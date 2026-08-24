@@ -2,6 +2,7 @@ package com.jarvis.assistant.data
 
 import android.content.Context
 import com.jarvis.assistant.contracts.Message
+import com.jarvis.assistant.contracts.ToolCall
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
@@ -24,7 +25,26 @@ class ConversationManager(private val dao: MessageDao) {
 
     suspend fun addMessage(message: Message) {
         dao.insert(message.toEntity())
-        dao.trimTo(MAX_MESSAGES)
+        // Keep last MAX_MESSAGES + any orphaned tool results whose parent assistant is kept
+        val all = dao.all()
+        val assistantKeepIds = all.takeLast(MAX_MESSAGES).map { it.id }.toMutableSet()
+        // Also keep tool messages whose parent assistant (by toolCallId) is in the keep set
+        val assistantToolCallIds = all.filter { it.role == "assistant" && it.toolCallsJson != null }
+            .filter { it.id in assistantKeepIds }
+            .flatMap { entity ->
+                entity.toolCallsJson?.let { jsonStr ->
+                    try {
+                        val toolCalls = json.decodeFromString(
+                            ListSerializer(ToolCall.serializer()),
+                            jsonStr
+                        )
+                        toolCalls.map { it.id }
+                    } catch (e: Exception) { emptyList() }
+                } ?: emptyList()
+            }.toSet()
+        val toolKeepIds = all.filter { it.role == "tool" && it.toolCallId in assistantToolCallIds }.map { it.id }
+        assistantKeepIds.addAll(toolKeepIds)
+        dao.trimToIds(assistantKeepIds)
     }
 
     /**

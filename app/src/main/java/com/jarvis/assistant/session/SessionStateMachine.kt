@@ -10,22 +10,28 @@ sealed interface SessionEvent {
     data object SpeechCaptured : SessionEvent
     data object NoSpeech : SessionEvent
     data object AsrSuccess : SessionEvent
-    data object AsrFailed : SessionEvent
+    data class AsrFailed(val cause: Throwable? = null) : SessionEvent
     data object LlmStarted : SessionEvent
     data object LlmDone : SessionEvent
     data object PlaybackStarted : SessionEvent
     data object PlaybackComplete : SessionEvent
     data object SessionFinished : SessionEvent
-    data object ErrorOccurred : SessionEvent
+    data class ErrorOccurred(val cause: Throwable? = null) : SessionEvent
 }
 
-sealed interface SessionAction {
-    data object None : SessionAction
-    data object StartListening : SessionAction
-    data object StartThinking : SessionAction
-    data object StartSpeaking : SessionAction
-    data object ReturnToIdle : SessionAction
-    data object NotifyError : SessionAction
+/** Pure reducer: (current state, event) -> new state. */
+fun reduceState(current: AssistantState, event: SessionEvent): AssistantState = when (event) {
+    SessionEvent.WakeWordOrBargeIn -> AssistantState.LISTENING
+    SessionEvent.SpeechCaptured -> AssistantState.THINKING
+    SessionEvent.NoSpeech -> AssistantState.IDLE
+    SessionEvent.AsrSuccess -> current
+    is SessionEvent.AsrFailed -> AssistantState.IDLE
+    SessionEvent.LlmStarted -> current
+    SessionEvent.LlmDone -> AssistantState.IDLE
+    SessionEvent.PlaybackStarted -> AssistantState.SPEAKING
+    SessionEvent.PlaybackComplete -> current
+    SessionEvent.SessionFinished -> AssistantState.IDLE
+    is SessionEvent.ErrorOccurred -> AssistantState.IDLE
 }
 
 class SessionStateMachine {
@@ -34,19 +40,7 @@ class SessionStateMachine {
 
     fun currentState(): AssistantState = _state.value
 
-    fun onEvent(event: SessionEvent): SessionAction {
-        return when (event) {
-            SessionEvent.WakeWordOrBargeIn -> { _state.value = AssistantState.LISTENING; SessionAction.StartListening }
-            SessionEvent.SpeechCaptured -> { _state.value = AssistantState.THINKING; SessionAction.StartThinking }
-            SessionEvent.NoSpeech -> { _state.value = AssistantState.IDLE; SessionAction.ReturnToIdle }
-            SessionEvent.AsrSuccess -> SessionAction.None
-            SessionEvent.AsrFailed -> { _state.value = AssistantState.IDLE; SessionAction.NotifyError }
-            SessionEvent.LlmStarted -> SessionAction.None
-            SessionEvent.LlmDone -> { _state.value = AssistantState.IDLE; SessionAction.ReturnToIdle }
-            SessionEvent.PlaybackStarted -> { _state.value = AssistantState.SPEAKING; SessionAction.StartSpeaking }
-            SessionEvent.PlaybackComplete -> SessionAction.None
-            SessionEvent.SessionFinished -> { _state.value = AssistantState.IDLE; SessionAction.ReturnToIdle }
-            SessionEvent.ErrorOccurred -> { _state.value = AssistantState.IDLE; SessionAction.NotifyError }
-        }
+    fun onEvent(event: SessionEvent) {
+        _state.value = reduceState(_state.value, event)
     }
 }

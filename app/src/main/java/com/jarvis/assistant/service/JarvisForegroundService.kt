@@ -129,6 +129,7 @@ class JarvisForegroundService : Service() {
             return
         }
         graph = appGraph
+        graph?.wireErrorHandler { msg -> speakError(Exception(msg)) }
 
         scheduleRestartAlarm()
 

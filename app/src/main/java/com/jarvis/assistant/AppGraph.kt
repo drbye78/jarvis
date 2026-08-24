@@ -74,6 +74,10 @@ class AppGraph(context: Context) {
         }
     }
 
+    fun wireErrorHandler(handler: suspend (String) -> Unit) {
+        sessionManager.setOnError(handler)
+    }
+
     fun shutdown() {
         sessionManager.cancelAll()
         audioPipeline.release()

@@ -24,4 +24,7 @@ interface MessageDao {
 
     @Query("DELETE FROM messages")
     suspend fun clear()
+
+    @Query("DELETE FROM messages WHERE id NOT IN (:ids)")
+    suspend fun trimToIds(ids: Set<Long>)
 }

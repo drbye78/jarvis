@@ -20,8 +20,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -70,6 +72,10 @@ class SessionManager(
 
     private val cooldownMs = 600L
     @Volatile private var lastDetectionTime = 0L
+
+    private var onErrorHandler: suspend (String) -> Unit = {}
+
+    fun setOnError(handler: suspend (String) -> Unit) { onErrorHandler = handler }
 
     // ------------------------------------------------------------------
     // Public control surface
@@ -133,7 +139,19 @@ class SessionManager(
 
             // b) Recognize.
             stateMachine.onEvent(SessionEvent.SpeechCaptured)
-            val result = asr.recognizeStreaming(pcm)
+            var result: AsrResult
+            var attempts = 0
+            while (true) {
+                val r = asr.recognizeStreaming(pcm)
+                if (r is AsrResult.Failure && attempts < 2) {
+                    attempts++
+                    Timber.w(r.cause, "ASR attempt $attempts failed, retrying")
+                    kotlinx.coroutines.delay(500L * attempts)
+                    continue
+                }
+                result = r
+                break
+            }
             when (result) {
                 is AsrResult.Success -> {
                     stateMachine.onEvent(SessionEvent.AsrSuccess)
@@ -151,7 +169,7 @@ class SessionManager(
                     return
                 }
                 is AsrResult.Failure -> {
-                    stateMachine.onEvent(SessionEvent.AsrFailed)
+                    stateMachine.onEvent(SessionEvent.AsrFailed(result.cause))
                     finish(id)
                     return
                 }
@@ -162,7 +180,8 @@ class SessionManager(
             finish(id)
         } catch (e: Exception) {
             Timber.e(e, "Session failed")
-            stateMachine.onEvent(SessionEvent.ErrorOccurred)
+            stateMachine.onEvent(SessionEvent.ErrorOccurred(e))
+            onErrorHandler("Произошла ошибка. Попробуйте ещё раз.")
             finish(id)
         }
     }
@@ -199,52 +218,62 @@ class SessionManager(
             val assistantTextBuilder = StringBuilder()
             val toolAccum = mutableMapOf<Int, ToolCallAccum>()
 
-            llm.chatStream(messages, tools).collect { chunk ->
-                when (chunk) {
-                    is LlmChunk.Text -> {
-                        sentenceBuffer.append(chunk.text)
-                        assistantTextBuilder.append(chunk.text)
-                        if (sentenceBuffer.toString().endsWithSentence()) {
-                            val s = sentenceBuffer.toString()
-                            sentenceBuffer.clear()
-                            launch { speakChunk(s) } // child of sessionJob (FIX #1)
-                        }
-                    }
+            try {
+                withTimeout(30_000L) {
+                    llm.chatStream(messages, tools).collect { chunk ->
+                        when (chunk) {
+                            is LlmChunk.Text -> {
+                                sentenceBuffer.append(chunk.text)
+                                assistantTextBuilder.append(chunk.text)
+                                if (sentenceBuffer.toString().endsWithSentence()) {
+                                    val s = sentenceBuffer.toString()
+                                    sentenceBuffer.clear()
+                                    launch { speakChunk(s) } // child of sessionJob (FIX #1)
+                                }
+                            }
 
-                    is LlmChunk.FunctionCallDelta -> {
-                        val a = toolAccum.getOrPut(chunk.index) {
-                            ToolCallAccum(chunk.index, null, StringBuilder(), null)
-                        }
-                        if (chunk.name != null) a.name = chunk.name
-                        a.args.append(chunk.argsDelta)
-                    }
+                            is LlmChunk.FunctionCallDelta -> {
+                                val a = toolAccum.getOrPut(chunk.index) {
+                                    ToolCallAccum(chunk.index, null, StringBuilder(), null)
+                                }
+                                if (chunk.name != null) a.name = chunk.name
+                                a.args.append(chunk.argsDelta)
+                            }
 
-                    is LlmChunk.FunctionCallComplete -> {
-                        toolCallsPending.add(chunk.call)
-                    }
+                            is LlmChunk.FunctionCallComplete -> {
+                                toolCallsPending.add(chunk.call)
+                            }
 
-                    is LlmChunk.Done -> {
-                        if (sentenceBuffer.isNotEmpty()) {
-                            val s = sentenceBuffer.toString()
-                            sentenceBuffer.clear()
-                            launch { speakChunk(s) }
-                        }
-                        // Fallback: clients that emit deltas but no Complete.
-                        if (toolCallsPending.isEmpty() && toolAccum.isNotEmpty()) {
-                            toolAccum.toSortedMap().forEach { (_, a) ->
-                                if (a.name != null) {
-                                    val tcId = a.id ?: java.util.UUID.randomUUID().toString()
-                                    toolCallsPending.add(
-                                        ToolCall(
-                                            id = tcId,
-                                            function = FunctionCall(a.name!!, a.args.toString())
-                                        )
-                                    )
+                            is LlmChunk.Done -> {
+                                if (sentenceBuffer.isNotEmpty()) {
+                                    val s = sentenceBuffer.toString()
+                                    sentenceBuffer.clear()
+                                    launch { speakChunk(s) }
+                                }
+                                // Fallback: clients that emit deltas but no Complete.
+                                if (toolCallsPending.isEmpty() && toolAccum.isNotEmpty()) {
+                                    toolAccum.toSortedMap().forEach { (_, a) ->
+                                        if (a.name != null) {
+                                            val tcId = a.id ?: java.util.UUID.randomUUID().toString()
+                                            toolCallsPending.add(
+                                                ToolCall(
+                                                    id = tcId,
+                                                    function = FunctionCall(a.name!!, a.args.toString())
+                                                )
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            } catch (e: TimeoutCancellationException) {
+                Timber.w(e, "LLM stream timed out")
+                stateMachine.onEvent(SessionEvent.ErrorOccurred(e))
+                onErrorHandler("Превышено время ожидания ответа.")
+                finish(id)
+                return
             }
 
             if (toolCallsPending.isNotEmpty()) {
