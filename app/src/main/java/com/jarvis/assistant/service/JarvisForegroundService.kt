@@ -121,8 +121,13 @@ class JarvisForegroundService : Service() {
         }
         registerReceiver(powerReceiver, filter)
 
-        val appGraph = AppGraph(this)
-        appGraph.start()
+        val appGraph = try {
+            AppGraph(this).also { it.start() }
+        } catch (e: Exception) {
+            Timber.e(e, "AppGraph start failed")
+            speakError(e)
+            return
+        }
         graph = appGraph
 
         scheduleRestartAlarm()

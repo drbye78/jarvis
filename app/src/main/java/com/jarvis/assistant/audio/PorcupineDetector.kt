@@ -15,6 +15,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import timber.log.Timber
 
 /**
  * Single owner of the Porcupine wake-word engine.
@@ -43,31 +44,37 @@ class PorcupineDetector(
     private var actorJob: Job? = null
 
     init {
-        porcupine = Porcupine.Builder()
-            .setAccessKey(accessKey)
-            .setKeywordPath(keywordPath)
-            .setSensitivity(sensitivity)
-            .build(context)
-
-        // SINGLE actor coroutine: the only place that calls process().
-        // The mic pipeline emits 320-sample (20 ms) frames to satisfy Silero
-        // VAD's FRAME_SIZE_20_MS, but Porcupine requires its native 512-sample
-        // frame at 16 kHz, so we re-chunk using a reusable accumulator that
-        // avoids per-frame array allocations.
-        actorJob = CoroutineScope(Dispatchers.Default).launch {
-            val accumulator = SampleAccumulator(512)
-            frames.collect { frame ->
-                if (!isActive) return@collect
-                accumulator.append(frame)
-                var chunk = accumulator.take()
-                while (chunk != null) {
-                    val result = processMutex.withLock {
-                        porcupine?.process(chunk) ?: -1
+        porcupine = try {
+            Porcupine.Builder()
+                .setAccessKey(accessKey)
+                .setKeywordPath(keywordPath)
+                .setSensitivity(sensitivity)
+                .build(context)
+        } catch (e: Exception) {
+            Timber.e(e, "Porcupine init failed — wake word disabled")
+            null
+        }
+        if (porcupine != null) {
+            // SINGLE actor coroutine: the only place that calls process().
+            // The mic pipeline emits 320-sample (20 ms) frames to satisfy Silero
+            // VAD's FRAME_SIZE_20_MS, but Porcupine requires its native 512-sample
+            // frame at 16 kHz, so we re-chunk using a reusable accumulator that
+            // avoids per-frame array allocations.
+            actorJob = CoroutineScope(Dispatchers.Default).launch {
+                val accumulator = SampleAccumulator(512)
+                frames.collect { frame ->
+                    if (!isActive) return@collect
+                    accumulator.append(frame)
+                    var chunk = accumulator.take()
+                    while (chunk != null) {
+                        val result = processMutex.withLock {
+                            porcupine?.process(chunk) ?: -1
+                        }
+                        if (result >= 0) {
+                            detectionsFlow.emit(Detection.WakeWord)
+                        }
+                        chunk = accumulator.take()
                     }
-                    if (result >= 0) {
-                        detectionsFlow.emit(Detection.WakeWord)
-                    }
-                    chunk = accumulator.take()
                 }
             }
         }

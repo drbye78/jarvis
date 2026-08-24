@@ -65,8 +65,13 @@ class AppGraph(context: Context) {
     )
 
     fun start() {
-        audioPipeline.start()
-        sessionManager.startListening()
+        try {
+            audioPipeline.start()
+            sessionManager.startListening()
+        } catch (e: Exception) {
+            scope.cancel()
+            throw e
+        }
     }
 
     fun shutdown() {

@@ -37,8 +37,6 @@ abstract class AppDatabase : RoomDatabase() {
                     "jarvis.db"
                 )
                     .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
-                    // TODO: Remove after schema stabilizes, add real migrations
-                    .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
             }

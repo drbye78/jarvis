@@ -1,7 +1,6 @@
 package com.jarvis.assistant.audio
 
 import com.jarvis.assistant.contracts.AudioSource
-import com.jarvis.assistant.contracts.RingBuffer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -9,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 /**
  * Owns an [AudioSource] and a SINGLE producer coroutine that is the only code
@@ -30,7 +30,7 @@ class AudioPipeline(
     /** Public, read-only view of the captured frames. */
     val frames: Flow<ShortArray> = _frames
 
-    val ringBuffer = RingBuffer<ShortArray>(8)
+    val ringBuffer = AudioRingBuffer(8)
 
     @Volatile private var running = false
     private var producerJob: Job? = null
@@ -52,8 +52,9 @@ class AudioPipeline(
                     }
                 } catch (e: CancellationException) {
                     throw e
-                } catch (_: Exception) {
-                    // Surface nothing here; keep the single producer alive.
+                } catch (e: Exception) {
+                    Timber.w(e, "AudioPipeline read error")
+                    kotlinx.coroutines.delay(100)
                 }
             }
         }

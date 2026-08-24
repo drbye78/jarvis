@@ -30,6 +30,11 @@ class AudioRecordSource(
     // 20 ms @ 16 kHz == 320 samples, matching the Silero VAD frame size.
     private val frameSize = (spec.sampleRate * 20) / 1000
 
+    // Double-buffer to avoid per-frame allocation
+    private val bufferA = ShortArray(frameSize)
+    private val bufferB = ShortArray(frameSize)
+    private var useA = true
+
     override fun start() {
         if (audioRecord != null) return
         val record = AudioRecord(
@@ -56,11 +61,11 @@ class AudioRecordSource(
     override fun read(): ShortArray {
         val record = audioRecord
             ?: throw IllegalStateException("AudioRecordSource not started")
-        val frame = ShortArray(frameSize)
-        val read = record.read(frame, 0, frame.size)
+        val buf = if (useA) bufferA else bufferB
+        useA = !useA
+        val read = record.read(buf, 0, frameSize)
         if (read <= 0) return ShortArray(0)
-        // Return a copied ShortArray of exactly the frame read.
-        return if (read == frame.size) frame.copyOf() else frame.copyOf(read)
+        return if (read == frameSize) buf else buf.copyOf(read)
     }
 
     override fun stop() {

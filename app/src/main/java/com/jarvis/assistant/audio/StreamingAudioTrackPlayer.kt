@@ -37,6 +37,7 @@ class StreamingAudioTrackPlayer(
     private val queue = Channel<PlayJob>(Channel.UNLIMITED)
     private val actorJob: Job
     @Volatile private var currentPlay: Job? = null
+    private var trackStarted = false
 
     init {
         val minBuf = AudioTrack.getMinBufferSize(
@@ -62,7 +63,6 @@ class StreamingAudioTrackPlayer(
             )
             .setBufferSizeInBytes(bufferSize)
             .build()
-        track.play()
         actorJob = scope.launch {
             for (job in queue) {
                 val play = launch {
@@ -88,6 +88,10 @@ class StreamingAudioTrackPlayer(
     }
 
     private fun writeChunk(chunk: ByteArray) {
+        if (!trackStarted) {
+            track.play()
+            trackStarted = true
+        }
         var offset = 0
         while (offset < chunk.size) {
             val written = track.write(chunk, offset, chunk.size - offset)

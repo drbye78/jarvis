@@ -1,5 +1,6 @@
 package com.jarvis.assistant.contracts
 
+import com.jarvis.assistant.audio.AudioRingBuffer
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -13,7 +14,7 @@ import kotlinx.coroutines.flow.Flow
 interface SpeechDetector {
     suspend fun collectSpeech(
         frames: Flow<ShortArray>,
-        ringBuffer: RingBuffer<ShortArray>,
+        ringBuffer: AudioRingBuffer,
         silenceFrames: Int = 25
     ): ByteArray
 }

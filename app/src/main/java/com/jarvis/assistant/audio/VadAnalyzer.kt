@@ -5,7 +5,6 @@ import com.konovalov.vad.silero.config.FrameSize
 import com.konovalov.vad.silero.config.Mode
 import com.konovalov.vad.silero.config.SampleRate
 import com.konovalov.vad.silero.VadSilero
-import com.jarvis.assistant.contracts.RingBuffer
 import com.jarvis.assistant.contracts.SpeechDetector
 import com.jarvis.assistant.util.SampleAccumulator
 import com.jarvis.assistant.util.toByteArray
@@ -14,6 +13,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import java.io.ByteArrayOutputStream
 
 /**
@@ -39,7 +39,7 @@ class VadAnalyzer(
 
     override suspend fun collectSpeech(
         frames: Flow<ShortArray>,
-        ringBuffer: RingBuffer<ShortArray>,
+        ringBuffer: AudioRingBuffer,
         silenceFrames: Int
     ): ByteArray = coroutineScope {
         val vad = VadSilero(
@@ -97,7 +97,12 @@ class VadAnalyzer(
             }
         }
 
-        vad.close()
-        pcmBytes.toByteArray()
+        val result = pcmBytes.toByteArray()
+        try {
+            vad.close()
+        } catch (e: Exception) {
+            Timber.w(e, "VAD close failed — result already captured")
+        }
+        result
     }
 }
