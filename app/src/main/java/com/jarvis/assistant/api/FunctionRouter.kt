@@ -16,6 +16,7 @@ import com.jarvis.assistant.tools.ToolRegistry
 import com.jarvis.assistant.tools.UnconfiguredDeviceControlAdapter
 import com.jarvis.assistant.tools.WeatherClient
 import com.jarvis.assistant.tools.WeatherTool
+import okhttp3.OkHttpClient
 
 /**
  * Registry and executor for assistant tools.
@@ -29,10 +30,11 @@ import com.jarvis.assistant.tools.WeatherTool
  */
 class FunctionRouter(
     context: Context,
+    private val httpClient: OkHttpClient,
     private val historyProvider: suspend () -> List<Message> = { emptyList() }
 ) {
     private val alarmScheduler: AlarmScheduler = AndroidAlarmScheduler(context)
-    private val weatherClient: WeatherClient = OpenMeteoWeatherClient()
+    private val weatherClient: WeatherClient = OpenMeteoWeatherClient(httpClient)
     private val deviceAdapter: DeviceControlAdapter = UnconfiguredDeviceControlAdapter()
 
     private val toolRegistry = ToolRegistry(

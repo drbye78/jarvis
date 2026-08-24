@@ -14,7 +14,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import timber.log.Timber
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 
 /**
  * Dual Sber OAuth [TokenProvider].
@@ -30,15 +29,13 @@ import java.util.concurrent.TimeUnit
  * Errors are surfaced by throwing (no silent nulls): missing credentials,
  * non-2xx responses, or a malformed token payload all raise.
  */
-class TokenManager(context: Context) : TokenProvider {
+class TokenManager(
+    context: Context,
+    private val httpClient: OkHttpClient
+) : TokenProvider {
 
     private val appContext = context.applicationContext
     private val prefs = SecurePrefs.get(appContext)
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .build()
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -99,7 +96,7 @@ class TokenManager(context: Context) : TokenProvider {
             .post(body)
             .build()
 
-        val response = client.newCall(request).execute()
+        val response = httpClient.newCall(request).execute()
         val raw = try {
             response.body?.string().orEmpty()
         } finally {

@@ -23,30 +23,46 @@ import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.session.SessionManager
 import com.jarvis.assistant.session.SessionStateMachine
+import io.grpc.ManagedChannel
+import io.grpc.okhttp.OkHttpChannelBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 class AppGraph(context: Context) {
     private val appContext = context.applicationContext
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    // Shared HTTP client (connection pooling, thread reuse)
+    val httpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
+
+    // Shared gRPC channel for Salute Speech (ASR + TTS share host:port)
+    val saluteChannel: ManagedChannel = OkHttpChannelBuilder
+        .forTarget("smartspeech.sber.ru:443")
+        .useTransportSecurity()
+        .build()
+
     val database: AppDatabase = AppDatabase.getInstance(appContext)
     val conversationManager: ConversationManager = ConversationManager(database.messageDao())
 
-    val tokenProvider: TokenProvider = TokenManager(appContext)
-    val asrClient: AsrClient = SaluteSpeechASR(tokenProvider)
-    val llmClient: LlmClient = GigaChatClient(tokenProvider)
-    val ttsClient: SaluteSpeechTTS = SaluteSpeechTTS(tokenProvider)
+    val tokenProvider: TokenProvider = TokenManager(appContext, httpClient)
+    val asrClient: AsrClient = SaluteSpeechASR(tokenProvider, saluteChannel)
+    val llmClient: LlmClient = GigaChatClient(tokenProvider, httpClient)
+    val ttsClient: SaluteSpeechTTS = SaluteSpeechTTS(tokenProvider, saluteChannel)
 
     val audioPipeline: AudioPipeline = AudioPipeline(scope, AudioRecordSource())
     val wakeWordDetector: WakeWordDetector = PorcupineDetector(audioPipeline.frames, appContext, BuildConfig.PICOVOICE_KEY)
     val vad: SpeechDetector = VadAnalyzer(appContext)
     val player: TtsPlayer = StreamingAudioTrackPlayer(scope, AudioSpec.TTS)
 
-    val functionRouter: FunctionRouter = FunctionRouter(appContext) { conversationManager.getHistoryForLLM() }
+    val functionRouter: FunctionRouter = FunctionRouter(appContext, httpClient) { conversationManager.getHistoryForLLM() }
 
     val stateMachine: SessionStateMachine = SessionStateMachine()
 
@@ -84,5 +100,6 @@ class AppGraph(context: Context) {
         wakeWordDetector.release()
         player.release()
         scope.cancel()
+        runCatching { saluteChannel.shutdown().awaitTermination(2, TimeUnit.SECONDS) }
     }
 }

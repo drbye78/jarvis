@@ -9,23 +9,18 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.concurrent.TimeUnit
 
 interface WeatherClient {
     suspend fun getWeather(location: String, units: String): String
 }
 
-class OpenMeteoWeatherClient : WeatherClient {
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
+class OpenMeteoWeatherClient(private val httpClient: OkHttpClient) : WeatherClient {
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun getWeather(location: String, units: String): String = withContext(Dispatchers.IO) {
         val geoUrl = "https://geocoding-api.open-meteo.com/v1/search?name=$location&count=1&language=ru"
         val geoReq = Request.Builder().url(geoUrl).build()
-        val geoResp = client.newCall(geoReq).execute()
+        val geoResp = httpClient.newCall(geoReq).execute()
         val geoBody = geoResp.body?.string().orEmpty()
         val geoJson = json.parseToJsonElement(geoBody).jsonObject
         val results = geoJson["results"]?.jsonArray
@@ -38,7 +33,7 @@ class OpenMeteoWeatherClient : WeatherClient {
 
         val weatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,weather_code&timezone=auto"
         val weatherReq = Request.Builder().url(weatherUrl).build()
-        val weatherResp = client.newCall(weatherReq).execute()
+        val weatherResp = httpClient.newCall(weatherReq).execute()
         val weatherBody = weatherResp.body?.string().orEmpty()
         val weatherJson = json.parseToJsonElement(weatherBody).jsonObject
         val current = weatherJson["current"]?.jsonObject

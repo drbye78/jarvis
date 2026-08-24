@@ -29,7 +29,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
-import java.util.concurrent.TimeUnit
 
 /**
  * GigaChat LLM client (OpenAI-compatible streaming chat completions).
@@ -48,12 +47,10 @@ import java.util.concurrent.TimeUnit
  *     arguments string and the captured function name.
  * Text deltas are emitted immediately as [LlmChunk.Text].
  */
-class GigaChatClient(private val tokenProvider: TokenProvider) : LlmClient {
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .build()
+class GigaChatClient(
+    private val tokenProvider: TokenProvider,
+    private val httpClient: OkHttpClient
+) : LlmClient {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -91,7 +88,7 @@ class GigaChatClient(private val tokenProvider: TokenProvider) : LlmClient {
                 .post(body)
                 .build()
 
-            val newCall = client.newCall(request)
+            val newCall = httpClient.newCall(request)
             call = newCall
             val response = newCall.execute()
 

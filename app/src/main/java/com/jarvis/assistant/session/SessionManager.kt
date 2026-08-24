@@ -328,7 +328,7 @@ class SessionManager(
      */
     private suspend fun CoroutineScope.speakChunk(text: String) {
         stateMachine.onEvent(SessionEvent.PlaybackStarted)
-        val ttsFlow = ttsClient.synthesizeStream(text, "Mila", "1.1")
+        val ttsFlow = ttsClient.synthesizeStream(text, "Mila")
         val done = player.play(ttsFlow)
         done.await() // wait for drain (FIX #5)
     }

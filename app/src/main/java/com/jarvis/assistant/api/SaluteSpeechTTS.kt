@@ -5,8 +5,8 @@ import com.jarvis.assistant.grpc.synthesis.SmartSpeechGrpc
 import com.jarvis.assistant.grpc.synthesis.SynthesisRequest
 import com.jarvis.assistant.grpc.synthesis.SynthesisResponse
 import io.grpc.ClientInterceptors
+import io.grpc.ManagedChannel
 import io.grpc.Metadata
-import io.grpc.okhttp.OkHttpChannelBuilder
 import io.grpc.stub.MetadataUtils
 import io.grpc.stub.StreamObserver
 import kotlinx.coroutines.Dispatchers
@@ -14,7 +14,6 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
-import java.util.concurrent.TimeUnit
 
 /**
  * Salute Speech TTS client over gRPC (smartspeech.sber.ru:443).
@@ -25,27 +24,23 @@ import java.util.concurrent.TimeUnit
  *
  * @param tokenProvider provides the Sber OAuth bearer token for the gRPC call.
  */
-class SaluteSpeechTTS(private val tokenProvider: TokenProvider) {
-
-    private val endpoint = "smartspeech.sber.ru:443"
+class SaluteSpeechTTS(
+    private val tokenProvider: TokenProvider,
+    private val channel: ManagedChannel
+) {
 
     /**
      * Stream synthesized speech as 24 kHz / 16-bit / mono PCM chunks.
      *
      * @param text  text to synthesize.
      * @param voice Salute voice id (default "Mila" -> mapped to "May_24000").
-     * @param speed playback speed string (default "1.1"); Sber has no speed
-     *        control field, so this is currently accepted for API compatibility
-     *        and ignored by the wire protocol.
      */
     fun synthesizeStream(
         text: String,
-        voice: String = "Mila",
-        speed: String = "1.1"
+        voice: String = "Mila"
     ): Flow<ByteArray> = callbackFlow {
         val token = withContext(Dispatchers.IO) { tokenProvider.getSaluteToken() }
 
-        val channel = OkHttpChannelBuilder.forTarget(endpoint).useTransportSecurity().build()
         try {
             val headers = Metadata().apply {
                 put(
@@ -54,7 +49,7 @@ class SaluteSpeechTTS(private val tokenProvider: TokenProvider) {
                 )
             }
             val interceptedChannel = ClientInterceptors.intercept(
-                channel,
+                this@SaluteSpeechTTS.channel,
                 MetadataUtils.newAttachHeadersInterceptor(headers)
             )
             val stub = SmartSpeechGrpc.newStub(interceptedChannel)
@@ -83,9 +78,7 @@ class SaluteSpeechTTS(private val tokenProvider: TokenProvider) {
             }
 
             stub.synthesize(request, responseObserver)
-            awaitClose {
-                runCatching { channel.shutdown().awaitTermination(2, TimeUnit.SECONDS) }
-            }
+            awaitClose { /* No channel shutdown — managed by AppGraph */ }
         } catch (e: Throwable) {
             close(e)
         }

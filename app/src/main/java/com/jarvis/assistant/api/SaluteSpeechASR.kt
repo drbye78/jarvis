@@ -11,9 +11,9 @@ import com.jarvis.assistant.grpc.recognition.SmartSpeechGrpc
 import com.jarvis.assistant.grpc.recognition.Transcription
 import com.google.protobuf.ByteString
 import io.grpc.ClientInterceptors
+import io.grpc.ManagedChannel
 import io.grpc.Metadata
 import io.grpc.Status
-import io.grpc.okhttp.OkHttpChannelBuilder
 import io.grpc.stub.MetadataUtils
 import io.grpc.stub.StreamObserver
 import kotlinx.coroutines.Dispatchers
@@ -22,7 +22,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import timber.log.Timber
-import java.util.concurrent.TimeUnit
 
 /**
  * Salute Speech streaming ASR client over gRPC (smartspeech.sber.ru:443).
@@ -34,15 +33,15 @@ import java.util.concurrent.TimeUnit
  * Audio contract: 16 kHz / 16-bit / mono / little-endian PCM (matches
  * [com.jarvis.assistant.contracts.AudioSpec.MIC]).
  */
-class SaluteSpeechASR(private val tokenProvider: TokenProvider) : AsrClient {
-
-    private val endpoint = "smartspeech.sber.ru:443"
+class SaluteSpeechASR(
+    private val tokenProvider: TokenProvider,
+    private val channel: ManagedChannel
+) : AsrClient {
 
     override suspend fun recognizeStreaming(pcm: ByteArray): AsrResult = withContext(Dispatchers.IO) {
         if (pcm.isEmpty()) return@withContext AsrResult.NoSpeech
 
         val token = tokenProvider.getSaluteToken()
-        val channel = OkHttpChannelBuilder.forTarget(endpoint).useTransportSecurity().build()
         try {
             withTimeout(60_000L) {
                 suspendCancellableCoroutine { cont ->
@@ -135,8 +134,6 @@ class SaluteSpeechASR(private val tokenProvider: TokenProvider) : AsrClient {
             }
         } catch (e: TimeoutCancellationException) {
             return@withContext AsrResult.Failure(e)
-        } finally {
-            runCatching { channel.shutdown().awaitTermination(2, TimeUnit.SECONDS) }
         }
     }
 }

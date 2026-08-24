@@ -60,6 +60,9 @@ android {
         getByName("debug") {
             java.srcDir("build/generated/java/generateDebugProto/java")
         }
+        getByName("release") {
+            java.srcDir("build/generated/java/generateReleaseProto/java")
+        }
     }
 }
 
