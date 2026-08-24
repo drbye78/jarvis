@@ -4,10 +4,18 @@ import android.content.Context
 import com.jarvis.assistant.contracts.FunctionCall
 import com.jarvis.assistant.contracts.Message
 import com.jarvis.assistant.contracts.Tool as SerializationTool
-import com.jarvis.assistant.contracts.ToolContract
 import com.jarvis.assistant.contracts.ToolFunction
 import com.jarvis.assistant.contracts.ToolResult
+import com.jarvis.assistant.tools.AlarmScheduler
+import com.jarvis.assistant.tools.AlarmTool
+import com.jarvis.assistant.tools.AndroidAlarmScheduler
+import com.jarvis.assistant.tools.DeviceControlAdapter
+import com.jarvis.assistant.tools.DeviceControlTool
+import com.jarvis.assistant.tools.OpenMeteoWeatherClient
 import com.jarvis.assistant.tools.ToolRegistry
+import com.jarvis.assistant.tools.UnconfiguredDeviceControlAdapter
+import com.jarvis.assistant.tools.WeatherClient
+import com.jarvis.assistant.tools.WeatherTool
 
 /**
  * Registry and executor for assistant tools.
@@ -20,66 +28,18 @@ import com.jarvis.assistant.tools.ToolRegistry
  * unknown tool names produce a clear error result rather than throwing.
  */
 class FunctionRouter(
-    @Suppress("unused") context: Context,
+    context: Context,
     private val historyProvider: suspend () -> List<Message> = { emptyList() }
 ) {
+    private val alarmScheduler: AlarmScheduler = AndroidAlarmScheduler(context)
+    private val weatherClient: WeatherClient = OpenMeteoWeatherClient()
+    private val deviceAdapter: DeviceControlAdapter = UnconfiguredDeviceControlAdapter()
 
     private val toolRegistry = ToolRegistry(
         listOf(
-            object : ToolContract {
-                override val name = "setAlarm"
-                override val description = "Set an alarm at a given time."
-                override val parametersJson = """
-                    {
-                      "type": "object",
-                      "properties": {
-                        "time": { "type": "string", "description": "ISO-8601 time, e.g. 07:30" },
-                        "label": { "type": "string", "description": "Optional alarm label" }
-                      },
-                      "required": ["time"]
-                    }
-                """.trimIndent()
-
-                override suspend fun execute(arguments: String): String {
-                    return """{"error":"not configured"}"""
-                }
-            },
-            object : ToolContract {
-                override val name = "controlDevice"
-                override val description = "Turn a smart-home device on or off."
-                override val parametersJson = """
-                    {
-                      "type": "object",
-                      "properties": {
-                        "device": { "type": "string", "description": "Device id or name" },
-                        "state": { "type": "string", "enum": ["on", "off"] }
-                      },
-                      "required": ["device", "state"]
-                    }
-                """.trimIndent()
-
-                override suspend fun execute(arguments: String): String {
-                    return """{"error":"not configured"}"""
-                }
-            },
-            object : ToolContract {
-                override val name = "getWeather"
-                override val description = "Get the current weather for a location."
-                override val parametersJson = """
-                    {
-                      "type": "object",
-                      "properties": {
-                        "location": { "type": "string", "description": "City or coordinates" },
-                        "units": { "type": "string", "enum": ["celsius", "fahrenheit"] }
-                      },
-                      "required": ["location"]
-                    }
-                """.trimIndent()
-
-                override suspend fun execute(arguments: String): String {
-                    return """{"error":"not configured"}"""
-                }
-            }
+            AlarmTool(alarmScheduler),
+            WeatherTool(weatherClient),
+            DeviceControlTool(deviceAdapter)
         )
     )
 
