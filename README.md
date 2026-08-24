@@ -43,9 +43,6 @@ After installing the app:
 ```bash
 ./gradlew testDebugUnitTest
 ```
-Note: `GigaChatClientTest` is `@Ignore`d — it exposed that `chatStream()`'s SSE
-flow does not terminate against MockWebServer (hangs after `[DONE]`). Fix flow
-completion in `GigaChatClient`, then remove the annotation.
 
 ## Configuration
 All tunables (wake-word sensitivity, VAD timings, session/API timeouts,

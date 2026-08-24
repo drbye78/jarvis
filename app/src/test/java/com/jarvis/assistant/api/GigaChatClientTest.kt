@@ -12,13 +12,8 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Test
 
-// TODO(unignore): chatStream() SSE flow does not terminate against MockWebServer —
-// the flow hangs after [DONE] instead of completing. Fix termination in GigaChatClient,
-// then remove this annotation. Tracked as Phase 5 follow-up.
-@Ignore("chatStream hangs on MockWebServer — SSE flow termination bug")
 class GigaChatClientTest {
     private lateinit var server: MockWebServer
     private lateinit var client: GigaChatClient

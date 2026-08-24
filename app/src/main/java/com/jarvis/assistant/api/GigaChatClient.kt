@@ -92,96 +92,105 @@ class GigaChatClient(
             call = newCall
             val response = newCall.execute()
 
-            if (!response.isSuccessful) {
-                val err = response.body?.string().orEmpty()
-                response.close()
-                Timber.d("GigaChat request failed: HTTP ${response.code}: $err")
-                throw RuntimeException(
-                    "GigaChat request failed (HTTP ${response.code}): $err"
-                )
-            }
-
-            val bodySource = response.body?.source()
-                ?: throw RuntimeException("GigaChat returned an empty body")
-
-            val acc = mutableMapOf<Int, ToolCallAccum>()
-            var toolCallsFinalized = false
-
-            fun finalizeToolCalls() {
-                if (toolCallsFinalized) return
-                toolCallsFinalized = true
-                acc.toSortedMap().forEach { (_, a) ->
-                    val name = a.name ?: "unknown"
-                    val id = a.id ?: java.util.UUID.randomUUID().toString()
-                    trySend(
-                        LlmChunk.FunctionCallComplete(
-                            ToolCall(
-                                id = id,
-                                function = FunctionCall(name, a.args.toString())
-                            )
-                        )
+            try {
+                if (!response.isSuccessful) {
+                    val err = response.body?.string().orEmpty()
+                    Timber.d("GigaChat request failed: HTTP ${response.code}: $err")
+                    throw RuntimeException(
+                        "GigaChat request failed (HTTP ${response.code}): $err"
                     )
                 }
-            }
 
-            // ---- Manual SSE parsing (FIX #4) ----
-            while (!isClosedForSend) {
-                val line = bodySource.readUtf8Line() ?: break // EOF
+                val bodySource = response.body?.source()
+                    ?: throw RuntimeException("GigaChat returned an empty body")
 
-                // Skip blank lines and SSE comments (lines starting with ':').
-                if (line.isBlank()) continue
-                if (line.startsWith(":")) continue
-                if (!line.startsWith("data:")) continue
+                val acc = mutableMapOf<Int, ToolCallAccum>()
+                var toolCallsFinalized = false
 
-                val data = line.removePrefix("data:").trim()
-                if (data == "[DONE]") {
-                    finalizeToolCalls()
-                    trySend(LlmChunk.Done)
-                    break
-                }
-
-                val chunk = parseChunk(data) ?: continue // skip malformed chunks
-
-                val choices = chunk["choices"]?.jsonArray
-                if (choices.isNullOrEmpty()) continue
-                val choice = choices[0].jsonObject
-                val delta = choice["delta"]?.jsonObject ?: continue
-
-                // Text delta.
-                val text = delta["content"]?.jsonPrimitive?.contentOrNull
-                if (!text.isNullOrEmpty()) {
-                    trySend(LlmChunk.Text(text))
-                }
-
-                // Tool-call deltas (incremental, keyed by index).
-                val toolCalls = delta["tool_calls"]?.jsonArray
-                if (toolCalls != null) {
-                    for (tc in toolCalls) {
-                        val tco = tc.jsonObject
-                        val index = tco["index"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
-                        val tcoId = tco["id"]?.jsonPrimitive?.contentOrNull
-                        val fn = tco["function"]?.jsonObject
-                        val name = fn?.get("name")?.jsonPrimitive?.contentOrNull
-                        val argsDelta = fn?.get("arguments")?.jsonPrimitive?.contentOrNull ?: ""
-
-                        val a = acc.getOrPut(index) {
-                            ToolCallAccum(index, null, StringBuilder(), null)
-                        }
-                        if (tcoId != null) a.id = tcoId
-                        if (name != null) a.name = name
-                        a.args.append(argsDelta)
-
-                        trySend(LlmChunk.FunctionCallDelta(index, name, argsDelta))
+                fun finalizeToolCalls() {
+                    if (toolCallsFinalized) return
+                    toolCallsFinalized = true
+                    acc.toSortedMap().forEach { (_, a) ->
+                        val name = a.name ?: "unknown"
+                        val id = a.id ?: java.util.UUID.randomUUID().toString()
+                        trySend(
+                            LlmChunk.FunctionCallComplete(
+                                ToolCall(
+                                    id = id,
+                                    function = FunctionCall(name, a.args.toString())
+                                )
+                            )
+                        )
                     }
                 }
 
-                // A finish reason (e.g. "stop" / "tool_calls") means the model is
-                // done producing this choice; finalize tool calls now. [DONE]
-                // still drives the terminal Done chunk.
-                val finishReason = choice["finish_reason"]?.jsonPrimitive?.contentOrNull
-                if (!finishReason.isNullOrBlank()) {
-                    finalizeToolCalls()
+                // ---- Manual SSE parsing (FIX #4) ----
+                while (!isClosedForSend) {
+                    val line = bodySource.readUtf8Line() ?: break // EOF
+
+                    // Skip blank lines and SSE comments (lines starting with ':').
+                    if (line.isBlank()) continue
+                    if (line.startsWith(":")) continue
+                    if (!line.startsWith("data:")) continue
+
+                    val data = line.removePrefix("data:").trim()
+                    if (data == "[DONE]") {
+                        finalizeToolCalls()
+                        trySend(LlmChunk.Done)
+                        break
+                    }
+
+                    val chunk = parseChunk(data) ?: continue // skip malformed chunks
+
+                    val choices = chunk["choices"]?.jsonArray
+                    if (choices.isNullOrEmpty()) continue
+                    val choice = choices[0].jsonObject
+                    val delta = choice["delta"]?.jsonObject ?: continue
+
+                    // Text delta.
+                    val text = delta["content"]?.jsonPrimitive?.contentOrNull
+                    if (!text.isNullOrEmpty()) {
+                        trySend(LlmChunk.Text(text))
+                    }
+
+                    // Tool-call deltas (incremental, keyed by index).
+                    val toolCalls = delta["tool_calls"]?.jsonArray
+                    if (toolCalls != null) {
+                        for (tc in toolCalls) {
+                            val tco = tc.jsonObject
+                            val index = tco["index"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+                            val tcoId = tco["id"]?.jsonPrimitive?.contentOrNull
+                            val fn = tco["function"]?.jsonObject
+                            val name = fn?.get("name")?.jsonPrimitive?.contentOrNull
+                            val argsDelta = fn?.get("arguments")?.jsonPrimitive?.contentOrNull ?: ""
+
+                            val a = acc.getOrPut(index) {
+                                ToolCallAccum(index, null, StringBuilder(), null)
+                            }
+                            if (tcoId != null) a.id = tcoId
+                            if (name != null) a.name = name
+                            a.args.append(argsDelta)
+
+                            trySend(LlmChunk.FunctionCallDelta(index, name, argsDelta))
+                        }
+                    }
+
+                    // A finish reason (e.g. "stop" / "tool_calls") means the model is
+                    // done producing this choice; finalize tool calls now. [DONE]
+                    // still drives the terminal Done chunk.
+                    val finishReason = choice["finish_reason"]?.jsonPrimitive?.contentOrNull
+                    if (!finishReason.isNullOrBlank()) {
+                        finalizeToolCalls()
+                    }
                 }
+
+                // Stream ended normally ([DONE] or EOF). Complete the flow so
+                // collectors (e.g. toList()) actually return — without this,
+                // control falls through to awaitClose() below and the flow
+                // hangs forever.
+                close()
+            } finally {
+                runCatching { response.close() }
             }
         }
 
