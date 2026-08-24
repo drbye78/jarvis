@@ -22,6 +22,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -160,6 +161,7 @@ class SessionManager(
             // Barge-in / shutdown: graceful stop. Only act if still current.
             finish(id)
         } catch (e: Exception) {
+            Timber.e(e, "Session failed")
             stateMachine.onEvent(SessionEvent.ErrorOccurred)
             finish(id)
         }

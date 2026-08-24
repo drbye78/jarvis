@@ -36,8 +36,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "jarvis.db"
                 )
-                    .allowMainThreadQueries()
                     .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    // TODO: Remove after schema stabilizes, add real migrations
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

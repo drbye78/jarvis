@@ -28,6 +28,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
 /**
@@ -97,6 +98,7 @@ class GigaChatClient(private val tokenProvider: TokenProvider) : LlmClient {
             if (!response.isSuccessful) {
                 val err = response.body?.string().orEmpty()
                 response.close()
+                Timber.d("GigaChat request failed: HTTP ${response.code}: $err")
                 throw RuntimeException(
                     "GigaChat request failed (HTTP ${response.code}): $err"
                 )

@@ -21,6 +21,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
 /**
@@ -85,6 +86,7 @@ class SaluteSpeechASR(private val tokenProvider: TokenProvider) : AsrClient {
                         }
 
                         override fun onError(t: Throwable) {
+                            Timber.e(t, "ASR transport error")
                             settle(AsrResult.Failure(t))
                         }
 

@@ -207,6 +207,7 @@ class JarvisForegroundService : Service() {
     // ------------------------------------------------------------------
 
     private fun speakError(e: Exception) {
+        Timber.e(e, "Voice error prompt")
         runCatching {
             errorTts.language = Locale("ru")
             errorTts.speak(

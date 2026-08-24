@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import timber.log.Timber
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -106,6 +107,7 @@ class TokenManager(context: Context) : TokenProvider {
         }
 
         if (!response.isSuccessful) {
+            Timber.e("Token refresh failed: $raw")
             throw RuntimeException(
                 "OAuth token request failed (HTTP ${response.code}) for scope='$scope': $raw"
             )
