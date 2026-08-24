@@ -20,33 +20,11 @@ import android.os.PowerManager
 import android.speech.tts.TextToSpeech
 import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
-import com.jarvis.assistant.BuildConfig
-import com.jarvis.assistant.audio.AudioPipeline
-import com.jarvis.assistant.audio.AudioRecordSource
-import com.jarvis.assistant.audio.PorcupineDetector
-import com.jarvis.assistant.audio.StreamingAudioTrackPlayer
-import com.jarvis.assistant.audio.VadAnalyzer
-import com.jarvis.assistant.api.FunctionRouter
-import com.jarvis.assistant.api.GigaChatClient
-import com.jarvis.assistant.api.SaluteSpeechASR
-import com.jarvis.assistant.api.SaluteSpeechTTS
-import com.jarvis.assistant.api.TokenManager
-import com.jarvis.assistant.contracts.AssistantState
-import com.jarvis.assistant.contracts.AudioSpec
-import com.jarvis.assistant.contracts.TtsPlayer
-import com.jarvis.assistant.data.AppDatabase
-import com.jarvis.assistant.data.ConversationManager
-import com.jarvis.assistant.session.SessionManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import com.jarvis.assistant.AppGraph
 import java.util.Locale
 
 /**
- * Foreground service that owns the entire voice pipeline and wires it to a
- * [SessionManager].
+ * Foreground service that owns the entire voice pipeline via [AppGraph].
  *
  * Idempotent (R9): [onStartCommand] only initializes once; subsequent calls are
  * no-ops. A 15-minute [AlarmManager] restart keeps the sticky service alive
@@ -54,21 +32,8 @@ import java.util.Locale
  */
 class JarvisForegroundService : Service() {
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     private var initialized = false
-
-    private lateinit var audioPipeline: AudioPipeline
-    private lateinit var porcupine: PorcupineDetector
-    private lateinit var vad: VadAnalyzer
-    private lateinit var tokenManager: TokenManager
-    private lateinit var asr: SaluteSpeechASR
-    private lateinit var ttsClient: SaluteSpeechTTS
-    private lateinit var llm: GigaChatClient
-    private lateinit var player: TtsPlayer
-    private lateinit var functionRouter: FunctionRouter
-    private lateinit var conversationManager: ConversationManager
-    private lateinit var sessionManager: SessionManager
+    private var graph: AppGraph? = null
 
     private lateinit var wakeLock: PowerManager.WakeLock
     private lateinit var wifiLock: WifiManager.WifiLock
@@ -111,42 +76,9 @@ class JarvisForegroundService : Service() {
         ).apply { setReferenceCounted(false) }
         wifiLock.acquire()
 
-        audioPipeline = AudioPipeline(serviceScope, AudioRecordSource())
-        porcupine = PorcupineDetector(audioPipeline.frames, applicationContext, BuildConfig.PICOVOICE_KEY)
-        vad = VadAnalyzer(applicationContext)
-        tokenManager = TokenManager(applicationContext)
-        asr = SaluteSpeechASR(tokenManager)
-        ttsClient = SaluteSpeechTTS(tokenManager)
-        llm = GigaChatClient(tokenManager)
-        player = StreamingAudioTrackPlayer(serviceScope, AudioSpec.TTS)
-        functionRouter = FunctionRouter(applicationContext) {
-            conversationManager.getHistoryForLLM()
-        }
-        conversationManager = ConversationManager(
-            AppDatabase.getInstance(applicationContext).messageDao()
-        )
-
-        sessionManager = SessionManager(
-            audioPipeline = audioPipeline,
-            porcupine = porcupine,
-            vad = vad,
-            asr = asr,
-            llm = llm,
-            ttsClient = ttsClient,
-            player = player,
-            functionRouter = functionRouter,
-            conversationManager = conversationManager,
-            scope = serviceScope,
-            onStateChange = { /* hook for notification updates if desired */ },
-            onError = { e -> speakError(e) },
-            duck = { duck() },
-            unduck = { unduck() }
-        )
-
-        // Start the mic producer (Porcupine actor + SessionManager detection
-        // collector are launched in their own constructors/init).
-        audioPipeline.start()
-        sessionManager.startSession()
+        val appGraph = AppGraph(this)
+        appGraph.start()
+        graph = appGraph
     }
 
     // ------------------------------------------------------------------
@@ -262,14 +194,11 @@ class JarvisForegroundService : Service() {
     // ------------------------------------------------------------------
 
     override fun onDestroy() {
-        runCatching { sessionManager.cancelAll() }
-        runCatching { audioPipeline.release() }
-        runCatching { porcupine.release() }
-        runCatching { player.release() }
+        runCatching { graph?.shutdown() }
+        graph = null
         if (::wakeLock.isInitialized && wakeLock.isHeld) runCatching { wakeLock.release() }
         if (::wifiLock.isInitialized && wifiLock.isHeld) runCatching { wifiLock.release() }
         runCatching { errorTts.shutdown() }
-        serviceScope.cancel()
         super.onDestroy()
     }
 

@@ -1,19 +1,18 @@
 package com.jarvis.assistant.session
 
 import com.jarvis.assistant.audio.AudioPipeline
-import com.jarvis.assistant.audio.PorcupineDetector
-import com.jarvis.assistant.audio.VadAnalyzer
 import com.jarvis.assistant.api.FunctionRouter
 import com.jarvis.assistant.api.SaluteSpeechTTS
-import com.jarvis.assistant.contracts.AssistantState
 import com.jarvis.assistant.contracts.AsrResult
 import com.jarvis.assistant.contracts.AsrClient
 import com.jarvis.assistant.contracts.FunctionCall
 import com.jarvis.assistant.contracts.LlmChunk
 import com.jarvis.assistant.contracts.LlmClient
 import com.jarvis.assistant.contracts.Message
+import com.jarvis.assistant.contracts.SpeechDetector
 import com.jarvis.assistant.contracts.ToolCall
 import com.jarvis.assistant.contracts.TtsPlayer
+import com.jarvis.assistant.contracts.WakeWordDetector
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.util.SentenceSplitter.endsWithSentence
 import kotlinx.coroutines.CoroutineScope
@@ -52,55 +51,46 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class SessionManager(
     private val audioPipeline: AudioPipeline,
-    private val porcupine: PorcupineDetector,
-    private val vad: VadAnalyzer,
+    private val wakeWordDetector: WakeWordDetector,
+    private val vad: SpeechDetector,
     private val asr: AsrClient,
     private val llm: LlmClient,
     private val ttsClient: SaluteSpeechTTS,
     private val player: TtsPlayer,
     private val functionRouter: FunctionRouter,
     private val conversationManager: ConversationManager,
-    private val scope: CoroutineScope,
-    private val onStateChange: (AssistantState) -> Unit,
-    private val onError: (Exception) -> Unit,
-    private val duck: () -> Unit = {},
-    private val unduck: () -> Unit = {}
+    private val stateMachine: SessionStateMachine,
+    private val scope: CoroutineScope
 ) {
-
-    @Volatile
-    private var _state: AssistantState = AssistantState.IDLE
-    val currentState: AssistantState get() = _state
 
     private var sessionJob: Job? = null
     private var detectionJob: Job? = null
     private val sessionSeq = AtomicInteger(0)
 
-    init {
-        // One long-lived collector interprets Porcupine detections by state.
-        // FIX #3: a single actor owns Porcupine; here we only react.
-        detectionJob = scope.launch {
-            porcupine.detections().collect {
-                when (_state) {
-                    // Barge-in OR a fresh wake word both start a new turn.
-                    AssistantState.SPEAKING,
-                    AssistantState.IDLE,
-                    AssistantState.LISTENING -> startSession()
-                    else -> { /* THINKING: ignore */ }
-                }
-            }
-        }
-    }
-
     // ------------------------------------------------------------------
     // Public control surface
     // ------------------------------------------------------------------
+
+    /**
+     * Start (or restart) the wake-word detection collector. Idempotent — calling
+     * again cancels the previous collector and starts a fresh one.
+     */
+    fun startListening() {
+        detectionJob?.cancel()
+        detectionJob = scope.launch {
+            wakeWordDetector.detections().collect {
+                stateMachine.onEvent(SessionEvent.WakeWordOrBargeIn)
+                startSession()
+            }
+        }
+    }
 
     /** Begin (or restart) a listening session. */
     fun startSession() {
         sessionJob?.cancel()
         runCatching { player.flush() } // stops any in-flight TTS (barge-in)
         val id = sessionSeq.incrementAndGet()
-        setState(AssistantState.LISTENING)
+        stateMachine.onEvent(SessionEvent.WakeWordOrBargeIn)
         sessionJob = scope.launch { runSession(id) }
     }
 
@@ -116,11 +106,6 @@ class SessionManager(
     // Session lifecycle
     // ------------------------------------------------------------------
 
-    private fun setState(state: AssistantState) {
-        _state = state
-        onStateChange(state)
-    }
-
     /**
      * FIX #1: declared as `suspend fun CoroutineScope` so the implicit receiver
      * is the launched coroutine's scope ([sessionJob]). Any `launch` inside
@@ -131,16 +116,19 @@ class SessionManager(
             // a) Collect speech. Empty PCM => nothing said.
             val pcm = vad.collectSpeech(audioPipeline.frames, audioPipeline.ringBuffer)
             if (pcm.isEmpty()) {
+                stateMachine.onEvent(SessionEvent.NoSpeech)
                 finish(id)
                 return
             }
 
             // b) Recognize.
-            setState(AssistantState.THINKING)
+            stateMachine.onEvent(SessionEvent.SpeechCaptured)
             val result = asr.recognizeStreaming(pcm)
             when (result) {
                 is AsrResult.Success -> {
+                    stateMachine.onEvent(SessionEvent.AsrSuccess)
                     if (result.text.isBlank()) {
+                        stateMachine.onEvent(SessionEvent.NoSpeech)
                         finish(id)
                         return
                     }
@@ -148,21 +136,22 @@ class SessionManager(
                     processLlm(id)
                 }
                 is AsrResult.NoSpeech -> {
+                    stateMachine.onEvent(SessionEvent.NoSpeech)
                     finish(id)
                     return
                 }
                 is AsrResult.Failure -> {
-                    if (id == sessionSeq.get()) onError(Exception("ASR failed", result.cause))
+                    stateMachine.onEvent(SessionEvent.AsrFailed)
                     finish(id)
                     return
                 }
             }
-            // processLlm drives the terminal IDLE + unduck transition.
+            // processLlm drives the terminal IDLE transition.
         } catch (_: CancellationException) {
             // Barge-in / shutdown: graceful stop. Only act if still current.
             finish(id)
         } catch (e: Exception) {
-            if (id == sessionSeq.get()) onError(e)
+            stateMachine.onEvent(SessionEvent.ErrorOccurred)
             finish(id)
         }
     }
@@ -170,8 +159,7 @@ class SessionManager(
     /** Terminal transition, guarded so a stale session cannot clobber state. */
     private fun finish(id: Int) {
         if (id != sessionSeq.get()) return
-        setState(AssistantState.IDLE)
-        unduck()
+        stateMachine.onEvent(SessionEvent.SessionFinished)
     }
 
     /**
@@ -184,6 +172,7 @@ class SessionManager(
      *    wait for all TTS to drain, finish.
      */
     private suspend fun CoroutineScope.processLlm(id: Int) {
+        stateMachine.onEvent(SessionEvent.LlmStarted)
         val toolCallsPending = mutableListOf<ToolCall>()
 
         while (true) {
@@ -284,6 +273,7 @@ class SessionManager(
 
             // Wait for all TTS children to drain, then idle.
             coroutineContext[Job]?.children?.filter { it.isActive }?.forEach { it.join() }
+            stateMachine.onEvent(SessionEvent.LlmDone)
             finish(id)
             return
         }
@@ -292,13 +282,12 @@ class SessionManager(
     /**
      * FIX #1/#5: child of [sessionJob] (declared `suspend fun CoroutineScope`).
      * Awaits the player's [Deferred] so the sentence is only "done" once fully
-     * played (FIX #5). Ducking is engaged on first speech.
+     * played (FIX #5).
      *
      * Note: persistence is handled by the caller (processLlm), not per-sentence.
      */
     private suspend fun CoroutineScope.speakChunk(text: String) {
-        setState(AssistantState.SPEAKING)
-        duck()
+        stateMachine.onEvent(SessionEvent.PlaybackStarted)
         val ttsFlow = ttsClient.synthesizeStream(text, "Mila", "1.1")
         val done = player.play(ttsFlow)
         done.await() // wait for drain (FIX #5)

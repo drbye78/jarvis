@@ -12,7 +12,7 @@ import kotlinx.serialization.json.Json
  * trim that retains only the most recent 20 rows. Decoupled from other phases
  * (no api/ or audio/ imports).
  */
-class ConversationManager(private val dao: MessageDao) {
+class ConversationManager(private val dao: MessageDao) : ConversationRepository {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -22,7 +22,7 @@ class ConversationManager(private val dao: MessageDao) {
         addMessage(Message(role = role, content = content))
     }
 
-    suspend fun addMessage(message: Message) {
+    override suspend fun addMessage(message: Message) {
         dao.insert(message.toEntity())
         dao.trimTo(MAX_MESSAGES)
     }
@@ -37,7 +37,9 @@ class ConversationManager(private val dao: MessageDao) {
             .map { it.toMessage() }
     }
 
-    suspend fun clear() {
+    override suspend fun getHistory(): List<Message> = getHistoryForLLM()
+
+    override suspend fun clear() {
         dao.clear()
     }
 
