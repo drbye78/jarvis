@@ -4,8 +4,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface LlmClient {
     fun chatStream(
-        userMessage: String,
-        history: List<Message>,
+        messages: List<Message>,
         tools: List<Tool>
     ): Flow<LlmChunk>
 }

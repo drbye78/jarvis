@@ -9,5 +9,11 @@ data class MessageEntity(
     val id: Long = 0,
     val role: String,
     val content: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    @androidx.room.ColumnInfo(name = "name")
+    val name: String? = null,
+    @androidx.room.ColumnInfo(name = "tool_calls_json")
+    val toolCallsJson: String? = null,
+    @androidx.room.ColumnInfo(name = "tool_call_id")
+    val toolCallId: String? = null
 )

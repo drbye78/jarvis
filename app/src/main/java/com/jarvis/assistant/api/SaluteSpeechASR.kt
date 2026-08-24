@@ -1,6 +1,7 @@
 package com.jarvis.assistant.api
 
 import com.jarvis.assistant.contracts.AsrClient
+import com.jarvis.assistant.contracts.AsrResult
 import com.jarvis.assistant.contracts.TokenProvider
 import com.jarvis.assistant.grpc.recognition.OptionalBool
 import com.jarvis.assistant.grpc.recognition.RecognitionOptions
@@ -36,8 +37,8 @@ class SaluteSpeechASR(private val tokenProvider: TokenProvider) : AsrClient {
 
     private val endpoint = "smartspeech.sber.ru:443"
 
-    override suspend fun recognizeStreaming(pcm: ByteArray): String = withContext(Dispatchers.IO) {
-        if (pcm.isEmpty()) return@withContext ""
+    override suspend fun recognizeStreaming(pcm: ByteArray): AsrResult = withContext(Dispatchers.IO) {
+        if (pcm.isEmpty()) return@withContext AsrResult.NoSpeech
 
         val token = tokenProvider.getSaluteToken()
         val channel = OkHttpChannelBuilder.forTarget(endpoint).useTransportSecurity().build()
@@ -47,10 +48,10 @@ class SaluteSpeechASR(private val tokenProvider: TokenProvider) : AsrClient {
                     val transcript = StringBuilder()
                     var settled = false
 
-                    fun settle(value: String) {
+                    fun settle(result: AsrResult) {
                         if (settled) return
                         settled = true
-                        if (cont.isActive) cont.resumeWith(Result.success(value))
+                        if (cont.isActive) cont.resumeWith(Result.success(result))
                     }
 
                     val headers = Metadata().apply {
@@ -75,16 +76,24 @@ class SaluteSpeechASR(private val tokenProvider: TokenProvider) : AsrClient {
                                 transcript.append(text)
                             }
                             if (t.eou) {
-                                settle(transcript.toString().trim())
+                                val final = transcript.toString().trim()
+                                settle(
+                                    if (final.isNotBlank()) AsrResult.Success(final)
+                                    else AsrResult.NoSpeech
+                                )
                             }
                         }
 
                         override fun onError(t: Throwable) {
-                            settle("") // degrade gracefully on transport errors
+                            settle(AsrResult.Failure(t))
                         }
 
                         override fun onCompleted() {
-                            settle(transcript.toString().trim())
+                            val final = transcript.toString().trim()
+                            settle(
+                                if (final.isNotBlank()) AsrResult.Success(final)
+                                else AsrResult.NoSpeech
+                            )
                         }
                     }
 
@@ -123,7 +132,7 @@ class SaluteSpeechASR(private val tokenProvider: TokenProvider) : AsrClient {
                 }
             }
         } catch (e: TimeoutCancellationException) {
-            "" // degrade gracefully on timeout
+            return@withContext AsrResult.Failure(e)
         } finally {
             runCatching { channel.shutdown().awaitTermination(2, TimeUnit.SECONDS) }
         }

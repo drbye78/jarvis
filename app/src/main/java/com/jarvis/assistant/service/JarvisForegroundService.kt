@@ -88,6 +88,7 @@ class JarvisForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        scheduleRestartAlarm()   // re-arm on EVERY start command (Issue 8)
         ensureInitialized()
         return START_STICKY
     }
@@ -146,8 +147,6 @@ class JarvisForegroundService : Service() {
         // collector are launched in their own constructors/init).
         audioPipeline.start()
         sessionManager.startSession()
-
-        scheduleRestartAlarm()
     }
 
     // ------------------------------------------------------------------

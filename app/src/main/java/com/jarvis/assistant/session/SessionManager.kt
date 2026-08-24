@@ -6,10 +6,13 @@ import com.jarvis.assistant.audio.VadAnalyzer
 import com.jarvis.assistant.api.FunctionRouter
 import com.jarvis.assistant.api.SaluteSpeechTTS
 import com.jarvis.assistant.contracts.AssistantState
+import com.jarvis.assistant.contracts.AsrResult
 import com.jarvis.assistant.contracts.AsrClient
 import com.jarvis.assistant.contracts.FunctionCall
 import com.jarvis.assistant.contracts.LlmChunk
 import com.jarvis.assistant.contracts.LlmClient
+import com.jarvis.assistant.contracts.Message
+import com.jarvis.assistant.contracts.ToolCall
 import com.jarvis.assistant.contracts.TtsPlayer
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.util.SentenceSplitter.endsWithSentence
@@ -36,6 +39,12 @@ import java.util.concurrent.atomic.AtomicInteger
  *   current [AssistantState] via one long-lived collector.
  * - **#5 (TTS not awaited):** [speakChunk] awaits the player's [Deferred] so a
  *   sentence is only considered "done" once it has drained to the speaker.
+ * - **#6 (duplicate user message):** caller assembles the full message list
+ *   (system prompt + history + user turn) before calling [LlmClient.chatStream].
+ * - **#7 (tool-call protocol):** assistant tool_calls + tool results are
+ *   persisted with proper `tool_call_id` linkage; assistant text is accumulated
+ *   and persisted as ONE message at turn end.
+ * - **#9 (ASR typed result):** distinguishes Success/NoSpeech/Failure.
  * - **Barge-in:** a detection while SPEAKING calls [startSession], which flushes
  *   the player (cancelling the in-flight TTS flow) and starts a fresh turn. A
  *   [sessionSeq] guard prevents a cancelled session's terminal transition from
@@ -65,12 +74,6 @@ class SessionManager(
     private var sessionJob: Job? = null
     private var detectionJob: Job? = null
     private val sessionSeq = AtomicInteger(0)
-
-    private data class ToolCallAccum(
-        val index: Int,
-        var name: String?,
-        val args: StringBuilder
-    )
 
     init {
         // One long-lived collector interprets Porcupine detections by state.
@@ -134,15 +137,26 @@ class SessionManager(
 
             // b) Recognize.
             setState(AssistantState.THINKING)
-            val text = asr.recognizeStreaming(pcm)
-            if (text.isBlank()) {
-                finish(id)
-                return
+            val result = asr.recognizeStreaming(pcm)
+            when (result) {
+                is AsrResult.Success -> {
+                    if (result.text.isBlank()) {
+                        finish(id)
+                        return
+                    }
+                    conversationManager.addMessage("user", result.text)
+                    processLlm(id)
+                }
+                is AsrResult.NoSpeech -> {
+                    finish(id)
+                    return
+                }
+                is AsrResult.Failure -> {
+                    if (id == sessionSeq.get()) onError(Exception("ASR failed", result.cause))
+                    finish(id)
+                    return
+                }
             }
-
-            // c) Persist user turn and run the LLM (iterative tool loop).
-            conversationManager.addMessage("user", text)
-            processLlm(text, id)
             // processLlm drives the terminal IDLE + unduck transition.
         } catch (_: CancellationException) {
             // Barge-in / shutdown: graceful stop. Only act if still current.
@@ -161,27 +175,35 @@ class SessionManager(
     }
 
     /**
-     * Iterative (NOT recursive) tool-call loop. Each LLM pass may emit text
-     * (flushed to TTS per sentence) and/or function calls. When function calls
-     * are present we execute them, feed the results back as a new user turn, and
-     * loop. When no calls remain we wait for all TTS children to finish, then
-     * go IDLE and unduck.
+     * Iterative (NOT recursive) tool-call loop. On each pass:
+     * 1. Assemble complete message list (system prompt + history).
+     * 2. Stream LLM response, flushing sentences to TTS (per sentence).
+     * 3. If tool calls are present: persist assistant message with tool_calls,
+     *    execute each tool, persist tool result with tool_call_id, loop.
+     * 4. If no tool calls: persist ONE accumulated assistant text message,
+     *    wait for all TTS to drain, finish.
      */
-    private suspend fun CoroutineScope.processLlm(userText: String, id: Int) {
-        val pendingCalls = mutableListOf<FunctionCall>()
-        var currentUserText = userText
+    private suspend fun CoroutineScope.processLlm(id: Int) {
+        val toolCallsPending = mutableListOf<ToolCall>()
 
         while (true) {
             val history = conversationManager.getHistoryForLLM()
             val tools = functionRouter.getAvailableTools()
 
+            val messages = buildList {
+                add(Message(role = "system", content = SYSTEM_PROMPT))
+                addAll(history)
+            }
+
             val sentenceBuffer = StringBuilder()
+            val assistantTextBuilder = StringBuilder()
             val toolAccum = mutableMapOf<Int, ToolCallAccum>()
 
-            llm.chatStream(currentUserText, history, tools).collect { chunk ->
+            llm.chatStream(messages, tools).collect { chunk ->
                 when (chunk) {
                     is LlmChunk.Text -> {
                         sentenceBuffer.append(chunk.text)
+                        assistantTextBuilder.append(chunk.text)
                         if (sentenceBuffer.toString().endsWithSentence()) {
                             val s = sentenceBuffer.toString()
                             sentenceBuffer.clear()
@@ -191,14 +213,14 @@ class SessionManager(
 
                     is LlmChunk.FunctionCallDelta -> {
                         val a = toolAccum.getOrPut(chunk.index) {
-                            ToolCallAccum(chunk.index, null, StringBuilder())
+                            ToolCallAccum(chunk.index, null, StringBuilder(), null)
                         }
                         if (chunk.name != null) a.name = chunk.name
                         a.args.append(chunk.argsDelta)
                     }
 
                     is LlmChunk.FunctionCallComplete -> {
-                        pendingCalls.add(chunk.call)
+                        toolCallsPending.add(chunk.call)
                     }
 
                     is LlmChunk.Done -> {
@@ -208,10 +230,16 @@ class SessionManager(
                             launch { speakChunk(s) }
                         }
                         // Fallback: clients that emit deltas but no Complete.
-                        if (pendingCalls.isEmpty() && toolAccum.isNotEmpty()) {
+                        if (toolCallsPending.isEmpty() && toolAccum.isNotEmpty()) {
                             toolAccum.toSortedMap().forEach { (_, a) ->
                                 if (a.name != null) {
-                                    pendingCalls.add(FunctionCall(a.name!!, a.args.toString()))
+                                    val tcId = a.id ?: java.util.UUID.randomUUID().toString()
+                                    toolCallsPending.add(
+                                        ToolCall(
+                                            id = tcId,
+                                            function = FunctionCall(a.name!!, a.args.toString())
+                                        )
+                                    )
                                 }
                             }
                         }
@@ -219,20 +247,42 @@ class SessionManager(
                 }
             }
 
-            if (pendingCalls.isNotEmpty()) {
-                val results = mutableListOf<String>()
-                for (call in pendingCalls) {
-                    val result = withContext(Dispatchers.IO) { functionRouter.execute(call) }
-                    conversationManager.addMessage("function", result.result)
-                    results.add(result.result)
+            if (toolCallsPending.isNotEmpty()) {
+                // Persist ONE assistant message with all tool calls (Issue 7).
+                conversationManager.addMessage(
+                    Message(
+                        role = "assistant",
+                        content = assistantTextBuilder.toString(),
+                        toolCalls = toolCallsPending.toList()
+                    )
+                )
+
+                // Execute each tool, persist result with tool_call_id.
+                for (call in toolCallsPending) {
+                    val result = withContext(Dispatchers.IO) {
+                        functionRouter.execute(call.function)
+                    }
+                    conversationManager.addMessage(
+                        Message(
+                            role = "tool",
+                            content = result.result,
+                            toolCallId = call.id,
+                            name = call.function.name
+                        )
+                    )
                 }
-                currentUserText =
-                    "Результат: " + results.joinToString("; ") { it } + ". Сообщи пользователю."
-                pendingCalls.clear()
+                toolCallsPending.clear()
                 continue
             }
 
-            // No more tool calls: wait for all TTS children to drain, then idle.
+            // No more tool calls: persist ONE accumulated assistant text message.
+            if (assistantTextBuilder.isNotEmpty()) {
+                conversationManager.addMessage(
+                    Message(role = "assistant", content = assistantTextBuilder.toString())
+                )
+            }
+
+            // Wait for all TTS children to drain, then idle.
             coroutineContext[Job]?.children?.filter { it.isActive }?.forEach { it.join() }
             finish(id)
             return
@@ -243,13 +293,30 @@ class SessionManager(
      * FIX #1/#5: child of [sessionJob] (declared `suspend fun CoroutineScope`).
      * Awaits the player's [Deferred] so the sentence is only "done" once fully
      * played (FIX #5). Ducking is engaged on first speech.
+     *
+     * Note: persistence is handled by the caller (processLlm), not per-sentence.
      */
     private suspend fun CoroutineScope.speakChunk(text: String) {
         setState(AssistantState.SPEAKING)
         duck()
-        conversationManager.addMessage("assistant", text)
         val ttsFlow = ttsClient.synthesizeStream(text, "Mila", "1.1")
         val done = player.play(ttsFlow)
         done.await() // wait for drain (FIX #5)
+    }
+
+    private data class ToolCallAccum(
+        val index: Int,
+        var name: String?,
+        val args: StringBuilder,
+        var id: String?
+    )
+
+    companion object {
+        private val SYSTEM_PROMPT = """
+            You are Jarvis, a concise voice assistant for Android.
+            Answer briefly and conversationally. When a user request maps to a
+            tool, call it instead of answering from memory. Prefer calling tools
+            for alarms, device control, and weather.
+        """.trimIndent()
     }
 }

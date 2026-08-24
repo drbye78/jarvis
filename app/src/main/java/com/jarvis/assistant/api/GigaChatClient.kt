@@ -6,6 +6,7 @@ import com.jarvis.assistant.contracts.LlmChunk
 import com.jarvis.assistant.contracts.LlmClient
 import com.jarvis.assistant.contracts.Message
 import com.jarvis.assistant.contracts.Tool
+import com.jarvis.assistant.contracts.ToolCall
 import com.jarvis.assistant.contracts.TokenProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -58,20 +59,13 @@ class GigaChatClient(private val tokenProvider: TokenProvider) : LlmClient {
     private val endpoint = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
 
     override fun chatStream(
-        userMessage: String,
-        history: List<Message>,
+        messages: List<Message>,
         tools: List<Tool>
     ): Flow<LlmChunk> = callbackFlow {
         var call: Call? = null
 
         withContext(Dispatchers.IO) {
             val token = tokenProvider.getGigaChatToken()
-
-            val messages = buildList {
-                add(Message(ROLE_SYSTEM, SYSTEM_PROMPT))
-                addAll(history)
-                add(Message(ROLE_USER, userMessage))
-            }
 
             val requestJson = JsonObject(
                 mapOf(
@@ -117,11 +111,15 @@ class GigaChatClient(private val tokenProvider: TokenProvider) : LlmClient {
             fun finalizeToolCalls() {
                 if (toolCallsFinalized) return
                 toolCallsFinalized = true
-                acc.toSortedMap().forEach { (index, a) ->
+                acc.toSortedMap().forEach { (_, a) ->
                     val name = a.name ?: "unknown"
+                    val id = a.id ?: java.util.UUID.randomUUID().toString()
                     trySend(
                         LlmChunk.FunctionCallComplete(
-                            FunctionCall(name, a.args.toString())
+                            ToolCall(
+                                id = id,
+                                function = FunctionCall(name, a.args.toString())
+                            )
                         )
                     )
                 }
@@ -162,11 +160,15 @@ class GigaChatClient(private val tokenProvider: TokenProvider) : LlmClient {
                     for (tc in toolCalls) {
                         val tco = tc.jsonObject
                         val index = tco["index"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+                        val tcoId = tco["id"]?.jsonPrimitive?.contentOrNull
                         val fn = tco["function"]?.jsonObject
                         val name = fn?.get("name")?.jsonPrimitive?.contentOrNull
                         val argsDelta = fn?.get("arguments")?.jsonPrimitive?.contentOrNull ?: ""
 
-                        val a = acc.getOrPut(index) { ToolCallAccum(index, null, StringBuilder()) }
+                        val a = acc.getOrPut(index) {
+                            ToolCallAccum(index, null, StringBuilder(), null)
+                        }
+                        if (tcoId != null) a.id = tcoId
                         if (name != null) a.name = name
                         a.args.append(argsDelta)
 
@@ -224,17 +226,7 @@ class GigaChatClient(private val tokenProvider: TokenProvider) : LlmClient {
     private data class ToolCallAccum(
         val index: Int,
         var name: String?,
-        val args: StringBuilder
+        val args: StringBuilder,
+        var id: String?
     )
-
-    private companion object {
-        const val ROLE_SYSTEM = "system"
-        const val ROLE_USER = "user"
-        private val SYSTEM_PROMPT = """
-            You are Jarvis, a concise voice assistant for Android.
-            Answer briefly and conversationally. When a user request maps to a
-            tool, call it instead of answering from memory. Prefer calling tools
-            for alarms, device control, and weather.
-        """.trimIndent()
-    }
 }

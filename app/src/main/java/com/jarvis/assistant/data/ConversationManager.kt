@@ -2,6 +2,8 @@ package com.jarvis.assistant.data
 
 import android.content.Context
 import com.jarvis.assistant.contracts.Message
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 
 /**
  * Wraps [MessageDao] to provide conversation persistence for the LLM layer.
@@ -12,10 +14,16 @@ import com.jarvis.assistant.contracts.Message
  */
 class ConversationManager(private val dao: MessageDao) {
 
+    private val json = Json { ignoreUnknownKeys = true }
+
     constructor(context: Context) : this(AppDatabase.getInstance(context).messageDao())
 
     suspend fun addMessage(role: String, content: String) {
-        dao.insert(MessageEntity(role = role, content = content))
+        addMessage(Message(role = role, content = content))
+    }
+
+    suspend fun addMessage(message: Message) {
+        dao.insert(message.toEntity())
         dao.trimTo(MAX_MESSAGES)
     }
 
@@ -26,12 +34,28 @@ class ConversationManager(private val dao: MessageDao) {
     suspend fun getHistoryForLLM(): List<Message> {
         return dao.recentDesc(MAX_MESSAGES)
             .reversed()
-            .map { Message(role = it.role, content = it.content) }
+            .map { it.toMessage() }
     }
 
     suspend fun clear() {
         dao.clear()
     }
+
+    private fun Message.toEntity() = MessageEntity(
+        role = role,
+        content = content,
+        name = name,
+        toolCallsJson = toolCalls?.let { json.encodeToString(ListSerializer(com.jarvis.assistant.contracts.ToolCall.serializer()), it) },
+        toolCallId = toolCallId
+    )
+
+    private fun MessageEntity.toMessage() = Message(
+        role = role,
+        content = content,
+        name = name,
+        toolCalls = toolCallsJson?.let { json.decodeFromString(ListSerializer(com.jarvis.assistant.contracts.ToolCall.serializer()), it) },
+        toolCallId = toolCallId
+    )
 
     companion object {
         const val MAX_MESSAGES: Int = 20

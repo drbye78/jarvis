@@ -5,7 +5,17 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class Message(
     val role: String,
-    val content: String
+    val content: String,
+    val name: String? = null,
+    val toolCalls: List<ToolCall>? = null,
+    val toolCallId: String? = null
+)
+
+@Serializable
+data class ToolCall(
+    val id: String,
+    val type: String = "function",
+    val function: FunctionCall
 )
 
 @Serializable
@@ -45,8 +55,14 @@ sealed interface LlmChunk {
         val name: String? = null,
         val argsDelta: String = ""
     ) : LlmChunk
-    data class FunctionCallComplete(val call: FunctionCall) : LlmChunk
+    data class FunctionCallComplete(val call: ToolCall) : LlmChunk
     data object Done : LlmChunk
 }
 
 enum class AssistantState { IDLE, LISTENING, THINKING, SPEAKING }
+
+sealed interface AsrResult {
+    data class Success(val text: String) : AsrResult
+    data object NoSpeech : AsrResult
+    data class Failure(val cause: Throwable) : AsrResult
+}
