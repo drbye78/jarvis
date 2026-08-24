@@ -2,6 +2,7 @@ package com.jarvis.assistant.api
 
 import android.content.Context
 import com.jarvis.assistant.BuildConfig
+import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.contracts.TokenProvider
 import com.jarvis.assistant.util.SecurePrefs
 import kotlinx.coroutines.Dispatchers
@@ -31,19 +32,14 @@ import java.util.UUID
  */
 class TokenManager(
     context: Context,
-    private val httpClient: OkHttpClient
+    private val httpClient: OkHttpClient,
+    private val config: JarvisConfig = JarvisConfig()
 ) : TokenProvider {
 
     private val appContext = context.applicationContext
     private val prefs = SecurePrefs.get(appContext)
 
     private val json = Json { ignoreUnknownKeys = true }
-
-    // Sber OAuth 2.0 token endpoint (shared by GigaChat and Salute Speech).
-    private val oauthEndpoint = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
-
-    // Refresh window: refresh when fewer than this many ms of validity remain.
-    private val REFRESH_THRESHOLD_MS = 60_000L
 
     override suspend fun getGigaChatToken(): String = getToken(
         cacheKey = KEY_GIGACHAT_TOKEN,
@@ -71,7 +67,7 @@ class TokenManager(
         val cached = prefs.getString(cacheKey, null)
         val expiry = prefs.getLong(expiryKey, 0L)
         val now = System.currentTimeMillis()
-        if (!cached.isNullOrBlank() && (expiry - now) > REFRESH_THRESHOLD_MS) {
+        if (!cached.isNullOrBlank() && (expiry - now) > config.oauthRefreshThresholdMs) {
             return@withContext cached
         }
 
@@ -90,7 +86,7 @@ class TokenManager(
             .build()
 
         val request = Request.Builder()
-            .url(oauthEndpoint)
+            .url(config.oauthEndpoint)
             .addHeader("RqUID", UUID.randomUUID().toString())
             .addHeader("Content-Type", "application/x-www-form-urlencoded")
             .post(body)

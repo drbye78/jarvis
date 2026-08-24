@@ -13,7 +13,9 @@ import com.jarvis.assistant.contracts.SpeechDetector
 import com.jarvis.assistant.contracts.ToolCall
 import com.jarvis.assistant.contracts.TtsPlayer
 import com.jarvis.assistant.contracts.WakeWordDetector
+import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.data.ConversationManager
+import com.jarvis.assistant.util.NetworkMonitor
 import com.jarvis.assistant.util.SentenceSplitter.endsWithSentence
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -63,6 +65,8 @@ class SessionManager(
     private val functionRouter: FunctionRouter,
     private val conversationManager: ConversationManager,
     private val stateMachine: SessionStateMachine,
+    private val networkMonitor: NetworkMonitor,
+    private val config: JarvisConfig,
     private val scope: CoroutineScope
 ) {
 
@@ -70,7 +74,7 @@ class SessionManager(
     private var detectionJob: Job? = null
     private val sessionSeq = AtomicInteger(0)
 
-    private val cooldownMs = 600L
+    private val cooldownMs = config.wakeWordCooldownMs
     @Volatile private var lastDetectionTime = 0L
 
     private var onErrorHandler: suspend (String) -> Unit = {}
@@ -107,7 +111,15 @@ class SessionManager(
         runCatching { player.flush() } // stops any in-flight TTS (barge-in)
         val id = sessionSeq.incrementAndGet()
         stateMachine.onEvent(SessionEvent.WakeWordOrBargeIn)
-        sessionJob = scope.launch { runSession(id) }
+        sessionJob = scope.launch {
+            if (!networkMonitor.isCurrentlyOnline()) {
+                stateMachine.onEvent(SessionEvent.ErrorOccurred())
+                onErrorHandler("Нет подключения к интернету. Проверьте сеть.")
+                finish(id)
+                return@launch
+            }
+            runSession(id)
+        }
     }
 
     /** Cancel everything (used by Service.onDestroy). */
@@ -130,7 +142,7 @@ class SessionManager(
     private suspend fun CoroutineScope.runSession(id: Int) {
         try {
             // a) Collect speech. Empty PCM => nothing said.
-            val pcm = vad.collectSpeech(audioPipeline.frames, audioPipeline.ringBuffer)
+            val pcm = vad.collectSpeech(audioPipeline.frames, audioPipeline.ringBuffer, config.vadSilenceFrames)
             if (pcm.isEmpty()) {
                 stateMachine.onEvent(SessionEvent.NoSpeech)
                 finish(id)
@@ -143,7 +155,7 @@ class SessionManager(
             var attempts = 0
             while (true) {
                 val r = asr.recognizeStreaming(pcm)
-                if (r is AsrResult.Failure && attempts < 2) {
+                if (r is AsrResult.Failure && attempts < config.asrMaxRetries) {
                     attempts++
                     Timber.w(r.cause, "ASR attempt $attempts failed, retrying")
                     kotlinx.coroutines.delay(500L * attempts)
@@ -219,7 +231,7 @@ class SessionManager(
             val toolAccum = mutableMapOf<Int, ToolCallAccum>()
 
             try {
-                withTimeout(30_000L) {
+                withTimeout(config.llmTimeoutMs) {
                     llm.chatStream(messages, tools).collect { chunk ->
                         when (chunk) {
                             is LlmChunk.Text -> {
@@ -328,7 +340,7 @@ class SessionManager(
      */
     private suspend fun CoroutineScope.speakChunk(text: String) {
         stateMachine.onEvent(SessionEvent.PlaybackStarted)
-        val ttsFlow = ttsClient.synthesizeStream(text, "Mila")
+        val ttsFlow = ttsClient.synthesizeStream(text, config.ttsVoice)
         val done = player.play(ttsFlow)
         done.await() // wait for drain (FIX #5)
     }

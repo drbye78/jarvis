@@ -19,8 +19,10 @@ import com.jarvis.assistant.contracts.SpeechDetector
 import com.jarvis.assistant.contracts.TokenProvider
 import com.jarvis.assistant.contracts.TtsPlayer
 import com.jarvis.assistant.contracts.WakeWordDetector
+import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.data.ConversationManager
+import com.jarvis.assistant.util.NetworkMonitor
 import com.jarvis.assistant.session.SessionManager
 import com.jarvis.assistant.session.SessionStateMachine
 import io.grpc.ManagedChannel
@@ -32,7 +34,7 @@ import kotlinx.coroutines.cancel
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
-class AppGraph(context: Context) {
+class AppGraph(context: Context, private val config: JarvisConfig = JarvisConfig()) {
     private val appContext = context.applicationContext
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -52,14 +54,20 @@ class AppGraph(context: Context) {
     val database: AppDatabase = AppDatabase.getInstance(appContext)
     val conversationManager: ConversationManager = ConversationManager(database.messageDao())
 
-    val tokenProvider: TokenProvider = TokenManager(appContext, httpClient)
-    val asrClient: AsrClient = SaluteSpeechASR(tokenProvider, saluteChannel)
-    val llmClient: LlmClient = GigaChatClient(tokenProvider, httpClient)
+    val networkMonitor: NetworkMonitor = NetworkMonitor(appContext)
+
+    val tokenProvider: TokenProvider = TokenManager(appContext, httpClient, config)
+    val asrClient: AsrClient = SaluteSpeechASR(tokenProvider, saluteChannel, config)
+    val llmClient: LlmClient = GigaChatClient(tokenProvider, httpClient, config)
     val ttsClient: SaluteSpeechTTS = SaluteSpeechTTS(tokenProvider, saluteChannel)
 
     val audioPipeline: AudioPipeline = AudioPipeline(scope, AudioRecordSource())
-    val wakeWordDetector: WakeWordDetector = PorcupineDetector(audioPipeline.frames, appContext, BuildConfig.PICOVOICE_KEY)
-    val vad: SpeechDetector = VadAnalyzer(appContext)
+    val wakeWordDetector: WakeWordDetector = PorcupineDetector(
+        audioPipeline.frames, appContext, BuildConfig.PICOVOICE_KEY,
+        keywordPath = config.porcupineKeywordPath,
+        sensitivity = config.porcupineSensitivity
+    )
+    val vad: SpeechDetector = VadAnalyzer(appContext, config)
     val player: TtsPlayer = StreamingAudioTrackPlayer(scope, AudioSpec.TTS)
 
     val functionRouter: FunctionRouter = FunctionRouter(appContext, httpClient) { conversationManager.getHistoryForLLM() }
@@ -77,6 +85,8 @@ class AppGraph(context: Context) {
         functionRouter = functionRouter,
         conversationManager = conversationManager,
         stateMachine = stateMachine,
+        networkMonitor = networkMonitor,
+        config = config,
         scope = scope
     )
 

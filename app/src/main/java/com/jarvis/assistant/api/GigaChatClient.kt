@@ -1,6 +1,7 @@
 package com.jarvis.assistant.api
 
 import com.jarvis.assistant.BuildConfig
+import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.contracts.FunctionCall
 import com.jarvis.assistant.contracts.LlmChunk
 import com.jarvis.assistant.contracts.LlmClient
@@ -49,12 +50,11 @@ import timber.log.Timber
  */
 class GigaChatClient(
     private val tokenProvider: TokenProvider,
-    private val httpClient: OkHttpClient
+    private val httpClient: OkHttpClient,
+    private val config: JarvisConfig = JarvisConfig()
 ) : LlmClient {
 
     private val json = Json { ignoreUnknownKeys = true }
-
-    private val endpoint = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
 
     override fun chatStream(
         messages: List<Message>,
@@ -67,13 +67,13 @@ class GigaChatClient(
 
             val requestJson = JsonObject(
                 mapOf(
-                    "model" to JsonPrimitive("GigaChat-Pro"),
+                    "model" to JsonPrimitive(config.gigaChatModel),
                     "messages" to json.encodeToJsonElement(ListSerializer(Message.serializer()), messages),
                     "tools" to toolsToJson(tools),
                     "tool_choice" to JsonPrimitive("auto"),
                     "stream" to JsonPrimitive(true),
-                    "temperature" to JsonPrimitive(0.7),
-                    "max_tokens" to JsonPrimitive(2048)
+                    "temperature" to JsonPrimitive(config.gigaChatTemperature),
+                    "max_tokens" to JsonPrimitive(config.gigaChatMaxTokens)
                 )
             )
 
@@ -82,7 +82,7 @@ class GigaChatClient(
                 .toRequestBody(mediaType)
 
             val request = Request.Builder()
-                .url(endpoint)
+                .url(config.gigaChatEndpoint)
                 .addHeader("Authorization", "Bearer $token")
                 .addHeader("Accept", "text/event-stream")
                 .post(body)

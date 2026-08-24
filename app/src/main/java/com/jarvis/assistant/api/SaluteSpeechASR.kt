@@ -1,5 +1,6 @@
 package com.jarvis.assistant.api
 
+import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.contracts.AsrClient
 import com.jarvis.assistant.contracts.AsrResult
 import com.jarvis.assistant.contracts.TokenProvider
@@ -35,7 +36,8 @@ import timber.log.Timber
  */
 class SaluteSpeechASR(
     private val tokenProvider: TokenProvider,
-    private val channel: ManagedChannel
+    private val channel: ManagedChannel,
+    private val config: JarvisConfig = JarvisConfig()
 ) : AsrClient {
 
     override suspend fun recognizeStreaming(pcm: ByteArray): AsrResult = withContext(Dispatchers.IO) {
@@ -43,7 +45,7 @@ class SaluteSpeechASR(
 
         val token = tokenProvider.getSaluteToken()
         try {
-            withTimeout(60_000L) {
+            withTimeout(config.asrTimeoutMs) {
                 suspendCancellableCoroutine { cont ->
                     val transcript = StringBuilder()
                     var settled = false

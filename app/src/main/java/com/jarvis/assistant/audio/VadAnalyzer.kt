@@ -5,6 +5,7 @@ import com.konovalov.vad.silero.config.FrameSize
 import com.konovalov.vad.silero.config.Mode
 import com.konovalov.vad.silero.config.SampleRate
 import com.konovalov.vad.silero.VadSilero
+import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.contracts.SpeechDetector
 import com.jarvis.assistant.util.SampleAccumulator
 import com.jarvis.assistant.util.toByteArray
@@ -30,6 +31,7 @@ import java.io.ByteArrayOutputStream
  */
 class VadAnalyzer(
     private val context: Context,
+    private val config: JarvisConfig = JarvisConfig(),
     private val sampleRate: Int = 16_000
 ) : SpeechDetector {
 
@@ -47,8 +49,8 @@ class VadAnalyzer(
             sampleRate = SampleRate.SAMPLE_RATE_16K,
             frameSize = FrameSize.FRAME_SIZE_512,
             mode = Mode.VERY_AGGRESSIVE,
-            silenceDurationMs = 300,
-            speechDurationMs = 50
+            silenceDurationMs = config.vadSilenceDurationMs,
+            speechDurationMs = config.vadSpeechDurationMs
         )
 
         val accumulator = SampleAccumulator(VAD_FRAME_SAMPLES)

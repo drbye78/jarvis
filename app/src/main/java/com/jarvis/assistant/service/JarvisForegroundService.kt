@@ -24,6 +24,7 @@ import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import com.jarvis.assistant.AppGraph
 import com.jarvis.assistant.R
+import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.contracts.AssistantState
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -42,6 +43,7 @@ import java.util.Locale
  */
 class JarvisForegroundService : Service() {
 
+    private val config = JarvisConfig()
     private var initialized = false
     private var graph: AppGraph? = null
 
@@ -53,6 +55,11 @@ class JarvisForegroundService : Service() {
     // Single shared TTS for error prompts (no per-error allocation -> no leak).
     private val errorTts by lazy {
         TextToSpeech(this) { }
+    }
+
+    // Binder exposed to MainActivity for service-bound lifecycle tracking.
+    private val binder = object : android.os.Binder() {
+        fun getService(): JarvisForegroundService = this@JarvisForegroundService
     }
 
     // Ducking state.
@@ -122,7 +129,7 @@ class JarvisForegroundService : Service() {
         registerReceiver(powerReceiver, filter)
 
         val appGraph = try {
-            AppGraph(this).also { it.start() }
+            AppGraph(this, config).also { it.start() }
         } catch (e: Exception) {
             Timber.e(e, "AppGraph start failed")
             speakError(e)
@@ -238,7 +245,7 @@ class JarvisForegroundService : Service() {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val triggerAt = System.currentTimeMillis() + RESTART_INTERVAL_MS
+        val triggerAt = System.currentTimeMillis() + config.restartIntervalMs
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             alarmManager.setExactAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP, triggerAt, pending
@@ -262,12 +269,11 @@ class JarvisForegroundService : Service() {
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBind(intent: Intent?): IBinder = binder
 
     private companion object {
         const val NOTIFICATION_ID = 1
         const val RESTART_REQUEST_CODE = 1001
         const val CHANNEL_ID = "jarvis_foreground"
-        const val RESTART_INTERVAL_MS = 15 * 60 * 1000L
     }
 }
