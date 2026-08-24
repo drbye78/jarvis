@@ -67,6 +67,9 @@ class SessionManager(
     private var detectionJob: Job? = null
     private val sessionSeq = AtomicInteger(0)
 
+    private val cooldownMs = 600L
+    @Volatile private var lastDetectionTime = 0L
+
     // ------------------------------------------------------------------
     // Public control surface
     // ------------------------------------------------------------------
@@ -74,11 +77,17 @@ class SessionManager(
     /**
      * Start (or restart) the wake-word detection collector. Idempotent — calling
      * again cancels the previous collector and starts a fresh one.
+     * A 600 ms cooldown prevents the wake word's trailing audio from triggering
+     * an immediate re-start, applying across all states (IDLE, LISTENING,
+     * THINKING, SPEAKING).
      */
     fun startListening() {
         detectionJob?.cancel()
         detectionJob = scope.launch {
             wakeWordDetector.detections().collect {
+                val now = System.currentTimeMillis()
+                if (now - lastDetectionTime < cooldownMs) return@collect
+                lastDetectionTime = now
                 stateMachine.onEvent(SessionEvent.WakeWordOrBargeIn)
                 startSession()
             }
