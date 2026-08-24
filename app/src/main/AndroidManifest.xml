@@ -1,16 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  targetSdk stays at 30 deliberately: raising to 31+ requires exact-alarm
+  exemptions (SCHEDULE_EXACT_ALARM) and 34+ kills background microphone
+  auto-restart via foregroundServiceType restrictions. The deployment target
+  is a Huawei MatePad SE 11 (HarmonyOS 2.0 / Android 10-11) where the
+  always-listening mic foreground service must survive indefinitely.
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Always-listening wake word + ASR capture -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Persistent foreground service hosting the audio pipeline -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- CPU wake for alarm firing while screen is off -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.WIFI" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- LLM/ASR/TTS/weather API traffic -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Auto-start after boot / app update so the assistant comes back up -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Whitelisted from battery optimization: the device is permanently
+         plugged in and must never throttle the mic pipeline -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Read incoming notifications for the notification-read tool -->
     <uses-permission
         android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
         tools:ignore="ProtectedPermissions" />
