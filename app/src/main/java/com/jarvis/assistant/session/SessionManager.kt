@@ -1,128 +1,140 @@
 package com.jarvis.assistant.session
 
 import com.jarvis.assistant.audio.AudioPipeline
-import com.jarvis.assistant.api.FunctionRouter
-import com.jarvis.assistant.api.SaluteSpeechTTS
-import com.jarvis.assistant.contracts.AsrResult
-import com.jarvis.assistant.contracts.AsrClient
-import com.jarvis.assistant.contracts.FunctionCall
-import com.jarvis.assistant.contracts.LlmChunk
-import com.jarvis.assistant.contracts.LlmClient
-import com.jarvis.assistant.contracts.Message
-import com.jarvis.assistant.contracts.SpeechDetector
-import com.jarvis.assistant.contracts.ToolCall
-import com.jarvis.assistant.contracts.TtsPlayer
-import com.jarvis.assistant.contracts.WakeWordDetector
 import com.jarvis.assistant.config.JarvisConfig
+import com.jarvis.assistant.contracts.Detection
+import com.jarvis.assistant.contracts.DetectorState
+import com.jarvis.assistant.contracts.WakeWordDetector
+import com.jarvis.assistant.llm.LlmClient
+import com.jarvis.assistant.model.AsrOutcome
+import com.jarvis.assistant.model.ChatRequest
+import com.jarvis.assistant.model.FunctionCall
+import com.jarvis.assistant.model.LlmChunk
+import com.jarvis.assistant.model.Message
+import com.jarvis.assistant.model.ToolCall
+import com.jarvis.assistant.model.ToolDefinition
+import com.jarvis.assistant.speech.asr.AsrEvent
+import com.jarvis.assistant.speech.asr.AsrStream
+import com.jarvis.assistant.speech.asr.StreamingAsrClient
+import com.jarvis.assistant.speech.tts.TtsClient
+import com.jarvis.assistant.speech.tts.TtsPlayer
+import com.jarvis.assistant.tools.ToolExecutor
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.util.NetworkMonitor
-import com.jarvis.assistant.util.SentenceSplitter.endsWithSentence
+import com.jarvis.assistant.util.OnlineChecker
+import com.jarvis.assistant.util.SentenceBuffer
+import com.jarvis.assistant.util.toByteArray
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Orchestrates a full voice turn: capture -> ASR -> LLM (with iterative tool
- * calls) -> TTS, plus wake-word / barge-in handling and media ducking.
+ * Orchestrates a full voice turn with TRUE STREAMING ASR:
  *
- * ## Defect fixes
- * - **#1 (scope leak):** every `launch` lives inside a `suspend fun
- *   CoroutineScope` (so it resolves to the [sessionJob] scope) or inside a
- *   `scope.launch { }` lambda. Children are therefore auto-cancelled when the
- *   session job is cancelled (barge-in / shutdown).
- * - **#3 (Porcupine race):** a SINGLE Porcupine actor is owned by
- *   [PorcupineDetector]; this manager only *interprets* its detections by the
- *   current [AssistantState] via one long-lived collector.
- * - **#5 (TTS not awaited):** [speakChunk] awaits the player's [Deferred] so a
- *   sentence is only considered "done" once it has drained to the speaker.
- * - **#6 (duplicate user message):** caller assembles the full message list
- *   (system prompt + history + user turn) before calling [LlmClient.chatStream].
- * - **#7 (tool-call protocol):** assistant tool_calls + tool results are
- *   persisted with proper `tool_call_id` linkage; assistant text is accumulated
- *   and persisted as ONE message at turn end.
- * - **#9 (ASR typed result):** distinguishes Success/NoSpeech/Failure.
- * - **Barge-in:** a detection while SPEAKING calls [startSession], which flushes
- *   the player (cancelling the in-flight TTS flow) and starts a fresh turn. A
- *   [sessionSeq] guard prevents a cancelled session's terminal transition from
+ *   WakeWord -> open ASR stream -> live mic audio -> server EOU ->
+ *   LLM (iterative tool loop) -> per-sentence TTS -> drain -> IDLE
+ *
+ * Key guarantees:
+ * - **Barge-in**: wake word in ANY state cancels the session, flushes the
+ *   player's queue (generation bump) and cancels ASR/TTS/LLM transports.
+ * - **Tool loop**: iterative with a bounded number of passes; assistant
+ *   tool_calls and tool results are persisted with tool_call_id linkage and
+ *   serialized through the wire layer (snake_case) on every subsequent pass.
+ * - **Timeouts everywhere**: LLM total, TTS per sentence, ASR hard cap.
+ * - A [sessionSeq] guard prevents a stale session's terminal transition from
  *   clobbering the new session's state.
  */
 class SessionManager(
     private val audioPipeline: AudioPipeline,
     private val wakeWordDetector: WakeWordDetector,
-    private val vad: SpeechDetector,
-    private val asr: AsrClient,
+    private val asrClient: StreamingAsrClient,
     private val llm: LlmClient,
-    private val ttsClient: SaluteSpeechTTS,
+    private val ttsClient: TtsClient,
     private val player: TtsPlayer,
-    private val functionRouter: FunctionRouter,
+    private val functionRouter: ToolExecutor,
     private val conversationManager: ConversationManager,
     private val stateMachine: SessionStateMachine,
-    private val networkMonitor: NetworkMonitor,
+    private val networkMonitor: OnlineChecker,
     private val config: JarvisConfig,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
 ) {
 
     private var sessionJob: Job? = null
     private var detectionJob: Job? = null
     private val sessionSeq = AtomicInteger(0)
 
-    private val cooldownMs = config.wakeWordCooldownMs
     @Volatile private var lastDetectionTime = 0L
-
     private var onErrorHandler: suspend (String) -> Unit = {}
 
-    fun setOnError(handler: suspend (String) -> Unit) { onErrorHandler = handler }
+    fun setOnError(handler: suspend (String) -> Unit) {
+        onErrorHandler = handler
+    }
 
     // ------------------------------------------------------------------
     // Public control surface
     // ------------------------------------------------------------------
 
-    /**
-     * Start (or restart) the wake-word detection collector. Idempotent — calling
-     * again cancels the previous collector and starts a fresh one.
-     * A 600 ms cooldown prevents the wake word's trailing audio from triggering
-     * an immediate re-start, applying across all states (IDLE, LISTENING,
-     * THINKING, SPEAKING).
-     */
+    /** Start the wake-word collector. Idempotent. */
     fun startListening() {
         detectionJob?.cancel()
+        // M1: an init failure is emitted into a SharedFlow nobody subscribes
+        // to yet, so it would be dropped silently. Read the detector state
+        // synchronously and route a dead engine into the error path instead
+        // of running deaf.
+        val detectorState = wakeWordDetector.state.value
+        if (detectorState is DetectorState.Failed) {
+            scope.launch {
+                onErrorHandler("Ошибка движка wake word: ${detectorState.reason}")
+                stateMachine.onEvent(SessionEvent.ErrorOccurred)
+            }
+            return
+        }
         detectionJob = scope.launch {
-            wakeWordDetector.detections().collect {
-                val now = System.currentTimeMillis()
-                if (now - lastDetectionTime < cooldownMs) return@collect
-                lastDetectionTime = now
-                stateMachine.onEvent(SessionEvent.WakeWordOrBargeIn)
-                startSession()
+            wakeWordDetector.detections().collect { detection ->
+                when (detection) {
+                    is Detection.DetectorError -> {
+                        onErrorHandler("Ошибка движка wake word: ${detection.message}")
+                        stateMachine.onEvent(SessionEvent.ErrorOccurred)
+                    }
+
+                    Detection.WakeWord -> {
+                        val now = System.currentTimeMillis()
+                        if (now - lastDetectionTime < config.wakeWordCooldownMs) return@collect
+                        lastDetectionTime = now
+                        startSession()
+                    }
+                }
             }
         }
     }
 
-    /** Begin (or restart) a listening session. */
+    /** Begin (or restart) a listening session — also the barge-in entry point. */
     fun startSession() {
         sessionJob?.cancel()
-        runCatching { player.flush() } // stops any in-flight TTS (barge-in)
+        player.flush() // generation bump: current + queued sentences die
         val id = sessionSeq.incrementAndGet()
-        stateMachine.onEvent(SessionEvent.WakeWordOrBargeIn)
         sessionJob = scope.launch {
             if (!networkMonitor.isCurrentlyOnline()) {
-                stateMachine.onEvent(SessionEvent.ErrorOccurred())
+                stateMachine.onEvent(SessionEvent.WakeWordOrBargeIn)
+                stateMachine.onEvent(SessionEvent.ErrorOccurred)
                 onErrorHandler("Нет подключения к интернету. Проверьте сеть.")
-                finish(id)
                 return@launch
             }
             runSession(id)
         }
     }
 
-    /** Cancel everything (used by Service.onDestroy). */
     fun cancelAll() {
         sessionJob?.cancel()
         sessionJob = null
@@ -134,119 +146,195 @@ class SessionManager(
     // Session lifecycle
     // ------------------------------------------------------------------
 
-    /**
-     * FIX #1: declared as `suspend fun CoroutineScope` so the implicit receiver
-     * is the launched coroutine's scope ([sessionJob]). Any `launch` inside
-     * therefore becomes a child of [sessionJob] and is cancelled with it.
-     */
     private suspend fun CoroutineScope.runSession(id: Int) {
         try {
-            // a) Collect speech. Empty PCM => nothing said.
-            val pcm = vad.collectSpeech(audioPipeline.frames, audioPipeline.ringBuffer, config.vadSilenceFrames)
-            if (pcm.isEmpty()) {
-                stateMachine.onEvent(SessionEvent.NoSpeech)
+            stateMachine.onEvent(SessionEvent.WakeWordOrBargeIn) // -> LISTENING
+
+            // 1) Open the streaming ASR session (with retries).
+            val stream = openAsrWithRetry()
+            if (stream == null) {
+                stateMachine.onEvent(SessionEvent.AsrFailed())
+                onErrorHandler("Не удалось открыть распознавание речи.")
                 finish(id)
                 return
             }
 
-            // b) Recognize.
-            stateMachine.onEvent(SessionEvent.SpeechCaptured)
-            var result: AsrResult
-            var attempts = 0
-            while (true) {
-                val r = asr.recognizeStreaming(pcm)
-                if (r is AsrResult.Failure && attempts < config.asrMaxRetries) {
-                    attempts++
-                    Timber.w(r.cause, "ASR attempt $attempts failed, retrying")
-                    kotlinx.coroutines.delay(500L * attempts)
-                    continue
-                }
-                result = r
-                break
-            }
-            when (result) {
-                is AsrResult.Success -> {
-                    stateMachine.onEvent(SessionEvent.AsrSuccess)
-                    if (result.text.isBlank()) {
+            // 2) Feed live audio into the stream until the server reports EOU.
+            val outcome = listenAndCollect(stream)
+            stream.cancel() // done with the transport either way
+
+            when (outcome) {
+                is AsrOutcome.Final -> {
+                    if (outcome.text.isBlank()) {
                         stateMachine.onEvent(SessionEvent.NoSpeech)
                         finish(id)
                         return
                     }
-                    conversationManager.addMessage("user", result.text)
+                    stateMachine.onEvent(SessionEvent.SpeechCaptured) // -> THINKING
+                    Timber.i("ASR final: %s", outcome.text)
+                    conversationManager.addMessage("user", outcome.text)
                     processLlm(id)
                 }
-                is AsrResult.NoSpeech -> {
+
+                AsrOutcome.NoSpeech -> {
                     stateMachine.onEvent(SessionEvent.NoSpeech)
                     finish(id)
-                    return
                 }
-                is AsrResult.Failure -> {
-                    stateMachine.onEvent(SessionEvent.AsrFailed(result.cause))
+
+                is AsrOutcome.Failed -> {
+                    stateMachine.onEvent(SessionEvent.AsrFailed(outcome.cause))
+                    onErrorHandler("Ошибка распознавания речи.")
                     finish(id)
-                    return
                 }
             }
-            // processLlm drives the terminal IDLE transition.
         } catch (_: CancellationException) {
-            // Barge-in / shutdown: graceful stop. Only act if still current.
+            // Barge-in / shutdown. Only act if still current.
             finish(id)
         } catch (e: Exception) {
             Timber.e(e, "Session failed")
-            stateMachine.onEvent(SessionEvent.ErrorOccurred(e))
+            stateMachine.onEvent(SessionEvent.ErrorOccurred)
             onErrorHandler("Произошла ошибка. Попробуйте ещё раз.")
             finish(id)
         }
     }
 
-    /** Terminal transition, guarded so a stale session cannot clobber state. */
-    private fun finish(id: Int) {
-        if (id != sessionSeq.get()) return
-        stateMachine.onEvent(SessionEvent.SessionFinished)
+    private suspend fun openAsrWithRetry(): AsrStream? {
+        var attempts = 0
+        while (true) {
+            try {
+                return asrClient.open()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (attempts >= config.asrMaxRetries) {
+                    Timber.e(e, "ASR open failed after $attempts retries")
+                    return null
+                }
+                attempts++
+                Timber.w(e, "ASR open attempt $attempts failed, retrying")
+                delay(500L * attempts)
+            }
+        }
     }
 
     /**
-     * Iterative (NOT recursive) tool-call loop. On each pass:
-     * 1. Assemble complete message list (system prompt + history).
-     * 2. Stream LLM response, flushing sentences to TTS (per sentence).
-     * 3. If tool calls are present: persist assistant message with tool_calls,
-     *    execute each tool, persist tool result with tool_call_id, loop.
-     * 4. If no tool calls: persist ONE accumulated assistant text message,
-     *    wait for all TTS to drain, finish.
+     * Pumps live mic audio into the ASR stream until the server reports
+     * end-of-utterance (or the local hard cap fires).
+     */
+    private suspend fun CoroutineScope.listenAndCollect(stream: AsrStream): AsrOutcome {
+        val result = CompletableDeferred<AsrOutcome>()
+
+        // Collector for ASR events.
+        val eventCollector = launch {
+            stream.events.collect { event ->
+                when (event) {
+                    is AsrEvent.Partial -> { /* UI could show live text here */ }
+
+                    is AsrEvent.Final ->
+                        result.complete(
+                            if (event.text.isBlank()) AsrOutcome.NoSpeech
+                            else AsrOutcome.Final(event.text)
+                        )
+
+                    is AsrEvent.Failed -> result.complete(AsrOutcome.Failed(event.cause))
+                }
+            }
+            // Events flow closed without a terminal event.
+            result.complete(AsrOutcome.Failed(RuntimeException("ASR events closed")))
+        }
+
+        // Feeder: pre-roll from ring buffer, then live frames.
+        val feeder = launch {
+            audioPipeline.ringBuffer.drain().forEach { stream.send(it.toByteArray()) }
+            audioPipeline.frames.collect { frame ->
+                stream.send(frame.toByteArray())
+            }
+        }
+
+        // Hard cap: no matter what, an utterance cannot exceed this.
+        val hardCap = launch {
+            delay(config.maxUtteranceMs)
+            if (!result.isCompleted) {
+                stream.finish()
+                // Grace window for the server to flush its final transcript.
+                delay(3000)
+                if (!result.isCompleted) {
+                    result.complete(AsrOutcome.NoSpeech)
+                }
+            }
+        }
+
+        val outcome = try {
+            result.await()
+        } finally {
+            feeder.cancel()
+            eventCollector.cancel()
+            hardCap.cancel()
+        }
+        return outcome
+    }
+
+    /** Terminal transition, guarded against stale sessions. */
+    private fun finish(id: Int) {
+        if (id != sessionSeq.get()) return
+        stateMachine.onEvent(SessionEvent.LlmDone)
+    }
+
+    // ------------------------------------------------------------------
+    // LLM turn: iterative tool loop + streaming sentence TTS
+    // ------------------------------------------------------------------
+
+    /**
+     * LLM turn: iterative tool loop + streaming sentence TTS.
+     *
+     * Accepted tradeoff (C2): tools execute BEFORE anything is persisted, so
+     * barge-in/cancellation mid-loop persists NOTHING for the turn — even if
+     * a tool already fired real side effects (alarm set, volume changed).
+     * History stays correct at the cost of conversational amnesia for that
+     * interrupted turn; the alternative (persist-then-execute) poisons
+     * history with dangling assistant/tool pairs that 400 every later request.
      */
     private suspend fun CoroutineScope.processLlm(id: Int) {
         stateMachine.onEvent(SessionEvent.LlmStarted)
-        val toolCallsPending = mutableListOf<ToolCall>()
+        var pass = 0
 
         while (true) {
-            val history = conversationManager.getHistoryForLLM()
-            val tools = functionRouter.getAvailableTools()
-
-            val messages = buildList {
-                add(Message(role = "system", content = SYSTEM_PROMPT))
-                addAll(history)
+            pass++
+            if (pass > config.maxToolPasses) {
+                Timber.w("Tool loop exceeded %d passes, aborting turn", config.maxToolPasses)
+                onErrorHandler("Слишком много шагов, останавливаюсь.")
+                break
             }
 
-            val sentenceBuffer = StringBuilder()
-            val assistantTextBuilder = StringBuilder()
+            val history = conversationManager.getHistoryForLLM()
+            val tools = functionRouter.getToolDefinitions()
+            val request = ChatRequest(
+                messages = listOf(Message.system(SYSTEM_PROMPT)) + history,
+                tools = tools,
+                model = null, // profile default
+                temperature = config.gigaChatTemperature,
+                maxTokens = config.gigaChatMaxTokens,
+            )
+
+            val sentenceBuffer = SentenceBuffer()
+            val assistantText = StringBuilder()
             val toolAccum = mutableMapOf<Int, ToolCallAccum>()
+            val toolCallsPending = mutableListOf<ToolCall>()
 
             try {
                 withTimeout(config.llmTimeoutMs) {
-                    llm.chatStream(messages, tools).collect { chunk ->
+                    llm.chatStream(request).collect { chunk ->
                         when (chunk) {
                             is LlmChunk.Text -> {
-                                sentenceBuffer.append(chunk.text)
-                                assistantTextBuilder.append(chunk.text)
-                                if (sentenceBuffer.toString().endsWithSentence()) {
-                                    val s = sentenceBuffer.toString()
-                                    sentenceBuffer.clear()
-                                    launch { speakChunk(s) } // child of sessionJob (FIX #1)
+                                assistantText.append(chunk.text)
+                                sentenceBuffer.append(chunk.text).forEach { sentence ->
+                                    launch { speakSentence(sentence) }
                                 }
                             }
 
                             is LlmChunk.FunctionCallDelta -> {
                                 val a = toolAccum.getOrPut(chunk.index) {
-                                    ToolCallAccum(chunk.index, null, StringBuilder(), null)
+                                    ToolCallAccum(chunk.index)
                                 }
                                 if (chunk.name != null) a.name = chunk.name
                                 a.args.append(chunk.argsDelta)
@@ -256,24 +344,20 @@ class SessionManager(
                                 toolCallsPending.add(chunk.call)
                             }
 
-                            is LlmChunk.Done -> {
-                                if (sentenceBuffer.isNotEmpty()) {
-                                    val s = sentenceBuffer.toString()
-                                    sentenceBuffer.clear()
-                                    launch { speakChunk(s) }
+                            LlmChunk.Done -> {
+                                sentenceBuffer.flushRemaining()?.let { rest ->
+                                    launch { speakSentence(rest) }
                                 }
-                                // Fallback: clients that emit deltas but no Complete.
+                                // Fallback for providers without Complete events.
                                 if (toolCallsPending.isEmpty() && toolAccum.isNotEmpty()) {
                                     toolAccum.toSortedMap().forEach { (_, a) ->
-                                        if (a.name != null) {
-                                            val tcId = a.id ?: java.util.UUID.randomUUID().toString()
-                                            toolCallsPending.add(
-                                                ToolCall(
-                                                    id = tcId,
-                                                    function = FunctionCall(a.name!!, a.args.toString())
-                                                )
+                                        val name = a.name ?: return@forEach
+                                        toolCallsPending.add(
+                                            ToolCall(
+                                                id = a.id ?: java.util.UUID.randomUUID().toString(),
+                                                function = FunctionCall(name, a.args.toString()),
                                             )
-                                        }
+                                        )
                                     }
                                 }
                             }
@@ -282,82 +366,106 @@ class SessionManager(
                 }
             } catch (e: TimeoutCancellationException) {
                 Timber.w(e, "LLM stream timed out")
-                stateMachine.onEvent(SessionEvent.ErrorOccurred(e))
+                stateMachine.onEvent(SessionEvent.ErrorOccurred)
                 onErrorHandler("Превышено время ожидания ответа.")
+                finish(id)
+                return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e, "LLM stream failed")
+                stateMachine.onEvent(SessionEvent.ErrorOccurred)
+                onErrorHandler("Не удалось получить ответ от нейросети.")
                 finish(id)
                 return
             }
 
+            // Tool calls? Execute ALL of them first, buffering results in
+            // memory, then persist assistant+results atomically (C2): an
+            // interruption mid-loop persists nothing, so history can never
+            // hold a dangling pair. Tool failures are already converted to
+            // JSON error results by the ToolRegistry, so buffering loses no
+            // legitimate result.
             if (toolCallsPending.isNotEmpty()) {
-                // Persist ONE assistant message with all tool calls (Issue 7).
-                conversationManager.addMessage(
-                    Message(
-                        role = "assistant",
-                        content = assistantTextBuilder.toString(),
-                        toolCalls = toolCallsPending.toList()
-                    )
-                )
+                val pending = toolCallsPending.toList()
+                toolCallsPending.clear()
 
-                // Execute each tool, persist result with tool_call_id.
-                for (call in toolCallsPending) {
-                    val result = withContext(Dispatchers.IO) {
+                val toolResults = mutableListOf<Message>()
+                for (call in pending) {
+                    val toolResult = withContext(Dispatchers.IO) {
                         functionRouter.execute(call.function)
                     }
-                    conversationManager.addMessage(
-                        Message(
-                            role = "tool",
-                            content = result.result,
-                            toolCallId = call.id,
-                            name = call.function.name
-                        )
+                    toolResults += Message(
+                        role = "tool",
+                        content = toolResult.result.ifBlank { "{}" },
+                        toolCallId = call.id,
+                        name = call.function.name,
                     )
                 }
-                toolCallsPending.clear()
-                continue
+
+                conversationManager.addAssistantWithToolResults(
+                    assistant = Message(
+                        role = "assistant",
+                        content = assistantText.toString(),
+                        toolCalls = pending,
+                    ),
+                    results = toolResults,
+                )
+                continue // next LLM pass, now with tool results in history
             }
 
-            // No more tool calls: persist ONE accumulated assistant text message.
-            if (assistantTextBuilder.isNotEmpty()) {
+            // Plain answer: persist once, wait for every TTS sentence to drain.
+            if (assistantText.isNotEmpty()) {
                 conversationManager.addMessage(
-                    Message(role = "assistant", content = assistantTextBuilder.toString())
+                    Message(role = "assistant", content = assistantText.toString())
                 )
             }
 
-            // Wait for all TTS children to drain, then idle.
-            coroutineContext[Job]?.children?.filter { it.isActive }?.forEach { it.join() }
-            stateMachine.onEvent(SessionEvent.LlmDone)
-            finish(id)
+            val children = coroutineContext[Job]?.children?.toList().orEmpty()
+            for (child in children) {
+                // Drain speakSentence children with an overall safety timeout.
+                withTimeoutOrNull(config.ttsDrainTimeoutMs) { child.join() }
+            }
+            finish(id) // -> IDLE
             return
         }
+
+        finish(id)
     }
 
     /**
-     * FIX #1/#5: child of [sessionJob] (declared `suspend fun CoroutineScope`).
-     * Awaits the player's [Deferred] so the sentence is only "done" once fully
-     * played (FIX #5).
-     *
-     * Note: persistence is handled by the caller (processLlm), not per-sentence.
+     * Speak one sentence: enqueue TTS flow on the player and await drain.
+     * Player flush (barge-in) cancels the Deferred, which surfaces here as
+     * CancellationException of the await — we treat it as "sentence dropped".
      */
-    private suspend fun CoroutineScope.speakChunk(text: String) {
-        stateMachine.onEvent(SessionEvent.PlaybackStarted)
-        val ttsFlow = ttsClient.synthesizeStream(text, config.ttsVoice)
-        val done = player.play(ttsFlow)
-        done.await() // wait for drain (FIX #5)
+    private suspend fun CoroutineScope.speakSentence(text: String) {
+        stateMachine.onEvent(SessionEvent.PlaybackStarted) // -> SPEAKING
+        val flow = ttsClient.synthesizeStream(text, config.ttsVoice)
+        val done = player.play(flow)
+        try {
+            withTimeoutOrNull(config.ttsSentenceTimeoutMs) { done.await() }
+                ?: Timber.w("TTS sentence timed out, continuing")
+        } catch (e: CancellationException) {
+            // Deferred cancelled by player.flush(): dropped sentence, fine.
+            if (done.isCancelled) return
+            throw e
+        }
     }
 
-    private data class ToolCallAccum(
-        val index: Int,
-        var name: String?,
-        val args: StringBuilder,
-        var id: String?
-    )
+    private class ToolCallAccum(val index: Int) {
+        var name: String? = null
+        var id: String? = null
+        val args = StringBuilder()
+    }
 
     companion object {
         private val SYSTEM_PROMPT = """
-            You are Jarvis, a concise voice assistant for Android.
-            Answer briefly and conversationally. When a user request maps to a
-            tool, call it instead of answering from memory. Prefer calling tools
-            for alarms, device control, and weather.
+            Ты — Джарвис, голосовой ассистент на планшете Android.
+            Отвечай кратко и разговорно, ВСЕГДА на русском языке.
+            Если запрос пользователя соответствует одному из доступных
+            инструментов (будильник, таймер, погода, управление устройством,
+            яркость, громкость и т.д.) — вызывай инструмент вместо ответа
+            из памяти. Не упоминай технические детали и JSON.
         """.trimIndent()
     }
 }

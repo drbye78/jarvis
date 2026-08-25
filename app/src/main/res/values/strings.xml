@@ -1,3 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Jarvis</string>
+
+    <!-- Channels -->
+    <string name="channel_name">Джарвис</string>
+    <string name="channel_errors">Ошибки</string>
+    <string name="channel_alarm">Будильники</string>
+
+    <!-- States -->
+    <string name="state_idle">Ожидание</string>
+    <string name="state_listening">Слушаю…</string>
+    <string name="state_thinking">Думаю…</string>
+    <string name="state_speaking">Говорю…</string>
+    <string name="state_idle_full">Джарвис слушает. Скажите «Джарвис»</string>
+    <string name="state_listening_full">Слушаю…</string>
+    <string name="state_thinking_full">Думаю…</string>
+    <string name="state_speaking_full">Говорю…</string>
+    <string name="state_muted">Микрофон выключен</string>
+    <string name="state_stopped">Ассистент остановлен</string>
+
+    <!-- Main -->
+    <string name="start">Запустить</string>
+    <string name="stop">Остановить</string>
+    <string name="mic_mute">Выключить микрофон</string>
+    <string name="mic_unmute">Включить микрофон</string>
+    <string name="alarms">Будильники</string>
+    <string name="settings">Настройки</string>
+    <string name="transcript_title">Разговор</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_title">Настройка Джарвиса</string>
+    <string name="onboarding_hint">Обязательные пункты: микрофон и оптимизация батареи. Остальные включают дополнительные возможности.</string>
+    <string name="grant_mic">Разрешить микрофон</string>
+    <string name="grant_notif_listener">Доступ к уведомлениям</string>
+    <string name="grant_battery">Оптимизация батареи</string>
+    <string name="grant_write_settings">Настройки записи (яркость)</string>
+    <string name="grant_dnd">Режим «Не беспокоить»</string>
+    <string name="grant_device_admin">Блокировка экрана</string>
+    <string name="start_jarvis">Запустить Джарвиса</string>
+    <string name="admin_explanation">Право нужно только для выключения экрана по голосовой команде. Никаких других действий Джарвис с устройством не выполняет.</string>
+
+    <!-- Settings -->
+    <string name="provider_label">Нейросеть (LLM)</string>
+    <string name="base_url_label">Base URL (…/v1)</string>
+    <string name="api_key_label">API-ключ</string>
+    <string name="model_label">Модель</string>
+    <string name="sensitivity_label">Чувствительность wake word</string>
+    <string name="sensitivity_value">Чувствительность: %1$.2f</string>
+    <string name="apply">Применить и перезапустить</string>
+    <string name="settings_applied">Настройки применены, сервис перезапущен</string>
+    <string name="error_base_url">Укажите Base URL</string>
+    <string name="error_api_key">Укажите API-ключ</string>
+
+    <!-- Alarms -->
+    <string name="add_alarm">Добавить будильник</string>
+    <string name="alarm_label_hint">Название (необязательно)</string>
+    <string name="alarm_label_title">Будильник на %02d:%02d — название</string>
+    <string name="default_alarm_label">Будильник</string>
+    <string name="ok">ОК</string>
+    <string name="cancel">Отмена</string>
+    <string name="delete">Удалить</string>
+
+    <!-- Ringing -->
+    <string name="alarm_notification_title">Будильник</string>
+    <string name="dismiss">Отключить</string>
+    <string name="snooze">Отложить на 10 минут</string>
+    <string name="snooze_label">Повтор будильника</string>
+    <string name="timer_done">Время вышло!</string>
+    <string name="perm_notification_text">Нужен доступ к микрофону. Нажмите, чтобы открыть приложение.</string>
 </resources>

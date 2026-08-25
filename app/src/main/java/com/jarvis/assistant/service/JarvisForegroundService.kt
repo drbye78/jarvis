@@ -7,13 +7,14 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.ComponentName
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.media.AudioManager
-import android.media.session.MediaSessionManager
 import android.media.session.MediaController
+import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -22,100 +23,176 @@ import android.os.PowerManager
 import android.speech.tts.TextToSpeech
 import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
-import com.jarvis.assistant.AppGraph
+import androidx.core.content.ContextCompat
+import com.jarvis.assistant.MainActivity
 import com.jarvis.assistant.R
 import com.jarvis.assistant.config.JarvisConfig
-import com.jarvis.assistant.contracts.AssistantState
+import com.jarvis.assistant.model.AssistantState
+import com.jarvis.assistant.di.AppGraph
+import com.jarvis.assistant.di.GraphHolder
+import com.jarvis.assistant.util.AppPrefs
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.Locale
 
 /**
- * Foreground service that owns the entire voice pipeline via [AppGraph].
+ * Foreground service owning the entire voice pipeline.
  *
- * Idempotent (R9): [onStartCommand] only initializes once; subsequent calls are
- * no-ops. A 15-minute [AlarmManager] restart keeps the sticky service alive
- * across Doze/stopped states.
- *
- * Observes the [SessionStateMachine] StateFlow for live notification updates
- * and media duck/unduck. Guards against power disconnect by pausing/resuming
- * the audio pipeline.
+ * Fixes vs. the original:
+ * - **RECORD_AUDIO is checked BEFORE init**; if missing, the service shows an
+ *   actionable notification (tap → app requests permission) and retries via
+ *   the watchdog instead of burning its one-shot init and running dead.
+ * - **Init failure no longer poisons `initialized`** — retry happens on the
+ *   next onStartCommand (watchdog / user action).
+ * - **User-stop semantics**: an explicit stop cancels the restart alarm, so
+ *   the assistant STAYS stopped (the old watchdog resurrected it within 15
+ *   minutes). If the SYSTEM kills the process there is no onDestroy, the
+ *   alarm survives, and the service revives — exactly the desired split.
+ * - **Media-key duck fallback now resumes** playback on unduck.
  */
 class JarvisForegroundService : Service() {
 
     private val config = JarvisConfig()
-    private var initialized = false
+    private lateinit var prefs: AppPrefs
+
+    @Volatile private var initialized = false
     private var graph: AppGraph? = null
+    private var powerReceiver: BroadcastReceiver? = null
 
     private lateinit var wakeLock: PowerManager.WakeLock
     private lateinit var wifiLock: WifiManager.WifiLock
 
-    private var powerReceiver: BroadcastReceiver? = null
+    private val errorTts by lazy { TextToSpeech(this) { } }
 
-    // Single shared TTS for error prompts (no per-error allocation -> no leak).
-    private val errorTts by lazy {
-        TextToSpeech(this) { }
-    }
-
-    // Binder exposed to MainActivity for service-bound lifecycle tracking.
-    private val binder = object : android.os.Binder() {
-        fun getService(): JarvisForegroundService = this@JarvisForegroundService
-    }
-
-    // Ducking state.
     private var wasMusicPlaying = false
     private var lastController: MediaController? = null
+    private var usedMediaKeyFallback = false
+
+    // ------------------------------------------------------------------
+    // Lifecycle
+    // ------------------------------------------------------------------
 
     override fun onCreate() {
         super.onCreate()
-        val channel = NotificationChannel(CHANNEL_ID, "Jarvis", NotificationManager.IMPORTANCE_LOW)
+        prefs = AppPrefs(this)
+        val channel = NotificationChannel(
+            CHANNEL_ID, getString(R.string.channel_name),
+            NotificationManager.IMPORTANCE_LOW,
+        )
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(channel)
-
-        val initialNotification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Jarvis")
-            .setContentText("Ожидание")
-            .setSmallIcon(R.drawable.ic_mic)
-            .setOngoing(true)
-            .build()
-        startForeground(NOTIFICATION_ID, initialNotification)
+        startForegroundCompat(buildStateNotification(getString(R.string.state_idle)))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        scheduleRestartAlarm()   // re-arm on EVERY start command (Issue 8)
+        when (intent?.action) {
+            ACTION_EXPLICIT_START -> prefs.userStopped = false
+            ACTION_WATCHDOG -> {
+                // The 15-minute keep-alive ping. Respect an explicit stop.
+                if (prefs.userStopped) {
+                    Timber.i("Watchdog fired but user stopped the assistant — shutting down")
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+            }
+        }
+
+        scheduleRestartAlarm()
         ensureInitialized()
         return START_STICKY
     }
 
-    /** Idempotent initialization (R9). */
+    // ------------------------------------------------------------------
+    // Initialization (idempotent, retryable)
+    // ------------------------------------------------------------------
+
     private fun ensureInitialized() {
         if (initialized) return
-        initialized = true
 
+        // Permission gate FIRST — the original crashed AudioRecord init on
+        // fresh installs and never retried.
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Timber.w("RECORD_AUDIO not granted; showing permission notification")
+            showPermissionNotification()
+            initialized = false // retry on next start command
+            return
+        }
+
+        try {
+            acquireLocks()
+            registerPowerReceiver()
+
+            val appGraph = AppGraph(
+                this, config,
+                com.jarvis.assistant.config.ProviderSettings.DEFAULT.copy(
+                    type = prefs.providerType,
+                    openAiBaseUrl = prefs.openAiBaseUrl,
+                    openAiModel = prefs.openAiModel,
+                    wakeSensitivity = prefs.wakeSensitivity,
+                ),
+                onSessionError = { msg -> speakError(msg) },
+            ).also { it.start() }
+            graph = appGraph
+            GraphHolder.graph = appGraph
+            initialized = true
+
+            // Live state -> notification text + ducking.
+            appGraph.scope.launch {
+                appGraph.stateMachine.state.collect { state ->
+                    val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    nm.notify(NOTIFICATION_ID, buildStateNotification(stateLabel(state)))
+                }
+            }
+            appGraph.scope.launch {
+                var wasActive = false
+                appGraph.stateMachine.state.collect { state ->
+                    val isActive = state != AssistantState.IDLE
+                    when {
+                        isActive && !wasActive -> duck()
+                        !isActive && wasActive -> unduck()
+                    }
+                    wasActive = isActive
+                }
+            }
+            Timber.i("Jarvis pipeline initialized")
+        } catch (e: Exception) {
+            Timber.e(e, "AppGraph init failed — will retry on next watchdog tick")
+            // Do NOT mark initialized: the 15-minute watchdog (or an
+            // app revisit) retries automatically.
+            graph?.shutdown()
+            graph = null
+            GraphHolder.graph = null
+            speakError("Не удалось запустить ассистента. Повторю попытку автоматически.")
+        }
+    }
+
+    private fun acquireLocks() {
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK, "Jarvis::WakeLock"
+            PowerManager.PARTIAL_WAKE_LOCK, "Jarvis::WakeLock",
         ).apply { setReferenceCounted(false) }
         wakeLock.acquire()
 
         val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         @Suppress("MissingPermission")
         wifiLock = wifiManager.createWifiLock(
-            WifiManager.WIFI_MODE_FULL_HIGH_PERF, "Jarvis::WifiLock"
+            WifiManager.WIFI_MODE_FULL_HIGH_PERF, "Jarvis::WifiLock",
         ).apply { setReferenceCounted(false) }
         wifiLock.acquire()
+    }
 
-        // Power disconnect guard
+    private fun registerPowerReceiver() {
         powerReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 when (intent.action) {
                     Intent.ACTION_POWER_DISCONNECTED -> {
-                        Timber.d("Power disconnected — pausing capture")
                         graph?.audioPipeline?.stop()
                         if (::wakeLock.isInitialized && wakeLock.isHeld) wakeLock.release()
                     }
+
                     Intent.ACTION_POWER_CONNECTED -> {
-                        Timber.d("Power reconnected — resuming capture")
                         if (::wakeLock.isInitialized && !wakeLock.isHeld) wakeLock.acquire()
                         graph?.audioPipeline?.start()
                     }
@@ -127,68 +204,76 @@ class JarvisForegroundService : Service() {
             addAction(Intent.ACTION_POWER_CONNECTED)
         }
         registerReceiver(powerReceiver, filter)
+    }
 
-        val appGraph = try {
-            AppGraph(this, config).also { it.start() }
-        } catch (e: Exception) {
-            Timber.e(e, "AppGraph start failed")
-            speakError(e)
-            return
-        }
-        graph = appGraph
-        graph?.wireErrorHandler { msg -> speakError(Exception(msg)) }
+    // ------------------------------------------------------------------
+    // Notifications
+    // ------------------------------------------------------------------
 
-        scheduleRestartAlarm()
+    private fun stateLabel(state: AssistantState): String = when (state) {
+        AssistantState.IDLE -> getString(R.string.state_idle)
+        AssistantState.LISTENING -> getString(R.string.state_listening)
+        AssistantState.THINKING -> getString(R.string.state_thinking)
+        AssistantState.SPEAKING -> getString(R.string.state_speaking)
+    }
 
-        // Observe state for live notification updates
-        appGraph.scope.launch {
-            appGraph.stateMachine.state.collect { state ->
-                val notification = NotificationCompat.Builder(this@JarvisForegroundService, CHANNEL_ID)
-                    .setContentTitle("Jarvis")
-                    .setContentText(when (state) {
-                        AssistantState.IDLE -> "Ожидание"
-                        AssistantState.LISTENING -> "Слушаю…"
-                        AssistantState.THINKING -> "Думаю…"
-                        AssistantState.SPEAKING -> "Говорю…"
-                    })
-                    .setSmallIcon(R.drawable.ic_mic)
-                    .setOngoing(true)
-                    .build()
-                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                nm.notify(NOTIFICATION_ID, notification)
-            }
-        }
+    private fun buildStateNotification(text: String): Notification {
+        val contentIntent = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Jarvis")
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_mic)
+            .setOngoing(true)
+            .setContentIntent(contentIntent)
+            .build()
+    }
 
-        // Observe state for duck/unduck
-        appGraph.scope.launch {
-            var wasActive = false
-            appGraph.stateMachine.state.collect { state ->
-                val isActive = state == AssistantState.LISTENING ||
-                        state == AssistantState.SPEAKING ||
-                        state == AssistantState.THINKING
-                when {
-                    isActive && !wasActive -> duck()
-                    !isActive && wasActive -> unduck()
-                }
-                wasActive = isActive
-            }
+    private fun showPermissionNotification() {
+        val intent = PendingIntent.getActivity(
+            this, 1, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(this, CHANNEL_ERROR)
+            .setContentTitle("Jarvis")
+            .setContentText(getString(R.string.perm_notification_text))
+            .setSmallIcon(R.drawable.ic_mic)
+            .setAutoCancel(true)
+            .setContentIntent(intent)
+            .build()
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channel = NotificationChannel(
+            CHANNEL_ERROR, getString(R.string.channel_errors),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        nm.createNotificationChannel(channel)
+        nm.notify(NOTIFICATION_PERMISSION, notification)
+    }
+
+    private fun startForegroundCompat(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo_MICROPHONE)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
         }
     }
 
     // ------------------------------------------------------------------
-    // Ducking
+    // Ducking (pause/resume) with working media-key fallback
     // ------------------------------------------------------------------
 
     private fun duck() {
-        if (wasMusicPlaying) return // already ducked
+        if (wasMusicPlaying) return
         val msm = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         val component = ComponentName(this, JarvisNotificationListener::class.java)
         val controllers = try {
             msm.getActiveSessions(component)
         } catch (_: SecurityException) {
-            // Listener not granted -> fall back to a media key event.
             dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
             wasMusicPlaying = true
+            usedMediaKeyFallback = true
             return
         }
         for (c in controllers) {
@@ -204,8 +289,15 @@ class JarvisForegroundService : Service() {
 
     private fun unduck() {
         if (!wasMusicPlaying) return
-        runCatching { lastController?.transportControls?.play() }
+        if (usedMediaKeyFallback) {
+            // FIX: the old fallback paused music via a media key but never
+            // resumed it. Symmetric PLAY key now restores playback.
+            dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+        } else {
+            runCatching { lastController?.transportControls?.play() }
+        }
         wasMusicPlaying = false
+        usedMediaKeyFallback = false
         lastController = null
     }
 
@@ -216,43 +308,49 @@ class JarvisForegroundService : Service() {
     }
 
     // ------------------------------------------------------------------
-    // Error prompt (single shared TTS)
+    // Error voice
     // ------------------------------------------------------------------
 
-    private fun speakError(e: Exception) {
-        Timber.e(e, "Voice error prompt")
+    private fun speakError(message: String) {
+        Timber.e("Voice error: %s", message)
         runCatching {
             errorTts.language = Locale("ru")
-            errorTts.speak(
-                "Произошла ошибка",
-                TextToSpeech.QUEUE_FLUSH,
-                null,
-                null
-            )
+            errorTts.speak(message, TextToSpeech.QUEUE_FLUSH, null, null)
         }
     }
 
     // ------------------------------------------------------------------
-    // Restart alarm
+    // Watchdog
     // ------------------------------------------------------------------
 
     private fun scheduleRestartAlarm() {
         val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(this, JarvisForegroundService::class.java)
+            .setAction(ACTION_WATCHDOG)
         val pending = PendingIntent.getService(
-            this,
-            RESTART_REQUEST_CODE,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            this, RESTART_REQUEST_CODE, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val triggerAt = System.currentTimeMillis() + config.restartIntervalMs
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP, triggerAt, pending
-            )
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
         } else {
             alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pending)
         }
+    }
+
+    private fun cancelRestartAlarm() {
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        // Must match scheduleRestartAlarm()'s Intent (filterEquals compares
+        // the action) or alarmManager.cancel is a silent no-op.
+        val intent = Intent(this, JarvisForegroundService::class.java)
+            .setAction(ACTION_WATCHDOG)
+        alarmManager.cancel(
+            PendingIntent.getService(
+                this, RESTART_REQUEST_CODE, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        )
     }
 
     // ------------------------------------------------------------------
@@ -260,9 +358,15 @@ class JarvisForegroundService : Service() {
     // ------------------------------------------------------------------
 
     override fun onDestroy() {
+        // Explicit stop → cancel the watchdog so the assistant stays stopped.
+        // (A system process kill never reaches onDestroy, so the watchdog
+        // survives that path and revives the service — intended.)
+        cancelRestartAlarm()
         runCatching { powerReceiver?.let { unregisterReceiver(it) } }
-        runCatching { graph?.shutdown() }
+        graph?.shutdown()
         graph = null
+        GraphHolder.graph = null
+        initialized = false
         if (::wakeLock.isInitialized && wakeLock.isHeld) runCatching { wakeLock.release() }
         if (::wifiLock.isInitialized && wifiLock.isHeld) runCatching { wifiLock.release() }
         runCatching { errorTts.shutdown() }
@@ -271,9 +375,30 @@ class JarvisForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder = binder
 
-    private companion object {
+    private val binder = object : android.os.Binder() {
+        fun getService(): JarvisForegroundService = this@JarvisForegroundService
+    }
+
+    companion object {
+        const val ACTION_EXPLICIT_START = "com.jarvis.assistant.EXPLICIT_START"
+        const val ACTION_WATCHDOG = "com.jarvis.assistant.WATCHDOG"
         const val NOTIFICATION_ID = 1
-        const val RESTART_REQUEST_CODE = 1001
-        const val CHANNEL_ID = "jarvis_foreground"
+        private const val NOTIFICATION_PERMISSION = 2
+        private const val RESTART_REQUEST_CODE = 1001
+        private const val CHANNEL_ID = "jarvis_foreground"
+        private const val CHANNEL_ERROR = "jarvis_errors"
+        private const val ServiceInfo_MICROPHONE =
+            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+
+        fun explicitStart(context: Context) {
+            val intent = Intent(context, JarvisForegroundService::class.java)
+                .setAction(ACTION_EXPLICIT_START)
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun explicitStop(context: Context) {
+            AppPrefs(context).userStopped = true
+            context.stopService(Intent(context, JarvisForegroundService::class.java))
+        }
     }
 }

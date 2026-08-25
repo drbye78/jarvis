@@ -4,6 +4,7 @@ import com.jarvis.assistant.contracts.AudioSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.isActive
@@ -11,23 +12,25 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
- * Owns an [AudioSource] and a SINGLE producer coroutine that is the only code
- * path allowed to touch the underlying [AudioRecord] (FIX #1).
+ * Owns an [AudioSource] and a SINGLE producer coroutine — the only code path
+ * allowed to touch the underlying AudioRecord.
  *
- * Every captured frame is (a) appended to a small [RingBuffer] so a
- * late-subscribing VAD collector can recover pre-subscription frames, and
- * (b) emitted on [frames] as a defensive copy.
+ * Fix for the ring-buffer aliasing defect: [AudioRecordSource.read] returns
+ * references to two reused internal buffers, so every frame is defensively
+ * copied ONCE here, and the same snapshot is shared (read-only) between the
+ * ring buffer and the SharedFlow. Previously the ring buffer retained aliased
+ * buffers that were overwritten by the next reads, corrupting the
+ * pre-subscription recovery audio fed to ASR.
  */
 class AudioPipeline(
     private val scope: CoroutineScope,
-    private val source: AudioSource
+    private val source: AudioSource,
 ) {
     private val _frames = MutableSharedFlow<ShortArray>(
         extraBufferCapacity = 10,
-        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
     )
 
-    /** Public, read-only view of the captured frames. */
     val frames: Flow<ShortArray> = _frames
 
     val ringBuffer = AudioRingBuffer(8)
@@ -36,25 +39,25 @@ class AudioPipeline(
     private var producerJob: Job? = null
 
     init {
-        // The producer is launched in the supplied scope but only reads while
-        // [running] is true, so start()/stop() gate the actual capture.
         producerJob = scope.launch {
             while (isActive) {
                 if (!running) {
-                    kotlinx.coroutines.delay(10)
+                    delay(10)
                     continue
                 }
                 try {
                     val frame = source.read()
                     if (frame.isNotEmpty()) {
-                        ringBuffer.add(frame)
-                        _frames.emit(frame.copyOf())
+                        // Single defensive copy shared by ring buffer and flow.
+                        val snapshot = frame.copyOf()
+                        ringBuffer.add(snapshot)
+                        _frames.emit(snapshot)
                     }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     Timber.w(e, "AudioPipeline read error")
-                    kotlinx.coroutines.delay(100)
+                    delay(100)
                 }
             }
         }
@@ -71,6 +74,8 @@ class AudioPipeline(
         running = false
         source.stop()
     }
+
+    fun isRunning(): Boolean = running
 
     fun release() {
         running = false

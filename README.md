@@ -1,64 +1,63 @@
-# Jarvis — Russian Voice Assistant for Huawei MatePad
+# Jarvis — Russian Voice Assistant for Huawei MatePad (v3)
 
-Always-listening Russian-language voice assistant for Huawei MatePad SE 11 (HarmonyOS 2.0).
+Always-listening Russian-language voice assistant for Huawei MatePad SE 11
+(HarmonyOS 2.0). Streaming-first: live ASR, streamed LLM with tool calling,
+sentence-buffered TTS. Alarms and timers that actually ring. Real on-tablet
+device control. Pluggable LLM provider (Sber GigaChat by default, or any
+OpenAI-compatible endpoint).
 
 ## Prerequisites
 - JDK 17
-- Android SDK 34 (set `sdk.dir` in `local.properties` or `ANDROID_HOME` env)
-- Gradle wrapper (included): `./gradlew`
+- Android SDK 34 (`sdk.dir` in `local.properties` or `ANDROID_HOME`)
+- Gradle wrapper included: `./gradlew`
 
 ## Setup
-1. Copy `local.properties.example` to `local.properties` and set your Android SDK path:
-   ```
-   sdk.dir=/path/to/Android/Sdk
-   ```
-2. Add your API credentials to `local.properties`:
+1. Copy `local.properties.example` to `local.properties` and set:
    ```properties
+   sdk.dir=/path/to/Android/Sdk
    PICOVOICE_KEY=your_picovoice_access_key
    SALUTE_CLIENT_ID=your_sber_salute_client_id
    SALUTE_CLIENT_SECRET=your_sber_salute_client_secret
    GIGACHAT_CLIENT_ID=your_sber_gigachat_client_id
    GIGACHAT_CLIENT_SECRET=your_sber_gigachat_client_secret
    ```
-3. Generate the wake-word model:
-   - Go to [Picovoice Console](https://console.picovoice.ai/)
-   - Create a custom keyword for "Джарвис" (Jarvis)
-   - Download `jarvis_ru.ppn`
-   - Place it in `app/src/main/assets/jarvis_ru.ppn`
-4. Build and install:
+   (GigaChat credentials are optional if you plan to use the
+   OpenAI-compatible provider — configure it in the app's Settings instead.)
+2. Download the wake-word model from
+   [Picovoice Console](https://console.picovoice.ai/) — create a custom
+   keyword for "Джарвис" — and place `jarvis_ru.ppn` in
+   `app/src/main/assets/`.
+3. Build and install:
    ```bash
    ./gradlew assembleDebug
    adb install app/build/outputs/apk/debug/app-debug.apk
    ```
-
-## Device configuration
-After installing the app:
-1. Launch Jarvis from the app drawer
-2. Grant `RECORD_AUDIO` permission when prompted
-3. Open the notification listener settings and enable Jarvis (required for music ducking)
-4. Disable battery optimization for Jarvis
-5. **Huawei-specific**: Go to Settings → Apps → App launch → Jarvis → Manage manually → enable all three toggles (auto-launch, secondary launch, run in background)
+4. Launch Jarvis and follow the onboarding screen.
 
 ## Running tests
 ```bash
 ./gradlew testDebugUnitTest
 ```
 
-## Configuration
-All tunables (wake-word sensitivity, VAD timings, session/API timeouts,
-history cap, restart interval) live in
-[`JarvisConfig`](app/src/main/java/com/jarvis/assistant/config/JarvisConfig.kt)
-with sensible defaults; override by constructing `AppGraph(context, config)`.
-Network availability is tracked by `NetworkMonitor`; sessions started offline
-speak a Russian error instead of failing silently.
+## What Jarvis can do
+- **Voice**: wake word «Джарвис», barge-in mid-answer, streaming recognition.
+- **Chat**: GigaChat (or OpenAI-compatible provider) with 20-message context.
+- **Alarms & timers**: set/cancel/list by voice or UI; ring over the lock
+  screen; survive reboots.
+- **Weather**: current conditions for any city (Open-Meteo).
+- **Device control**: volume, brightness, Wi-Fi, Bluetooth, DND, screen off,
+  open app, battery/time info.
 
-## Architecture
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architecture document.
+## Docs
+- [PLAN.md](PLAN.md) — audit findings → fix map, architecture decisions,
+  acceptance criteria.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — component and concurrency model.
+- [RUNBOOK.md](RUNBOOK.md) — troubleshooting, debugging, performance targets.
 
 ## Tech stack
-- Kotlin 2.2.21 · Coroutines · Flow
-- Picovoice Porcupine (wake-word) · Silero VAD
-- Sber SaluteSpeech (ASR + TTS via gRPC)
-- Sber GigaChat (LLM via SSE, tool-calling)
-- Room (conversation + alarm persistence)
-- Open-Meteo (weather, free, no API key)
+- Kotlin 2.2.21 · Coroutines · Flow · kotlinx.serialization
+- Picovoice Porcupine (wake word)
+- Sber SaluteSpeech (streaming ASR + TTS via gRPC)
+- Sber GigaChat or any OpenAI-compatible API (LLM via SSE, tool calling)
+- Room (conversation + alarms) · Open-Meteo (weather)
+- Material Components UI

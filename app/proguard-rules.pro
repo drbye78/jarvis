@@ -6,11 +6,6 @@
 -keep,includedescriptorclasses class com.jarvis.assistant.contracts.**$$serializer { *; }
 -keepclassmembers class com.jarvis.assistant.contracts.** { *** Companion; }
 -keepclasseswithmembers class com.jarvis.assistant.contracts.** { kotlinx.serialization.KSerializer serializer(...); }
-# Broadened: any @Serializable class anywhere (tool DTOs may live outside contracts)
--keepclasseswithmembers @kotlinx.serialization.Serializable class * {
-    kotlinx.serialization.KSerializer serializer(...);
-}
--keepclassmembers @kotlinx.serialization.Serializable class * { *** Companion; }
 
 # Protobuf
 -keep class com.google.protobuf.** { *; }

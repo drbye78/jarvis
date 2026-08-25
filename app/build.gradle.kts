@@ -20,10 +20,12 @@ android {
 
     defaultConfig {
         applicationId = "com.jarvis.assistant"
+        // targetSdk 30 on purpose: appliance profile for the MatePad (Android 10/11).
+        // Android 14+ guards are handled in code (typed FGS, runtime checks).
         minSdk = 24
         targetSdk = 30
-        versionCode = 1
-        versionName = "2.1"
+        versionCode = 3
+        versionName = "3.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -98,6 +100,9 @@ dependencies {
 
     implementation(libs.core.ktx)
     implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.appcompat)
+    implementation(libs.material)
+    implementation(libs.recyclerview)
 
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
@@ -121,14 +126,11 @@ dependencies {
 
     implementation(libs.porcupine.android)
 
-    implementation(libs.silero)
 
     implementation(libs.timber)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.androidx.test.core)
-    testImplementation(libs.mockwebserver)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.espresso.core)
 }

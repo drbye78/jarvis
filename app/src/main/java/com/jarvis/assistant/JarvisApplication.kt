@@ -1,8 +1,8 @@
 package com.jarvis.assistant
 
 import android.app.Application
-import com.jarvis.assistant.BuildConfig
 import timber.log.Timber
+import com.jarvis.assistant.util.FileLoggingTree
 
 class JarvisApplication : Application() {
     override fun onCreate() {
@@ -11,9 +11,12 @@ class JarvisApplication : Application() {
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }
+        // Release builds log to rotating files under filesDir/logs/ so the
+        // RUNBOOK's debugging procedures work everywhere.
+        Timber.plant(FileLoggingTree(this))
 
-        val missingAssets = assets?.list("")?.let { !it.contains("jarvis_ru.ppn") } ?: true
-        if (missingAssets) {
+        val missingModel = assets?.list("")?.let { !it.contains("jarvis_ru.ppn") } ?: true
+        if (missingModel) {
             Timber.e("Wake word model 'jarvis_ru.ppn' not found in assets/")
         }
 

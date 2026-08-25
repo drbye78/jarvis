@@ -1,62 +1,90 @@
-# Jarvis — Runbook
+# Jarvis — Runbook (v3)
+
+> All latency figures below are TARGETS to be measured on the actual device,
+> not marketing numbers. Replace them with your measurements.
+
+## First run
+
+1. Install the APK, open Jarvis → onboarding screen appears.
+2. Grant **микрофон** (mandatory). Optionally grant notification-listener
+   access (music ducking), battery-optimization exemption (mandatory for
+   always-on), write-settings (brightness tool), DND access, device admin
+   (screen-off tool).
+3. Press **Запустить Джарвиса**.
 
 ## Common issues
 
-### "AudioRecord failed to initialize"
-- Check that `RECORD_AUDIO` permission is granted (Settings → Apps → Jarvis → Permissions)
-- On HarmonyOS: check that no other app is using the microphone
-- Try rebooting the device
+### "Assistant never responds to the wake word"
+- Check the persistent notification says «Ожидание».
+- Release builds: `adb shell run-as com.jarvis.assistant cat files/logs/jarvis.log`
+  (debug builds: `adb logcat -s Timber:*`).
+- Verify `jarvis_ru.ppn` is in `app/src/main/assets/` and the Picovoice key
+  in `local.properties` is valid.
+- Detector errors are SPOKEN (system TTS) and logged — a deaf-but-silent
+  assistant is no longer possible.
+- Sensitivity adjustable in Settings (0–1 slider; restart applies it).
 
 ### "OAuth token request failed (HTTP 401)"
-- Verify your Sber credentials in `local.properties` are correct
-- Check that the Sber Developer Portal has your device registered
-- Tokens expire after ~1 hour; check network connectivity
+- Verify Sber credentials in `local.properties`.
+- Or switch Settings → provider to an OpenAI-compatible endpoint.
 
 ### "GigaChat request failed (HTTP ...)"
-- Verify `GIGACHAT_CLIENT_ID` and `GIGACHAT_CLIENT_SECRET`
-- Check that the GigaChat API is accessible from your network
-- Verify the OAuth scope is `GIGACHAT_API_PERS`
-
-### "Wake word not detected"
-- Verify `jarvis_ru.ppn` is in `app/src/main/assets/`
-- Check that the Picovoice access key is valid
-- Sensitivity is 0.6 — adjust in `PorcupineDetector.kt` if needed
-- Background noise may interfere; try in a quieter environment
+- Check credentials/scope (`GIGACHAT_API_PERS`).
+- If you switched providers, verify base URL ends with `/v1` and the API key
+  is set — the Apply button restarts the service with the new profile.
 
 ### "Service keeps getting killed"
-- Huawei PowerGenie: Settings → Apps → App launch → Jarvis → Manage manually → enable all
-- Battery optimization: Settings → Apps → Jarvis → Battery → Don't optimize
-- Check that the persistent notification is visible (if not, service was killed)
-- The 15-minute restart alarm should bring it back; wait up to 15 minutes
+- Huawei PowerGenie: Settings → Apps → App launch → Jarvis → Manage manually
+  → enable all three toggles.
+- Battery optimization: don't optimize.
+- The 15-minute watchdog revives the service after system kills. An explicit
+  user Stop is respected (watchdog cancelled) until reboot or manual start.
 
-### "Ducking not working (music doesn't pause)"
-- Settings → Sound & vibration → Notification access → enable Jarvis
-- As fallback, the app sends a media-key pause event (works with most players)
+### "Music doesn't pause when Jarvis talks"
+- Enable the notification listener for Jarvis (onboarding screen or system
+  settings). The media-key fallback now also RESUMES playback afterwards.
+
+### "Alarms don't ring"
+- Alarms fire via `setAlarmClock` — check the system alarm indicator appears.
+- Do-not-disturb filters can silence alarms: check DND settings.
+- Alarms survive reboots (BootReceiver re-arms them from Room).
 
 ## Debugging
+
 ```bash
-# View all Jarvis logs
+# Logs (debug builds)
 adb logcat -s Timber:*
 
-# View only errors
-adb logcat -s Timber:* *:E
+# Logs (release builds — rotating files)
+adb shell run-as com.jarvis.assistant ls files/logs/
+adb shell run-as com.jarvis.assistant cat files/logs/jarvis.log
 
-# Check service status
+# Service status
 adb shell dumpsys activity services com.jarvis.assistant
 
-# Check notification listener status
+# Notification listener status
 adb shell settings get secure enabled_notification_listeners
+
+# Run unit tests
+./gradlew testDebugUnitTest
 ```
 
-## Performance monitoring
-- Total round-trip latency (wake-word → TTS start): ~1.3–2.2 seconds
-- Wake-word latency: <200ms
-- ASR latency: 500–1200ms
-- LLM time-to-first-token: 800–2000ms
-- TTS latency: 100–300ms
-- If latency exceeds these ranges, check network (permanent WiFi required)
+## Performance targets (to be measured on-device)
+
+| Stage | Target |
+|-------|--------|
+| Wake word → session start | < 300 ms |
+| Session start → ASR stream open | < 500 ms |
+| End of speech (server EOU) → final transcript | 300–800 ms |
+| Transcript → LLM first token | 800–2000 ms |
+| First sentence → TTS audio start | 300–600 ms |
+| **Total: end of speech → first audio** | **~1.5–2.5 s** |
+
+Streaming ASR means these numbers no longer grow with utterance length.
 
 ## Recovery procedures
-1. **App not responding**: Kill from system settings, relaunch from launcher
-2. **Tokens seem stale**: Restart the app (tokens are fetched fresh on cold start)
-3. **Conversation history corrupted**: Clear app data (Settings → Apps → Jarvis → Storage → Clear Data)
+
+1. **App not responding** — kill from system settings, relaunch.
+2. **Provider misconfigured** — Settings → switch back to GigaChat → Apply.
+3. **Conversation history corrupted** — Settings → Apps → Jarvis → Storage →
+   Clear Data (wipes history and alarms; destructive by design).

@@ -1,109 +1,136 @@
 package com.jarvis.assistant
 
-import android.app.Activity
-import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
-import android.os.Build
 import android.os.Bundle
-import android.os.IBinder
-import android.os.PowerManager
-import android.provider.Settings
 import android.widget.Button
 import android.widget.TextView
-import androidx.core.content.ContextCompat
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.jarvis.assistant.model.AssistantState
+import com.jarvis.assistant.data.AppDatabase
+import com.jarvis.assistant.data.ConversationManager
+import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.service.JarvisForegroundService
+import com.jarvis.assistant.ui.TranscriptAdapter
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
-class MainActivity : Activity() {
+/**
+ * Home screen: live status chip, rolling conversation transcript (from
+ * Room), mic mute, start/stop, and navigation to Alarms / Settings. First
+ * launch redirects to onboarding.
+ */
+class MainActivity : AppCompatActivity() {
 
-    private var serviceBound = false
-    private val serviceConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            serviceBound = true
-            updateToggleState(true)
-        }
-        override fun onServiceDisconnected(name: ComponentName?) {
-            serviceBound = false
-            updateToggleState(false)
-        }
-    }
+    private lateinit var statusText: TextView
+    private lateinit var micButton: Button
+    private lateinit var toggleButton: Button
+    private lateinit var adapter: TranscriptAdapter
+
+    private var micMuted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val prefs = com.jarvis.assistant.util.AppPrefs(this)
+        if (!prefs.onboarded) {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+            finish()
+            return
+        }
+
         setContentView(R.layout.activity_main)
+        statusText = findViewById(R.id.statusText)
+        micButton = findViewById(R.id.micButton)
+        toggleButton = findViewById(R.id.toggleButton)
+        adapter = TranscriptAdapter()
 
-        val statusText = findViewById<TextView>(R.id.statusText)
-        val toggleButton = findViewById<Button>(R.id.toggleButton)
-        val permissionsText = findViewById<TextView>(R.id.permissionsText)
+        findViewById<RecyclerView>(R.id.transcript).apply {
+            layoutManager = LinearLayoutManager(this@MainActivity)
+            adapter = this@MainActivity.adapter
+        }
 
-        statusText.text = "Статус: Остановлен"
-        toggleButton.text = "Запустить"
-        permissionsText.text = getPermissionsStatus()
+        findViewById<Button>(R.id.alarmsButton).setOnClickListener {
+            startActivity(Intent(this, AlarmsActivity::class.java))
+        }
+        findViewById<Button>(R.id.settingsButton).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
 
         toggleButton.setOnClickListener {
-            if (serviceBound) {
-                val intent = Intent(this, JarvisForegroundService::class.java)
-                stopService(intent)
+            if (GraphHolder.isRunning) {
+                JarvisForegroundService.explicitStop(this)
+                statusText.text = getString(R.string.state_stopped)
             } else {
-                val intent = Intent(this, JarvisForegroundService::class.java)
-                ContextCompat.startForegroundService(this, intent)
+                JarvisForegroundService.explicitStart(this)
+            }
+            refreshServiceState()
+        }
+
+        micButton.setOnClickListener {
+            val graph = GraphHolder.graph ?: return@setOnClickListener
+            micMuted = !micMuted
+            if (micMuted) {
+                graph.audioPipeline.stop()
+                micButton.text = getString(R.string.mic_unmute)
+                statusText.text = getString(R.string.state_muted)
+            } else {
+                graph.audioPipeline.start()
+                micButton.text = getString(R.string.mic_mute)
             }
         }
+
+        observeTranscript()
     }
 
     override fun onResume() {
         super.onResume()
-        val intent = Intent(this, JarvisForegroundService::class.java)
-        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-        findViewById<TextView>(R.id.permissionsText).text = getPermissionsStatus()
+        refreshServiceState()
     }
 
-    override fun onPause() {
-        super.onPause()
-        if (serviceBound) {
-            unbindService(serviceConnection)
-            serviceBound = false
+    private fun refreshServiceState() {
+        toggleButton.text =
+            getString(if (GraphHolder.isRunning) R.string.stop else R.string.start)
+    }
+
+    private fun observeTranscript() {
+        val manager = ConversationManager(AppDatabase.getInstance(this).messageDao())
+        lifecycleScope.launch {
+            manager.transcriptLive().collectLatest { messages ->
+                adapter.submit(messages)
+            }
+        }
+        // Status chip: poll graph presence, collect state while alive.
+        lifecycleScope.launch {
+            var collectedGraph: com.jarvis.assistant.di.AppGraph? = null
+            var stateJob: kotlinx.coroutines.Job? = null
+            while (isActive) {
+                val graph = GraphHolder.graph
+                if (graph != null && graph !== collectedGraph) {
+                    stateJob?.cancel()
+                    collectedGraph = graph
+                    stateJob = launch {
+                        graph.stateMachine.state.collectLatest { state ->
+                            if (micMuted) return@collectLatest
+                            statusText.text = labelFor(state)
+                        }
+                    }
+                } else if (graph == null) {
+                    collectedGraph = null
+                }
+                delay(500)
+            }
         }
     }
 
-    private fun updateToggleState(bound: Boolean) {
-        val statusText = findViewById<TextView>(R.id.statusText)
-        val toggleButton = findViewById<Button>(R.id.toggleButton)
-        if (bound) {
-            statusText.text = "Статус: Запущен"
-            toggleButton.text = "Остановить"
-        } else {
-            statusText.text = "Статус: Остановлен"
-            toggleButton.text = "Запустить"
-        }
-    }
-
-    private fun getPermissionsStatus(): String {
-        val sb = StringBuilder()
-
-        // 1. RECORD_AUDIO
-        val audioGranted = ContextCompat.checkSelfPermission(
-            this, android.Manifest.permission.RECORD_AUDIO
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        sb.appendLine("RECORD_AUDIO: ${if (audioGranted) "✓ Granted" else "✗ Not granted"}")
-
-        // 2. Notification Listener
-        val listeners = Settings.Secure.getString(
-            contentResolver, "enabled_notification_listeners"
-        ) ?: ""
-        val hasNotificationListener = listeners.contains(packageName)
-        sb.appendLine("Notification Listener: ${if (hasNotificationListener) "✓ Enabled" else "✗ Not enabled"}")
-
-        // 3. Battery optimization
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        val ignoringBattery = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            powerManager.isIgnoringBatteryOptimizations(packageName)
-        } else {
-            true
-        }
-        sb.append("Battery optimization: ${if (ignoringBattery) "✓ Ignored" else "✗ Not ignored"}")
-
-        return sb.toString()
+    private fun labelFor(state: AssistantState): String = when (state) {
+        AssistantState.IDLE -> getString(R.string.state_idle_full)
+        AssistantState.LISTENING -> getString(R.string.state_listening_full)
+        AssistantState.THINKING -> getString(R.string.state_thinking_full)
+        AssistantState.SPEAKING -> getString(R.string.state_speaking_full)
     }
 }

@@ -1,23 +1,35 @@
 package com.jarvis.assistant.data
 
-import android.content.Context
-import com.jarvis.assistant.contracts.Message
-import com.jarvis.assistant.contracts.ToolCall
+import com.jarvis.assistant.model.Message
+import com.jarvis.assistant.model.ToolCall
+import com.jarvis.assistant.wire.WireToolCall
+import com.jarvis.assistant.wire.toDomain
+import com.jarvis.assistant.wire.toWire
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 /**
- * Wraps [MessageDao] to provide conversation persistence for the LLM layer.
+ * Conversation persistence for the LLM layer.
  *
- * Keeps a 20-message cap (per blueprint): every inserted message triggers a
- * trim that retains only the most recent 20 rows. Decoupled from other phases
- * (no api/ or audio/ imports).
+ * Defects fixed here:
+ * 1. Ordering is by row id (monotonic), not createdAt (ambiguous ties).
+ * 2. Assistant `tool_calls` and their tool results are inserted as ONE
+ *    transaction ([addAssistantWithToolResults]) — an interruption can never
+ *    leave a dangling half-pair in the table.
+ * 3. [getHistoryForLLM] sanitizes POSITION-INDEPENDENTLY: a tool row whose
+ *    assistant is not in the window is dropped wherever it sits, and an
+ *    assistant whose ids have no tool results keeps its content with
+ *    `tool_calls` cleared. Either half alone would make the chat-completions
+ *    request schema-invalid (HTTP 400).
  */
-class ConversationManager(private val dao: MessageDao) {
+class ConversationManager(
+    private val dao: MessageDao,
+    private val maxMessages: Int = 20,
+) {
 
     private val json = Json { ignoreUnknownKeys = true }
-
-    constructor(context: Context) : this(AppDatabase.getInstance(context).messageDao())
 
     suspend fun addMessage(role: String, content: String) {
         addMessage(Message(role = role, content = content))
@@ -25,39 +37,82 @@ class ConversationManager(private val dao: MessageDao) {
 
     suspend fun addMessage(message: Message) {
         dao.insert(message.toEntity())
-        // Keep last MAX_MESSAGES + any orphaned tool results whose parent assistant is kept
-        val all = dao.all()
-        val assistantKeepIds = all.takeLast(MAX_MESSAGES).map { it.id }.toMutableSet()
-        // Also keep tool messages whose parent assistant (by toolCallId) is in the keep set
-        val assistantToolCallIds = all.filter { it.role == "assistant" && it.toolCallsJson != null }
-            .filter { it.id in assistantKeepIds }
+        trim()
+    }
+
+    /** Persists the assistant message and its tool results atomically (C2). */
+    suspend fun addAssistantWithToolResults(assistant: Message, results: List<Message>) {
+        dao.insertAssistantWithResults(assistant.toEntity(), results.map { it.toEntity() })
+        trim()
+    }
+
+    /** Keeps the newest [maxMessages] messages plus their tool results. */
+    private suspend fun trim() {
+        val all = dao.all() // ordered by id ASC
+        if (all.size <= maxMessages) return
+
+        val keep = all.takeLast(maxMessages).map { it.id }.toMutableSet()
+
+        // Tool messages whose parent assistant message is kept must survive.
+        val assistantToolCallIds = all
+            .filter { it.id in keep && it.role == "assistant" && it.toolCallsJson != null }
             .flatMap { entity ->
                 entity.toolCallsJson?.let { jsonStr ->
-                    try {
-                        val toolCalls = json.decodeFromString(
-                            ListSerializer(ToolCall.serializer()),
-                            jsonStr
-                        )
-                        toolCalls.map { it.id }
-                    } catch (e: Exception) { emptyList() }
+                    runCatching {
+                        json.decodeFromString(ListSerializer(WireToolCall.serializer()), jsonStr)
+                            .map { it.id }
+                    }.getOrDefault(emptyList())
                 } ?: emptyList()
-            }.toSet()
-        val toolKeepIds = all.filter { it.role == "tool" && it.toolCallId in assistantToolCallIds }.map { it.id }
-        assistantKeepIds.addAll(toolKeepIds)
-        dao.trimToIds(assistantKeepIds)
+            }
+            .toSet()
+
+        all.filter { it.role == "tool" && it.toolCallId in assistantToolCallIds }
+            .forEach { keep.add(it.id) }
+
+        dao.trimToIds(keep)
     }
 
     /**
-     * Returns the last [MAX_MESSAGES] messages mapped to [Message] in
-     * chronological (oldest-first) order, suitable for sending to the LLM.
+     * History for the LLM: last [maxMessages] messages, oldest first, with
+     * broken tool pairs removed position-independently (see class doc).
      */
     suspend fun getHistoryForLLM(): List<Message> {
-        return dao.recentDesc(MAX_MESSAGES)
+        val window = dao.recentDesc(maxMessages)
             .reversed()
             .map { it.toMessage() }
+
+        val assistantToolCallIds = window
+            .filter { it.role == "assistant" }
+            .flatMapTo(mutableSetOf()) { msg -> msg.toolCalls.orEmpty().map { call -> call.id } }
+        val resultIds = window
+            .filter { it.role == "tool" && it.toolCallId != null }
+            .mapTo(mutableSetOf()) { it.toolCallId!! }
+
+        return window.mapNotNull { msg ->
+            when {
+                // A tool result without its assistant in the window is dropped.
+                msg.role == "tool" ->
+                    msg.takeIf { it.toolCallId != null && it.toolCallId in assistantToolCallIds }
+
+                // An assistant keeps only ids that actually have results; if
+                // none remain the row survives with content but no tool_calls.
+                msg.role == "assistant" && !msg.toolCalls.isNullOrEmpty() -> {
+                    val paired = msg.toolCalls!!.filter { it.id in resultIds }
+                    when (paired.size) {
+                        msg.toolCalls!!.size -> msg
+                        0 -> msg.copy(toolCalls = null)
+                        else -> msg.copy(toolCalls = paired)
+                    }
+                }
+
+                else -> msg
+            }
+        }
     }
 
-    suspend fun getHistory(): List<Message> = getHistoryForLLM()
+    /** Live transcript for the UI, newest last. */
+    fun transcriptLive(limit: Int = 100): Flow<List<Message>> =
+        dao.recentDescLive(limit).map { list -> list.reversed().map { it.toMessage() } }
 
     suspend fun clear() {
         dao.clear()
@@ -67,19 +122,22 @@ class ConversationManager(private val dao: MessageDao) {
         role = role,
         content = content,
         name = name,
-        toolCallsJson = toolCalls?.let { json.encodeToString(ListSerializer(com.jarvis.assistant.contracts.ToolCall.serializer()), it) },
-        toolCallId = toolCallId
+        toolCallsJson = toolCalls?.let { calls ->
+            json.encodeToString(ListSerializer(WireToolCall.serializer()), calls.map { it.toWire() })
+        },
+        toolCallId = toolCallId,
     )
 
     private fun MessageEntity.toMessage() = Message(
         role = role,
         content = content,
         name = name,
-        toolCalls = toolCallsJson?.let { json.decodeFromString(ListSerializer(com.jarvis.assistant.contracts.ToolCall.serializer()), it) },
-        toolCallId = toolCallId
+        toolCalls = toolCallsJson?.let {
+            runCatching {
+                json.decodeFromString(ListSerializer(WireToolCall.serializer()), it)
+                    .map { wire -> wire.toDomain() }
+            }.getOrNull()
+        },
+        toolCallId = toolCallId,
     )
-
-    companion object {
-        const val MAX_MESSAGES: Int = 20
-    }
 }

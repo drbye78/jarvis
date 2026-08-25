@@ -2,6 +2,13 @@ package com.jarvis.assistant.audio
 
 import java.util.concurrent.ConcurrentLinkedDeque
 
+/**
+ * Small bounded buffer of recent frames used for pre-subscription recovery:
+ * when a listening session opens, frames captured between the wake word and
+ * stream start are drained so the first word is not clipped.
+ *
+ * Frames stored here must be private snapshots (see [AudioPipeline]).
+ */
 class AudioRingBuffer(private val capacity: Int) {
     private val deque = ConcurrentLinkedDeque<ShortArray>()
 
