@@ -12,7 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.jarvis.assistant.data.AlarmEntity
+import com.jarvis.assistant.data.ScheduledAlertEntity
 import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.tools.AndroidAlarmScheduler
 import kotlinx.coroutines.flow.collectLatest
@@ -43,19 +43,19 @@ class AlarmsActivity : AppCompatActivity() {
         findViewById<Button>(R.id.addAlarmButton).setOnClickListener { showAddDialog() }
 
         lifecycleScope.launch {
-            AppDatabase.getInstance(this@AlarmsActivity).alarmDao().allLive()
+            AppDatabase.getInstance(this@AlarmsActivity).alarmDao().alarmsLive()
                 .collectLatest { adapter.submit(it) }
         }
     }
 
-    private fun toggle(alarm: AlarmEntity, enabled: Boolean) {
+    private fun toggle(alarm: ScheduledAlertEntity, enabled: Boolean) {
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@AlarmsActivity).alarmDao()
             AndroidAlarmScheduler(this@AlarmsActivity, dao).setEnabled(alarm.id, enabled)
         }
     }
 
-    private fun delete(alarm: AlarmEntity) {
+    private fun delete(alarm: ScheduledAlertEntity) {
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@AlarmsActivity).alarmDao()
             AndroidAlarmScheduler(this@AlarmsActivity, dao).cancel(alarm.id)
@@ -86,13 +86,13 @@ class AlarmsActivity : AppCompatActivity() {
 }
 
 class AlarmListAdapter(
-    private val onToggle: (AlarmEntity, Boolean) -> Unit,
-    private val onDelete: (AlarmEntity) -> Unit,
+    private val onToggle: (ScheduledAlertEntity, Boolean) -> Unit,
+    private val onDelete: (ScheduledAlertEntity) -> Unit,
 ) : RecyclerView.Adapter<AlarmListAdapter.VH>() {
 
-    private val items = mutableListOf<AlarmEntity>()
+    private val items = mutableListOf<ScheduledAlertEntity>()
 
-    fun submit(list: List<AlarmEntity>) {
+    fun submit(list: List<ScheduledAlertEntity>) {
         items.clear()
         items.addAll(list)
         notifyDataSetChanged()
@@ -109,7 +109,10 @@ class AlarmListAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val alarm = items[position]
         holder.label.text = alarm.label
-        holder.time.text = "%02d:%02d".format(alarm.hour, alarm.minute)
+        // Unified store has no hour/minute columns; render from the trigger.
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = alarm.triggerAtMillis }
+        holder.time.text =
+            "%02d:%02d".format(cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE))
         holder.repeat.text = if (alarm.repeatDaily) "ежедневно" else "однократно"
         holder.enabled.isChecked = alarm.enabled
         holder.enabled.setOnCheckedChangeListener { _, checked ->
