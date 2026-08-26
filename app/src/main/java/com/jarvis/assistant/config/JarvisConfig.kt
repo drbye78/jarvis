@@ -39,7 +39,21 @@ data class JarvisConfig(
 
     // History
     val historyMaxMessages: Int = 20,
-)
+
+    // Audio pre-roll (M8): how much recent mic audio the ring buffer keeps so
+    // the first words are not clipped between wake word and ASR stream open.
+    val preRollMs: Long = DEFAULT_PRE_ROLL_MS,
+
+    // Barge-in policy (M7): interrupting TTS playback requires a repeated wake
+    // word within [bargeInRepeatWindowMs] unless [bargeInSingleShot] is set.
+    val bargeInRepeatWindowMs: Long = 1_200,
+    val bargeInSingleShot: Boolean = false,
+) {
+    companion object {
+        /** Single source of truth for the pre-roll default ([AudioPipeline] references it). */
+        const val DEFAULT_PRE_ROLL_MS = 3_000L
+    }
+}
 
 /**
  * User-facing provider configuration (Settings screen). Persisted in plain
