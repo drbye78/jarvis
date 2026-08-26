@@ -1,5 +1,6 @@
 package com.jarvis.assistant.audio
 
+import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.contracts.AudioSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import kotlin.coroutines.coroutineContext
 
 /**
  * Owns an [AudioSource] and a SINGLE producer coroutine — the only code path
@@ -21,11 +23,35 @@ import timber.log.Timber
  * ring buffer and the SharedFlow. Previously the ring buffer retained aliased
  * buffers that were overwritten by the next reads, corrupting the
  * pre-subscription recovery audio fed to ASR.
+ *
+ * M8: ring capacity derives from [JarvisConfig.preRollMs] instead of a fixed
+ * 160 ms; evictions of unread pre-roll frames are counted and logged.
+ *
+ * m5: when the source reports itself not started/closed ([IllegalStateException]
+ * from [AudioSource.read]) the producer exits cleanly with a single log line
+ * instead of spamming retry delays; [start] revives it.
  */
 class AudioPipeline(
     private val scope: CoroutineScope,
     private val source: AudioSource,
+    private val preRollMs: Long = JarvisConfig.DEFAULT_PRE_ROLL_MS,
 ) {
+    companion object {
+        /** One capture frame = 20 ms @ 16 kHz (320 samples), see [AudioRecordSource]. */
+        const val FRAME_MS = 20L
+
+        /** After the first eviction, re-log only every Nth eviction to avoid log floods. */
+        private const val EVICTION_LOG_STRIDE = 50L
+
+        /**
+         * Ring capacity in frames for a given pre-roll window. Coerced so even
+         * degenerate config values keep at least one frame of headroom.
+         * Default 3000 ms / 20 ms = 150 frames ≈ 96 KB at 320 samples × 2 bytes.
+         */
+        fun ringCapacity(preRollMs: Long): Int =
+            (preRollMs.coerceAtLeast(FRAME_MS) / FRAME_MS).toInt()
+    }
+
     private val _frames = MutableSharedFlow<ShortArray>(
         extraBufferCapacity = 10,
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
@@ -33,40 +59,70 @@ class AudioPipeline(
 
     val frames: Flow<ShortArray> = _frames
 
-    val ringBuffer = AudioRingBuffer(8)
+    val ringBuffer = AudioRingBuffer(ringCapacity(preRollMs))
 
     @Volatile private var running = false
     private var producerJob: Job? = null
 
     init {
-        producerJob = scope.launch {
-            while (isActive) {
-                if (!running) {
-                    delay(10)
-                    continue
-                }
-                try {
-                    val frame = source.read()
-                    if (frame.isNotEmpty()) {
-                        // Single defensive copy shared by ring buffer and flow.
-                        val snapshot = frame.copyOf()
-                        ringBuffer.add(snapshot)
-                        _frames.emit(snapshot)
+        ensureProducer()
+    }
+
+    private fun ensureProducer() {
+        if (producerJob?.isActive == true) return
+        producerJob = scope.launch { runProducer() }
+    }
+
+    private suspend fun runProducer() {
+        var loggedEvictions = 0L
+        while (coroutineContext.isActive) {
+            if (!running) {
+                delay(10)
+                continue
+            }
+            try {
+                val frame = source.read()
+                if (frame.isNotEmpty()) {
+                    // Single defensive copy shared by ring buffer and flow.
+                    val snapshot = frame.copyOf()
+                    ringBuffer.add(snapshot)
+                    val evicted = ringBuffer.evictionCount
+                    if (evicted > loggedEvictions &&
+                        (loggedEvictions == 0L || evicted - loggedEvictions >= EVICTION_LOG_STRIDE)
+                    ) {
+                        loggedEvictions = evicted
+                        Timber.w(
+                            "Pre-roll overflow: %d unread frames evicted so far (capacity=%d frames)",
+                            evicted,
+                            ringBuffer.capacity,
+                        )
                     }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Timber.w(e, "AudioPipeline read error")
-                    delay(100)
+                    _frames.emit(snapshot)
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: IllegalStateException) {
+                // Source not started / closed underneath us (m5): producing is
+                // pointless until the next start(); exit cleanly, once.
+                // Log FIRST: isRunning()==false must be the LAST observable
+                // event, so observers never miss this line.
+                Timber.w(e, "Audio source unavailable — pipeline producer exiting cleanly")
+                running = false
+                return
+            } catch (e: Exception) {
+                Timber.w(e, "AudioPipeline read error")
+                delay(100)
             }
         }
     }
 
     fun start() {
-        if (running) return
-        running = true
-        source.start()
+        if (!running) {
+            running = true
+            source.start()
+        }
+        // Revive a producer that exited cleanly on an unavailable source.
+        ensureProducer()
     }
 
     fun stop() {

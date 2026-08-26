@@ -17,13 +17,33 @@ class AudioRecordSource(
     private val spec: AudioSpec = AudioSpec.MIC,
 ) : AudioSource {
 
+    companion object {
+        /**
+         * Pure decision (m5): fail fast when the framework reports a broken
+         * buffer size instead of accepting a source that can never deliver
+         * audio. JVM-testable without the framework call itself.
+         */
+        internal fun validatedBufferSize(raw: Int, sampleRate: Int): Int {
+            if (raw <= 0) {
+                throw IllegalStateException(
+                    "AudioRecord.getMinBufferSize returned $raw at ${sampleRate}Hz/mono/16-bit — microphone source unusable",
+                )
+            }
+            return raw
+        }
+    }
+
     private var audioRecord: android.media.AudioRecord? = null
     private var echoCanceler: AcousticEchoCanceler? = null
 
-    private val bufferSize = android.media.AudioRecord.getMinBufferSize(
+    // Fail fast (constructor-time) on a degenerate getMinBufferSize result.
+    private val bufferSize = validatedBufferSize(
+        android.media.AudioRecord.getMinBufferSize(
+            spec.sampleRate,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+        ),
         spec.sampleRate,
-        AudioFormat.CHANNEL_IN_MONO,
-        AudioFormat.ENCODING_PCM_16BIT,
     )
 
     // 20 ms @ 16 kHz == 320 samples, matching the Silero VAD frame size.
