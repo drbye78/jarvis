@@ -1,5 +1,6 @@
 package com.jarvis.assistant.tools
 
+import com.jarvis.assistant.llm.await
 import com.jarvis.assistant.util.JsonOut
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -77,10 +78,12 @@ class OpenMeteoWeatherClient(private val httpClient: OkHttpClient) : WeatherClie
         }.toString()
     }
 
-    private fun httpGet(url: String): String? = try {
-        httpClient.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+    private suspend fun httpGet(url: String): String? = try {
+        httpClient.newCall(Request.Builder().url(url).build()).await().use { resp ->
             if (resp.isSuccessful) resp.body?.string() else null
         }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e // cancellation must not be swallowed into "unreachable"
     } catch (e: Exception) {
         null
     }

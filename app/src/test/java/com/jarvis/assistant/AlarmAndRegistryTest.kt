@@ -7,6 +7,7 @@ import com.jarvis.assistant.tools.AlarmTimes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Calendar
@@ -118,5 +119,35 @@ class ToolRegistryTest {
             "object",
             (defs[0].parameters["type"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
         )
+    }
+
+    /** Success payload that legitimately CONTAINS the literal `"error` text —
+     *  the old substring sniffing misclassified this as an error (m1). */
+    private class ErrorWordTool : ToolContract {
+        override val name = "errword"
+        override val description = "payload mentions error"
+        override val parametersJson = """{"type":"object","properties":{}}"""
+        override suspend fun execute(arguments: String) =
+            """{"error_history":["old"],"status":"ok"}"""
+    }
+
+    @Test
+    fun `success payload mentioning error key is not flagged as error`() = runBlocking {
+        val registry = ToolRegistry(listOf(ErrorWordTool()))
+        val structured = registry.executeResult(FunctionCall("errword", "{}"))
+        assertFalse(structured.isError)
+        // Legacy facade agrees with the structured classification.
+        assertFalse(registry.execute(FunctionCall("errword", "{}")).isError)
+    }
+
+    @Test
+    fun `executeResult classifies outcomes via the isError flag`() = runBlocking {
+        val registry =
+            ToolRegistry(listOf(OkTool(), ThrowingTool(), HangingTool()), perToolTimeoutMs = 100)
+
+        assertFalse(registry.executeResult(FunctionCall("ok", "{}")).isError)
+        assertTrue(registry.executeResult(FunctionCall("boom", "{}")).isError)
+        assertTrue(registry.executeResult(FunctionCall("hang", "{}")).isError)
+        assertTrue(registry.executeResult(FunctionCall("nope", "{}")).isError)
     }
 }
