@@ -11,7 +11,13 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import com.jarvis.assistant.R
+import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.tools.AlarmRinger
+import com.jarvis.assistant.tools.AlarmReceiver
+import com.jarvis.assistant.tools.AndroidAlarmScheduler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
@@ -22,14 +28,19 @@ import kotlinx.coroutines.launch
  * Doubles as the "ringer service": launching this activity IS the ring; it
  * stops ringer + notification in onDestroy, with a 5-minute auto-timeout
  * enforced inside [AlarmRinger].
+ *
+ * M3: ALL scheduling math is delegated to [AndroidAlarmScheduler]. The daily
+ * re-arm happens in onCreate via the IDEMPOTENT scheduler.onFired(id) — not
+ * in button handlers — so back, HOME, process death and the auto-timeout
+ * path still schedule tomorrow's occurrence.
  */
 class AlarmRingingActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val label = intent.getStringExtra("label") ?: "Будильник"
-        val isTimer = intent.getBooleanExtra("is_timer", false)
-        val alarmId = intent.getLongExtra("alarm_id", -1L)
+        val label = intent.getStringExtra(AlarmReceiver.EXTRA_LABEL) ?: "Будильник"
+        val isTimer = intent.getBooleanExtra(AlarmReceiver.EXTRA_IS_TIMER, false)
+        val alertId = intent.getIntExtra(AlarmReceiver.EXTRA_ALERT_ID, -1)
 
         setContentView(R.layout.activity_alarm_ringing)
         window.addFlags(
@@ -43,60 +54,33 @@ class AlarmRingingActivity : Activity() {
             if (isTimer) getString(R.string.timer_done) else currentTime()
 
         findViewById<android.widget.Button>(R.id.btnDismiss).setOnClickListener {
-            AlarmRinger.stop(this)
-            stopRingingNotification()
-            // Daily alarms stay scheduled for tomorrow (setAlarmClock is
-            // one-shot, so re-arm now).
-            if (alarmId >= 0 && !isTimer) {
-                rearmDaily(alarmId)
-            }
+            stopRingingUi()
+            // No scheduling here: onFired already ran below in onCreate.
             finish()
         }
 
         findViewById<android.widget.Button>(R.id.btnSnooze).setOnClickListener {
-            AlarmRinger.stop(this)
-            stopRingingNotification()
-            if (alarmId >= 0 && !isTimer) {
-                snooze(alarmId)
+            stopRingingUi()
+            if (alertId >= 0) {
+                ioScope.launch { runCatching { scheduler().snooze(alertId) } }
             }
             finish()
         }
 
         postRingingNotification(label)
         AlarmRinger.start(this)
-    }
 
-    private fun rearmDaily(alarmId: Long) {
-        val scope = kotlinx.coroutines.CoroutineScope(
-            kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
-        )
-        scope.launch {
-            try {
-                val dao = com.jarvis.assistant.data.AppDatabase
-                    .getInstance(this@AlarmRingingActivity).alarmDao()
-                val scheduler = com.jarvis.assistant.tools.AndroidAlarmScheduler(
-                    this@AlarmRingingActivity, dao
-                )
-                scheduler.setEnabled(alarmId, true)
-            } catch (e: Exception) {
-                // Alarm may have been one-shot or deleted — fine.
-            }
+        if (alertId >= 0) {
+            ioScope.launch { runCatching { scheduler().onFired(alertId) } }
         }
     }
 
-    private fun snooze(alarmId: Long) {
-        val trigger = System.currentTimeMillis() + 10 * 60 * 1000L
-        val am = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-        val intent = Intent(this, com.jarvis.assistant.tools.AlarmReceiver::class.java).apply {
-            action = com.jarvis.assistant.tools.AlarmReceiver.ACTION_ALARM_FIRED
-            putExtra("alarm_id", alarmId)
-            putExtra("label", getString(R.string.snooze_label))
-        }
-        val pending = android.app.PendingIntent.getBroadcast(
-            this, (alarmId + 100_000).toInt(), intent,
-            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
-        )
-        am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, trigger, pending)
+    private fun scheduler(): AndroidAlarmScheduler =
+        AndroidAlarmScheduler(this, AppDatabase.getInstance(this).alarmDao())
+
+    private fun stopRingingUi() {
+        AlarmRinger.stop(this)
+        stopRingingNotification()
     }
 
     private fun postRingingNotification(label: String) {
@@ -140,5 +124,13 @@ class AlarmRingingActivity : Activity() {
 
     companion object {
         private const val ALARM_NOTIFICATION_ID = 500
+
+        /**
+         * Application-lifetime scope shared by every ringing instance: a fast
+         * dismiss destroys the activity before its launch dispatches, and the
+         * idempotent onFired/snooze writes MUST still complete (they are the
+         * only re-arm path). Short-lived DB writes only; never cancelled.
+         */
+        private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }

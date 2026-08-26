@@ -6,18 +6,26 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 /**
- * Version 1 of the rebuilt schema (no backward compatibility is kept from the
- * v2.x app — upgrading over an old install falls back to a destructive
- * migration, which is intentional and documented in PLAN.md).
+ * Version 2: the v1 `alarms` table is replaced by the unified
+ * `scheduled_alerts` store (PLAN.md §3.3). No backward compatibility is kept:
+ * `fallbackToDestructiveMigration` drops ALL tables on any version jump —
+ * including chat history — which is intentional and accepted (v1 → v2 wipes
+ * old alarm rows and messages).
+ *
+ * `alarmDao()` keeps its historical name (returning the new [AlertDao])
+ * because FunctionRouter — owned by another lane — constructs the scheduler
+ * through it.
  */
 @Database(
-    entities = [MessageEntity::class, AlarmEntity::class],
-    version = 1,
+    entities = [MessageEntity::class, ScheduledAlertEntity::class],
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
-    abstract fun alarmDao(): AlarmDao
+
+    /** Unified alert store accessor; name kept for cross-lane call-site parity. */
+    abstract fun alarmDao(): AlertDao
 
     companion object {
         @Volatile

@@ -14,8 +14,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Starts the assistant after boot / app update AND re-arms every persisted
- * alarm (the old implementation lost all alarms on reboot because they only
- * lived inside AlarmManager).
+ * alert through the unified scheduler: alarms always (dailies rolled past
+ * missed days) and timers while still in the future — before the unified
+ * store timers vanished on reboot entirely (M9/S3).
  *
  * A fresh boot clears the userStopped flag: the appliance profile expects the
  * assistant to come back after a reboot.
@@ -29,12 +30,12 @@ class BootReceiver : BroadcastReceiver() {
         }
         val prefs = AppPrefs(context)
 
-        // Re-arm persisted alarms first — they must survive reboots.
+        // Re-arm persisted alerts first — they must survive reboots.
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val dao = AppDatabase.getInstance(context).alarmDao()
-                AndroidAlarmScheduler(context, dao).rescheduleAll()
+                AndroidAlarmScheduler(context, dao).rescheduleAllOnBoot()
             } finally {
                 pending.finish()
             }
