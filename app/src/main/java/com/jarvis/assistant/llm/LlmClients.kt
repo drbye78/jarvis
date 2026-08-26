@@ -5,8 +5,10 @@ import com.jarvis.assistant.model.LlmChunk
 import com.jarvis.assistant.model.ToolCall
 import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.wire.toWire
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.launch
@@ -91,55 +93,71 @@ abstract class SseLlmClient(
                 val httpCall = httpClient.newCall(httpRequest)
                 call = httpCall
 
-                val response = httpCall.execute()
-                if (!response.isSuccessful) {
-                    val err = runCatching { response.body?.string() }.getOrNull().orEmpty()
-                    response.close()
-                    close(RuntimeException("LLM request failed (HTTP ${response.code}): $err"))
-                    return@launch
-                }
-                val source = response.body?.source()
-                    ?: run {
-                        close(RuntimeException("LLM returned an empty body"))
+                // Cancellable open (M5): barge-in during connect/headers aborts
+                // the in-flight request instead of waiting for the timeout.
+                val response = httpCall.await()
+                try {
+                    // Body lifecycle (M4): closed on EVERY exit below — normal
+                    // EOF, [DONE], error, and cancellation — via this finally.
+                    if (!response.isSuccessful) {
+                        val err = runCatching { response.body?.string() }.getOrNull().orEmpty()
+                        close(RuntimeException("LLM request failed (HTTP ${response.code}): $err"))
                         return@launch
                     }
+                    val source = response.body?.source()
+                        ?: run {
+                            close(RuntimeException("LLM returned an empty body"))
+                            return@launch
+                        }
 
-                while (true) {
-                    val line = try {
-                        source.readUtf8Line() ?: break // EOF
-                    } catch (e: IOException) {
-                        if (httpCall.isCanceled()) return@launch // barge-in: stop silently
-                        close(e)
-                        return@launch
+                    while (true) {
+                        // Stop consuming mid-stream as soon as we are cancelled.
+                        ensureActive()
+                        val line = try {
+                            source.readUtf8Line() ?: break // EOF
+                        } catch (e: IOException) {
+                            if (httpCall.isCanceled()) return@launch // barge-in: stop silently
+                            close(e)
+                            return@launch
+                        }
+
+                        val data = SseParser.dataPayload(line) ?: continue
+                        if (SseParser.isDone(data)) {
+                            finalizeToolCalls()
+                            trySend(LlmChunk.Done)
+                            break
+                        }
+
+                        val parsed = SseParser.parseChunk(json, data) ?: continue
+
+                        parsed.text?.takeIf { it.isNotEmpty() }?.let { trySend(LlmChunk.Text(it)) }
+
+                        for (d in parsed.toolDeltas) {
+                            val a = acc.getOrPut(d.index) { ToolCallAccum(d.index) }
+                            if (d.id != null) a.id = d.id
+                            if (d.name != null) a.name = d.name
+                            a.args.append(d.argsDelta)
+                            trySend(LlmChunk.FunctionCallDelta(d.index, d.name, d.argsDelta))
+                        }
+
+                        if (parsed.finishReason != null) {
+                            finalizeToolCalls()
+                            acc = mutableMapOf() // defensive: no double-finalize
+                        }
                     }
-
-                    val data = SseParser.dataPayload(line) ?: continue
-                    if (SseParser.isDone(data)) {
-                        finalizeToolCalls()
-                        trySend(LlmChunk.Done)
-                        break
-                    }
-
-                    val parsed = SseParser.parseChunk(json, data) ?: continue
-
-                    parsed.text?.takeIf { it.isNotEmpty() }?.let { trySend(LlmChunk.Text(it)) }
-
-                    for (d in parsed.toolDeltas) {
-                        val a = acc.getOrPut(d.index) { ToolCallAccum(d.index) }
-                        if (d.id != null) a.id = d.id
-                        if (d.name != null) a.name = d.name
-                        a.args.append(d.argsDelta)
-                        trySend(LlmChunk.FunctionCallDelta(d.index, d.name, d.argsDelta))
-                    }
-
-                    if (parsed.finishReason != null) {
-                        finalizeToolCalls()
-                        acc = mutableMapOf() // defensive: no double-finalize
-                    }
+                    // Normal end ([DONE] or EOF): finalize, emit Done, and
+                    // CLOSE the channel — the producer ending alone does not
+                    // complete a channelFlow parked in awaitClose, and without
+                    // close() every collector hangs until its timeout (the
+                    // same defect commit 3999acb fixed in the v3 client).
+                    finalizeToolCalls()
+                    trySend(LlmChunk.Done)
+                    close()
+                } finally {
+                    runCatching { response.close() }
                 }
-                // EOF without [DONE]: still finalize tool calls and emit Done.
-                finalizeToolCalls()
-                trySend(LlmChunk.Done)
+            } catch (e: CancellationException) {
+                throw e // never mask cancellation as a stream error
             } catch (e: IOException) {
                 if (call?.isCanceled() != true) close(e)
             } catch (e: Exception) {

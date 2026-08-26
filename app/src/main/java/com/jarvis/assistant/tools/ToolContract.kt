@@ -30,6 +30,13 @@ data class ToolExecution(
     val isError: Boolean,
 )
 
+/**
+ * Structured outcome of a tool execution (m1). Classification is carried by
+ * [isError] instead of sniffing the content for an `"error"` substring —
+ * legitimate payloads may legitimately contain that key.
+ */
+data class ToolResult(val content: String, val isError: Boolean = false)
+
 /** Tool facade used by the session layer (interface for JVM testing). */
 interface ToolExecutor {
     fun getToolDefinitions(): List<ToolDefinition>
@@ -62,21 +69,29 @@ class ToolRegistry(
         buildJsonObject { }
     }
 
-    suspend fun execute(call: FunctionCall): ToolExecution = try {
+    /**
+     * Classified execution (m1): success → isError=false; execution exception
+     * or timeout → isError=true with JSON error content. The old
+     * `result.contains("\"error\"")` substring sniffing is gone — a payload
+     * that merely mentions "error" is no longer misclassified.
+     */
+    suspend fun executeResult(call: FunctionCall): ToolResult = try {
         val tool = tools.find { it.name == call.name }
         if (tool == null) {
-            ToolExecution(call, """{"error":"Unknown function: ${call.name}"}""", isError = true)
+            ToolResult("""{"error":"Unknown function: ${call.name}"}""", isError = true)
         } else {
-            val result = withTimeout(perToolTimeoutMs) { tool.execute(call.arguments) }
-            ToolExecution(call, result, isError = result.contains("\"error\""))
+            ToolResult(withTimeout(perToolTimeoutMs) { tool.execute(call.arguments) })
         }
     } catch (e: TimeoutCancellationException) {
         Timber.w("Tool %s timed out", call.name)
-        ToolExecution(call, """{"error":"Tool timed out"}""", isError = true)
+        ToolResult("""{"error":"Tool timed out"}""", isError = true)
     } catch (e: Exception) {
         Timber.e(e, "Tool %s failed", call.name)
-        ToolExecution(call, """{"error":"Tool execution failed: ${e.message}"}""", isError = true)
+        ToolResult("""{"error":"Tool execution failed: ${e.message}"}""", isError = true)
     }
+
+    suspend fun execute(call: FunctionCall): ToolExecution =
+        executeResult(call).let { ToolExecution(call, it.content, it.isError) }
 }
 
 /** Shared argument parsing helper for tools. */
