@@ -48,6 +48,12 @@ import java.util.Locale
  *   the assistant STAYS stopped (the old watchdog resurrected it within 15
  *   minutes). If the SYSTEM kills the process there is no onDestroy, the
  *   alarm survives, and the service revives — exactly the desired split.
+ * - **Watchdog cancel is user-stop-only (m7)**: onDestroy cancels the alarm
+ *   only when `userStopped` is set, so system-driven teardowns (Apply
+ *   restart) can never strand the service dead.
+ * - **Ducking always recovers (m8)**: teardown unducks unconditionally.
+ * - **Mute is a user intent (m12)**: [setMuted] stops the pipeline AND
+ *   cancels the active session; the power receiver never silently unmutes.
  * - **Media-key duck fallback now resumes** playback on unduck.
  */
 class JarvisForegroundService : Service() {
@@ -194,7 +200,9 @@ class JarvisForegroundService : Service() {
 
                     Intent.ACTION_POWER_CONNECTED -> {
                         if (::wakeLock.isInitialized && !wakeLock.isHeld) wakeLock.acquire()
-                        graph?.audioPipeline?.start()
+                        // m12: restart respects mute — the receiver must never
+                        // silently undo a user's mute.
+                        graph?.sessionManager?.onPowerConnected()
                     }
                 }
             }
@@ -358,10 +366,15 @@ class JarvisForegroundService : Service() {
     // ------------------------------------------------------------------
 
     override fun onDestroy() {
-        // Explicit stop → cancel the watchdog so the assistant stays stopped.
-        // (A system process kill never reaches onDestroy, so the watchdog
-        // survives that path and revives the service — intended.)
-        cancelRestartAlarm()
+        // m8: recover ducking no matter which state edge wedged — a teardown
+        // must never leave paused media paused forever.
+        runCatching { unduck() }
+        // m7: only an EXPLICIT user stop may cancel the watchdog. Any other
+        // teardown (system service-stop, Apply-restart handoff) leaves the
+        // restart alarm armed so the assistant revives.
+        if (prefs.userStopped) {
+            cancelRestartAlarm()
+        }
         runCatching { powerReceiver?.let { unregisterReceiver(it) } }
         graph?.shutdown()
         graph = null
@@ -374,6 +387,15 @@ class JarvisForegroundService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
+
+    /**
+     * m12: user-facing mic mute. Delegates to the session manager so muting
+     * also CANCELS the active session and survives power-receiver restarts;
+     * UI can call this via the binder in a later phase.
+     */
+    fun setMuted(muted: Boolean) {
+        graph?.sessionManager?.setMuted(muted)
+    }
 
     private val binder = object : android.os.Binder() {
         fun getService(): JarvisForegroundService = this@JarvisForegroundService

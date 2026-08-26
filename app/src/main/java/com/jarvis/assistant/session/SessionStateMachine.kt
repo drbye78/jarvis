@@ -15,6 +15,9 @@ sealed interface SessionEvent {
     data object LlmDone : SessionEvent
     data object PlaybackStarted : SessionEvent
     data object ErrorOccurred : SessionEvent
+
+    /** Explicit cancellation of everything (cancelAll) — global reset to IDLE (M6). */
+    data object Cancelled : SessionEvent
 }
 
 /**
@@ -22,7 +25,8 @@ sealed interface SessionEvent {
  * event->state mapping that happily accepted impossible transitions (e.g.
  * PlaybackStarted from IDLE). Here an explicit transition table defines the
  * legal edges; unknown pairs are REJECTED (state kept + warning logged), and
- * the WakeWordOrBargeIn and ErrorOccurred events are the only global resets.
+ * the WakeWordOrBargeIn, ErrorOccurred and Cancelled events are the only
+ * global resets.
  */
 object SessionTransitions {
     private val table: Map<Pair<AssistantState, SessionEvent>, AssistantState> = buildMap {
@@ -45,6 +49,7 @@ object SessionTransitions {
         // Global events valid from any state.
         SessionEvent.WakeWordOrBargeIn -> AssistantState.LISTENING
         SessionEvent.ErrorOccurred -> AssistantState.IDLE
+        SessionEvent.Cancelled -> AssistantState.IDLE
         else -> table[current to event]
     }
 }
