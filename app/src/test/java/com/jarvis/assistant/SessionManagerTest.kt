@@ -787,6 +787,10 @@ class SessionManagerTest {
             }
             assertEquals("", h.manager.partialTranscript.value)
 
+            // Let the global post-accept debounce (600 ms) elapse so the next
+            // wake word is a fresh activation, not a trailing echo of turn one.
+            delay(700)
+
             // Second turn: a server failure clears the partial too.
             h.wake.detections.emit(Detection.WakeWord)
             withTimeout(5_000) { while (h.asr.streams.size < 2) delay(20) }

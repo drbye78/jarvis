@@ -28,6 +28,7 @@ class FunctionRouter(
             CancelAlarmTool(appContext, alarmScheduler),
             ListAlarmsTool(appContext),
             SetTimerTool(alarmScheduler),
+            CancelTimerTool(appContext, alarmScheduler),
             WeatherTool(OpenMeteoWeatherClient(httpClient)),
         ) + DeviceTools(appContext).all(),
     )

@@ -5,6 +5,8 @@ import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.contracts.Detection
 import com.jarvis.assistant.contracts.DetectorState
 import com.jarvis.assistant.contracts.WakeWordDetector
+import com.jarvis.assistant.contracts.BargeInPolicy
+import com.jarvis.assistant.contracts.gatedBy
 import com.jarvis.assistant.llm.LlmClient
 import com.jarvis.assistant.model.AsrOutcome
 import com.jarvis.assistant.model.ChatRequest
@@ -97,7 +99,7 @@ class SessionManager(
     private val _muted = MutableStateFlow(false)
     val muted: StateFlow<Boolean> = _muted.asStateFlow()
 
-    @Volatile private var lastDetectionTime = 0L
+
     private var onErrorHandler: suspend (String) -> Unit = {}
 
     fun setOnError(handler: suspend (String) -> Unit) {
@@ -143,20 +145,19 @@ class SessionManager(
             return
         }
         detectionJob = scope.launch {
-            wakeWordDetector.detections().collect { detection ->
-                when (detection) {
-                    is Detection.DetectorError -> {
-                        reportFailure(null, "Ошибка движка wake word: ${detection.message}")
-                    }
+            wakeWordDetector.detections()
+                .gatedBy(BargeInPolicy.from(config), stateMachine.state)
+                .collect { detection ->
+                    when (detection) {
+                        is Detection.DetectorError -> {
+                            reportFailure(null, "Ошибка движка wake word: ${detection.message}")
+                        }
 
-                    Detection.WakeWord -> {
-                        val now = System.currentTimeMillis()
-                        if (now - lastDetectionTime < config.wakeWordCooldownMs) return@collect
-                        lastDetectionTime = now
-                        startSession()
+                        Detection.WakeWord -> {
+                            startSession()
+                        }
                     }
                 }
-            }
         }
     }
 
