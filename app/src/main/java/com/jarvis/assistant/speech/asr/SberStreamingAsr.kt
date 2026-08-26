@@ -81,8 +81,14 @@ class SberStreamingAsr(
         private val noSpeechTimeoutSec: Long,
     ) : AsrStream {
 
+        // m11: replay=1 redelivers a terminal event emitted in the window
+        // between open() and the session's subscription (an instant server
+        // error used to be dropped, hanging the session in LISTENING until
+        // the 90s cap); extraBufferCapacity keeps early emissions from being
+        // lost before the collector subscribes.
         private val _events = MutableSharedFlow<AsrEvent>(
-            extraBufferCapacity = 64,
+            replay = 1,
+            extraBufferCapacity = 16,
             onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
         )
         override val events: SharedFlow<AsrEvent> = _events.asSharedFlow()

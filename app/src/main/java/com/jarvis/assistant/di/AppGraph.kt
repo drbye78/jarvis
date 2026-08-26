@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.StateFlow
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -89,7 +90,10 @@ class AppGraph(
     val asrClient = SberStreamingAsr(
         tokenManager = tokenManager,
         channel = saluteChannel,
-        deadlineMs = config.asrStreamDeadlineMs,
+        // m11: the gRPC deadline must OUTLIVE the local maxUtteranceMs cap
+        // (90s) plus its grace window, or deadline-exceeded races/masks the
+        // local no-speech path and misclassifies the outcome.
+        deadlineMs = config.asrStreamDeadlineMs + 5_000,
     )
 
     val ttsClient: TtsClient = SaluteSpeechTts(tokenManager, saluteChannel)
@@ -122,6 +126,13 @@ class AppGraph(
         config = config,
         scope = scope,
     ).also { it.setOnError(onSessionError) }
+
+    /**
+     * m12: user mute intent. Owned by the SessionManager (so the semantics —
+     * stop pipeline + cancel active session + survive power-receiver restarts
+     * — stay JVM-testable); exposed here as the observation point for UI.
+     */
+    val muteState: StateFlow<Boolean> get() = sessionManager.muted
 
     fun start() {
         try {
