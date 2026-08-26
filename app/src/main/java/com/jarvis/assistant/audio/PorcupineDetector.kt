@@ -144,8 +144,28 @@ class PorcupineDetector(
     override fun detections(): Flow<Detection> = detectionsFlow
 
     fun setSensitivity(value: Float) {
-        // Sensitivity changes require engine rebuild; caller restarts the
-        // service, which rebuilds the detector with the new config.
+        // Sensitivity is baked into the native engine at build time, so a
+        // change requires rebuilding it. Swap under processMutex so no
+        // in-flight process() ever touches a half-replaced engine, and free
+        // the previous engine only after the new one is in place.
+        if (_state.value == DetectorState.Released) return
+        val newEngine = try {
+            engineFactory(value)
+        } catch (e: Exception) {
+            Timber.e(e, "Wake-word sensitivity rebuild failed; keeping current engine")
+            return
+        }
+        runBlocking {
+            processMutex.withLock {
+                val old = engine
+                engine = newEngine
+                try {
+                    old?.release()
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to release old wake-word engine on sensitivity change")
+                }
+            }
+        }
     }
 
     override fun release() {

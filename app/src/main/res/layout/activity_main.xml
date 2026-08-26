@@ -87,5 +87,22 @@
             android:minHeight="300dp"
             android:clipToPadding="false"
             android:paddingBottom="16dp" />
+
+        <!-- Live ASR partial: muted/translucent italic variant of the user
+             bubble so it reads as "in progress" and stays distinct from
+             finalized transcript lines. Hidden until the first partial arrives. -->
+        <TextView
+            android:id="@+id/partialText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="4dp"
+            android:background="#803F51B5"
+            android:maxWidth="280dp"
+            android:padding="12dp"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="italic"
+            android:visibility="gone" />
     </LinearLayout>
 </ScrollView>

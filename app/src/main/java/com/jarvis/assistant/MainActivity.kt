@@ -2,6 +2,7 @@ package com.jarvis.assistant
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -30,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var micButton: Button
     private lateinit var toggleButton: Button
     private lateinit var adapter: TranscriptAdapter
+    private lateinit var partialText: TextView
 
     private var micMuted = false
 
@@ -47,6 +49,7 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         micButton = findViewById(R.id.micButton)
         toggleButton = findViewById(R.id.toggleButton)
+        partialText = findViewById(R.id.partialText)
         adapter = TranscriptAdapter()
 
         findViewById<RecyclerView>(R.id.transcript).apply {
@@ -104,14 +107,16 @@ class MainActivity : AppCompatActivity() {
                 adapter.submit(messages)
             }
         }
-        // Status chip: poll graph presence, collect state while alive.
+        // Status chip + live partial: poll graph presence, collect while alive.
         lifecycleScope.launch {
             var collectedGraph: com.jarvis.assistant.di.AppGraph? = null
             var stateJob: kotlinx.coroutines.Job? = null
+            var partialJob: kotlinx.coroutines.Job? = null
             while (isActive) {
                 val graph = GraphHolder.graph
                 if (graph != null && graph !== collectedGraph) {
                     stateJob?.cancel()
+                    partialJob?.cancel()
                     collectedGraph = graph
                     stateJob = launch {
                         graph.stateMachine.state.collectLatest { state ->
@@ -119,11 +124,30 @@ class MainActivity : AppCompatActivity() {
                             statusText.text = labelFor(state)
                         }
                     }
+                    partialJob = launch {
+                        graph.sessionManager.partialTranscript.collectLatest { partial ->
+                            updatePartial(partial)
+                        }
+                    }
                 } else if (graph == null) {
                     collectedGraph = null
                 }
                 delay(500)
             }
+        }
+    }
+
+    /**
+     * Renders the live ASR partial as a muted, in-progress line. When the
+     * partial is cleared ("") the indicator hides so only finalized transcript
+     * lines remain visible.
+     */
+    private fun updatePartial(partial: String) {
+        if (partial.isBlank()) {
+            partialText.visibility = View.GONE
+        } else {
+            partialText.text = partial
+            partialText.visibility = View.VISIBLE
         }
     }
 

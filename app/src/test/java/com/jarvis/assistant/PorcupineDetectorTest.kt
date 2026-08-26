@@ -168,4 +168,28 @@ class PorcupineDetectorTest {
         detector.release()
         collector.cancel()
     }
+
+    @Test
+    fun `setSensitivity rebuilds engine and releases previous`() {
+        val built = AtomicInteger()
+        val builtWith = CopyOnWriteArrayList<Float>()
+        val released = AtomicInteger()
+        val engine = object : PorcupineEngine {
+            override fun process(chunk: ShortArray): Int = -1
+            override fun release() { released.incrementAndGet() }
+        }
+        val detector = PorcupineDetector(
+            frames = emptyFlow(),
+            context = null,
+            sensitivity = 0.6f,
+            engineFactory = { s -> built.incrementAndGet(); builtWith.add(s); engine },
+        )
+        assertEquals(1, built.get()) // initial build at 0.6f
+        detector.setSensitivity(0.9f)
+        assertEquals(2, built.get())
+        assertEquals(0.9f, builtWith[1])
+        assertEquals(1, released.get()) // previous engine released on swap
+        detector.release()
+        assertEquals(2, released.get()) // engine freed exactly once more
+    }
 }

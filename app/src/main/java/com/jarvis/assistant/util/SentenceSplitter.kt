@@ -54,6 +54,13 @@ fun String.splitSentences(): List<String> {
     return result
 }
 
+// Single-letter tokens are abbreviations only when the letter is a consonant
+// (в., с., к., т. …); a vowel (А., О.) is an initial and ends the sentence.
+private val CONSONANTS = setOf(
+    'б', 'в', 'г', 'д', 'ж', 'з', 'к', 'л', 'м', 'н',
+    'п', 'р', 'с', 'т', 'ф', 'х', 'ц', 'ч', 'ш', 'щ',
+)
+
 private fun isAbbreviationAt(text: String, dotIndex: Int): Boolean {
     var start = dotIndex - 1
     while (start >= 0 && (text[start].isLetter() || text[start] == '.')) start--
@@ -61,7 +68,7 @@ private fun isAbbreviationAt(text: String, dotIndex: Int): Boolean {
     if (start >= dotIndex) return false
     val token = text.substring(start, dotIndex).lowercase().replace(".", "")
     if (token.isEmpty()) return false
-    if (token.length == 1) return true
+    if (token.length == 1) return token[0] in CONSONANTS
     return token in ABBREVIATIONS
 }
 

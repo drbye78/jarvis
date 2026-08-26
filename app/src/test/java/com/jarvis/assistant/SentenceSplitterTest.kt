@@ -32,6 +32,20 @@ class SentenceSplitterTest {
         val parts = "Стоп…\nНовая строка".splitSentences()
         assertEquals(2, parts.size)
     }
+
+    @Test
+    fun `single consonant letter plus dot is not a boundary`() {
+        // "с." (страница) is a single-consonant abbreviation, not a boundary.
+        val parts = "с. 10".splitSentences()
+        assertEquals(1, parts.size)
+    }
+
+    @Test
+    fun `single vowel letter plus dot is a boundary`() {
+        // "А." is an initial, not an abbreviation: the dot ends the sentence.
+        val parts = "Слово. А.".splitSentences()
+        assertEquals(2, parts.size)
+    }
 }
 
 class SentenceBufferTest {
