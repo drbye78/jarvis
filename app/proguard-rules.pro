@@ -3,9 +3,9 @@
 -dontnote kotlinx.serialization.AnnotationsKt
 -keepclassmembers class kotlinx.serialization.json.** { *** Companion; }
 -keepclasseswithmembers class kotlinx.serialization.json.** { kotlinx.serialization.KSerializer serializer(...); }
--keep,includedescriptorclasses class com.jarvis.assistant.contracts.**$$serializer { *; }
--keepclassmembers class com.jarvis.assistant.contracts.** { *** Companion; }
--keepclasseswithmembers class com.jarvis.assistant.contracts.** { kotlinx.serialization.KSerializer serializer(...); }
+-keep,includedescriptorclasses class com.jarvis.assistant.wire.**$$serializer { *; }
+-keepclassmembers class com.jarvis.assistant.wire.** { *** Companion; }
+-keepclasseswithmembers class com.jarvis.assistant.wire.** { kotlinx.serialization.KSerializer serializer(...); }
 
 # Protobuf
 -keep class com.google.protobuf.** { *; }

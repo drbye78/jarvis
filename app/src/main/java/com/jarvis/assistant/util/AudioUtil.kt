@@ -28,10 +28,6 @@ class SampleAccumulator(private val chunkSize: Int) {
         count = remaining
         return result
     }
-
-    fun reset() {
-        count = 0
-    }
 }
 
 /** Little-endian 16-bit PCM conversions. */
@@ -42,17 +38,6 @@ fun ShortArray.toByteArray(): ByteArray {
         val v = this[i].toInt() and 0xFFFF
         out[i * 2] = (v and 0xFF).toByte()
         out[i * 2 + 1] = (v shr 8 and 0xFF).toByte()
-    }
-    return out
-}
-
-fun ByteArray.toShortArray(): ShortArray {
-    require(size % 2 == 0) { "ByteArray length must be even for 16-bit PCM" }
-    val out = ShortArray(size / 2)
-    for (i in out.indices) {
-        val lo = this[i * 2].toInt() and 0xFF
-        val hi = this[i * 2 + 1].toInt() and 0xFF
-        out[i] = (lo or (hi shl 8)).toShort()
     }
     return out
 }

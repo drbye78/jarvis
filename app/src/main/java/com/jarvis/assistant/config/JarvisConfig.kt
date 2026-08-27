@@ -6,7 +6,6 @@ package com.jarvis.assistant.config
  */
 data class JarvisConfig(
     // Porcupine wake word
-    val porcupineSensitivity: Float = 0.6f,
     val porcupineKeywordPath: String = "jarvis_ru.ppn",
 
     // Session
@@ -48,6 +47,10 @@ data class JarvisConfig(
     // word within [bargeInRepeatWindowMs] unless [bargeInSingleShot] is set.
     val bargeInRepeatWindowMs: Long = 1_200,
     val bargeInSingleShot: Boolean = false,
+
+    // Speech gRPC endpoint (saluteChannel target). Extracted from the hard-coded
+    // value previously in AppGraph so it is configurable in one place (P7/m15).
+    val llmEndpoint: String = "smartspeech.sber.ru:443",
 ) {
     companion object {
         /** Single source of truth for the pre-roll default ([AudioPipeline] references it). */

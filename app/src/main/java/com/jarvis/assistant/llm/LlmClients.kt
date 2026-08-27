@@ -60,7 +60,7 @@ abstract class SseLlmClient(
 
         // Blocking producer runs in a child coroutine so awaitClose stays reachable.
         val producer = launch(Dispatchers.IO) {
-            var acc = mutableMapOf<Int, ToolCallAccum>()
+            var acc = mutableMapOf<Int, ToolCallAccumulator>()
             var toolCallsFinalized = false
 
             fun finalizeToolCalls() {
@@ -133,7 +133,7 @@ abstract class SseLlmClient(
                         parsed.text?.takeIf { it.isNotEmpty() }?.let { trySend(LlmChunk.Text(it)) }
 
                         for (d in parsed.toolDeltas) {
-                            val a = acc.getOrPut(d.index) { ToolCallAccum(d.index) }
+                            val a = acc.getOrPut(d.index) { ToolCallAccumulator(d.index) }
                             if (d.id != null) a.id = d.id
                             if (d.name != null) a.name = d.name
                             a.args.append(d.argsDelta)
@@ -166,12 +166,6 @@ abstract class SseLlmClient(
         }
 
         awaitClose { call?.cancel() }
-    }
-
-    private class ToolCallAccum(val index: Int) {
-        var name: String? = null
-        var id: String? = null
-        val args = StringBuilder()
     }
 }
 

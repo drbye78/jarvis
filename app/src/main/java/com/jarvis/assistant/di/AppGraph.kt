@@ -56,7 +56,7 @@ class AppGraph(
         .build()
 
     val saluteChannel: ManagedChannel = OkHttpChannelBuilder
-        .forTarget("smartspeech.sber.ru:443")
+        .forTarget(config.llmEndpoint)
         .useTransportSecurity()
         .build()
 
