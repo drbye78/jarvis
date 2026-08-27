@@ -1,4 +1,4 @@
-# Jarvis Voice Assistant — Architecture (v3)
+# Jarvis Voice Assistant — Architecture (v4)
 
 > Target: Huawei MatePad SE 11 · HarmonyOS 2.0 (AOSP 10/11) · Kirin 710A
 > Always WiFi · Always charging · Russian language (ru-RU)
@@ -9,8 +9,8 @@
 ```
 Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame)
   ├─ PorcupineDetector (wake word, single actor, 320→512 re-chunk)
-  └─ SessionManager
-       ├─ SberStreamingAsr (bidi gRPC; live audio up, partials/EOU down)
+   └─ SessionManager (delegates each turn to TurnRunner)
+        ├─ SberStreamingAsr (bidi gRPC; live audio up, partials/EOU down)
        ├─ ConversationManager (Room; 20-msg window, tool-pair-safe)
        ├─ LlmClient (GigaChat | OpenAI-compatible; SSE; wire DTOs)
        │    └─ ToolRegistry → alarms/timers · weather · 8 device tools
@@ -48,10 +48,16 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 
 ## Barge-in
 
-Wake word is accepted in every state. Detection → `player.flush()` (generation
-bump kills current + queued TTS) → `sessionJob.cancel()` (kills ASR feeder,
-LLM SSE call, TTS contexts via structured cancellation) → new session. A
-600 ms cooldown prevents self-retrigger from the wake word's trailing audio.
+Wake word is accepted in **every** state (IDLE, LISTENING, THINKING, SPEAKING).
+Detection flows through `Flow<Detection>.gatedBy(BargeInPolicy.from(config), stateMachine.state)`:
+in SPEAKING it cancels the active turn; in the other states it is still accepted so
+the user can barge in at any time. `BargeInPolicy.postAcceptCooldownMs` (default 600 ms)
+debounces self-retrigger from the wake word's trailing audio. On barge-in:
+`player.flush()` (generation bump kills current + queued TTS) → `sessionJob.cancel()`
+(kills ASR feeder, LLM SSE call, TTS contexts via structured cancellation) → new
+session. `CancelTimerTool` cancels a snoozed alarm's pending one-shot timer so a
+snooze isn't interrupted. A superseded (barge-in'd) turn discards its partial
+tool-history writes to keep the conversation coherent.
 
 ## Tool protocol
 
@@ -83,6 +89,8 @@ Timer tool uses `setExactAndAllowWhileIdle` one-shots.
 Gradle 8.14.2 · AGP 8.11.1 · Kotlin 2.2.21 · KSP 2.2.21-2.0.5 · Room 2.8.4
 gRPC 1.83.1 · protobuf-gradle-plugin 0.10.0 · OkHttp 4.12.0
 Porcupine 3.0.0 · Material Components · compileSdk 34 · minSdk 24 · targetSdk 30
+
+LLM endpoint is config-driven (`JarvisConfig.llmEndpoint`) rather than hardcoded.
 
 ## Security
 

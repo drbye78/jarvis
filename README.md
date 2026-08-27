@@ -1,4 +1,4 @@
-# Jarvis — Russian Voice Assistant for Huawei MatePad (v3)
+# Jarvis — Russian Voice Assistant for Huawei MatePad (v4)
 
 Always-listening Russian-language voice assistant for Huawei MatePad SE 11
 (HarmonyOS 2.0). Streaming-first: live ASR, streamed LLM with tool calling,
