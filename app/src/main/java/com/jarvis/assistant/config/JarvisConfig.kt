@@ -9,7 +9,6 @@ data class JarvisConfig(
     val porcupineKeywordPath: String = "jarvis_ru.ppn",
 
     // Session
-    val wakeWordCooldownMs: Long = 600,
     val maxUtteranceMs: Long = 90_000,      // hard cap for one utterance
     val maxToolPasses: Int = 5,             // bounded tool loop
 

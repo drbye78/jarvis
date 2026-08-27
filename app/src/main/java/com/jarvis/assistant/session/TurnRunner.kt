@@ -66,6 +66,7 @@ class TurnRunner(
     private val reportFailure: suspend (id: Int?, msg: String) -> Unit,
     private val finish: (id: Int) -> Unit,
     private val setPartial: (String) -> Unit,
+    private val isCurrentSession: (id: Int) -> Boolean,
 ) {
     /** m10: bounds how many sentence jobs hold a TTS synthesis/playback slot. */
     private val ttsSynthPermits = Semaphore(TTS_SYNTH_PREFETCH)
@@ -332,11 +333,11 @@ class TurnRunner(
                     }
                 } catch (e: CancellationException) {
                     // Interruption mid-pass: persist what DID finish, then rethrow.
-                    persistCompletedToolPass(assistantText, pending, completed)
+                    persistCompletedToolPass(id, assistantText, pending, completed)
                     throw e
                 }
 
-                persistCompletedToolPass(assistantText, pending, completed)
+                persistCompletedToolPass(id, assistantText, pending, completed)
                 continue // next LLM pass, now with tool results in history
             }
 
@@ -375,10 +376,15 @@ class TurnRunner(
      * the pair apart. Persists nothing when no tool finished.
      */
     private suspend fun persistCompletedToolPass(
+        id: Int,
         assistantText: StringBuilder,
         pending: List<ToolCall>,
         completed: List<Pair<ToolCall, Message>>,
     ) {
+        // M1: a superseded (barge-in'd) turn must not poison history. If a newer
+        // session is already running, drop this stale persist rather than let it
+        // interleave after the new turn's writes.
+        if (!isCurrentSession(id)) return
         if (completed.isEmpty()) return
         val completedIds = completed.mapTo(HashSet()) { it.first.id }
         withContext(NonCancellable) {

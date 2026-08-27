@@ -84,8 +84,8 @@ data class BargeInPolicy(
  * [BargeInPolicy]; see the policy KDoc for the exact semantics.
  *
  * Pure function of its inputs apart from time: [nowMs] is injectable so JVM
- * tests drive the clock deterministically. Not wired anywhere yet — the
- * session-integration step collects this between detector and handler.
+ * tests drive the clock deterministically. Wired into the session in
+ * SessionManager.startListening via detections().gatedBy(BargeInPolicy.from(config), stateMachine.state).
  */
 fun Flow<Detection>.gatedBy(
     policy: BargeInPolicy,

@@ -227,7 +227,7 @@ class PumpAudioSource : AudioSource {
 private class Harness(
     val llm: ScriptedLlm,
     val config: JarvisConfig = JarvisConfig(
-        wakeWordCooldownMs = 0,
+        
         maxUtteranceMs = Long.MAX_VALUE,
         ttsSentenceTimeoutMs = 5_000,
         ttsDrainTimeoutMs = 5_000,
@@ -468,7 +468,7 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `interrupted tool pass persists completed subset atomically`() = runBlocking {
+    fun `barge-in discards the superseded session's stale history writes`() = runBlocking {
         val llm = ScriptedLlm(
             mutableListOf(
                 listOf( // pass 1: model calls TWO tools; the second never finishes
@@ -498,38 +498,19 @@ class SessionManagerTest {
                 while (h.asr.streams.size < 2) delay(20)
             }
 
-            // The COMPLETED subset must be persisted: assistant row paired
-            // with call_1 ONLY, plus its result row — under NonCancellable,
-            // so it lands even though the job was cancelled.
-            withTimeout(5_000) {
-                while (h.dao.rows.none { it.role == "assistant" && it.toolCallsJson != null }) delay(20)
-            }
-            delay(200) // settle: any (incorrect) extra persistence would land here
+            // M1: a superseded session must NOT poison history. The interrupted
+            // turn's partial tool-history writes are discarded, even though call_1
+            // completed — the user moved on, so its rows are dropped rather than
+            // interleaved after the new session's.
+            delay(200) // settle: any (incorrect) persistence would land here
 
-            val assistantsWithCalls =
-                h.dao.rows.filter { it.role == "assistant" && it.toolCallsJson != null }
-            assertEquals(1, assistantsWithCalls.size)
-            val persistedIds = persistedToolCallIds(assistantsWithCalls[0])
-            assertEquals(listOf("call_1"), persistedIds) // hung call_2 NOT persisted
-
-            // Exactly one tool row, linked to call_1.
-            val toolRows = h.dao.rows.filter { it.role == "tool" }
-            assertEquals(1, toolRows.size)
-            assertEquals("call_1", toolRows[0].toolCallId)
-
-            // No dangling rows anywhere: every tool row pairs with a persisted
-            // tool_call id and vice versa.
-            for (row in h.dao.rows.filter { it.role == "tool" }) {
-                assertTrue("orphan tool row ${row.toolCallId}", row.toolCallId in persistedIds)
-            }
-            for (id in persistedIds) {
-                assertTrue(
-                    "unpaired tool_call $id",
-                    h.dao.rows.any { it.role == "tool" && it.toolCallId == id },
-                )
-            }
-
-            assertEquals(listOf("user", "assistant", "tool"), h.dao.rows.map { it.role })
+            assertEquals(0, h.dao.rows.count { it.role == "tool" })
+            assertEquals(
+                0,
+                h.dao.rows.count { it.role == "assistant" && it.toolCallsJson != null },
+            )
+            // Only the original user utterance survives (committed before barge-in).
+            assertEquals(listOf("user"), h.dao.rows.map { it.role })
             assertEquals(1, llm.requests.size) // never advanced to the second pass
         } finally {
             h.shutdown()
@@ -694,7 +675,7 @@ class SessionManagerTest {
     @Test
     fun `drain finishes under one overall deadline when sentences hang`() = runBlocking {
         val config = JarvisConfig(
-            wakeWordCooldownMs = 0,
+            
             maxUtteranceMs = Long.MAX_VALUE,
             ttsSentenceTimeoutMs = 30_000, // sentence timeout must NOT rescue the drain
             ttsDrainTimeoutMs = 600,       // ONE overall budget for all children

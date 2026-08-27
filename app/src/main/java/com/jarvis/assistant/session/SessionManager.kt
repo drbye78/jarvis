@@ -87,9 +87,10 @@ class SessionManager(
     private val turnRunner = TurnRunner(
         audioPipeline, asrClient, llm, ttsClient, player, functionRouter,
         conversationManager, config,
-        stateMachine::onEvent, this::reportFailure, this::finish,
-        { _partialTranscript.value = it },
-    )
+            stateMachine::onEvent, this::reportFailure, this::finish,
+            { _partialTranscript.value = it },
+            isCurrentSession = { it == sessionSeq.get() },
+        )
 
     private var onErrorHandler: suspend (String) -> Unit = {}
 
