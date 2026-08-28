@@ -174,34 +174,108 @@
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
-                    <RadioGroup
-                        android:id="@+id/wakeWordGroup"
+                    <!-- Engine selector: Porcupine vs Sherpa-ONNX -->
+                    <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp">
+                        android:layout_marginTop="16dp"
+                        android:text="@string/engine_label"
+                        android:textStyle="bold" />
+
+                    <RadioGroup
+                        android:id="@+id/engineGroup"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp">
 
                         <RadioButton
-                            android:id="@+id/wakeBuiltin"
+                            android:id="@+id/enginePorcupine"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:minHeight="48dp"
-                            android:text="@string/wake_word_builtin" />
+                            android:text="@string/engine_porcupine" />
 
                         <RadioButton
-                            android:id="@+id/wakeCustomBundled"
+                            android:id="@+id/engineSherpa"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:minHeight="48dp"
-                            android:text="@string/wake_word_custom_bundled" />
+                            android:text="@string/engine_sherpa" />
                     </RadioGroup>
 
-                    <Button
-                        android:id="@+id/loadCustomButton"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    <!-- Porcupine controls (hidden when Sherpa-ONNX is active) -->
+                    <LinearLayout
+                        android:id="@+id/porcupineBlock"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/load_custom_wake_word" />
+                        android:layout_marginTop="12dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/porcupine_hint"
+                            android:textColor="?android:attr/textColorSecondary"
+                            android:textSize="13sp" />
+
+                        <RadioGroup
+                            android:id="@+id/wakeWordGroup"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp">
+
+                            <RadioButton
+                                android:id="@+id/wakeBuiltin"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minHeight="48dp"
+                                android:text="@string/wake_word_builtin" />
+
+                            <RadioButton
+                                android:id="@+id/wakeCustomBundled"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minHeight="48dp"
+                                android:text="@string/wake_word_custom_bundled" />
+                        </RadioGroup>
+
+                        <Button
+                            android:id="@+id/loadCustomButton"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="@string/load_custom_wake_word" />
+                    </LinearLayout>
+
+                    <!-- Sherpa-ONNX controls (hidden when Porcupine is active) -->
+                    <LinearLayout
+                        android:id="@+id/sherpaBlock"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/sherpa_hint"
+                            android:textColor="?android:attr/textColorSecondary"
+                            android:textSize="13sp" />
+
+                        <!-- Read-only note: this AAR (v1.13.6) can only load the
+                             bundled model from assets, so user-supplied models
+                             are intentionally unsupported. -->
+                        <TextView
+                            android:id="@+id/sherpaModelName"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/sherpa_bundled_note"
+                            android:textColor="?android:attr/textColorSecondary"
+                            android:textSize="13sp" />
+                    </LinearLayout>
 
                     <TextView
                         android:layout_width="match_parent"

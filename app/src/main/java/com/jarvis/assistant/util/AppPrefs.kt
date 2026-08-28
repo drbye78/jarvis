@@ -61,6 +61,19 @@ class AppPrefs(context: Context) {
         get() = prefs.getString(KEY_CUSTOM_WAKE_PATH, "") ?: ""
         set(value) = prefs.edit().putString(KEY_CUSTOM_WAKE_PATH, value).apply()
 
+    /** Selected wake-word engine: "porcupine" | "sherpa". */
+    var wakeWordEngine: String
+        get() = prefs.getString(KEY_WAKE_ENGINE, "porcupine") ?: "porcupine"
+        set(value) = prefs.edit().putString(KEY_WAKE_ENGINE, value).apply()
+
+    /**
+     * Absolute path to a user-supplied Sherpa-ONNX model directory. Blank means
+     * "use the bundled model" (extracted from assets by the graph builder).
+     */
+    var sherpaOnnxPath: String
+        get() = prefs.getString(KEY_SHERPA_ONNX, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_SHERPA_ONNX, value).apply()
+
     fun loadProviderSettings(): ProviderSettings = ProviderSettings(
         type = providerType,
         openAiBaseUrl = openAiBaseUrl,
@@ -78,5 +91,7 @@ class AppPrefs(context: Context) {
         const val KEY_WAKE_SENSITIVITY = "wake_sensitivity"
         const val KEY_WAKE_MODEL = "wake_word_model"
         const val KEY_CUSTOM_WAKE_PATH = "custom_wake_word_path"
+        const val KEY_WAKE_ENGINE = "wake_word_engine"
+        const val KEY_SHERPA_ONNX = "sherpa_onnx_path"
     }
 }

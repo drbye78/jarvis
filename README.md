@@ -35,12 +35,18 @@ OpenAI-compatible endpoint).
    (`EncryptedSharedPreferences`) on the device — **nothing secret is ever in
    the APK or in `local.properties`**. GigaChat creds are optional if you use
    the OpenAI-compatible provider instead (also configured in Settings).
-4. **Wake word.** The app ships with a bundled `jarvis_ru.ppn` (Russian
-   «Джарвис»). In Settings → Wake word you can also pick the built-in
-   "Jarvis" model, or **load your own `.ppn`** trained in
-   [Picovoice Console](https://console.picovoice.ai/) (a Console `.ppn` is
-   bound to your Picovoice key). Wake-word changes apply live while the
-   assistant is running.
+4. **Wake word — two engines (hybrid).** In Settings → Wake word you choose
+    the engine:
+    - **Sherpa-ONNX (recommended, no account):** a fully on-device wake word
+      using the bundled `gigaspeech` model that detects «Jarvis». No Picovoice
+      key, no network — offline by design.
+    - **Picovoice Porcupine:** built-in "Jarvis", or **load your own `.ppn`**
+      trained in [Picovoice Console](https://console.picovoice.ai/) (a Console
+      `.ppn` is bound to your Picovoice key). Requires a free Picovoice account.
+    Switching engines and the sensitivity slider apply live while the assistant
+    is running. NOTE: a custom Sherpa model cannot be loaded with the current
+    AAR (it only loads the bundled asset); custom Sherpa wake words need a
+    self-trained model + a different build — see RUNBOOK.
 5. Launch Jarvis and follow the onboarding screen.
 
 ## Running tests
@@ -63,7 +69,7 @@ OpenAI-compatible endpoint).
 
 ## Tech stack
 - Kotlin 2.2.21 · Coroutines · Flow · kotlinx.serialization
-- Picovoice Porcupine (wake word)
+- Picovoice Porcupine + Sherpa-ONNX (hybrid wake word: Porcupine with a Picovoice account, or fully offline Sherpa-ONNX with no account)
 - Sber SaluteSpeech (streaming ASR + TTS via gRPC)
 - Sber GigaChat or any OpenAI-compatible API (LLM via SSE, tool calling)
 - Room (conversation + alarms) · Open-Meteo (weather)

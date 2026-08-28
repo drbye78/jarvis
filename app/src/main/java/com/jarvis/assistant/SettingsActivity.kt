@@ -2,6 +2,7 @@ package com.jarvis.assistant
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -21,7 +22,7 @@ import kotlinx.coroutines.launch
 /**
  * Callback contract the Settings screen uses to push user input out of the UI
  * layer. Every method is implemented here and wires input into the
- * [CredentialsStore] and the live wake-word [com.jarvis.assistant.audio.PorcupineDetector]
+ * [CredentialsStore] and the live wake-word [com.jarvis.assistant.audio.HybridWakeWordDetector]
  * exposed via [GraphHolder] (when the assistant is running).
  */
 interface SettingsCallbacks {
@@ -42,6 +43,9 @@ interface SettingsCallbacks {
 
     /** Porcupine sensitivity changed, range 0.0–1.0. */
     fun onSensitivityChanged(value: Float)
+
+    /** The chosen wake-word engine changed ("porcupine" | "sherpa"). */
+    fun onEngineSelected(engine: String)
 }
 
 /**
@@ -60,6 +64,10 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var wakeWordGroup: RadioGroup
     private lateinit var sensitivityBar: SeekBar
     private lateinit var sensitivityValue: TextView
+
+    private lateinit var engineGroup: RadioGroup
+    private lateinit var porcupineBlock: View
+    private lateinit var sherpaBlock: View
 
     private lateinit var appPrefs: AppPrefs
 
@@ -83,6 +91,10 @@ class SettingsActivity : AppCompatActivity() {
         wakeWordGroup = findViewById(R.id.wakeWordGroup)
         sensitivityBar = findViewById(R.id.sensitivityBar)
         sensitivityValue = findViewById(R.id.sensitivityValue)
+
+        engineGroup = findViewById(R.id.engineGroup)
+        porcupineBlock = findViewById(R.id.porcupineBlock)
+        sherpaBlock = findViewById(R.id.sherpaBlock)
 
         // Pre-fill credential fields from the keystore-backed store.
         picovoiceKey.setText(CredentialsStore.picovoiceKey)
@@ -122,7 +134,20 @@ class SettingsActivity : AppCompatActivity() {
             callbacks.onLoadCustomPpn()
         }
 
-        // B) Sensitivity slider: SeekBar 0..100 → Porcupine 0.0..1.0.
+        // B2) Engine selection (Porcupine vs Sherpa-ONNX). Restore the saved
+        // engine, reflect it in the radio + the shown control block.
+        val savedEngine = appPrefs.wakeWordEngine
+        engineGroup.check(
+            if (savedEngine == "sherpa") R.id.engineSherpa else R.id.enginePorcupine,
+        )
+        applyEngineVisibility(savedEngine)
+
+        engineGroup.setOnCheckedChangeListener { _, checkedId ->
+            val engine = if (checkedId == R.id.engineSherpa) "sherpa" else "porcupine"
+            callbacks.onEngineSelected(engine)
+        }
+
+        // B) Sensitivity slider: SeekBar 0..100 → wake engine 0.0..1.0.
         // The expensive native engine rebuild is deferred to onStopTrackingTouch
         // so it runs once, not on every progress tick.
         sensitivityBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -156,11 +181,11 @@ class SettingsActivity : AppCompatActivity() {
         sensitivityValue.text = getString(R.string.sensitivity_value, value)
     }
 
-    /** Maps a wake-word model id to the path Porcupine should load (null = built-in JARVIS). */
-    private fun keywordPathFor(modelId: String): String? = when (modelId) {
-        "builtin" -> null
-        "custom_user" -> appPrefs.customWakeWordPath.ifBlank { "jarvis_ru.ppn" }
-        else -> "jarvis_ru.ppn" // custom_bundled (default)
+    /** Show the controls for the active engine, hide the other. */
+    private fun applyEngineVisibility(engine: String) {
+        val isSherpa = engine == "sherpa"
+        porcupineBlock.visibility = if (isSherpa) View.GONE else View.VISIBLE
+        sherpaBlock.visibility = if (isSherpa) View.VISIBLE else View.GONE
     }
 
     @Suppress("DEPRECATION")
@@ -190,8 +215,7 @@ class SettingsActivity : AppCompatActivity() {
             appPrefs.wakeWordModel = "custom_user"
             // Reconfigure off the UI thread.
             lifecycleScope.launch(Dispatchers.Default) {
-                GraphHolder.graph?.wakeWordDetector
-                    ?.reconfigure(dst.absolutePath, appPrefs.wakeSensitivity)
+                GraphHolder.graph?.reconfigureWakeWord()
             }
             // L4: the URI is only read once (during the copy above), so the
             // persistable permission can be released immediately.
@@ -215,17 +239,15 @@ class SettingsActivity : AppCompatActivity() {
             CredentialsStore.gigaChatClientSecret = gigaChatSecret
             // Force a token refresh so a changed Picovoice/Sber key applies now.
             GraphHolder.graph?.tokenManager?.invalidate()
-            // Apply a changed Picovoice key live to the wake-word engine
-            // (this method is suspend, so reconfigure can be awaited directly).
-            GraphHolder.graph?.wakeWordDetector
-                ?.reconfigure(keywordPathFor(appPrefs.wakeWordModel), appPrefs.wakeSensitivity)
+            // Apply a changed Picovoice key live to the wake-word engine (this
+            // method is suspend, so reconfigure can be awaited directly).
+            GraphHolder.graph?.reconfigureWakeWord()
         }
 
         override fun onWakeWordSelected(modelId: String) {
             appPrefs.wakeWordModel = modelId
             lifecycleScope.launch(Dispatchers.Default) {
-                GraphHolder.graph?.wakeWordDetector
-                    ?.reconfigure(keywordPathFor(modelId), appPrefs.wakeSensitivity)
+                GraphHolder.graph?.reconfigureWakeWord()
             }
         }
 
@@ -239,11 +261,18 @@ class SettingsActivity : AppCompatActivity() {
             startActivityForResult(intent, PPN_REQUEST)
         }
 
+        override fun onEngineSelected(engine: String) {
+            appPrefs.wakeWordEngine = engine
+            applyEngineVisibility(engine)
+            lifecycleScope.launch(Dispatchers.Default) {
+                GraphHolder.graph?.reconfigureWakeWord()
+            }
+        }
+
         override fun onSensitivityChanged(value: Float) {
             appPrefs.wakeSensitivity = value
             lifecycleScope.launch(Dispatchers.Default) {
-                GraphHolder.graph?.wakeWordDetector
-                    ?.reconfigure(keywordPathFor(appPrefs.wakeWordModel), value)
+                GraphHolder.graph?.reconfigureWakeWord()
             }
         }
     }
@@ -262,6 +291,8 @@ class SettingsActivity : AppCompatActivity() {
         override fun onWakeWordSelected(modelId: String) {}
 
         override fun onLoadCustomPpn() {}
+
+        override fun onEngineSelected(engine: String) {}
 
         override fun onSensitivityChanged(value: Float) {}
     }

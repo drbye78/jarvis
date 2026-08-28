@@ -120,6 +120,9 @@ dependencies {
 
     implementation(libs.porcupine.android)
 
+    // Sherpa-ONNX Keyword Spotting (prebuilt AAR, fully on-device engine).
+    implementation(files("libs/sherpa-onnx.aar"))
+
 
     implementation(libs.timber)
 

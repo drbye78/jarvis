@@ -48,6 +48,16 @@ interface WakeWordDetector {
     val state: kotlinx.coroutines.flow.StateFlow<DetectorState>
     fun detections(): kotlinx.coroutines.flow.Flow<Detection>
     fun release()
+
+    /**
+     * Swap the active engine + model live. The implementation builds the new
+     * engine off the calling thread and swaps it under a mutex, releasing the
+     * old engine only after the new one is in place.
+     */
+    suspend fun reconfigure(req: WakeWordRequest)
+
+    /** Rebuild the active engine with a new sensitivity (keeps the model). */
+    suspend fun setSensitivity(value: Float)
 }
 
 /**

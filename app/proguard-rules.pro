@@ -23,6 +23,9 @@
 # Picovoice Porcupine
 -keep class ai.picovoice.porcupine.** { *; }
 
+# Sherpa-ONNX Keyword Spotting (prebuilt AAR)
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**

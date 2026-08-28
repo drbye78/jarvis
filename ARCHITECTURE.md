@@ -10,7 +10,7 @@
 
 ```
 Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame)
-  ├─ PorcupineDetector (wake word, single actor, 320→512 re-chunk)
+   ├─ HybridWakeWordDetector (engine-agnostic wake word: Porcupine OR Sherpa-ONNX; single actor, 320→512 re-chunk)
    └─ SessionManager (delegates each turn to TurnRunner)
         ├─ SberStreamingAsr (bidi gRPC; live audio up, partials/EOU down)
        ├─ ConversationManager (Room; 20-msg window, tool-pair-safe)
@@ -29,7 +29,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `llm/` | `SseParser` (pure), `SseLlmClient` (shared SSE transport with correct cancellation), GigaChat / OpenAI-compatible profiles, `TokenManager` (mutex-serialized OAuth refresh). |
 | `speech/asr/` | `StreamingAsrClient` / `AsrStream` — bidi streaming ASR; server-side EOU. |
 | `speech/tts/` | `TtsClient` (SaluteSpeech, cancellable + deadline) and `TtsPlayer` contract. |
-| `audio/` | Pipeline (single-copy invariant), ring buffer, Porcupine detector (error-surfacing; runtime-switchable model via `reconfigure`, thread-safe under a Mutex), player (generations). |
+| `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loaded asset-relative), player (generations). |
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns; bounded tool loop. |
 | `tools/` | ToolContract + registry (timeouts, error capture) + real implementations. |
 | `data/` | Room: messages (id-ordered, orphan-safe windowing) + alarms. |
@@ -39,7 +39,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 ## Concurrency model
 
 - **One microphone producer** — the only thread touching AudioRecord.
-- **One Porcupine actor** — `process()` behind a Mutex, 512-sample re-chunking.
+- **One wake-word actor** — engine-agnostic `process()` behind a Mutex, 512-sample re-chunking (rebuilds serialized by `reconfigureMutex`).
 - **One AudioTrack actor** — sentences serialized through a Channel; a
   generation counter makes `flush()` cancel current + queued playback.
 - **Session children** — every session coroutine is a child of `sessionJob`;
@@ -90,7 +90,7 @@ Timer tool uses `setExactAndAllowWhileIdle` one-shots.
 
 Gradle 8.14.2 · AGP 8.11.1 · Kotlin 2.2.21 · KSP 2.2.21-2.0.5 · Room 2.8.4
 gRPC 1.83.1 · protobuf-gradle-plugin 0.10.0 · OkHttp 4.12.0
-Porcupine 3.0.0 · Material Components · compileSdk 34 · minSdk 24 · targetSdk 30
+Porcupine 3.0.0 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Material Components · compileSdk 34 · minSdk 24 · targetSdk 30
 
 LLM endpoint is config-driven (`JarvisConfig.llmEndpoint`) rather than hardcoded.
 

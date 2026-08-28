@@ -3,8 +3,10 @@ package com.jarvis.assistant.di
 import android.content.Context
 import com.jarvis.assistant.audio.AudioPipeline
 import com.jarvis.assistant.audio.AudioRecordSource
-import com.jarvis.assistant.audio.PorcupineDetector
+import com.jarvis.assistant.audio.HybridWakeWordDetector
 import com.jarvis.assistant.audio.StreamingAudioTrackPlayer
+import com.jarvis.assistant.contracts.WakeWordDetector
+import com.jarvis.assistant.contracts.WakeWordRequest
 import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.config.ProviderSettings
 import com.jarvis.assistant.data.AppDatabase
@@ -110,16 +112,17 @@ class AppGraph(
     val audioPipeline = AudioPipeline(scope, AudioRecordSource())
 
     val appPrefs = com.jarvis.assistant.util.AppPrefs(appContext)
-    val wakeKeywordPath = when (appPrefs.wakeWordModel) {
-        "builtin" -> null
-        "custom_user" -> appPrefs.customWakeWordPath.ifBlank { "jarvis_ru.ppn" }
-        else -> "jarvis_ru.ppn" // custom_bundled (default)
-    }
-    val wakeWordDetector = PorcupineDetector(
+    val wakeKeywordPath = wakeKeywordPathFor(appPrefs.wakeWordModel)
+
+    /**
+     * HYBRID wake-word detector. The initial engine is selected from persisted
+     * prefs (engine + model). Sherpa uses the bundled model (extracted from
+     * assets on first run) unless the user supplied a custom directory.
+     */
+    val wakeWordDetector: WakeWordDetector = HybridWakeWordDetector(
         frames = audioPipeline.frames,
         context = appContext,
-        keywordPath = wakeKeywordPath,
-        sensitivity = provider.wakeSensitivity,
+        initialReq = initialWakeRequest(),
     )
     val player: TtsPlayer = StreamingAudioTrackPlayer(scope)
 
@@ -148,6 +151,46 @@ class AppGraph(
      * — stay JVM-testable); exposed here as the observation point for UI.
      */
     val muteState: StateFlow<Boolean> get() = sessionManager.muted
+
+    private fun wakeKeywordPathFor(model: String): String? = when (model) {
+        "builtin" -> null
+        "custom_user" -> appPrefs.customWakeWordPath.ifBlank { "jarvis_ru.ppn" }
+        else -> "jarvis_ru.ppn" // custom_bundled (default)
+    }
+
+    // CRITICAL 1: Sherpa loads the bundled model from assets via RELATIVE
+    // paths (the v1.13.6 AAR cannot load an absolute filesDir path without
+    // crashing), so there is no model directory to manage. Always null.
+    private fun sherpaModelDirFor(): String? = null
+
+    /** Build the request the detector should currently run with. */
+    private fun initialWakeRequest(): WakeWordRequest {
+        val engine = appPrefs.wakeWordEngine
+        return WakeWordRequest(
+            engine = engine,
+            keywordPath = wakeKeywordPathFor(appPrefs.wakeWordModel),
+            sherpaModelDir = sherpaModelDirFor(),
+            sherpaKeyword = "Jarvis",
+            sensitivity = provider.wakeSensitivity,
+        )
+    }
+
+    /**
+     * Rebuild the live wake-word engine from the current prefs. Safe to call
+     * when the assistant is running (it suspends and swaps under the detector's
+     * mutex); a no-op if the graph is torn down.
+     */
+    suspend fun reconfigureWakeWord() {
+        val engine = appPrefs.wakeWordEngine
+        val req = WakeWordRequest(
+            engine = engine,
+            keywordPath = wakeKeywordPathFor(appPrefs.wakeWordModel),
+            sherpaModelDir = sherpaModelDirFor(),
+            sherpaKeyword = "Jarvis",
+            sensitivity = provider.wakeSensitivity,
+        )
+        wakeWordDetector.reconfigure(req)
+    }
 
     fun start() {
         try {

@@ -6,6 +6,7 @@ import com.jarvis.assistant.contracts.AudioSource
 import com.jarvis.assistant.contracts.Detection
 import com.jarvis.assistant.contracts.DetectorState
 import com.jarvis.assistant.contracts.WakeWordDetector
+import com.jarvis.assistant.contracts.WakeWordRequest
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.data.MessageEntity
 import com.jarvis.assistant.llm.LlmClient
@@ -156,6 +157,8 @@ class FakeWakeWord : WakeWordDetector {
     override val state = MutableStateFlow<DetectorState>(DetectorState.Ready)
     override fun detections(): Flow<Detection> = detections
     override fun release() {}
+    override suspend fun reconfigure(req: WakeWordRequest) {}
+    override suspend fun setSensitivity(value: Float) {}
 
     /** Waits until the manager's collector has subscribed (avoids dropped emissions). */
     suspend fun awaitSubscribed() {

@@ -1,9 +1,10 @@
 package com.jarvis.assistant
 
-import com.jarvis.assistant.audio.PorcupineDetector
-import com.jarvis.assistant.audio.PorcupineEngine
+import com.jarvis.assistant.audio.HybridWakeWordDetector
+import com.jarvis.assistant.audio.WakeWordEngine
 import com.jarvis.assistant.contracts.Detection
 import com.jarvis.assistant.contracts.DetectorState
+import com.jarvis.assistant.contracts.WakeWordRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -23,18 +24,23 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * JVM tests for [PorcupineDetector] using an injected fake [PorcupineEngine]:
+ * JVM tests for [HybridWakeWordDetector] using an injected fake [WakeWordEngine]:
  * init-failure surfacing (M1) and teardown ordering (C3 release race).
  */
 class PorcupineDetectorTest {
 
     @Test
     fun `init failure surfaces as Failed state with reason`() {
-        val detector = PorcupineDetector(
+        val detector = HybridWakeWordDetector(
             frames = emptyFlow(),
             context = null,
-            keywordPath = "missing.ppn",
-            sensitivity = 0.6f,
+            initialReq = WakeWordRequest(
+                engine = "porcupine",
+                keywordPath = "missing.ppn",
+                sherpaModelDir = null,
+                sherpaKeyword = "",
+                sensitivity = 0.6f,
+            ),
             engineFactory = { _ -> throw IllegalStateException("native boom") },
         )
         val s = detector.state.value
@@ -48,7 +54,7 @@ class PorcupineDetectorTest {
         val events = Collections.synchronizedList(mutableListOf<String>())
         val processStarted = CountDownLatch(1)
 
-        val engine = object : PorcupineEngine {
+        val engine = object : WakeWordEngine {
             override fun process(chunk: ShortArray): Int {
                 events.add("process")
                 processStarted.countDown()
@@ -68,11 +74,16 @@ class PorcupineDetectorTest {
             awaitCancellation()
         }
 
-        val detector = PorcupineDetector(
+        val detector = HybridWakeWordDetector(
             frames = frames,
             context = null,
-            keywordPath = "kw.ppn",
-            sensitivity = 0.6f,
+            initialReq = WakeWordRequest(
+                engine = "porcupine",
+                keywordPath = "kw.ppn",
+                sherpaModelDir = null,
+                sherpaKeyword = "",
+                sensitivity = 0.6f,
+            ),
             engineFactory = { _ -> engine },
         )
 
@@ -94,17 +105,22 @@ class PorcupineDetectorTest {
     @Test
     fun `double release is idempotent and prompt`() {
         val deletes = AtomicInteger()
-        val engine = object : PorcupineEngine {
+        val engine = object : WakeWordEngine {
             override fun process(chunk: ShortArray): Int = -1
             override fun release() {
                 deletes.incrementAndGet()
             }
         }
-        val detector = PorcupineDetector(
+        val detector = HybridWakeWordDetector(
             frames = emptyFlow(),
             context = null,
-            keywordPath = "kw.ppn",
-            sensitivity = 0.6f,
+            initialReq = WakeWordRequest(
+                engine = "porcupine",
+                keywordPath = "kw.ppn",
+                sherpaModelDir = null,
+                sherpaKeyword = "",
+                sensitivity = 0.6f,
+            ),
             engineFactory = { _ -> engine },
         )
 
@@ -121,7 +137,7 @@ class PorcupineDetectorTest {
     @Test
     fun `runtime process failure surfaces as Failed and DetectorError`() = runBlocking {
         var calls = 0
-        val engine = object : PorcupineEngine {
+        val engine = object : WakeWordEngine {
             override fun process(chunk: ShortArray): Int {
                 calls++
                 if (calls >= 2) throw IllegalStateException("native exploded")
@@ -131,11 +147,16 @@ class PorcupineDetectorTest {
             override fun release() {}
         }
         val frames = MutableSharedFlow<ShortArray>(extraBufferCapacity = 16)
-        val detector = PorcupineDetector(
+        val detector = HybridWakeWordDetector(
             frames = frames,
             context = null,
-            keywordPath = "kw.ppn",
-            sensitivity = 0.6f,
+            initialReq = WakeWordRequest(
+                engine = "porcupine",
+                keywordPath = "kw.ppn",
+                sherpaModelDir = null,
+                sherpaKeyword = "",
+                sensitivity = 0.6f,
+            ),
             engineFactory = { _ -> engine },
         )
 
@@ -170,15 +191,21 @@ class PorcupineDetectorTest {
         val built = AtomicInteger()
         val builtWith = CopyOnWriteArrayList<Float>()
         val released = AtomicInteger()
-        val engine = object : PorcupineEngine {
+        val engine = object : WakeWordEngine {
             override fun process(chunk: ShortArray): Int = -1
             override fun release() { released.incrementAndGet() }
         }
-        val detector = PorcupineDetector(
+        val detector = HybridWakeWordDetector(
             frames = emptyFlow(),
             context = null,
-            sensitivity = 0.6f,
-            engineFactory = { s -> built.incrementAndGet(); builtWith.add(s); engine },
+            initialReq = WakeWordRequest(
+                engine = "porcupine",
+                keywordPath = null,
+                sherpaModelDir = null,
+                sherpaKeyword = "",
+                sensitivity = 0.6f,
+            ),
+            engineFactory = { req -> built.incrementAndGet(); builtWith.add(req.sensitivity); engine },
         )
         assertEquals(1, built.get()) // initial build at 0.6f
         runBlocking { detector.setSensitivity(0.9f) }

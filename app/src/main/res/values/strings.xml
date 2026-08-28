@@ -69,6 +69,14 @@
     <string name="load_custom_wake_word">Загрузить свой wake word…</string>
     <string name="sensitivity">Чувствительность</string>
 
+    <!-- Settings: wake word engine (HYBRID architecture) -->
+    <string name="engine_label">Движок wake word</string>
+    <string name="engine_porcupine">Picovoice Porcupine</string>
+    <string name="engine_sherpa">Sherpa-ONNX (локально, без аккаунта)</string>
+    <string name="porcupine_hint">Нужен ключ Picovoice (см. выше)</string>
+    <string name="sherpa_hint">Полностью на устройстве, без аккаунта. Используется встроенная модель Sherpa (офлайн, без сети).</string>
+    <string name="sherpa_bundled_note">Jarvis — встроенная модель Sherpa, офлайн, без аккаунта</string>
+
     <!-- Settings: misc -->
     <string name="close">Закрыть</string>
 
