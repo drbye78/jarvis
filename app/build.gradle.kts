@@ -20,12 +20,12 @@ android {
 
     defaultConfig {
         applicationId = "com.jarvis.assistant"
-        // targetSdk 30 on purpose: appliance profile for the MatePad (Android 10/11).
+        // targetSdk 30 on purpose: appliance profile for Android 11 / HarmonyOS 2.0+.
         // Android 14+ guards are handled in code (typed FGS, runtime checks).
         minSdk = 24
         targetSdk = 30
-        versionCode = 3
-        versionName = "3.0.0"
+        versionCode = 4
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

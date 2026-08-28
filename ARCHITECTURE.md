@@ -1,5 +1,6 @@
-# Jarvis Voice Assistant — Architecture (v4)
+# Jarvis Voice Assistant — Architecture
 
+> **Status: in active development (pre-1.0), version 0.2.0.**
 > Target: Android 11 (API 30) / HarmonyOS 2.0+ (AOSP-based) — validated on Huawei MatePad SE 11
 > Always WiFi · Always charging
 > Default build targets Russian (wake word, ASR/TTS language, UI); providers are multi-lingual

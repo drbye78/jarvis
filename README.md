@@ -1,4 +1,6 @@
-# Jarvis — Voice Assistant for Android 11 / HarmonyOS 2.0+ (v4)
+# Jarvis — Voice Assistant for Android 11 / HarmonyOS 2.0+
+
+> **Status: in active development (pre-1.0).** Version `0.2.0`. APIs, behavior, and on-device storage may change between releases.
 
 Always-listening voice assistant for Android 11 (API 30) / HarmonyOS 2.0+ devices.
 The default build targets Russian (wake word «Джарвис», ASR/TTS language, UI); the

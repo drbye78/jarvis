@@ -1,5 +1,6 @@
-# Jarvis — Runbook (v4)
+# Jarvis — Runbook
 
+> **Status: in active development (pre-1.0), version 0.2.0.** Procedures may change as the app evolves.
 > All latency figures below are TARGETS to be measured on the actual device,
 > not marketing numbers. Replace them with your measurements.
 
