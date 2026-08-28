@@ -20,6 +20,14 @@ interface ToolContract {
     val name: String
     val description: String
     val parametersJson: String
+
+    /**
+     * Optional per-tool execution timeout override (MUSIC lane). Null →
+     * the registry default. `playMusic` legitimately needs ~30 s: cold-start
+     * the player, wait for its media session, playFromSearch, verify.
+     */
+    val timeoutMs: Long? get() = null
+
     suspend fun execute(arguments: String): String
 }
 
@@ -75,19 +83,19 @@ class ToolRegistry(
      * `result.contains("\"error\"")` substring sniffing is gone — a payload
      * that merely mentions "error" is no longer misclassified.
      */
-    suspend fun executeResult(call: FunctionCall): ToolResult = try {
+    suspend fun executeResult(call: FunctionCall): ToolResult {
         val tool = tools.find { it.name == call.name }
-        if (tool == null) {
-            ToolResult("""{"error":"Unknown function: ${call.name}"}""", isError = true)
-        } else {
-            ToolResult(withTimeout(perToolTimeoutMs) { tool.execute(call.arguments) })
+            ?: return ToolResult("""{"error":"Unknown function: ${call.name}"}""", isError = true)
+        val timeout = tool.timeoutMs ?: perToolTimeoutMs
+        return try {
+            ToolResult(withTimeout(timeout) { tool.execute(call.arguments) })
+        } catch (e: TimeoutCancellationException) {
+            Timber.w("Tool %s timed out after %d ms", call.name, timeout)
+            ToolResult("""{"error":"Tool timed out"}""", isError = true)
+        } catch (e: Exception) {
+            Timber.e(e, "Tool %s failed", call.name)
+            ToolResult("""{"error":"Tool execution failed: ${e.message}"}""", isError = true)
         }
-    } catch (e: TimeoutCancellationException) {
-        Timber.w("Tool %s timed out", call.name)
-        ToolResult("""{"error":"Tool timed out"}""", isError = true)
-    } catch (e: Exception) {
-        Timber.e(e, "Tool %s failed", call.name)
-        ToolResult("""{"error":"Tool execution failed: ${e.message}"}""", isError = true)
     }
 
     suspend fun execute(call: FunctionCall): ToolExecution =

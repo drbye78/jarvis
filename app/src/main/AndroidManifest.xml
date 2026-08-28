@@ -39,6 +39,9 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- MUSIC lane: target player (current + legacy Yandex Music ids) -->
+        <package android:name="ru.yandex.music" />
+        <package android:name="com.yandex.music" />
     </queries>
 
     <application

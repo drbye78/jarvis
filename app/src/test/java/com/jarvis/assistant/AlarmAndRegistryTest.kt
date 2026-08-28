@@ -150,4 +150,30 @@ class ToolRegistryTest {
         assertTrue(registry.executeResult(FunctionCall("hang", "{}")).isError)
         assertTrue(registry.executeResult(FunctionCall("nope", "{}")).isError)
     }
+
+    /** MUSIC lane: a tool may override the registry-wide timeout
+     *  (playMusic legitimately needs ~30 s for the cold-start cascade). */
+    private class SlowButOverrideTool : ToolContract {
+        override val name = "slowOverride"
+        override val description = "slow but allowed"
+        override val parametersJson = """{"type":"object","properties":{}}"""
+        override val timeoutMs: Long = 60_000
+        override suspend fun execute(arguments: String): String {
+            delay(1_000)
+            return """{"status":"late"}"""
+        }
+    }
+
+    @Test
+    fun `per-tool timeout override beats the registry default`() = runBlocking {
+        // Registry default 100 ms would kill a 1 s tool — the override saves it.
+        val registry = ToolRegistry(listOf(SlowButOverrideTool()), perToolTimeoutMs = 100)
+        val result = registry.execute(FunctionCall("slowOverride", "{}"))
+        assertFalse(result.isError)
+        assertTrue(result.result.contains("late"))
+
+        // Without an override the same duration still times out.
+        val registry2 = ToolRegistry(listOf(HangingTool()), perToolTimeoutMs = 100)
+        assertTrue(registry2.execute(FunctionCall("hang", "{}")).isError)
+    }
 }

@@ -31,7 +31,8 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `speech/tts/` | `TtsClient` (SaluteSpeech, cancellable + deadline) and `TtsPlayer` contract. |
 | `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loaded asset-relative), player (generations). |
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns; bounded tool loop. |
-| `tools/` | ToolContract + registry (timeouts, error capture) + real implementations. |
+| `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. |
+| `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure strategy cascade with playback verification. Android adapter: `AndroidMediaGateway`. |
 | `data/` | Room: messages (id-ordered, orphan-safe windowing) + alarms. |
 | `service/` | Foreground service (permission gate, retryable init, watchdog semantics), boot receiver, ringing activity, notification listener. |
 | `ui/` | Adapters for transcript and alarm lists. |
@@ -67,7 +68,47 @@ OpenAI-compatible, serialized through the wire layer: assistant
 `tool_calls` (with ids) → tool results with `tool_call_id`. History windowing
 keeps assistant+tool pairs together and never leaves a leading orphan tool
 message. The tool loop is iterative and bounded (`maxToolPasses = 5`);
-each tool execution has a 15 s timeout.
+each tool execution has a 15 s default timeout — a tool may override it via
+`ToolContract.timeoutMs` (playMusic uses 30 s: cold-starting a player and
+verifying playback takes that long).
+
+## Music lane (external player control)
+
+`playMusic` orders an **installed player app** to search and play — Jarvis
+never streams audio itself. Control goes through the documented
+assistant→media-app path: with notification-listener access,
+`MediaSessionManager.getActiveSessions()` +
+`MediaController.TransportControls.playFromSearch()`
+(the same API Google Assistant uses).
+
+Whether a player implements `onPlayFromSearch` is up to the app, so the
+cascade **verifies playback actually started** and degrades honestly:
+
+1. **active_session** — target app has a live MediaSession → `playFromSearch`
+   → verify (was-idle→playing, or title changed, or position near track
+   start; baseline snapshotted BEFORE dispatch).
+2. **cold_start** — no session: launch the app, poll ≤ 8 s for its session,
+   `playFromSearch` → verify.
+3. **deep_link** — open the app's search screen for the query
+   (`yandexmusic://search?query=…`, fallback `music.yandex.ru/search/…`);
+   reported as `search_opened` — the user taps the track; never claimed as
+   success.
+
+Transport commands (`controlPlayback`: play/pause/toggle/next/previous/
+stop) target the app's live session, fall back to global media keys
+(`dispatchMediaKeyEvent`, works without listener access). `getNowPlaying`
+reads session metadata for «что играет?».
+
+Target resolution (`MusicAppCatalog`): LLM hint pins the brand (яндекс/звук/
+вк); else known packages in priority order (ru.yandex.music → com.yandex.music
+→ zvooq → vk); else any launchable app with a music-looking label. The whole
+cascade is pure Kotlin over gateway interfaces → fully JVM-tested
+(`MusicOrchestratorTest`).
+
+Ducking interplay: a Jarvis session pauses external music (existing duck
+logic); after a track switch, unduck resumes whatever is current. The spoken
+confirmation may overlap briefly with the just-started track — both use the
+music stream; no transient audio-focus is requested yet (follow-up).
 
 ## Alarms
 

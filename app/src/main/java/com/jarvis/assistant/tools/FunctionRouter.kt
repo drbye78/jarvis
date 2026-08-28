@@ -1,15 +1,18 @@
 package com.jarvis.assistant.tools
 
 import android.content.Context
+import com.jarvis.assistant.media.AndroidMediaGateway
+import com.jarvis.assistant.media.MusicPlaybackOrchestrator
 import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.model.ToolDefinition
 import okhttp3.OkHttpClient
 
 /**
  * Composition root for the tool framework: builds every REAL tool (alarms,
- * timers, weather, on-tablet device control) and exposes the registry to the
- * session layer. The old `UnconfiguredDeviceControlAdapter` stub is gone —
- * every advertised capability actually works or returns an instructive error.
+ * timers, weather, on-tablet device control, external music playback) and
+ * exposes the registry to the session layer. The old
+ * `UnconfiguredDeviceControlAdapter` stub is gone — every advertised
+ * capability actually works or returns an instructive error.
  */
 class FunctionRouter(
     context: Context,
@@ -22,6 +25,8 @@ class FunctionRouter(
         com.jarvis.assistant.data.AppDatabase.getInstance(appContext).alarmDao(),
     )
 
+    private val mediaGateway = AndroidMediaGateway(appContext)
+
     private val toolRegistry = ToolRegistry(
         listOf(
             SetAlarmTool(alarmScheduler),
@@ -30,7 +35,8 @@ class FunctionRouter(
             SetTimerTool(alarmScheduler),
             CancelTimerTool(appContext, alarmScheduler),
             WeatherTool(OpenMeteoWeatherClient(httpClient)),
-        ) + DeviceTools(appContext).all(),
+        ) + DeviceTools(appContext).all() +
+            MusicTools(MusicPlaybackOrchestrator(mediaGateway, mediaGateway.resolver)).all(),
     )
 
     override fun getToolDefinitions(): List<ToolDefinition> =

@@ -57,6 +57,10 @@ OpenAI-compatible endpoint).
 ## What Jarvis can do
 - **Voice**: wake word «Джарвис», barge-in mid-answer, streaming recognition.
 - **Chat**: GigaChat (or OpenAI-compatible provider) with 20-message context.
+- **Music**: «Джарвис, включи Bohemian Rhapsody» — orders the installed player
+  (Яндекс Музыка by default) to search and play; pause/resume/next/previous;
+  «что играет?» reads the current track. See [ARCHITECTURE.md](ARCHITECTURE.md)
+  (Music lane) for the strategy cascade and its honest fallbacks.
 - **Alarms & timers**: set/cancel/list by voice or UI; ring over the lock
   screen; survive reboots.
 - **Weather**: current conditions for any city (Open-Meteo).

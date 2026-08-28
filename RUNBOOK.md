@@ -51,6 +51,28 @@
 - Enable the notification listener for Jarvis (onboarding screen or system
   settings). The media-key fallback now also RESUMES playback afterwards.
 
+### «Джарвис, включи <трек>» — Jarvis opens search instead of playing
+Hands-free start depends on the player app implementing the Android
+`onPlayFromSearch` media-session callback (the same API Google Assistant
+uses). Jarvis tries it first and verifies playback actually started:
+
+1. Jarvis says «Включил…» — `playFromSearch` worked. Done.
+2. Jarvis says «открыл поиск — нажми на трек» — the player ignored the
+   voice-search command; Jarvis deep-linked its search screen for the query.
+   Check:
+   - Notification listener access granted for Jarvis (Settings → Special
+     access → Notification access). Without it only media keys work.
+   - The player is LOGGED IN and started at least once (a session may not
+     exist before the first manual playback).
+   - Player app is up to date — vendors ship `onPlayFromSearch` with
+     Android Auto / assistant integrations; older builds may lack it.
+3. Yandex Music package: current builds use `ru.yandex.music`, older sideloads
+   `com.yandex.music` — both are matched. Other players (Звук, VK Music) are
+   found by label; name the app in the command («включи X в Звуке») to pin it.
+
+Status is always honest: `playing` (verified), `search_opened` (user must
+tap), `app_opened` (player on screen), `error` (no player/no access).
+
 ### "Alarms don't ring"
 - Alarms fire via `setAlarmClock` — check the system alarm indicator appears.
 - Do-not-disturb filters can silence alarms: check DND settings.
@@ -116,3 +138,13 @@ Streaming ASR means these numbers no longer grow with utterance length.
   mapping should still be validated on the target hardware (Kirin 710A-class).
 - **Binary size.** The Sherpa-ONNX AAR (~47 MB) and the bundled model (~17 MB)
   are committed into the repo (no Git LFS configured).
+- **Hands-free music start depends on the player app.** Jarvis drives external
+  players through the standard `playFromSearch` media-session API; if the
+  installed player build does not implement it, Jarvis honestly falls back to
+  opening the app's search screen (`search_opened`) instead of pretending it
+  played something. On-device validation with the current Yandex Music build
+  is still pending.
+- **Music voice confirmation overlaps the just-started track.** Jarvis's TTS
+  and external playback both use the music stream; no transient audio-focus
+  is requested by the TTS player yet, so the «Включил…» confirmation may play
+  over the first seconds of the track.
