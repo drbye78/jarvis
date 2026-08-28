@@ -15,7 +15,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import timber.log.Timber
-import java.util.Collections
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -44,7 +44,7 @@ class AudioRingBufferTest {
     }
 
     private class RecordingTree : Timber.Tree() {
-        val lines = Collections.synchronizedList(mutableListOf<Pair<Int, String>>())
+        val lines = CopyOnWriteArrayList<Pair<Int, String>>()
         override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
             lines.add(priority to message)
         }
