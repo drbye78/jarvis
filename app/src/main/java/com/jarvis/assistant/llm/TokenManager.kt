@@ -2,8 +2,8 @@ package com.jarvis.assistant.llm
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.jarvis.assistant.BuildConfig
 import com.jarvis.assistant.config.JarvisConfig
+import com.jarvis.assistant.util.CredentialsStore
 import com.jarvis.assistant.util.SecurePrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -12,6 +12,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.Credentials
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -38,7 +39,7 @@ import java.util.UUID
  * @param context required only when [prefsOverride] is not supplied.
  * @param prefsOverride test seam: in-memory SharedPreferences for JVM tests.
  * @param credentials test seam: scope → client credentials; defaults to the
- *   BuildConfig values baked from local.properties.
+ *   values stored in [CredentialsStore] (entered by the user in Settings).
  */
 class TokenManager(
     context: Context?,
@@ -46,9 +47,11 @@ class TokenManager(
     private val config: JarvisConfig = JarvisConfig(),
     prefsOverride: SharedPreferences? = null,
     private val credentials: (scope: String) -> Pair<String, String> = { scope ->
-        when (scope) {
-            SCOPE_GIGACHAT -> BuildConfig.GIGACHAT_CLIENT_ID to BuildConfig.GIGACHAT_CLIENT_SECRET
-            else -> BuildConfig.SALUTE_CLIENT_ID to BuildConfig.SALUTE_CLIENT_SECRET
+        CredentialsStore.run {
+            when (scope) {
+                SCOPE_GIGACHAT -> gigaChatClientId to gigaChatClientSecret
+                else -> saluteClientId to saluteClientSecret
+            }
         }
     },
 ) {
@@ -72,6 +75,17 @@ class TokenManager(
         expiryKey = KEY_SALUTE_EXPIRY,
         scope = SCOPE_SALUTE,
     )
+
+    /**
+     * Force a token refresh after the user changes credentials in Settings.
+     * Clears both cached Sber tokens so the next request re-authenticates.
+     */
+    fun invalidate() {
+        prefs.edit()
+            .remove(KEY_GIGACHAT_TOKEN).remove(KEY_GIGACHAT_EXPIRY)
+            .remove(KEY_SALUTE_TOKEN).remove(KEY_SALUTE_EXPIRY)
+            .apply()
+    }
 
     private suspend fun getToken(
         cacheKey: String,
@@ -109,21 +123,24 @@ class TokenManager(
         if (clientId.isBlank() || clientSecret.isBlank()) {
             throw IllegalStateException(
                 "Missing OAuth client credentials for scope='$scope'. " +
-                    "Set them in local.properties or choose the OpenAI-compatible " +
+                    "Set them in Settings (Настройки) or choose the OpenAI-compatible " +
                     "provider in Settings."
             )
         }
 
+        // Sber OAuth requires HTTP Basic auth: base64(client_id:client_secret).
+        // OkHttp's Credentials.basic is platform-independent (works on the
+        // JVM unit-test runtime and on Android minSdk 24 alike).
+        val authHeader = Credentials.basic(clientId, clientSecret)
         val body = FormBody.Builder()
             .add("scope", scope)
             .add("grant_type", "client_credentials")
-            .add("client_id", clientId)
-            .add("client_secret", clientSecret)
             .build()
 
         val request = Request.Builder()
             .url(config.oauthEndpoint)
             .header("RqUID", UUID.randomUUID().toString())
+            .header("Authorization", authHeader)
             .post(body)
             .build()
 

@@ -116,9 +116,8 @@ class OnboardingActivity : AppCompatActivity() {
         val modelPresent = assets.list("")?.contains("jarvis_ru.ppn") == true
         line(modelPresent, "Модель wake word (jarvis_ru.ppn)")
 
-        val credentials = BuildConfig.GIGACHAT_CLIENT_ID.isNotBlank() &&
-            BuildConfig.SALUTE_CLIENT_ID.isNotBlank()
-        line(credentials, "Ключи Сбера в local.properties (или выбери другого провайдера в настройках)")
+        val credentials = com.jarvis.assistant.util.CredentialsStore.hasRequiredSber()
+        line(credentials, "Ключи Сбера (укажите в настройках)")
 
         statusView.text = sb.toString()
     }

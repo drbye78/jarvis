@@ -16,27 +16,32 @@ OpenAI-compatible endpoint).
 - Gradle wrapper included: `./gradlew`
 
 ## Setup
-1. Copy `local.properties.example` to `local.properties` and set:
+1. (Build only) Set `sdk.dir` in `local.properties` (or use `ANDROID_HOME`):
    ```properties
    sdk.dir=/path/to/Android/Sdk
-   PICOVOICE_KEY=your_picovoice_access_key
-   SALUTE_CLIENT_ID=your_sber_salute_client_id
-   SALUTE_CLIENT_SECRET=your_sber_salute_client_secret
-   GIGACHAT_CLIENT_ID=your_sber_gigachat_client_id
-   GIGACHAT_CLIENT_SECRET=your_sber_gigachat_client_secret
    ```
-   (GigaChat credentials are optional if you plan to use the
-   OpenAI-compatible provider — configure it in the app's Settings instead.)
-2. Download the wake-word model from
-   [Picovoice Console](https://console.picovoice.ai/) — create a custom
-   keyword for "Джарвис" — and place `jarvis_ru.ppn` in
-   `app/src/main/assets/`.
-3. Build and install:
+   No provider secrets belong in `local.properties` — see step 3.
+2. Build and install:
    ```bash
    ./gradlew assembleDebug
    adb install app/build/outputs/apk/debug/app-debug.apk
    ```
-4. Launch Jarvis and follow the onboarding screen.
+3. **Enter provider credentials in-app.** On first launch, open **Settings**
+   (gear button) and enter your own:
+   - **Picovoice access key** (wake word)
+   - **Sber Salute** client ID + secret (ASR/TTS)
+   - **GigaChat** client ID + secret (LLM)
+   Credentials are stored encrypted in the Android Keystore
+   (`EncryptedSharedPreferences`) on the device — **nothing secret is ever in
+   the APK or in `local.properties`**. GigaChat creds are optional if you use
+   the OpenAI-compatible provider instead (also configured in Settings).
+4. **Wake word.** The app ships with a bundled `jarvis_ru.ppn` (Russian
+   «Джарвис»). In Settings → Wake word you can also pick the built-in
+   "Jarvis" model, or **load your own `.ppn`** trained in
+   [Picovoice Console](https://console.picovoice.ai/) (a Console `.ppn` is
+   bound to your Picovoice key). Wake-word changes apply live while the
+   assistant is running.
+5. Launch Jarvis and follow the onboarding screen.
 
 ## Running tests
 ```bash

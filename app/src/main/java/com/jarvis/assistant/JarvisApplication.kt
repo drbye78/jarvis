@@ -2,11 +2,14 @@ package com.jarvis.assistant
 
 import android.app.Application
 import timber.log.Timber
+import com.jarvis.assistant.util.CredentialsStore
 import com.jarvis.assistant.util.FileLoggingTree
 
 class JarvisApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+
+        CredentialsStore.init(this)
 
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())

@@ -2,7 +2,6 @@ package com.jarvis.assistant.audio
 
 import ai.picovoice.porcupine.Porcupine
 import android.content.Context
-import com.jarvis.assistant.BuildConfig
 import com.jarvis.assistant.contracts.Detection
 import com.jarvis.assistant.contracts.DetectorState
 import com.jarvis.assistant.contracts.WakeWordDetector
@@ -20,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
@@ -65,14 +65,19 @@ private class NativePorcupineEngine(private val porcupine: Porcupine) : Porcupin
 class PorcupineDetector(
     private val frames: Flow<ShortArray>,
     context: Context?,
-    private val accessKey: String = BuildConfig.PICOVOICE_KEY,
-    private val keywordPath: String = "jarvis_ru.ppn",
+    private val keywordPath: String? = null,
     private val sensitivity: Float = 0.6f,
+    // Live, reconfigurable model path (read by the default engine factory and
+    // updated by [reconfigure] so the wake word can swap at runtime).
+    private var keywordPathField: String? = keywordPath,
     private val engineFactory: (sensitivity: Float) -> PorcupineEngine = { s ->
         NativePorcupineEngine(
             Porcupine.Builder()
-                .setAccessKey(accessKey)
-                .setKeywordPath(keywordPath)
+                .setAccessKey(com.jarvis.assistant.util.CredentialsStore.picovoiceKey)
+                .apply {
+                    if (keywordPathField != null) setKeywordPath(keywordPathField!!)
+                    else setKeyword(Porcupine.BuiltInKeyword.JARVIS)
+                }
                 .setSensitivity(s)
                 .build(requireNotNull(context) { "Context required for native Porcupine init" })
         )
@@ -91,6 +96,9 @@ class PorcupineDetector(
     private var engine: PorcupineEngine? = null
     private var actorJob: Job? = null
 
+    // Live, reconfigurable sensitivity (updated by [reconfigure]).
+    private var sensitivityField: Float = sensitivity
+
     init {
         engine = try {
             engineFactory(sensitivity)
@@ -101,7 +109,9 @@ class PorcupineDetector(
 
         if (engine == null) {
             val reason = when {
-                accessKey.isBlank() -> "Picovoice access key is missing (PICOVOICE_KEY in local.properties)"
+                !com.jarvis.assistant.util.CredentialsStore.isInitialized ||
+                    com.jarvis.assistant.util.CredentialsStore.picovoiceKey.isBlank() ->
+                    "Picovoice access key is missing (set it in Settings → Настройки)"
                 else -> "Wake-word model failed to load. Check that jarvis_ru.ppn is in app assets."
             }
             _state.value = DetectorState.Failed(reason)
@@ -143,30 +153,46 @@ class PorcupineDetector(
 
     override fun detections(): Flow<Detection> = detectionsFlow
 
-    fun setSensitivity(value: Float) {
-        // Sensitivity is baked into the native engine at build time, so a
-        // change requires rebuilding it. Swap under processMutex so no
-        // in-flight process() ever touches a half-replaced engine, and free
-        // the previous engine only after the new one is in place.
+    /**
+     * Change the active wake-word model and/or sensitivity live. The new engine
+     * is built first and only swapped under [processMutex] once it is ready,
+     * and the previous engine is released only after the new one is in place —
+     * so no in-flight [PorcupineEngine.process] ever touches a half-replaced
+     * or freed engine.
+     */
+    suspend fun reconfigure(keywordPath: String?, sensitivity: Float) {
         if (_state.value == DetectorState.Released) return
-        val newEngine = try {
-            engineFactory(value)
-        } catch (e: Exception) {
-            Timber.e(e, "Wake-word sensitivity rebuild failed; keeping current engine")
-            return
-        }
-        runBlocking {
-            processMutex.withLock {
-                val old = engine
-                engine = newEngine
-                try {
-                    old?.release()
-                } catch (e: Exception) {
-                    Timber.e(e, "Failed to release old wake-word engine on sensitivity change")
-                }
+        // Build the native engine OFF the calling (possibly Main) thread.
+        val newEngine = withContext(Dispatchers.Default) {
+            try {
+                buildEngine(keywordPath, sensitivity)
+            } catch (e: Exception) {
+                Timber.e(e, "Wake-word rebuild failed; keeping current engine")
+                null
+            }
+        } ?: return
+        // Swap under the mutex without blocking the UI thread.
+        processMutex.withLock {
+            val old = engine
+            engine = newEngine
+            try {
+                old?.release()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to release old wake-word engine on reconfigure")
             }
         }
     }
+
+    private fun buildEngine(keywordPath: String?, sensitivity: Float): PorcupineEngine {
+        // Update the live model fields so the (possibly injected) engine
+        // factory builds with the requested model + sensitivity.
+        keywordPathField = keywordPath
+        sensitivityField = sensitivity
+        return engineFactory(sensitivity)
+    }
+
+    /** Public compatibility method — rebuilds the engine with a new sensitivity. */
+    suspend fun setSensitivity(value: Float) = reconfigure(keywordPathField, value)
 
     override fun release() {
         // Snapshot BEFORE nulling: joining via the field after clearing it

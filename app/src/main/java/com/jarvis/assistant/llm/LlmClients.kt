@@ -18,6 +18,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import timber.log.Timber
 import java.io.IOException
 import java.util.UUID
 
@@ -101,7 +102,12 @@ abstract class SseLlmClient(
                     // EOF, [DONE], error, and cancellation — via this finally.
                     if (!response.isSuccessful) {
                         val err = runCatching { response.body?.string() }.getOrNull().orEmpty()
-                        close(RuntimeException("LLM request failed (HTTP ${response.code}): $err"))
+                        // Sanitized: never bake the raw body into the exception
+                        // (it can contain token/PII material and reaches the
+                        // rotating file log via collectors). Log a bounded
+                        // length only.
+                        Timber.e("LLM request failed: HTTP %d, body length=%d", response.code, err.length)
+                        close(RuntimeException("LLM request failed (HTTP ${response.code})"))
                         return@launch
                     }
                     val source = response.body?.source()

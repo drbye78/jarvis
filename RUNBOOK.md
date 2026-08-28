@@ -19,18 +19,19 @@
 - Check the persistent notification says «Ожидание».
 - Release builds: `adb shell run-as com.jarvis.assistant cat files/logs/jarvis.log`
   (debug builds: `adb logcat -s Timber:*`).
-- Verify `jarvis_ru.ppn` is in `app/src/main/assets/` and the Picovoice key
-  in `local.properties` is valid.
+- Verify the chosen wake-word model is valid and the Picovoice key entered in
+  **Settings** is correct. The default bundled `jarvis_ru.ppn` ships in
+  `app/src/main/assets/`; a custom `.ppn` must match your Picovoice key.
 - Detector errors are SPOKEN (system TTS) and logged — a deaf-but-silent
   assistant is no longer possible.
-- Sensitivity adjustable in Settings (0–1 slider; restart applies it).
+- Sensitivity adjustable live in Settings (0–1 slider; applies immediately).
 
 ### "OAuth token request failed (HTTP 401)"
-- Verify Sber credentials in `local.properties`.
+- Verify Sber credentials entered in **Settings** (gear button).
 - Or switch Settings → provider to an OpenAI-compatible endpoint.
 
 ### "GigaChat request failed (HTTP ...)"
-- Check credentials/scope (`GIGACHAT_API_PERS`).
+- Check credentials/scope (`GIGACHAT_API_PERS`) in **Settings**.
 - If you switched providers, verify base URL ends with `/v1` and the API key
   is set — the Apply button restarts the service with the new profile.
 

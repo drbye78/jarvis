@@ -52,6 +52,26 @@
     <string name="error_base_url">Укажите Base URL</string>
     <string name="error_api_key">Укажите API-ключ</string>
 
+    <!-- Settings: provider credentials (each user supplies their own) -->
+    <string name="credentials_section">Учётные данные провайдеров</string>
+    <string name="picovoice_key_label">Ключ Picovoice</string>
+    <string name="salute_id_label">Sber Salute ID</string>
+    <string name="salute_secret_label">Sber Salute секрет</string>
+    <string name="gigachat_id_label">GigaChat ID</string>
+    <string name="gigachat_secret_label">GigaChat секрет</string>
+    <string name="save">Сохранить</string>
+    <string name="settings_saved">Данные провайдеров сохранены</string>
+
+    <!-- Settings: wake word -->
+    <string name="wake_word_section">Ключевое слово</string>
+    <string name="wake_word_builtin">Jarvis (встроенный)</string>
+    <string name="wake_word_custom_bundled">Custom (bundled)</string>
+    <string name="load_custom_wake_word">Загрузить свой wake word…</string>
+    <string name="sensitivity">Чувствительность</string>
+
+    <!-- Settings: misc -->
+    <string name="close">Закрыть</string>
+
     <!-- Alarms -->
     <string name="add_alarm">Добавить будильник</string>
     <string name="alarm_label_hint">Название (необязательно)</string>

@@ -51,6 +51,16 @@ class AppPrefs(context: Context) {
         get() = prefs.getFloat(KEY_WAKE_SENSITIVITY, 0.6f)
         set(value) = prefs.edit().putFloat(KEY_WAKE_SENSITIVITY, value).apply()
 
+    /** Wake-word model: "builtin" | "custom_bundled" | "custom_user". */
+    var wakeWordModel: String
+        get() = prefs.getString(KEY_WAKE_MODEL, "custom_bundled") ?: "custom_bundled"
+        set(value) = prefs.edit().putString(KEY_WAKE_MODEL, value).apply()
+
+    /** Absolute path to a user-supplied .ppn (only when wakeWordModel="custom_user"). */
+    var customWakeWordPath: String
+        get() = prefs.getString(KEY_CUSTOM_WAKE_PATH, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_CUSTOM_WAKE_PATH, value).apply()
+
     fun loadProviderSettings(): ProviderSettings = ProviderSettings(
         type = providerType,
         openAiBaseUrl = openAiBaseUrl,
@@ -66,5 +76,7 @@ class AppPrefs(context: Context) {
         const val KEY_OPENAI_MODEL = "openai_model"
         const val KEY_OPENAI_APIKEY = "openai_api_key"
         const val KEY_WAKE_SENSITIVITY = "wake_sensitivity"
+        const val KEY_WAKE_MODEL = "wake_word_model"
+        const val KEY_CUSTOM_WAKE_PATH = "custom_wake_word_path"
     }
 }

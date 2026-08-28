@@ -33,7 +33,6 @@ class PorcupineDetectorTest {
         val detector = PorcupineDetector(
             frames = emptyFlow(),
             context = null,
-            accessKey = "test-key",
             keywordPath = "missing.ppn",
             sensitivity = 0.6f,
             engineFactory = { _ -> throw IllegalStateException("native boom") },
@@ -72,7 +71,6 @@ class PorcupineDetectorTest {
         val detector = PorcupineDetector(
             frames = frames,
             context = null,
-            accessKey = "test-key",
             keywordPath = "kw.ppn",
             sensitivity = 0.6f,
             engineFactory = { _ -> engine },
@@ -105,7 +103,6 @@ class PorcupineDetectorTest {
         val detector = PorcupineDetector(
             frames = emptyFlow(),
             context = null,
-            accessKey = "test-key",
             keywordPath = "kw.ppn",
             sensitivity = 0.6f,
             engineFactory = { _ -> engine },
@@ -137,7 +134,6 @@ class PorcupineDetectorTest {
         val detector = PorcupineDetector(
             frames = frames,
             context = null,
-            accessKey = "test-key",
             keywordPath = "kw.ppn",
             sensitivity = 0.6f,
             engineFactory = { _ -> engine },
@@ -185,7 +181,7 @@ class PorcupineDetectorTest {
             engineFactory = { s -> built.incrementAndGet(); builtWith.add(s); engine },
         )
         assertEquals(1, built.get()) // initial build at 0.6f
-        detector.setSensitivity(0.9f)
+        runBlocking { detector.setSensitivity(0.9f) }
         assertEquals(2, built.get())
         assertEquals(0.9f, builtWith[1])
         assertEquals(1, released.get()) // previous engine released on swap

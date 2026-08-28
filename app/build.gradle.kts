@@ -30,12 +30,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
-
-        buildConfigField("String", "PICOVOICE_KEY", "\"${localProps.getProperty("PICOVOICE_KEY", "")}\"")
-        buildConfigField("String", "SALUTE_CLIENT_ID", "\"${localProps.getProperty("SALUTE_CLIENT_ID", "")}\"")
-        buildConfigField("String", "SALUTE_CLIENT_SECRET", "\"${localProps.getProperty("SALUTE_CLIENT_SECRET", "")}\"")
-        buildConfigField("String", "GIGACHAT_CLIENT_ID", "\"${localProps.getProperty("GIGACHAT_CLIENT_ID", "")}\"")
-        buildConfigField("String", "GIGACHAT_CLIENT_SECRET", "\"${localProps.getProperty("GIGACHAT_CLIENT_SECRET", "")}\"")
     }
 
     buildTypes {

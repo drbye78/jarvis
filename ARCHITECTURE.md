@@ -29,7 +29,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `llm/` | `SseParser` (pure), `SseLlmClient` (shared SSE transport with correct cancellation), GigaChat / OpenAI-compatible profiles, `TokenManager` (mutex-serialized OAuth refresh). |
 | `speech/asr/` | `StreamingAsrClient` / `AsrStream` — bidi streaming ASR; server-side EOU. |
 | `speech/tts/` | `TtsClient` (SaluteSpeech, cancellable + deadline) and `TtsPlayer` contract. |
-| `audio/` | Pipeline (single-copy invariant), ring buffer, Porcupine detector (error-surfacing), player (generations). |
+| `audio/` | Pipeline (single-copy invariant), ring buffer, Porcupine detector (error-surfacing; runtime-switchable model via `reconfigure`, thread-safe under a Mutex), player (generations). |
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns; bounded tool loop. |
 | `tools/` | ToolContract + registry (timeouts, error capture) + real implementations. |
 | `data/` | Room: messages (id-ordered, orphan-safe windowing) + alarms. |
@@ -96,10 +96,17 @@ LLM endpoint is config-driven (`JarvisConfig.llmEndpoint`) rather than hardcoded
 
 ## Security
 
-- OAuth tokens + provider API keys in EncryptedSharedPreferences
+- **Per-user credentials, no shared secrets.** Provider keys (Picovoice, Sber
+  Salute, GigaChat) are entered in-app via **Settings** and stored in
+  `EncryptedSharedPreferences` (Android Keystore). **Nothing secret is baked
+  into `BuildConfig` or `local.properties`** — every install uses its owner's
+  own credentials, so the APK is safe to distribute to colleagues.
+- OAuth uses `Authorization: Basic base64(client_id:client_secret)` per
+  Sber's spec; tokens are cached encrypted; secrets/tokens are never logged.
 - HTTPS only (`usesCleartextTraffic=false`)
-- R8 minification for release; rotating file logs (no tokens logged)
-- `allowBackup=false`
+- R8 minification for release; rotating file logs (no tokens/logged secrets)
+- `allowBackup=false` (Keystore key is device-bound; a restore can't decrypt
+  the creds, so the user simply re-enters them)
 - WakeLock released on power disconnect; notification listener reads nothing
 
 ## Tests

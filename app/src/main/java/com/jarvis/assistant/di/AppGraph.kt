@@ -1,7 +1,6 @@
 package com.jarvis.assistant.di
 
 import android.content.Context
-import com.jarvis.assistant.BuildConfig
 import com.jarvis.assistant.audio.AudioPipeline
 import com.jarvis.assistant.audio.AudioRecordSource
 import com.jarvis.assistant.audio.PorcupineDetector
@@ -109,11 +108,17 @@ class AppGraph(
     val ttsClient: TtsClient = SaluteSpeechTts(tokenManager, saluteChannel)
 
     val audioPipeline = AudioPipeline(scope, AudioRecordSource())
+
+    val appPrefs = com.jarvis.assistant.util.AppPrefs(appContext)
+    val wakeKeywordPath = when (appPrefs.wakeWordModel) {
+        "builtin" -> null
+        "custom_user" -> appPrefs.customWakeWordPath.ifBlank { "jarvis_ru.ppn" }
+        else -> "jarvis_ru.ppn" // custom_bundled (default)
+    }
     val wakeWordDetector = PorcupineDetector(
         frames = audioPipeline.frames,
         context = appContext,
-        accessKey = BuildConfig.PICOVOICE_KEY,
-        keywordPath = config.porcupineKeywordPath,
+        keywordPath = wakeKeywordPath,
         sensitivity = provider.wakeSensitivity,
     )
     val player: TtsPlayer = StreamingAudioTrackPlayer(scope)

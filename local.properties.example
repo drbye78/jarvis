@@ -1,6 +1,4 @@
 sdk.dir=/path/to/Android/Sdk
-PICOVOICE_KEY=
-SALUTE_CLIENT_ID=
-SALUTE_CLIENT_SECRET=
-GIGACHAT_CLIENT_ID=
-GIGACHAT_CLIENT_SECRET=
+
+# Provider credentials are now entered in-app via Settings (stored in the Android
+# Keystore); nothing secret lives in local.properties.
