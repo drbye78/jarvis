@@ -104,7 +104,7 @@ LLM endpoint is config-driven (`JarvisConfig.llmEndpoint`) rather than hardcoded
 
 ## Tests
 
-JVM unit suite (see PLAN.md §2.9): wire DTOs, SSE parser, state machine,
+JVM unit suite: wire DTOs, SSE parser, state machine,
 sentence splitter, conversation windowing, alarm times, tool registry,
 and session orchestration with fakes (including the tool-loop wire-format
 regression). Run with `./gradlew testDebugUnitTest`.

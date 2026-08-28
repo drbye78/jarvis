@@ -71,7 +71,10 @@ class SaluteSpeechTts(
                 val responseObserver = object : StreamObserver<SynthesisResponse> {
                     override fun onNext(value: SynthesisResponse) {
                         val bytes = value.data.toByteArray()
-                        if (bytes.isNotEmpty()) trySend(bytes)
+                        // N5: bridge the gRPC callback (non-suspend) to the
+                        // channelFlow producer scope. send() suspends on
+                        // backpressure so audio chunks are never silently dropped.
+                        if (bytes.isNotEmpty()) this@channelFlow.launch { this@channelFlow.send(bytes) }
                     }
 
                     override fun onError(t: Throwable) {

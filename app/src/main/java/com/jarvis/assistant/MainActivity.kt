@@ -78,11 +78,11 @@ class MainActivity : AppCompatActivity() {
             val graph = GraphHolder.graph ?: return@setOnClickListener
             micMuted = !micMuted
             if (micMuted) {
-                graph.audioPipeline.stop()
+                graph.sessionManager.setMuted(true)
                 micButton.text = getString(R.string.mic_unmute)
                 statusText.text = getString(R.string.state_muted)
             } else {
-                graph.audioPipeline.start()
+                graph.sessionManager.setMuted(false)
                 micButton.text = getString(R.string.mic_mute)
             }
         }

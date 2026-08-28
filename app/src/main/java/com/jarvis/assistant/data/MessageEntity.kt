@@ -14,18 +14,3 @@ data class MessageEntity(
     val toolCallsJson: String? = null,
     val toolCallId: String? = null,
 )
-
-/**
- * A scheduled alarm. `id` doubles as the AlarmManager request code so cancel
- * is always exact (the original hashed label+time, which collided).
- */
-@Entity(tableName = "alarms")
-data class AlarmEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val label: String,
-    val hour: Int,
-    val minute: Int,
-    val enabled: Boolean = true,
-    val repeatDaily: Boolean = true,
-    val triggerMillis: Long,
-)

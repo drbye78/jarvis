@@ -63,12 +63,12 @@ abstract class SseLlmClient(
             var acc = mutableMapOf<Int, ToolCallAccumulator>()
             var toolCallsFinalized = false
 
-            fun finalizeToolCalls() {
+            suspend fun finalizeToolCalls() {
                 if (toolCallsFinalized) return
                 toolCallsFinalized = true
                 acc.toSortedMap().forEach { (_, a) ->
                     val name = a.name ?: return@forEach
-                    trySend(
+                    send(
                         LlmChunk.FunctionCallComplete(
                             ToolCall(
                                 id = a.id ?: UUID.randomUUID().toString(),
@@ -124,20 +124,19 @@ abstract class SseLlmClient(
                         val data = SseParser.dataPayload(line) ?: continue
                         if (SseParser.isDone(data)) {
                             finalizeToolCalls()
-                            trySend(LlmChunk.Done)
                             break
                         }
 
                         val parsed = SseParser.parseChunk(json, data) ?: continue
 
-                        parsed.text?.takeIf { it.isNotEmpty() }?.let { trySend(LlmChunk.Text(it)) }
+                        parsed.text?.takeIf { it.isNotEmpty() }?.let { send(LlmChunk.Text(it)) }
 
                         for (d in parsed.toolDeltas) {
                             val a = acc.getOrPut(d.index) { ToolCallAccumulator(d.index) }
                             if (d.id != null) a.id = d.id
                             if (d.name != null) a.name = d.name
                             a.args.append(d.argsDelta)
-                            trySend(LlmChunk.FunctionCallDelta(d.index, d.name, d.argsDelta))
+                            send(LlmChunk.FunctionCallDelta(d.index, d.name, d.argsDelta))
                         }
 
                         if (parsed.finishReason != null) {
@@ -151,7 +150,7 @@ abstract class SseLlmClient(
                     // close() every collector hangs until its timeout (the
                     // same defect commit 3999acb fixed in the v3 client).
                     finalizeToolCalls()
-                    trySend(LlmChunk.Done)
+                    send(LlmChunk.Done)
                     close()
                 } finally {
                     runCatching { response.close() }

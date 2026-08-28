@@ -422,6 +422,11 @@ class TurnRunner(
                 // Deferred cancelled by player.flush(): dropped sentence, fine.
                 if (done.isCancelled) return@withPermit
                 throw e
+            } catch (e: Exception) {
+                // N1: a real TTS failure (gRPC error, token expiry, AudioTrack
+                // short write) must NOT escape and crash the scope. Drop the
+                // sentence instead of letting it kill the process.
+                Timber.e(e, "TTS sentence failed, dropping: $text")
             }
         }
     }

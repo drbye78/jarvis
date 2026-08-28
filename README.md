@@ -53,8 +53,6 @@ OpenAI-compatible endpoint).
   open app, battery/time info.
 
 ## Docs
-- [PLAN.md](PLAN.md) — audit findings → fix map, architecture decisions,
-  acceptance criteria.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — component and concurrency model.
 - [RUNBOOK.md](RUNBOOK.md) — troubleshooting, debugging, performance targets.
 

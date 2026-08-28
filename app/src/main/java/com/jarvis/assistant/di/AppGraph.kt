@@ -25,11 +25,13 @@ import com.jarvis.assistant.util.NetworkMonitor
 import io.grpc.ManagedChannel
 import io.grpc.okhttp.OkHttpChannelBuilder
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
 import okhttp3.OkHttpClient
+import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
 /**
@@ -48,7 +50,15 @@ class AppGraph(
 ) {
     private val appContext = context.applicationContext
 
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e ->
+            // N1: defense-in-depth. Any uncaught coroutine exception (a TTS
+            // sentence that slipped past local handling, or a state-collector
+            // failure on an odd OEM ROM) must not crash the process on an
+            // always-listening appliance. Log it; failure paths already report.
+            Timber.e(e, "Uncaught coroutine exception in AppGraph scope")
+        },
+    )
 
     val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -139,17 +149,20 @@ class AppGraph(
             audioPipeline.start()
             sessionManager.startListening()
         } catch (e: Exception) {
-            scope.cancel()
+            shutdown() // N11: tear down anything we built before the throw
             throw e
         }
     }
 
     fun shutdown() {
-        sessionManager.cancelAll()
-        audioPipeline.release()
-        wakeWordDetector.release()
-        player.release()
-        scope.cancel()
+        // N11: every teardown is best-effort so shutdown() is safe to call even
+        // if construction/start partially failed (no resource left dangling for
+        // the watchdog's next retry).
+        runCatching { sessionManager.cancelAll() }
+        runCatching { audioPipeline.release() }
+        runCatching { wakeWordDetector.release() }
+        runCatching { player.release() }
+        runCatching { scope.cancel() }
         runCatching { saluteChannel.shutdown().awaitTermination(2, TimeUnit.SECONDS) }
     }
 }

@@ -5,6 +5,11 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import com.jarvis.assistant.R
 import com.jarvis.assistant.data.AlertDao
 import com.jarvis.assistant.data.ScheduledAlertEntity
 import timber.log.Timber
@@ -284,14 +289,20 @@ class AlarmReceiver : BroadcastReceiver() {
             ACTION_ALARM_FIRED, ACTION_TIMER_FIRED -> {
                 val label = intent.getStringExtra(EXTRA_LABEL) ?: "Будильник"
                 val isTimer = intent.action == ACTION_TIMER_FIRED
+                val alertId = intent.getIntExtra(EXTRA_ALERT_ID, -1)
+                // N2: post the full-screen-intent notification from the receiver
+                // itself, so the alarm still rings even when the foreground
+                // service is stopped and a background startActivity is blocked
+                // (timers use setExactAndAllowWhileIdle, which grants no launch
+                // window). The FSI launches the activity over the lock screen.
+                postRingingNotification(context, label, isTimer, alertId)
+                // Fast path: bring the activity up directly when already foreground.
                 val service = Intent(context, com.jarvis.assistant.service.AlarmRingingActivity::class.java).apply {
                     putExtra(EXTRA_LABEL, label)
                     putExtra(EXTRA_IS_TIMER, isTimer)
-                    putExtra(EXTRA_ALERT_ID, intent.getIntExtra(EXTRA_ALERT_ID, -1))
+                    putExtra(EXTRA_ALERT_ID, alertId)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
-                // Full-screen activity doubles as the ringer; showWhenLocked
-                // + turnScreenOn light up the tablet even on the lock screen.
                 context.startActivity(service)
             }
 
@@ -310,6 +321,45 @@ class AlarmReceiver : BroadcastReceiver() {
         const val ACTION_TIMER_FIRED = "com.jarvis.assistant.TIMER_FIRED"
         const val ACTION_SNOOZE = "com.jarvis.assistant.ALARM_SNOOZE"
         const val ACTION_DISMISS = "com.jarvis.assistant.ALARM_DISMISS"
+
+        private const val ALARM_NOTIFICATION_ID = 500
+
+        private fun postRingingNotification(
+            context: Context,
+            label: String,
+            isTimer: Boolean,
+            alertId: Int,
+        ) {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                nm.createNotificationChannel(
+                    NotificationChannel(
+                        "jarvis_alarm",
+                        context.getString(R.string.channel_alarm),
+                        NotificationManager.IMPORTANCE_HIGH,
+                    ),
+                )
+            }
+            val activityIntent = Intent(context, com.jarvis.assistant.service.AlarmRingingActivity::class.java).apply {
+                putExtra(EXTRA_LABEL, label)
+                putExtra(EXTRA_IS_TIMER, isTimer)
+                putExtra(EXTRA_ALERT_ID, alertId)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            val fullScreen = PendingIntent.getActivity(
+                context, 0, activityIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val notification = NotificationCompat.Builder(context, "jarvis_alarm")
+                .setContentTitle(context.getString(R.string.alarm_notification_title))
+                .setContentText(label)
+                .setSmallIcon(R.drawable.ic_mic)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setFullScreenIntent(fullScreen, true)
+                .setOngoing(true)
+                .build()
+            nm.notify(ALARM_NOTIFICATION_ID, notification)
+        }
         const val EXTRA_ALERT_ID = "alert_id"
         const val EXTRA_LABEL = "label"
         const val EXTRA_IS_TIMER = "is_timer"
