@@ -98,12 +98,12 @@ Streaming ASR means these numbers no longer grow with utterance length.
 
 ## Known limitations
 
-- **Sherpa-ONNX cold-start (possible ANR).** When the assistant starts with the
-  Sherpa-ONNX engine selected, the model + native runtime load on the **main
-  thread** — the initial engine build is intentionally synchronous to preserve
-  the unit-test contract. On slower devices (Kirin 710A-class) this can approach
-  the ANR budget. Follow-up: construct the graph off the main thread. (The live
-  `reconfigure` path already builds off `Dispatchers.Default`.)
+- **Sherpa-ONNX startup is async (no ANR).** The engine build now runs off the
+  main thread (`Dispatchers.Default`) — the detector starts in `Bootstrapping`
+  and transitions to `Ready` once the bundled model is loaded, so startup no
+  longer blocks the UI thread on Kirin 710A-class devices (fixes H1). There is
+  a brief window where the assistant is "listening" but the wake word is not yet
+  active until the model finishes loading (typically well under a second).
 - **Custom Sherpa wake words are not supported.** The bundled sherpa-onnx AAR
   (v1.13.6) only exposes a non-null `AssetManager` constructor, which loads the
   model from APK assets — a user-supplied `.onnx` directory cannot be loaded and

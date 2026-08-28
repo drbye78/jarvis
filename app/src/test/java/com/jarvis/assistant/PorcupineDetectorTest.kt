@@ -42,6 +42,7 @@ class PorcupineDetectorTest {
                 sensitivity = 0.6f,
             ),
             engineFactory = { _ -> throw IllegalStateException("native boom") },
+            engineBuildDispatcher = Dispatchers.Unconfined,
         )
         val s = detector.state.value
         assertTrue("expected Failed but was $s", s is DetectorState.Failed)
@@ -85,6 +86,7 @@ class PorcupineDetectorTest {
                 sensitivity = 0.6f,
             ),
             engineFactory = { _ -> engine },
+            engineBuildDispatcher = Dispatchers.Unconfined,
         )
 
         assertTrue(processStarted.await(2, TimeUnit.SECONDS))
@@ -122,6 +124,7 @@ class PorcupineDetectorTest {
                 sensitivity = 0.6f,
             ),
             engineFactory = { _ -> engine },
+            engineBuildDispatcher = Dispatchers.Unconfined,
         )
 
         val t0 = System.nanoTime()
@@ -158,6 +161,7 @@ class PorcupineDetectorTest {
                 sensitivity = 0.6f,
             ),
             engineFactory = { _ -> engine },
+            engineBuildDispatcher = Dispatchers.Unconfined,
         )
 
         // Subscribe BEFORE the failure so the DetectorError emission is seen.
@@ -206,6 +210,7 @@ class PorcupineDetectorTest {
                 sensitivity = 0.6f,
             ),
             engineFactory = { req -> built.incrementAndGet(); builtWith.add(req.sensitivity); engine },
+            engineBuildDispatcher = Dispatchers.Unconfined,
         )
         assertEquals(1, built.get()) // initial build at 0.6f
         runBlocking { detector.setSensitivity(0.9f) }
