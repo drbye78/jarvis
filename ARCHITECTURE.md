@@ -1,7 +1,8 @@
 # Jarvis Voice Assistant — Architecture (v4)
 
-> Target: Huawei MatePad SE 11 · HarmonyOS 2.0 (AOSP 10/11) · Kirin 710A
-> Always WiFi · Always charging · Russian language (ru-RU)
+> Target: Android 11 (API 30) / HarmonyOS 2.0+ (AOSP-based) — validated on Huawei MatePad SE 11
+> Always WiFi · Always charging
+> Default build targets Russian (wake word, ASR/TTS language, UI); providers are multi-lingual
 > targetSdk 30 (appliance profile) with Android 14+ guards · compileSdk 34
 
 ## Data flow

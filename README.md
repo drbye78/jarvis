@@ -1,7 +1,9 @@
-# Jarvis — Russian Voice Assistant for Huawei MatePad (v4)
+# Jarvis — Voice Assistant for Android 11 / HarmonyOS 2.0+ (v4)
 
-Always-listening Russian-language voice assistant for Huawei MatePad SE 11
-(HarmonyOS 2.0). Streaming-first: live ASR, streamed LLM with tool calling,
+Always-listening voice assistant for Android 11 (API 30) / HarmonyOS 2.0+ devices.
+The default build targets Russian (wake word «Джарвис», ASR/TTS language, UI); the
+SaluteSpeech and GigaChat providers are multi-lingual. Streaming-first: live ASR,
+streamed LLM with tool calling,
 sentence-buffered TTS. Alarms and timers that actually ring. Real on-tablet
 device control. Pluggable LLM provider (Sber GigaChat by default, or any
 OpenAI-compatible endpoint).
