@@ -100,6 +100,9 @@ keystore with `keytool` and update `local.properties` accordingly.
 - **Device control**: volume, brightness, Wi-Fi, Bluetooth, DND, screen off,
   open app, battery/time info.
 
+## License
+[MIT](LICENSE)
+
 ## Docs
 - [ARCHITECTURE.md](ARCHITECTURE.md) — component and concurrency model.
 - [RUNBOOK.md](RUNBOOK.md) — troubleshooting, debugging, performance targets.
