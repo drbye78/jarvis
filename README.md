@@ -54,6 +54,27 @@ OpenAI-compatible endpoint).
 ./gradlew testDebugUnitTest
 ```
 
+## Building a signed release APK
+
+Release APKs are signed with a personal keystore (`app/release.keystore`).
+Copy `local.properties.example` → `local.properties` and fill in the signing
+properties (store path, password, alias). The keystore file must be present
+in `app/` — it is `.gitignore`d and never committed.
+
+```bash
+./gradlew :app:assembleRelease
+# Output: app/build/outputs/apk/release/app-release.apk
+```
+
+To verify the signature:
+```bash
+/path/to/Android/Sdk/build-tools/34.0.0/apksigner verify --print-certs \
+  app/build/outputs/apk/release/app-release.apk
+```
+
+Colleagues who want to build their own signed APK generate their own
+keystore with `keytool` and update `local.properties` accordingly.
+
 ## What Jarvis can do
 - **Voice**: wake word «Джарвис», barge-in mid-answer, streaming recognition.
 - **Chat**: GigaChat (or OpenAI-compatible provider) with 20-message context.

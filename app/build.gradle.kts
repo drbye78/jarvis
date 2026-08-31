@@ -32,10 +32,20 @@ android {
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(localProps.getProperty("RELEASE_STORE_FILE", "release.keystore"))
+            storePassword = localProps.getProperty("RELEASE_STORE_PASSWORD", "")
+            keyAlias = localProps.getProperty("RELEASE_KEY_ALIAS", "")
+            keyPassword = localProps.getProperty("RELEASE_KEY_PASSWORD", "")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

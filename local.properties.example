@@ -2,3 +2,9 @@ sdk.dir=/path/to/Android/Sdk
 
 # Provider credentials are now entered in-app via Settings (stored in the Android
 # Keystore); nothing secret lives in local.properties.
+
+# Release signing (release.keystore must be present in app/ directory)
+RELEASE_STORE_FILE=release.keystore
+RELEASE_STORE_PASSWORD=<your store password>
+RELEASE_KEY_ALIAS=<your key alias>
+RELEASE_KEY_PASSWORD=<your key password>
