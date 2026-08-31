@@ -182,7 +182,7 @@ Streaming ASR means these numbers no longer grow with utterance length.
   `tokens.txt`, but detection accuracy and the sensitivity→`keywordsThreshold`
   mapping should still be validated on the target hardware (Kirin 710A-class).
 - **Binary size.** The Sherpa-ONNX AAR (~47 MB) and the bundled model (~17 MB)
-  are committed into the repo (no Git LFS configured).
+  are tracked via Git LFS (run `git lfs pull` after clone).
 - **Hands-free music start depends on the player app.** Jarvis drives external
   players through a capability-gated cascade (`playFromSearch`, MediaBrowser
   search/token, legacy intent); if the installed player build implements none

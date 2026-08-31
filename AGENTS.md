@@ -31,7 +31,7 @@ Compact ramp-up for agents. Every line is something easy to miss.
 ## Conventions
 - Russian is the default UI/config language (target users; "Джарвис"). Keep user-facing strings in `res/values/strings.xml`.
 - Version: `0.2.0`, pre-1.0 (in-development).
-- Large binaries are committed (no Git LFS): `app/libs/sherpa-onnx.aar` (~47 MB) and `app/src/main/assets/sherpa_kws/*` (~17 MB). Don't `.gitignore` them.
+- Large binaries are tracked via Git LFS: `app/libs/sherpa-onnx.aar` (~47 MB) and `app/src/main/assets/sherpa_kws/*` (~17 MB). Don't `.gitignore` them. `git lfs pull` is required after clone.
 
 ## References
 - `README.md` (setup/usage), `RUNBOOK.md` (troubleshooting + Known limitations), `ARCHITECTURE.md` (data flow, layers, security). This file is the quick-start; those are the spec.
