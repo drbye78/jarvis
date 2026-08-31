@@ -11,6 +11,16 @@ package com.jarvis.assistant.media
  * «Кино+Группа+крови» and found nothing. The fix is `Uri.encode` (spaces
  * become `%20`), and the building logic lives here, parameterized by an
  * encoder function, so it is JVM-unit-testable.
+ *
+ * Per-player honesty: a link is only listed when its SHAPE is confirmed.
+ * Zvuk (com.zvooq.openplay) intentionally returns NO links — zvuk.com is
+ * geo/bot-blocked from the dev environment, so the web-search URL shape
+ * could not be verified, and an unverified link would make the orchestrator
+ * claim "search opened" while the user stares at a wrong page. The browser
+ * (S0/S2) and session/launch lanes cover Zvuk — it ships official Android
+ * Auto support, the strongest MediaBrowserService/playFromSearch signal.
+ * RUNBOOK «Zvuk» documents the one-minute on-device check that re-enables
+ * a deep-link entry once its shape is confirmed.
  */
 object SearchLinks {
 
@@ -29,6 +39,9 @@ object SearchLinks {
                 "yandexmusic://search?query=$encoded",
                 "https://music.yandex.ru/search/$encoded",
             )
+            // Zvuk: no verified deep link (see class KDoc) — the cascade
+            // falls through to launch/legacy strategies.
+            "com.zvooq.openplay" -> emptyList()
             else -> emptyList()
         }
     }

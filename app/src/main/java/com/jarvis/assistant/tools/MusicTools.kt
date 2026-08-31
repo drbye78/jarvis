@@ -31,7 +31,9 @@ class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
     inner class PlayMusicTool : ToolContract {
         override val name = "playMusic"
         override val description =
-            "Search for music in the installed player app (Яндекс Музыка by default) and play it. " +
+            "Search for music in the installed player app and play it. The default player is " +
+                "Яндекс Музыка unless the user configured another one or names it explicitly " +
+                "(\"включи в Звуке\", \"включи в ВКе\" — use the 'app' slot for that). " +
                 "Use when the user names a track, artist, album or playlist — e.g. " +
                 "\"включи Bohemian Rhapsody\", \"поставь Кино Группа крови\", \"включи альбом Группа крови\", " +
                 "\"включи плейлист для тренировки\". FILL THE SLOTS: the track title goes into 'query', " +
@@ -47,7 +49,7 @@ class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
                 "genre" to """{"type":"string","description":"Genre slot: 'рок', 'классика'. Fill for \"включи рок\"."}""",
                 "mediaId" to """{"type":"string","description":"EXACT library item id previously returned by listPlaylists or searchLibrary in THIS conversation. When set, query/slots are ignored — pass it together with the item's 'title'. Use only right after those tools returned items."}""",
                 "title" to """{"type":"string","description":"Title of the mediaId item, exactly as listPlaylists/searchLibrary returned it — used to verify playback started. Optional, only meaningful with mediaId."}""",
-                "app" to """{"type":"string","description":"Optional player name to disambiguate: 'Яндекс Музыка', 'VK', 'Звук'. Omit for the default player."}""",
+                "app" to """{"type":"string","description":"Optional player name to disambiguate: 'Яндекс Музыка', 'Звук', 'VK Музыка'. Omit when the user did not name a player — the default (from Settings) applies."}""",
             ),
             required = emptyList(),
         )
@@ -187,7 +189,7 @@ class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
     inner class ListPlaylistsTool : ToolContract {
         override val name = "listPlaylists"
         override val description =
-            "List the playlists and library sections of the player (Яндекс Музыка by default). " +
+            "List the playlists and library sections of the default player. " +
                 "Use for \"какие плейлисты есть\", \"что послушать\", \"покажи библиотеку\". " +
                 "Returns up to 10 items with their mediaId — to play one, call playMusic with " +
                 "mediaId + title in the SAME conversation, immediately (ids are short-lived)."

@@ -1,108 +1,159 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Home: fixed header -> orb+status -> transcript (fills remaining space,
+     scrolls independently — the old ScrollView+weight nesting made the whole
+     page scroll instead) -> live partial -> control bar. The inner column is
+     width-capped in code for tablet comfort (840dp). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground">
 
     <LinearLayout
+        android:id="@+id/homeColumn"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:layout_height="match_parent"
+        android:layout_gravity="center_horizontal"
+        android:orientation="vertical">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <!-- Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="20dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="6dp">
+
+            <ImageView
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_logo"
+                app:tint="?attr/colorPrimary" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:text="@string/app_name"
+                style="@style/TextAppearance.Jarvis.AppTitle" />
+
+            <ImageButton
+                android:id="@+id/alarmsButton"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/alarms"
+                android:src="@drawable/ic_alarm"
+                app:tint="?attr/colorOnSurfaceVariant" />
+
+            <ImageButton
+                android:id="@+id/settingsButton"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/settings"
+                android:src="@drawable/ic_settings"
+                app:tint="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+
+        <!-- Voice orb + status -->
+        <com.jarvis.assistant.ui.VoiceOrbView
+            android:id="@+id/voiceOrb"
+            android:layout_width="168dp"
+            android:layout_height="168dp"
             android:layout_gravity="center_horizontal"
-            android:text="@string/app_name"
-            android:textSize="28sp"
-            android:textStyle="bold" />
+            android:layout_marginTop="6dp"
+            android:importantForAccessibility="no" />
 
         <TextView
             android:id="@+id/statusText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:gravity="center"
-            android:text="@string/state_idle_full"
-            android:textSize="16sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/toggleButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/stop" />
-
-            <Button
-                android:id="@+id/micButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/mic_mute" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/alarmsButton"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/alarms" />
-
-            <Button
-                android:id="@+id/settingsButton"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/settings" />
-        </LinearLayout>
-
-        <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/transcript_title"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="2dp"
+            android:background="@drawable/bg_status_pill"
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
+            android:paddingTop="7dp"
+            android:paddingBottom="7dp"
+            android:text="@string/state_idle_full"
+            style="@style/TextAppearance.Jarvis.Status" />
 
+        <TextView
+            android:id="@+id/wakeHintText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="6dp"
+            android:text="@string/wake_hint"
+            style="@style/TextAppearance.Jarvis.Hint" />
+
+        <!-- Conversation transcript -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/transcript"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_marginTop="8dp"
             android:layout_weight="1"
-            android:minHeight="300dp"
+            android:layout_marginTop="10dp"
             android:clipToPadding="false"
-            android:paddingBottom="16dp" />
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="8dp"
+            android:scrollbars="vertical" />
 
-        <!-- Live ASR partial: muted/translucent italic variant of the user
-             bubble so it reads as "in progress" and stays distinct from
-             finalized transcript lines. Hidden until the first partial arrives. -->
+        <!-- Live ASR partial: an "in progress" echo of what is being heard -->
         <TextView
             android:id="@+id/partialText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="end"
-            android:layout_marginTop="4dp"
-            android:background="#803F51B5"
-            android:maxWidth="280dp"
-            android:padding="12dp"
-            android:textColor="#FFFFFF"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="2dp"
+            android:background="@drawable/bg_bubble_partial"
+            android:maxWidth="300dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="9dp"
+            android:paddingBottom="9dp"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:textSize="15sp"
             android:textStyle="italic"
             android:visibility="gone" />
+
+        <!-- Control bar -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="14dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/micButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:icon="@drawable/ic_mic"
+                android:text="@string/mic_mute" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/toggleButton"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1.4"
+                android:icon="@drawable/ic_power"
+                android:text="@string/stop" />
+        </LinearLayout>
     </LinearLayout>
-</ScrollView>
+</FrameLayout>

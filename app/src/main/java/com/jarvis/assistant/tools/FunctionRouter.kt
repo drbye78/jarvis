@@ -28,7 +28,17 @@ class FunctionRouter(
         com.jarvis.assistant.data.AppDatabase.getInstance(appContext).alarmDao(),
     )
 
-    private val mediaGateway = AndroidMediaGateway(appContext)
+    // Preferred default music player from Settings («Музыка» card): a package
+    // name, or null for "auto" (Яндекс Музыка first). Read lazily on every
+    // resolve so a Settings change applies to the NEXT voice command without
+    // a service restart (same contract as the wake-word reconfigure path).
+    private val mediaGateway = AndroidMediaGateway(
+        appContext,
+        preferredPlayerPackage = {
+            com.jarvis.assistant.util.AppPrefs(appContext)
+                .preferredMusicPlayer.takeUnless { it == "auto" }
+        },
+    )
 
     private val toolRegistry = ToolRegistry(
         listOf(

@@ -77,6 +77,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var openAiModel: TextInputEditText
     private lateinit var openAiApiKey: TextInputEditText
 
+    private lateinit var playerGroup: RadioGroup
+
     private lateinit var engineGroup: RadioGroup
     private lateinit var porcupineBlock: View
     private lateinit var sherpaBlock: View
@@ -150,6 +152,29 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.saveProviderButton).setOnClickListener {
             saveLlmProviderSettings()
+        }
+
+        // A1) Preferred default music player (Settings «Музыка» card). The
+        // composition root reads this pref lazily on every resolve, so the
+        // change applies to the NEXT voice command — no service restart.
+        // An uninstalled preferred player degrades to auto priority in
+        // MusicAppCatalog (tested), so no validation is needed here.
+        playerGroup = findViewById(R.id.playerGroup)
+        playerGroup.check(
+            when (appPrefs.preferredMusicPlayer) {
+                "ru.yandex.music", "com.yandex.music" -> R.id.playerYandex
+                "com.zvooq.openplay" -> R.id.playerZvuk
+                "com.vk.music" -> R.id.playerVk
+                else -> R.id.playerAuto
+            },
+        )
+        playerGroup.setOnCheckedChangeListener { _, checkedId ->
+            appPrefs.preferredMusicPlayer = when (checkedId) {
+                R.id.playerYandex -> "ru.yandex.music"
+                R.id.playerZvuk -> "com.zvooq.openplay"
+                R.id.playerVk -> "com.vk.music"
+                else -> "auto"
+            }
         }
 
         callbacks = RealCallbacks()

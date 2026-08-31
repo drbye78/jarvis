@@ -3,9 +3,11 @@ package com.jarvis.assistant
 import android.app.TimePickerDialog
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -19,13 +21,15 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
- * Alarm management UI: live list with enable switches and delete, plus a
- * time-picker dialog for adding alarms. Replaces the v2.x situation where
- * alarms could only be created by voice and were invisible.
+ * Alarm management UI: live card list with enable switches and delete, an
+ * empty state, and a time-picker dialog for adding alarms. Replaces the
+ * v2.x situation where alarms could only be created by voice and were
+ * invisible.
  */
 class AlarmsActivity : AppCompatActivity() {
 
     private lateinit var adapter: AlarmListAdapter
+    private lateinit var emptyView: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,11 +44,16 @@ class AlarmsActivity : AppCompatActivity() {
             adapter = this@AlarmsActivity.adapter
         }
 
+        emptyView = findViewById(R.id.emptyAlarms)
+        findViewById<View>(R.id.backButton).setOnClickListener { finish() }
         findViewById<Button>(R.id.addAlarmButton).setOnClickListener { showAddDialog() }
 
         lifecycleScope.launch {
             AppDatabase.getInstance(this@AlarmsActivity).alarmDao().alarmsLive()
-                .collectLatest { adapter.submit(it) }
+                .collectLatest {
+                    adapter.submit(it)
+                    emptyView.visibility = if (it.isEmpty()) View.VISIBLE else View.GONE
+                }
         }
     }
 
@@ -125,8 +134,8 @@ class AlarmListAdapter(
         val label: TextView = view.findViewById(R.id.alarmLabel)
         val time: TextView = view.findViewById(R.id.alarmTime)
         val repeat: TextView = view.findViewById(R.id.alarmRepeat)
-        val enabled: com.google.android.material.switchmaterial.SwitchMaterial =
+        val enabled: com.google.android.material.materialswitch.MaterialSwitch =
             view.findViewById(R.id.alarmEnabled)
-        val delete: Button = view.findViewById(R.id.alarmDelete)
+        val delete: ImageButton = view.findViewById(R.id.alarmDelete)
     }
 }

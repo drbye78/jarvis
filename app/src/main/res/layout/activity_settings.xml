@@ -3,77 +3,92 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="?attr/colorSurface">
+    android:background="?android:attr/colorBackground"
+    android:orientation="vertical">
 
-    <!-- Header bar (theme is NoActionBar, so we draw our own) -->
+    <!-- Header (NoActionBar theme: we draw our own) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorPrimary"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="16dp"
-        android:paddingEnd="12dp">
+        android:paddingStart="12dp"
+        android:paddingEnd="8dp">
+
+        <ImageButton
+            android:id="@+id/closeButton"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/close"
+            android:src="@drawable/ic_close"
+            app:tint="?attr/colorOnSurface" />
 
         <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/settings"
-            android:textColor="?attr/colorOnPrimary"
-            android:textSize="20sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/closeButton"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/close"
-            android:textColor="?attr/colorOnPrimary" />
+            android:layout_marginStart="8dp"
+            android:text="@string/settings"
+            style="@style/TextAppearance.Jarvis.ScreenTitle" />
     </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <!-- Constrain width on large tablets for comfortable reading. -->
+        <!-- Comfortable reading column on tablets. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:maxWidth="760dp"
             android:orientation="vertical"
-            android:padding="24dp">
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="28dp">
 
             <!-- A0) LLM PROVIDER (GigaChat default, any OpenAI-compatible endpoint) -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="20dp"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp"
-                app:contentPadding="16dp">
+                android:layout_marginTop="6dp"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="?attr/colorSurface"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="1dp"
+                app:contentPadding="18dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
-                    <TextView
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/provider_label"
-                        android:textColor="?attr/colorPrimary"
-                        android:textSize="16sp"
-                        android:textStyle="bold" />
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_logo"
+                            app:tint="?attr/colorPrimary" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="10dp"
+                            android:text="@string/provider_label"
+                            style="@style/TextAppearance.Jarvis.SectionHeader" />
+                    </LinearLayout>
 
                     <RadioGroup
                         android:id="@+id/llmProviderGroup"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp">
+                        android:layout_marginTop="10dp">
 
                         <RadioButton
                             android:id="@+id/providerGigachat"
@@ -100,7 +115,7 @@
                         android:visibility="gone">
 
                         <com.google.android.material.textfield.TextInputLayout
-                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:hint="@string/base_url_label">
@@ -113,7 +128,7 @@
                         </com.google.android.material.textfield.TextInputLayout>
 
                         <com.google.android.material.textfield.TextInputLayout
-                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
@@ -127,12 +142,12 @@
                         </com.google.android.material.textfield.TextInputLayout>
 
                         <com.google.android.material.textfield.TextInputLayout
-                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
                             android:hint="@string/api_key_label"
-                            app:passwordToggleEnabled="true">
+                            app:endIconMode="password_toggle">
 
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/openAiApiKey"
@@ -146,10 +161,9 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
                             android:text="@string/provider_restart_hint"
-                            android:textColor="?android:attr/textColorSecondary"
-                            android:textSize="13sp" />
+                            style="@style/TextAppearance.Jarvis.Hint" />
 
-                        <Button
+                        <com.google.android.material.button.MaterialButton
                             android:id="@+id/saveProviderButton"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
@@ -159,14 +173,95 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- A1) MUSIC: preferred default player -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="?attr/colorSurface"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="1dp"
+                app:contentPadding="18dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_music_note"
+                            app:tint="?attr/colorPrimary" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="10dp"
+                            android:text="@string/music_section"
+                            style="@style/TextAppearance.Jarvis.SectionHeader" />
+                    </LinearLayout>
+
+                    <RadioGroup
+                        android:id="@+id/playerGroup"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp">
+
+                        <RadioButton
+                            android:id="@+id/playerAuto"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:text="@string/player_auto" />
+
+                        <RadioButton
+                            android:id="@+id/playerYandex"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:text="@string/player_yandex" />
+
+                        <RadioButton
+                            android:id="@+id/playerZvuk"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:text="@string/player_zvuk" />
+
+                        <RadioButton
+                            android:id="@+id/playerVk"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:text="@string/player_vk" />
+                    </RadioGroup>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/player_hint"
+                        style="@style/TextAppearance.Jarvis.Hint" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- A) PROVIDER CREDENTIALS -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="20dp"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp"
-                app:contentPadding="16dp">
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="?attr/colorSurface"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="1dp"
+                app:contentPadding="18dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -174,16 +269,14 @@
                     android:orientation="vertical">
 
                     <TextView
-                        android:layout_width="match_parent"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/credentials_section"
-                        android:textColor="?attr/colorPrimary"
-                        android:textSize="16sp"
-                        android:textStyle="bold" />
+                        style="@style/TextAppearance.Jarvis.SectionHeader" />
 
                     <!-- Picovoice access key (normal text, not a password) -->
                     <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="14dp"
@@ -198,7 +291,7 @@
 
                     <!-- Sber Salute: Client ID + Client Secret -->
                     <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
@@ -212,12 +305,12 @@
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
                         android:hint="@string/salute_secret_label"
-                        app:passwordToggleEnabled="true">
+                        app:endIconMode="password_toggle">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/saluteSecret"
@@ -228,7 +321,7 @@
 
                     <!-- GigaChat: Client ID + Client Secret -->
                     <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
@@ -242,12 +335,12 @@
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
                         android:hint="@string/gigachat_secret_label"
-                        app:passwordToggleEnabled="true">
+                        app:endIconMode="password_toggle">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/gigaChatSecret"
@@ -256,7 +349,7 @@
                             android:inputType="textPassword" />
                     </com.google.android.material.textfield.TextInputLayout>
 
-                    <Button
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/saveCredentialsButton"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -269,9 +362,10 @@
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp"
-                app:contentPadding="16dp">
+                app:cardBackgroundColor="?attr/colorSurface"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="1dp"
+                app:contentPadding="18dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -279,12 +373,10 @@
                     android:orientation="vertical">
 
                     <TextView
-                        android:layout_width="match_parent"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/wake_word_section"
-                        android:textColor="?attr/colorPrimary"
-                        android:textSize="16sp"
-                        android:textStyle="bold" />
+                        style="@style/TextAppearance.Jarvis.SectionHeader" />
 
                     <!-- Engine selector: Porcupine vs Sherpa-ONNX -->
                     <TextView
@@ -292,6 +384,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="16dp"
                         android:text="@string/engine_label"
+                        android:textColor="?attr/colorOnSurface"
                         android:textStyle="bold" />
 
                     <RadioGroup
@@ -327,8 +420,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/porcupine_hint"
-                            android:textColor="?android:attr/textColorSecondary"
-                            android:textSize="13sp" />
+                            style="@style/TextAppearance.Jarvis.Hint" />
 
                         <RadioGroup
                             android:id="@+id/wakeWordGroup"
@@ -351,9 +443,9 @@
                                 android:text="@string/wake_word_custom_bundled" />
                         </RadioGroup>
 
-                        <Button
+                        <com.google.android.material.button.MaterialButton
                             android:id="@+id/loadCustomButton"
-                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
@@ -373,8 +465,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/sherpa_hint"
-                            android:textColor="?android:attr/textColorSecondary"
-                            android:textSize="13sp" />
+                            style="@style/TextAppearance.Jarvis.Hint" />
 
                         <!-- Read-only note: this AAR (v1.13.6) can only load the
                              bundled model from assets, so user-supplied models
@@ -385,8 +476,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
                             android:text="@string/sherpa_bundled_note"
-                            android:textColor="?android:attr/textColorSecondary"
-                            android:textSize="13sp" />
+                            style="@style/TextAppearance.Jarvis.Hint" />
                     </LinearLayout>
 
                     <TextView
@@ -394,6 +484,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="20dp"
                         android:text="@string/sensitivity"
+                        android:textColor="?attr/colorOnSurface"
                         android:textStyle="bold" />
 
                     <TextView
@@ -402,8 +493,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
                         android:text="@string/sensitivity_value"
-                        android:textSize="14sp"
-                        android:textColor="?android:attr/textColorSecondary" />
+                        style="@style/TextAppearance.Jarvis.Hint" />
 
                     <SeekBar
                         android:id="@+id/sensitivityBar"

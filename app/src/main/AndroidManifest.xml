@@ -39,9 +39,10 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
-        <!-- MUSIC lane: target player (current + legacy Yandex Music ids) -->
+        <!-- MUSIC lane: target players (current + legacy Yandex Music ids, Zvuk) -->
         <package android:name="ru.yandex.music" />
         <package android:name="com.yandex.music" />
+        <package android:name="com.zvooq.openplay" />
         <!-- Tier 1 (S4): legacy Assistant voice-search intent resolution -->
         <intent>
             <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />

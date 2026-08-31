@@ -7,15 +7,24 @@ package com.jarvis.assistant.media
  *
  * Resolution order:
  *  1. LLM hint names a brand ("яндекс", "вк", "звук") → that brand's
- *     installed package.
+ *     installed package. An explicit per-request hint always wins —
+ *     "включи в Звуке" targets Zvuk even when Яндекс is the default.
  *  2. LLM hint matches an installed app's label ("вк" → "VK Музыка").
- *  3. No hint (or unrecognized) → first KNOWN player in priority order
- *     (Яндекс Музыка first — this project's target player), else any
+ *  3. The user's preferred player from Settings ("Музыка" card) when
+ *     installed ("звук" preferred → com.zvooq.openplay).
+ *  4. No preference ("auto") → first KNOWN player in priority order
+ *     (Яндекс Музыка first — this project's default target), else any
  *     launchable app whose label looks like a music player.
  */
 class MusicAppCatalog(
     /** Installed launchable apps as (packageName, label) pairs. */
     private val installed: () -> List<Pair<String, String>>,
+    /**
+     * Package name of the user's preferred default player, or null for
+     * "auto" priority. Production reads it from [com.jarvis.assistant.util.AppPrefs]
+     * via the composition root; tests pass a constant.
+     */
+    private val preferredPackage: () -> String? = { null },
 ) : MusicAppResolver {
 
     override fun resolve(appHint: String?): MediaAppInfo? {
@@ -36,6 +45,12 @@ class MusicAppCatalog(
             }
         }
 
+        // 3) The user's preferred default player (Settings → «Музыка»).
+        // Only applied when actually installed — a preference for an
+        // uninstalled player degrades to the auto priority below.
+        preferredPackage()?.let { preferred -> info(preferred)?.let { return it } }
+
+        // 4) Auto priority: KNOWN_PLAYERS order (Яндекс Музыка first).
         return known.firstOrNull()?.let { info(it.first) }
             ?: apps.firstOrNull { (_, label) ->
                 val l = label.lowercase()
@@ -48,7 +63,7 @@ class MusicAppCatalog(
         val KNOWN_PLAYERS = listOf(
             "ru.yandex.music" to "яндекс|yandex|музык",
             "com.yandex.music" to "яндекс|yandex|музык",
-            "com.zvooq.openplay" to "звук|zvuk",
+            "com.zvooq.openplay" to "звук|zvuk|сберзвук",
             "com.vk.music" to "вк|vk",
         )
 

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Jarvis design tokens — NIGHT (twin of values/colors.xml). -->
+    <color name="jarvis_primary">#4FDAC5</color>
+    <color name="jarvis_on_primary">#003731</color>
+    <color name="jarvis_primary_container">#005048</color>
+    <color name="jarvis_on_primary_container">#9CF2E4</color>
+
+    <color name="jarvis_secondary">#FFC169</color>
+    <color name="jarvis_on_secondary">#402D00</color>
+    <color name="jarvis_secondary_container">#5C4200</color>
+    <color name="jarvis_on_secondary_container">#FFDF9E</color>
+
+    <color name="jarvis_surface">#0E1514</color>
+    <color name="jarvis_on_surface">#DDE4E2</color>
+    <color name="jarvis_surface_variant">#3F4947</color>
+    <color name="jarvis_on_surface_variant">#BEC9C6</color>
+    <color name="jarvis_outline">#899390</color>
+
+    <color name="jarvis_background">#0E1514</color>
+
+    <color name="jarvis_error">#FFB4AB</color>
+    <color name="jarvis_on_error">#690005</color>
+    <color name="jarvis_error_container">#93000A</color>
+    <color name="jarvis_on_error_container">#FFDAD6</color>
+
+    <color name="jarvis_status_idle">#899390</color>
+    <color name="jarvis_status_listening">#4FDAC5</color>
+    <color name="jarvis_status_thinking">#FFC169</color>
+    <color name="jarvis_status_speaking">#6FF0DE</color>
+
+    <color name="jarvis_night_scrim">#EE000000</color>
+    <color name="jarvis_ringing_surface">#0E1514</color>
+</resources>

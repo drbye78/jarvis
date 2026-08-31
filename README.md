@@ -89,4 +89,7 @@ OpenAI-compatible endpoint).
 - Sber SaluteSpeech (streaming ASR + TTS via gRPC)
 - Sber GigaChat or any OpenAI-compatible API (LLM via SSE, tool calling)
 - Room (conversation + alarms) · Open-Meteo (weather)
-- Material Components UI
+- Material 3 UI (teal/amber day+night design system): home screen with a
+  live voice orb (breathing/ripple/thinking/speaking animations), chat-style
+  transcript, permission onboarding with status rows and start gating,
+  settings with a «Музыка» default-player card (Яндекс / Звук / VK)

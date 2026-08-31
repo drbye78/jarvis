@@ -114,11 +114,7 @@ In order:
 6. **deep_link** — open the app's search screen
    (`yandexmusic://search?query=…` with `%20` encoding, fallback
    `music.yandex.ru/search/…`); reported as `search_opened` — the user
-   taps the track; never claimed as success. **Note:** the
-   `yandexmusic://` URI scheme is undocumented by Yandex; the
-   `/search?query=` path is inferred from community sources and may not
-   work on all builds. The `https://music.yandex.ru/search/…` fallback
-   opens a browser page, not the app.
+   taps the track; never claimed as success.
 7. **launch_only** — honest «открыл приложение, запусти вручную».
 
 One browser bind per attempt, disconnected in `finally` — no leaks.
@@ -146,31 +142,16 @@ rather than a command to a random player.
 mediaIds are short-lived service identifiers — documented as
 "use immediately".
 
-Target resolution (`MusicAppCatalog`): LLM hint pins the brand (яндекс/
-звук/вк); else known packages in priority order (ru.yandex.music →
-com.yandex.music → zvooq → vk); else any launchable app with a
-music-looking label. The whole cascade is pure Kotlin over gateway
-interfaces → fully JVM-tested (`MusicOrchestratorTest`,
+Target resolution (`MusicAppCatalog`), in priority order: LLM hint pins
+the brand (яндекс/звук/вк — per-request, always wins); the user's
+preferred default player from Settings («Музыка» card, read lazily by
+the composition root so changes apply without a restart —
+uninstalled preferences degrade honestly to auto); else known packages
+in priority order (ru.yandex.music → com.yandex.music → zvooq → vk);
+else any launchable app with a music-looking label. The whole cascade
+is pure Kotlin over gateway interfaces → fully JVM-tested
+(`MusicOrchestratorTest`, `MusicAppCatalogTest`,
 `MediaBrowserGatewayTest`, `VoiceQueryTest`, `TransportToolsTest`).
-
-### Enrichment opportunities
-
-The MediaSession exposes capabilities we don't yet surface to the LLM:
-
-- **Queue management** — `skipToQueueItem(queueId)` exists on the
-  interface but has no LLM tool. Adding a `queueControl` tool would
-  enable "play track 3 from the queue," "what's next in the queue,"
-  "skip the rest" scenarios.
-- **Deterministic browser play** — Strategy 2 (`BROWSER_SEARCH`) is more
-  reliable than `playFromSearch` for exact matches: `onSearch()` returns
-  scored `mediaId` results that can be played deterministically. The LLM
-  could use this for "play the album *A Night at the Opera* by Queen"
-  with higher confidence.
-- **Heart/like prominence** — the `like` action exists in
-  `controlPlayback` but isn't surfaced as a standalone "like this song"
-  command; could be more visible in responses.
-- **Playlist mutation** — browsing is read-only; adding create/edit/delete
-  would enable "add this song to my favorites playlist."
 
 ### Audio etiquette
 
@@ -185,6 +166,31 @@ session start for a clean listening window — no auto-resume; the user
 says «продолжи». There is no acoustic echo cancellation: the wake word
 competes with speaker output, and loud music can mask it — pause-on-wake
 is the mitigation.
+
+## UI design system
+
+Theme: Material 3 (`Theme.Material3.DayNight.NoActionBar`, material
+1.12) over a teal/amber token set — `values/colors.xml` +
+`values-night/colors.xml` (24 day/night twins), status-bar follows the
+mode via `values(-night)/bools.xml`, text appearances in `styles.xml`
+(AppTitle / ScreenTitle / SectionHeader / Status / Hint). No hardcoded
+color hex outside the token files: bubbles/pills are shape drawables
+referencing `?attr/*`, so day/night is automatic everywhere.
+
+Screens: home is the voice orb (`VoiceOrbView` — custom Canvas view,
+four cheap animators: idle-breathe / listening-ripple / thinking-arcs /
+speaking-glow, muted-flat; animators cancelled on detach) + a chat
+transcript (`TranscriptAdapter` on `ListAdapter`/DiffUtil, system
+prompt filtered, tool traffic as compact pills, auto-scroll on insert)
++ a control bar (mic mute / start-stop). The transcript owns its
+scroll; the column is capped to 840dp on wide screens. Onboarding is a
+declarative status-row list (`PermRow` data) with start gated on the
+mandatory rows. Settings gained the «Музыка» card
+(`preferredMusicPlayer`), alarms list/ringing follow the same tokens.
+
+There is no XML-inflated custom-styled programmatic widget: row
+controls in onboarding are framework TextViews with theme ripples
+(programmatic MaterialButtons cannot take styles after construction).
 
 ## Alarms
 

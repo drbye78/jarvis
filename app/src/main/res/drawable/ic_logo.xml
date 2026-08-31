@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Jarvis mark: a ring + core dot — echoes the on-screen voice orb. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path
+        android:fillColor="?attr/colorPrimary"
+        android:fillType="evenOdd"
+        android:pathData="M12,3a9,9 0 1,0 0.001,0z M12,6.5a5.5,5.5 0 1,1 0,11a5.5,5.5 0 1,1 0,-11z" />
+    <path
+        android:fillColor="?attr/colorPrimary"
+        android:pathData="M12,9.5a2.5,2.5 0 1,1 0,5a2.5,2.5 0 1,1 0,-5z" />
+</vector>

@@ -30,9 +30,17 @@ import timber.log.Timber
  *  - media keys need no permission.
  *  - launching/deep-linking other apps needs no permission; package
  *    visibility on Android 11+ is covered by the manifest <queries> block
- *    (launcher-intent query + explicit Yandex Music package names).
+ *    (launcher-intent query + explicit Yandex Music / Zvuk package names).
  */
-class AndroidMediaGateway(private val context: Context) : MediaGateway {
+class AndroidMediaGateway(
+    private val context: Context,
+    /**
+     * Package of the user's preferred default player (Settings → «Музыка»),
+     * or null for "auto" priority. Supplied by the composition root so this
+     * adapter stays free of SharedPreferences.
+     */
+    private val preferredPlayerPackage: () -> String? = { null },
+) : MediaGateway {
 
     private val appContext = context.applicationContext
     private val listenerComponent = ComponentName(appContext, JarvisNotificationListener::class.java)
@@ -154,7 +162,7 @@ class AndroidMediaGateway(private val context: Context) : MediaGateway {
      * target player), then any launchable app whose label looks like a music
      * player. An LLM-provided hint ("вк", "яндекс", "звук") pins the brand.
      */
-    val resolver: MusicAppResolver = MusicAppCatalog(::installedLaunchables)
+    val resolver: MusicAppResolver = MusicAppCatalog(::installedLaunchables, preferredPlayerPackage)
 
     /**
      * Tier 3: the browser lane gateway, built on the same app context.

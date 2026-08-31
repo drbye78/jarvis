@@ -592,23 +592,23 @@ class MusicOrchestratorTest {
 
     @Test
     fun `catalog prefers yandex music without hint`() {
-        val catalog = MusicAppCatalog {
+        val catalog = MusicAppCatalog(installed = {
             listOf(
                 "com.zvooq.openplay" to "Звук",
                 "ru.yandex.music" to "Яндекс Музыка",
             )
-        }
+        })
         assertEquals("ru.yandex.music", catalog.resolve(null)?.packageName)
     }
 
     @Test
     fun `catalog brand hint picks that brand`() {
-        val catalog = MusicAppCatalog {
+        val catalog = MusicAppCatalog(installed = {
             listOf(
                 "ru.yandex.music" to "Яндекс Музыка",
                 "com.zvooq.openplay" to "Звук",
             )
-        }
+        })
         assertEquals("com.zvooq.openplay", catalog.resolve("звук")?.packageName)
         assertEquals("com.zvooq.openplay", catalog.resolve("  Zvuk ")?.packageName)
         assertEquals("ru.yandex.music", catalog.resolve("в яндекс музыке")?.packageName)
@@ -616,21 +616,19 @@ class MusicOrchestratorTest {
 
     @Test
     fun `catalog hint may match a label`() {
-        val catalog = MusicAppCatalog {
-            listOf("some.player" to "VK Музыка")
-        }
+        val catalog = MusicAppCatalog(installed = { listOf("some.player" to "VK Музыка") })
         assertEquals("some.player", catalog.resolve("vk")?.packageName)
     }
 
     @Test
     fun `catalog falls back to label keywords`() {
-        val catalog = MusicAppCatalog { listOf("x.player" to "Моя Музыка") }
+        val catalog = MusicAppCatalog(installed = { listOf("x.player" to "Моя Музыка") })
         assertEquals("x.player", catalog.resolve(null)?.packageName)
     }
 
     @Test
     fun `catalog finds nothing on a music-less device`() {
-        val catalog = MusicAppCatalog { listOf("com.android.chrome" to "Chrome") }
+        val catalog = MusicAppCatalog(installed = { listOf("com.android.chrome" to "Chrome") })
         assertNull(catalog.resolve(null))
         assertNull(catalog.resolve("спам"))
     }

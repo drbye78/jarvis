@@ -1,16 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Jarvis" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#3F51B5</item>
-        <item name="colorPrimaryVariant">#303F9F</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorSecondary">#FF5722</item>
-        <item name="colorOnSecondary">#FFFFFF</item>
-        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+    <!-- Material 3 base theme (material 1.12). Tokens live in colors.xml /
+         colors-night.xml; screens reference ?attr/* so day/night is automatic. -->
+    <style name="Theme.Jarvis" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/jarvis_primary</item>
+        <item name="colorOnPrimary">@color/jarvis_on_primary</item>
+        <item name="colorPrimaryContainer">@color/jarvis_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/jarvis_on_primary_container</item>
+
+        <item name="colorSecondary">@color/jarvis_secondary</item>
+        <item name="colorOnSecondary">@color/jarvis_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/jarvis_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/jarvis_on_secondary_container</item>
+
+        <item name="colorSurface">@color/jarvis_surface</item>
+        <item name="colorOnSurface">@color/jarvis_on_surface</item>
+        <item name="colorSurfaceVariant">@color/jarvis_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/jarvis_on_surface_variant</item>
+        <item name="colorOutline">@color/jarvis_outline</item>
+
+        <item name="colorError">@color/jarvis_error</item>
+        <item name="colorOnError">@color/jarvis_on_error</item>
+        <item name="colorErrorContainer">@color/jarvis_error_container</item>
+        <item name="colorOnErrorContainer">@color/jarvis_on_error_container</item>
+
+        <item name="android:colorBackground">@color/jarvis_background</item>
+        <item name="android:statusBarColor">@color/jarvis_surface</item>
+        <item name="android:windowLightStatusBar">@bool/jarvis_light_bars</item>
     </style>
 
-    <style name="Theme.Jarvis.Alarm" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="android:windowBackground">#B3000000</item>
+    <!-- Full-screen alarm ringing: translucent dark scrim over whatever was
+         on screen, real content drawn by AlarmRingingActivity. -->
+    <style name="Theme.Jarvis.Alarm" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/jarvis_night_scrim</item>
         <item name="android:windowIsTranslucent">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
     </style>
 </resources>

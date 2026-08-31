@@ -1,7 +1,12 @@
 # Music Lane Production Plan — Capability-Driven Voice Music Control
 
 > **Status (Aug 31 2026): IMPLEMENTED on `feat/music-capabilities`** —
-> Phases 0–6 complete. Phase 0 = audit M-fixes + carried-over bugs; Phase 1
+> Phases 0–6 complete, plus the follow-up track **Zvuk + UI/UX**:
+> preferred default player (Settings «Музыка», `MusicAppCatalog` step 3),
+> Zvuk visibility/prompt integration, and a Material 3 redesign of all
+> screens (voice orb home, status-row onboarding, chat transcript). 174
+> JVM tests; on-device ground-truth probing (§10) still requires the
+> tablet. Phase 0 = audit M-fixes + carried-over bugs; Phase 1
 > = Tier 0 probes (MediaCapabilities, gated dispatch, MusicDiag); Phase 2 =
 > Tier 1 structured voice search (VoiceQuery scoring, Assistant extras
 > Bundle, S4 legacy intent, playMusic slots); Phase 3 = Tier 3 browser lane

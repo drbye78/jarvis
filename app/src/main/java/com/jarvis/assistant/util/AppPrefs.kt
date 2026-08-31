@@ -82,6 +82,17 @@ class AppPrefs(context: Context) {
         get() = prefs.getString(KEY_SHERPA_ONNX, "") ?: ""
         set(value) = prefs.edit().putString(KEY_SHERPA_ONNX, value).apply()
 
+    /**
+     * The user's preferred default music player: "auto" (Яндекс Музыка first,
+     * the project default) or a package name — com.zvooq.openplay (Звук),
+     * ru.yandex.music, com.vk.music. Set from the Settings «Музыка» card;
+     * consumed by [com.jarvis.assistant.media.MusicAppCatalog] as resolution
+     * step 3 (an explicit voice hint "включи в Звуке" still wins).
+     */
+    var preferredMusicPlayer: String
+        get() = prefs.getString(KEY_MUSIC_PLAYER, "auto") ?: "auto"
+        set(value) = prefs.edit().putString(KEY_MUSIC_PLAYER, value).apply()
+
     fun loadProviderSettings(): ProviderSettings = ProviderSettings(
         type = providerType,
         openAiBaseUrl = openAiBaseUrl,
@@ -101,5 +112,6 @@ class AppPrefs(context: Context) {
         const val KEY_CUSTOM_WAKE_PATH = "custom_wake_word_path"
         const val KEY_WAKE_ENGINE = "wake_word_engine"
         const val KEY_SHERPA_ONNX = "sherpa_onnx_path"
+        const val KEY_MUSIC_PLAYER = "preferred_music_player"
     }
 }

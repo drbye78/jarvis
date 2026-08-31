@@ -9,9 +9,13 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="start"
-        android:background="#EEEEEE"
-        android:maxWidth="280dp"
-        android:padding="12dp"
-        android:textColor="#212121"
+        android:background="@drawable/bg_bubble_assistant"
+        android:lineSpacingMultiplier="1.12"
+        android:maxWidth="320dp"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:textColor="?attr/colorOnSurface"
         android:textSize="15sp" />
 </FrameLayout>

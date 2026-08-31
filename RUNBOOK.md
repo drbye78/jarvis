@@ -95,9 +95,6 @@ MEDIA_PLAY_FROM_SEARCH intent → search-screen deep link → launch-only.
    - The player is LOGGED IN and started at least once.
    - Player app is up to date — vendors ship assistant integrations
      (playFromSearch / onSearch / browser service) per build.
-   - The deep link may be the cause: `yandexmusic://search?query=…` is
-     undocumented and may not resolve on all builds. The `https://`
-     fallback opens a browser, not the app.
 4. Yandex Music package: current builds use `ru.yandex.music`, older
    sideloads `com.yandex.music` — both are matched. Other players (Звук,
    VK Music) are found by label; name the app in the command («включи X в
@@ -205,23 +202,3 @@ Streaming ASR means these numbers no longer grow with utterance length.
   gated on the session's action mask and rating type; media-key fallback only
   covers play/pause/next/previous/stop. Unsupported actions get an honest
   refusal naming the limitation.
-- **Deep-link scheme is undocumented.** The `yandexmusic://` URI scheme is
-  not published by Yandex; the `/search?query=` path used in Strategy 6 is
-  inferred from community sources and may not resolve on all builds. The
-  `https://music.yandex.ru/search/…` fallback opens a browser page, not
-  the app. Strategy 6 is a last-resort honest fallback, not a reliable path.
-- **Verification may score related tracks above threshold.** The
-  `VoiceQueryMatcher` uses weighted token overlap (title W=0.65, artist
-  W=0.35) with a `STRONG_THRESHOLD` of 0.5. A cover, remix, or
-  compilation featuring the requested artist can pass verification even
-  when it's not the exact recording the user intended. This is a known
-  trade-off — no exact-match path exists for unstructured search.
-- **Browser mediaIds are short-lived.** `mediaId` values returned by
-  `listPlaylists` / `searchLibrary` are service-scoped identifiers that
-  may become stale if the LLM delays between search and play. Use them
-  immediately in the same conversation turn.
-- **On-device validation with current Yandex Music build pending.**
-  The capability matrix (`MusicDiag` dump) should be verified on the
-  target hardware (Kirin 710A-class) with the latest Yandex Music build
-  to confirm `playFromSearch`, browser `onSearch`, repeat/shuffle bits,
-  and heart rating are still exposed as assumed.

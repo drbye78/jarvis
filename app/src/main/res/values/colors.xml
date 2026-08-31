@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Jarvis design tokens — DAY.
+         "Arc-reactor teal" primary + warm amber accent; alarm surfaces stay
+         calm and dark. Every color exists as a night twin in values-night/. -->
+    <color name="jarvis_primary">#00695C</color>
+    <color name="jarvis_on_primary">#FFFFFF</color>
+    <color name="jarvis_primary_container">#B2F1E8</color>
+    <color name="jarvis_on_primary_container">#00201C</color>
+
+    <color name="jarvis_secondary">#7A5900</color>
+    <color name="jarvis_on_secondary">#FFFFFF</color>
+    <color name="jarvis_secondary_container">#FFDF9E</color>
+    <color name="jarvis_on_secondary_container">#261A00</color>
+
+    <color name="jarvis_surface">#F6FAF9</color>
+    <color name="jarvis_on_surface">#171D1C</color>
+    <color name="jarvis_surface_variant">#DAE5E2</color>
+    <color name="jarvis_on_surface_variant">#3F4947</color>
+    <color name="jarvis_outline">#6F7977</color>
+
+    <color name="jarvis_background">#F6FAF9</color>
+
+    <color name="jarvis_error">#BA1A1A</color>
+    <color name="jarvis_on_error">#FFFFFF</color>
+    <color name="jarvis_error_container">#FFDAD6</color>
+    <color name="jarvis_on_error_container">#410002</color>
+
+    <!-- Semantic status colors (VoiceOrb + status pill) -->
+    <color name="jarvis_status_idle">#6F7977</color>
+    <color name="jarvis_status_listening">#00897B</color>
+    <color name="jarvis_status_thinking">#B26A00</color>
+    <color name="jarvis_status_speaking">#00A693</color>
+
+    <!-- Alarm ringing screen: deep, calm, high-contrast -->
+    <color name="jarvis_night_scrim">#EE0E1514</color>
+    <color name="jarvis_ringing_surface">#0E1514</color>
+</resources>

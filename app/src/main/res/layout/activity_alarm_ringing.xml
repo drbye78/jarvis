@@ -1,32 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Full-screen alarm ringing: deep calm surface, huge time, prominent
+     dismiss above snooze (the priority order of the two actions). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#B3000000"
+    android:background="@color/jarvis_ringing_surface"
     android:gravity="center"
     android:orientation="vertical"
     android:padding="32dp">
+
+    <ImageView
+        android:layout_width="96dp"
+        android:layout_height="96dp"
+        android:background="@drawable/bg_icon_chip"
+        android:contentDescription="@string/alarm_notification_title"
+        android:padding="24dp"
+        android:src="@drawable/ic_alarm"
+        app:tint="@color/jarvis_status_thinking" />
 
     <TextView
         android:id="@+id/alarmTime"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textColor="#FFFFFF"
-        android:textSize="56sp"
-        android:textStyle="bold"
+        android:layout_marginTop="28dp"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="@color/jarvis_on_surface"
+        android:textSize="60sp"
         tools:text="07:30" />
 
     <TextView
         android:id="@+id/alarmLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:textColor="#DDDDDD"
+        android:layout_marginTop="10dp"
+        android:textColor="@color/jarvis_on_surface_variant"
         android:textSize="20sp"
         tools:text="Подъём" />
 
-    <Button
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btnDismiss"
         android:layout_width="match_parent"
         android:layout_height="64dp"
@@ -34,9 +47,9 @@
         android:text="@string/dismiss"
         android:textSize="18sp" />
 
-    <Button
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSnooze"
-        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        style="@style/Widget.Material3.Button.TonalButton"
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:layout_marginTop="12dp"

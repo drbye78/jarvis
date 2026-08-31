@@ -2,36 +2,47 @@ package com.jarvis.assistant
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.DisplayMetrics
 import android.view.View
-import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.button.MaterialButton
 import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.service.JarvisForegroundService
 import com.jarvis.assistant.ui.TranscriptAdapter
+import com.jarvis.assistant.ui.VoiceOrbView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Home screen: live status chip, rolling conversation transcript (from
- * Room), mic mute, start/stop, and navigation to Alarms / Settings. First
- * launch redirects to onboarding.
+ * Home screen: the voice orb (live assistant state), a status pill, a
+ * chat-style transcript (Room-backed, auto-scrolling), the live ASR partial
+ * as an "in progress" bubble, and the mic / start-stop control bar.
+ * Navigation: alarms + settings in the header.
+ *
+ * Layout note: the transcript RecyclerView owns its scroll (the old layout
+ * nested it inside a ScrollView, which made layout_weight meaningless and
+ * the whole page scroll). On wide screens the whole column is capped to
+ * 840dp and centered for comfortable reading.
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var statusText: TextView
-    private lateinit var micButton: Button
-    private lateinit var toggleButton: Button
+    private lateinit var micButton: MaterialButton
+    private lateinit var toggleButton: MaterialButton
     private lateinit var adapter: TranscriptAdapter
     private lateinit var partialText: TextView
+    private lateinit var voiceOrb: VoiceOrbView
+    private lateinit var transcript: RecyclerView
 
     private var micMuted = false
 
@@ -50,17 +61,29 @@ class MainActivity : AppCompatActivity() {
         micButton = findViewById(R.id.micButton)
         toggleButton = findViewById(R.id.toggleButton)
         partialText = findViewById(R.id.partialText)
+        voiceOrb = findViewById(R.id.voiceOrb)
+        transcript = findViewById(R.id.transcript)
         adapter = TranscriptAdapter()
 
-        findViewById<RecyclerView>(R.id.transcript).apply {
+        capColumnWidthOnTablets()
+
+        transcript.apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = this@MainActivity.adapter
         }
 
-        findViewById<Button>(R.id.alarmsButton).setOnClickListener {
+        // Auto-scroll: keep the newest exchange in view as rows are inserted.
+        adapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
+                val target = adapter.itemCount - 1
+                if (target >= 0) transcript.smoothScrollToPosition(target)
+            }
+        })
+
+        findViewById<ImageButton>(R.id.alarmsButton).setOnClickListener {
             startActivity(Intent(this, AlarmsActivity::class.java))
         }
-        findViewById<Button>(R.id.settingsButton).setOnClickListener {
+        findViewById<ImageButton>(R.id.settingsButton).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
@@ -79,12 +102,15 @@ class MainActivity : AppCompatActivity() {
             micMuted = !micMuted
             if (micMuted) {
                 graph.sessionManager.setMuted(true)
-                micButton.text = getString(R.string.mic_unmute)
+                micButton.setIconResource(R.drawable.ic_mic_off)
+                micButton.setText(R.string.mic_unmute)
                 statusText.text = getString(R.string.state_muted)
             } else {
                 graph.sessionManager.setMuted(false)
-                micButton.text = getString(R.string.mic_mute)
+                micButton.setIconResource(R.drawable.ic_mic)
+                micButton.setText(R.string.mic_mute)
             }
+            voiceOrb.setState(currentState, micMuted)
         }
 
         observeTranscript()
@@ -95,9 +121,24 @@ class MainActivity : AppCompatActivity() {
         refreshServiceState()
     }
 
+    /** Comfortable reading column on wide/tablet screens. */
+    private fun capColumnWidthOnTablets() {
+        val column = findViewById<View>(R.id.homeColumn)
+        val dm: DisplayMetrics = resources.displayMetrics
+        val dp = { v: Int -> (v * dm.density).toInt() }
+        if (dm.widthPixels > dp(900)) {
+            column.layoutParams = column.layoutParams.apply { width = dp(840) }
+        }
+    }
+
     private fun refreshServiceState() {
-        toggleButton.text =
-            getString(if (GraphHolder.isRunning) R.string.stop else R.string.start)
+        if (GraphHolder.isRunning) {
+            toggleButton.setText(R.string.stop)
+            toggleButton.setIconResource(R.drawable.ic_power)
+        } else {
+            toggleButton.setText(R.string.start)
+            toggleButton.setIconResource(R.drawable.ic_power)
+        }
     }
 
     private fun observeTranscript() {
@@ -107,7 +148,8 @@ class MainActivity : AppCompatActivity() {
                 adapter.submit(messages)
             }
         }
-        // Status chip + live partial: poll graph presence, collect while alive.
+        // Status + orb + live partial: poll graph presence, collect while alive
+        // (the graph is rebuilt per service start; the poll re-binds collectors).
         lifecycleScope.launch {
             var collectedGraph: com.jarvis.assistant.di.AppGraph? = null
             var stateJob: kotlinx.coroutines.Job? = null
@@ -120,8 +162,9 @@ class MainActivity : AppCompatActivity() {
                     collectedGraph = graph
                     stateJob = launch {
                         graph.stateMachine.state.collectLatest { state ->
-                            if (micMuted) return@collectLatest
-                            statusText.text = labelFor(state)
+                            currentState = state
+                            voiceOrb.setState(state, micMuted)
+                            if (!micMuted) statusText.text = labelFor(state)
                         }
                     }
                     partialJob = launch {
@@ -130,17 +173,26 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 } else if (graph == null) {
-                    collectedGraph = null
+                    if (collectedGraph != null) {
+                        // Service stopped: reset the orb to idle-gray so the
+                        // screen stops claiming a live assistant.
+                        collectedGraph = null
+                        currentState = null
+                        voiceOrb.setState(null, micMuted)
+                    }
                 }
                 delay(500)
             }
         }
     }
 
+    /** Last observed state — kept so the mute toggle can redraw the orb. */
+    private var currentState: AssistantState? = null
+
     /**
-     * Renders the live ASR partial as a muted, in-progress line. When the
-     * partial is cleared ("") the indicator hides so only finalized transcript
-     * lines remain visible.
+     * Renders the live ASR partial as a muted, in-progress bubble above the
+     * control bar. When the partial is cleared ("") the bubble hides so only
+     * finalized transcript lines remain visible.
      */
     private fun updatePartial(partial: String) {
         if (partial.isBlank()) {

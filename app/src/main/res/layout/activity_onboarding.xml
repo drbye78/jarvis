@@ -1,89 +1,76 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- First-run onboarding: status rows are built programmatically into
+     permRows (icon + label + action button / done chip) — see
+     OnboardingActivity. Start is gated on the mandatory rows. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground"
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
         android:orientation="vertical"
-        android:padding="16dp">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/onboarding_title"
-            android:textSize="22sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/onboarding_hint"
-            android:textSize="14sp" />
-
-        <TextView
-            android:id="@+id/permStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:fontFamily="monospace"
-            android:textSize="13sp" />
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="28dp"
+        android:paddingBottom="24dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:orientation="vertical">
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/btnGrantMic"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/grant_mic" />
+            <ImageView
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_logo"
+                app:tint="?attr/colorPrimary" />
 
-            <Button
-                android:id="@+id/btnNotifListener"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/grant_notif_listener" />
-
-            <Button
-                android:id="@+id/btnBattery"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/grant_battery" />
-
-            <Button
-                android:id="@+id/btnWriteSettings"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/grant_write_settings" />
-
-            <Button
-                android:id="@+id/btnDnd"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/grant_dnd" />
-
-            <Button
-                android:id="@+id/btnDeviceAdmin"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/grant_device_admin" />
+                android:layout_marginStart="12dp"
+                android:text="@string/onboarding_title"
+                style="@style/TextAppearance.Jarvis.ScreenTitle" />
         </LinearLayout>
 
-        <Button
-            android:id="@+id/btnStart"
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="10dp"
+            android:text="@string/onboarding_hint"
+            style="@style/TextAppearance.Jarvis.Hint" />
+
+        <!-- Permission/access rows (built in code) -->
+        <LinearLayout
+            android:id="@+id/permRows"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="vertical" />
+
+        <TextView
+            android:id="@+id/startGateHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:gravity="center"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnStart"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="10dp"
+            android:icon="@drawable/ic_power"
             android:text="@string/start_jarvis"
             android:textSize="16sp" />
     </LinearLayout>

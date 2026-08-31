@@ -4,31 +4,38 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.jarvis.assistant.R
 import com.jarvis.assistant.model.Message
 
 /**
- * Simple transcript adapter: user messages right-aligned dark bubbles,
- * assistant replies left-aligned light bubbles, tool activity as compact
- * system lines.
+ * Chat-style transcript adapter v2.
+ *
+ * Changes vs v1: DiffUtil via [ListAdapter] instead of notifyDataSetChanged
+ * (Room emits a whole new list per change — now only the changed rows
+ * rebind), the system prompt is filtered out of the submitted list instead
+ * of rendering as an empty row, and tool traffic renders as a compact
+ * centered pill. Bubble styling lives in the item layouts / drawables; no
+ * hardcoded hex here.
+ *
+ * [submit] keeps the old name (MainActivity call site) and feeds the diff
+ * pipeline.
  */
-class TranscriptAdapter : RecyclerView.Adapter<TranscriptAdapter.VH>() {
+class TranscriptAdapter : ListAdapter<Message, TranscriptAdapter.VH>(DIFF) {
 
-    private val items = mutableListOf<Message>()
+    /** Row count the RecyclerView shows (system prompt filtered in [submit]). */
+    override fun getItemCount(): Int = super.getItemCount()
 
-    fun submit(messages: List<Message>) {
-        items.clear()
-        items.addAll(messages)
-        notifyDataSetChanged()
+    override fun getItemViewType(position: Int): Int = when (getItem(position).role) {
+        ROLE_USER -> TYPE_USER
+        ROLE_ASSISTANT -> TYPE_ASSISTANT
+        else -> TYPE_SYSTEM // tool traffic
     }
 
-    override fun getItemCount(): Int = items.size
-
-    override fun getItemViewType(position: Int): Int = when (items[position].role) {
-        "user" -> TYPE_USER
-        "assistant" -> TYPE_ASSISTANT
-        else -> TYPE_SYSTEM // system prompt / tool traffic
+    fun submit(messages: List<Message>) {
+        submitList(messages.filter { it.role != ROLE_SYSTEM_PROMPT })
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -42,13 +49,15 @@ class TranscriptAdapter : RecyclerView.Adapter<TranscriptAdapter.VH>() {
     }
 
     override fun onBindViewHolder(holder: VH, position: Int) {
-        val msg = items[position]
-        val text = when (msg.role) {
-            "tool" -> "🔧 ${msg.name ?: "tool"}: ${shorten(msg.content)}"
-            "system" -> "" // hide the system prompt
+        val msg = getItem(position)
+        holder.text.text = when (msg.role) {
+            // Tool line: name + truncated payload — compact, non-interactive.
+            ROLE_TOOL -> {
+                val name = msg.name ?: "tool"
+                "${name}: ${shorten(msg.content)}"
+            }
             else -> msg.content
         }
-        holder.text.text = text
     }
 
     private fun shorten(s: String, max: Int = 140): String =
@@ -62,5 +71,17 @@ class TranscriptAdapter : RecyclerView.Adapter<TranscriptAdapter.VH>() {
         const val TYPE_USER = 0
         const val TYPE_ASSISTANT = 1
         const val TYPE_SYSTEM = 2
+        const val ROLE_USER = "user"
+        const val ROLE_ASSISTANT = "assistant"
+        const val ROLE_TOOL = "tool"
+        const val ROLE_SYSTEM_PROMPT = "system"
+
+        val DIFF = object : DiffUtil.ItemCallback<Message>() {
+            override fun areItemsTheSame(oldItem: Message, newItem: Message): Boolean =
+                oldItem === newItem || oldItem == newItem
+
+            override fun areContentsTheSame(oldItem: Message, newItem: Message): Boolean =
+                oldItem == newItem
+        }
     }
 }
