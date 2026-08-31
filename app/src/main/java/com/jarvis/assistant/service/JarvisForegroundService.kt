@@ -170,7 +170,7 @@ class JarvisForegroundService : Service() {
             graph?.shutdown()
             graph = null
             GraphHolder.graph = null
-            speakError("Не удалось запустить ассистента. Повторю попытку автоматически.")
+            speakError(getString(R.string.tts_init_failed))
         }
     }
 
@@ -322,7 +322,7 @@ class JarvisForegroundService : Service() {
     private fun speakError(message: String) {
         Timber.e("Voice error: %s", message)
         runCatching {
-            errorTts.language = Locale("ru")
+            errorTts.language = Locale.getDefault()
             errorTts.speak(message, TextToSpeech.QUEUE_FLUSH, null, null)
         }
     }

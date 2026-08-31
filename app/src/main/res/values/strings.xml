@@ -108,7 +108,7 @@
     <string name="add_alarm">Добавить будильник</string>
     <string name="alarms_empty">Будильников нет. Скажите «Джарвис, разбуди меня в семь» — или добавьте кнопкой ниже.</string>
     <string name="alarm_label_hint">Название (необязательно)</string>
-    <string name="alarm_label_title">Будильник на %02d:%02d — название</string>
+    <string name="alarm_label_title" formatted="true">Будильник на %02d:%02d — название</string>
     <string name="default_alarm_label">Будильник</string>
     <string name="ok">ОК</string>
     <string name="cancel">Отмена</string>
@@ -121,4 +121,44 @@
     <string name="snooze_label">Повтор будильника</string>
     <string name="timer_done">Время вышло!</string>
     <string name="perm_notification_text">Нужен доступ к микрофону. Нажмите, чтобы открыть приложение.</string>
+
+    <!-- TTS speech feedback -->
+    <string name="tts_please_wait">Секунду.</string>
+    <string name="tts_opening_player">Открываю %s.</string>
+    <string name="tts_init_failed">Не удалось запустить ассистента. Повторю попытку автоматически.</string>
+
+    <!-- Default labels -->
+    <string name="default_timer_label">Таймер</string>
+
+    <!-- Now-playing -->
+    <string name="now_playing_unknown_track">неизвестный трек</string>
+    <string name="now_playing_playing">играет</string>
+    <string name="now_playing_paused">на паузе</string>
+    <string name="now_playing_speed">скорость %sx</string>
+    <string name="now_playing_repeat_one">повтор трека</string>
+    <string name="now_playing_repeat_all">повтор всего</string>
+    <string name="now_playing_shuffled">перемешано</string>
+    <string name="now_playing_queue">%1$d из %2$d</string>
+    <string name="now_playing_format">Играет: %1$s (%2$s%3$s%4$s).</string>
+
+    <!-- Weather conditions -->
+    <string name="weather_unknown">неизвестно</string>
+    <string name="weather_clear">ясно</string>
+    <string name="weather_partly_cloudy">малооблачно</string>
+    <string name="weather_cloudy">облачно</string>
+    <string name="weather_fog">туман</string>
+    <string name="weather_drizzle">морось</string>
+    <string name="weather_icy_drizzle">ледяная морось</string>
+    <string name="weather_rain">дождь</string>
+    <string name="weather_icy_rain">ледяной дождь</string>
+    <string name="weather_snow">снег</string>
+    <string name="weather_snow_grains">снежные зёрна</string>
+    <string name="weather_rain_shower">ливень</string>
+    <string name="weather_snow_shower">снегопад</string>
+    <string name="weather_thunderstorm">гроза</string>
+    <string name="weather_thunderstorm_hail">гроза с градом</string>
+
+    <!-- Device info -->
+    <string name="device_time_format">HH:mm, d MMMM</string>
+    <string name="device_battery_na">н/д</string>
 </resources>

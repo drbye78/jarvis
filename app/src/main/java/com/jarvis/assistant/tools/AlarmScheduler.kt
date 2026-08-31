@@ -287,7 +287,7 @@ class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             ACTION_ALARM_FIRED, ACTION_TIMER_FIRED -> {
-                val label = intent.getStringExtra(EXTRA_LABEL) ?: "Будильник"
+                val label = intent.getStringExtra(EXTRA_LABEL) ?: context.getString(R.string.default_alarm_label)
                 val isTimer = intent.action == ACTION_TIMER_FIRED
                 val alertId = intent.getIntExtra(EXTRA_ALERT_ID, -1)
                 // N2: post the full-screen-intent notification from the receiver

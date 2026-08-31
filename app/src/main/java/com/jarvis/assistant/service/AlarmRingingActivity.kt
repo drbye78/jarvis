@@ -38,7 +38,7 @@ class AlarmRingingActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val label = intent.getStringExtra(AlarmReceiver.EXTRA_LABEL) ?: "Будильник"
+        val label = intent.getStringExtra(AlarmReceiver.EXTRA_LABEL) ?: getString(R.string.default_alarm_label)
         val isTimer = intent.getBooleanExtra(AlarmReceiver.EXTRA_IS_TIMER, false)
         val alertId = intent.getIntExtra(AlarmReceiver.EXTRA_ALERT_ID, -1)
 

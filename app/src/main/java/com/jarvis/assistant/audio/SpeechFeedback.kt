@@ -1,5 +1,7 @@
 package com.jarvis.assistant.audio
 
+import android.content.Context
+import com.jarvis.assistant.R
 import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
 import kotlinx.coroutines.CoroutineScope
@@ -44,15 +46,16 @@ class TtsSpeechFeedback(
     private val player: TtsPlayer,
     private val voice: String,
     private val focus: AssistantAudioFocus? = null,
+    private val context: Context? = null,
 ) : SpeechFeedback {
 
     override fun onCascadeStarted(predictedLong: Boolean) {
         if (!predictedLong) return // live session: the fast path stays silent
-        speak("Секунду.")
+        speak(context?.getString(R.string.tts_please_wait) ?: "Секунду.")
     }
 
     override fun onLaunchingPlayer(label: String) {
-        speak("Открываю $label.")
+        speak(context?.getString(R.string.tts_opening_player, label) ?: "Открываю $label.")
     }
 
     private fun speak(text: String) {

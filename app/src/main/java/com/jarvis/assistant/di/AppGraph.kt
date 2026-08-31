@@ -132,7 +132,7 @@ class AppGraph(
         com.jarvis.assistant.audio.AndroidAudioFocusAdapter(appContext),
     )
     val speechFeedback = com.jarvis.assistant.audio.TtsSpeechFeedback(
-        scope, ttsClient, player, config.ttsVoice, audioFocus,
+        scope, ttsClient, player, config.ttsVoice, audioFocus, appContext,
     )
 
     val functionRouter = FunctionRouter(appContext, httpClient, speechFeedback)

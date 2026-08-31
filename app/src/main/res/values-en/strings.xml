@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- TTS speech feedback -->
+    <string name="tts_please_wait">One moment.</string>
+    <string name="tts_opening_player">Opening %s.</string>
+    <string name="tts_init_failed">Failed to start assistant. Retrying automatically.</string>
+
+    <!-- Default labels -->
+    <string name="default_timer_label">Timer</string>
+
+    <!-- Now-playing -->
+    <string name="now_playing_unknown_track">unknown track</string>
+    <string name="now_playing_playing">playing</string>
+    <string name="now_playing_paused">paused</string>
+    <string name="now_playing_speed">speed %sx</string>
+    <string name="now_playing_repeat_one">repeat one</string>
+    <string name="now_playing_repeat_all">repeat all</string>
+    <string name="now_playing_shuffled">shuffled</string>
+    <string name="now_playing_queue">%1$d of %2$d</string>
+    <string name="now_playing_format">Playing: %1$s (%2$s%3$s%4$s).</string>
+
+    <!-- Weather conditions -->
+    <string name="weather_unknown">unknown</string>
+    <string name="weather_clear">clear</string>
+    <string name="weather_partly_cloudy">partly cloudy</string>
+    <string name="weather_cloudy">cloudy</string>
+    <string name="weather_fog">fog</string>
+    <string name="weather_drizzle">drizzle</string>
+    <string name="weather_icy_drizzle">icy drizzle</string>
+    <string name="weather_rain">rain</string>
+    <string name="weather_icy_rain">icy rain</string>
+    <string name="weather_snow">snow</string>
+    <string name="weather_snow_grains">snow grains</string>
+    <string name="weather_rain_shower">rain shower</string>
+    <string name="weather_snow_shower">snow shower</string>
+    <string name="weather_thunderstorm">thunderstorm</string>
+    <string name="weather_thunderstorm_hail">thunderstorm with hail</string>
+
+    <!-- Device info -->
+    <string name="device_time_format">HH:mm, d MMMM</string>
+    <string name="device_battery_na">n/a</string>
+</resources>
