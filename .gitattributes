@@ -1,3 +1,5 @@
+# Git LFS — large binaries
 *.aar filter=lfs diff=lfs merge=lfs -text
 *.onnx filter=lfs diff=lfs merge=lfs -text
+*.int8.onnx filter=lfs diff=lfs merge=lfs -text
 *.ppn filter=lfs diff=lfs merge=lfs -text
