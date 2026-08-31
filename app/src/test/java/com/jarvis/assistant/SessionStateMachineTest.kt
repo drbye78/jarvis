@@ -55,6 +55,33 @@ class SessionStateMachineTest {
     }
 
     @Test
+    fun `asr failure with a cause unwedges LISTENING`() {
+        // Regression: the transition table keyed on the data class
+        // AsrFailed() — a lookup with AsrFailed(cause) missed the entry, the
+        // transition was REJECTED, and the machine stayed wedged in LISTENING
+        // with a stale «Слушаю» chip after every real ASR exception.
+        assertNull(
+            "AsrFailed with a cause must be rejected outside LISTENING",
+            SessionTransitions.next(
+                AssistantState.THINKING,
+                SessionEvent.AsrFailed(RuntimeException("boom")),
+            ),
+        )
+        assertEquals(
+            AssistantState.IDLE,
+            SessionTransitions.next(
+                AssistantState.LISTENING,
+                SessionEvent.AsrFailed(java.io.IOException("gRPC deadline exceeded")),
+            ),
+        )
+        // And the state machine itself recovers...
+        val sm = SessionStateMachine()
+        sm.onEvent(SessionEvent.WakeWordOrBargeIn)
+        sm.onEvent(SessionEvent.AsrFailed(IllegalStateException("stream closed")))
+        assertEquals(AssistantState.IDLE, sm.currentState())
+    }
+
+    @Test
     fun `consecutive sentences stay in SPEAKING`() {
         assertEquals(
             AssistantState.SPEAKING,

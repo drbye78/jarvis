@@ -67,6 +67,8 @@ class TurnRunner(
     private val finish: (id: Int) -> Unit,
     private val setPartial: (String) -> Unit,
     private val isCurrentSession: (id: Int) -> Boolean,
+    /** Phase 5 (M6): duck external music while sentences play; null = off. */
+    private val focus: com.jarvis.assistant.audio.AssistantAudioFocus? = null,
 ) {
     /** m10: bounds how many sentence jobs hold a TTS synthesis/playback slot. */
     private val ttsSynthPermits = Semaphore(TTS_SYNTH_PREFETCH)
@@ -414,6 +416,10 @@ class TurnRunner(
         onStateEvent(SessionEvent.PlaybackStarted) // -> SPEAKING
         ttsSynthPermits.withPermit {
             val flow = ttsClient.synthesizeStream(text, config.ttsVoice)
+            // Phase 5 (M6): the first sentence of a generation requests
+            // duck focus; the last drained sentence abandons it. Barge-in
+            // flush abandons via SessionManager's onTtsFlushed hook.
+            focus?.onTtsSentenceStarted()
             val done = player.play(flow)
             try {
                 withTimeoutOrNull(config.ttsSentenceTimeoutMs) { done.await() }
@@ -427,6 +433,8 @@ class TurnRunner(
                 // short write) must NOT escape and crash the scope. Drop the
                 // sentence instead of letting it kill the process.
                 Timber.e(e, "TTS sentence failed, dropping: $text")
+            } finally {
+                focus?.onTtsSentenceFinished()
             }
         }
     }
@@ -446,9 +454,17 @@ class TurnRunner(
             инструментов (будильник, таймер, погода, управление устройством,
             яркость, громкость, музыка и т.д.) — вызывай инструмент вместо ответа
             из памяти. Не упоминай технические детали и JSON.
-            Для музыки: назван трек/исполнитель/плейлист — вызывай playMusic
-            с чистым поисковым запросом; просто «включи музыку», «пауза»,
-            «дальше» — controlPlayback; «что играет» — getNowPlaying.
+            Для музыки: назван трек/исполнитель/альбом/плейлист — вызывай
+            playMusic, заполни слоты artist/album/playlist/genre отдельными
+            параметрами, в query — только название трека (не склеивай всё в
+            один запрос); просто «включи музыку», «пауза», «дальше» —
+            controlPlayback; «что играет» — getNowPlaying; «какие плейлисты»,
+            «что послушать» — listPlaylists; «найди в библиотеке» —
+            searchLibrary. Если listPlaylists или searchLibrary уже вернули
+            список — играть выбранное вызывай playMusic с mediaId и title.
+            «промотай на минуту» — controlPlayback seek с deltaMs;
+            «сначала» — restart; «лайкни» — like; «повтори трек» — repeat
+            one; «перемешай» — shuffle; «быстрее»/«медленнее» — speed.
         """.trimIndent()
     }
 }

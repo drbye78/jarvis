@@ -34,7 +34,6 @@ object SessionTransitions {
         put(AssistantState.IDLE to SessionEvent.WakeWordOrBargeIn, AssistantState.LISTENING)
         put(AssistantState.LISTENING to SessionEvent.SpeechCaptured, AssistantState.THINKING)
         put(AssistantState.LISTENING to SessionEvent.NoSpeech, AssistantState.IDLE)
-        put(AssistantState.LISTENING to SessionEvent.AsrFailed(), AssistantState.IDLE)
         put(AssistantState.THINKING to SessionEvent.LlmStarted, AssistantState.THINKING)
         put(AssistantState.THINKING to SessionEvent.PlaybackStarted, AssistantState.SPEAKING)
         put(AssistantState.THINKING to SessionEvent.LlmDone, AssistantState.IDLE)
@@ -50,6 +49,13 @@ object SessionTransitions {
         SessionEvent.WakeWordOrBargeIn -> AssistantState.LISTENING
         SessionEvent.ErrorOccurred -> AssistantState.IDLE
         SessionEvent.Cancelled -> AssistantState.IDLE
+        // AsrFailed carries a Throwable, so a data-class TABLE key like
+        // `AsrFailed()` would only ever match a cause-less failure — every
+        // real ASR exception missed the lookup, the transition was REJECTED,
+        // and the machine wedged in LISTENING with a stale «Слушаю» chip.
+        // Match by TYPE, from LISTENING, regardless of the cause payload.
+        is SessionEvent.AsrFailed ->
+            if (current == AssistantState.LISTENING) AssistantState.IDLE else null
         else -> table[current to event]
     }
 }

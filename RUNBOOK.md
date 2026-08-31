@@ -19,14 +19,18 @@
 - Check the persistent notification says «Ожидание».
 - Release builds: `adb shell run-as com.jarvis.assistant cat files/logs/jarvis.log`
   (debug builds: `adb logcat -s Timber:*`).
-   - **Engine:** Settings → Wake word lets you pick **Sherpa-ONNX** (bundled,
-     offline, no account) or **Picovoice Porcupine** (needs a free Picovoice key;
-     built-in "Jarvis" or your own `.ppn`). If Sherpa fails to load you'll see a
-     logged "Sherpa model failed to load" — the bundled assets under
-     `app/src/main/assets/sherpa_kws/` must be present in the APK.
-   - Verify the chosen wake-word model is valid and (for Porcupine) the Picovoice
-     key entered in **Settings** is correct. The default bundled `jarvis_ru.ppn`
-     ships in `app/src/main/assets/`; a custom `.ppn` must match your Picovoice key.
+   - **Engine:** Settings → Wake word. The **default is Sherpa-ONNX** (bundled,
+     offline, no account, zero configuration) — a fresh install hears "Джарвис"
+     out of the box. **Picovoice Porcupine** is opt-in and needs a free
+     Picovoice key plus a keyword model.
+   - Porcupine note: the repo does **NOT** ship a `jarvis_ru.ppn` asset — with
+     Porcupine selected you must enter a valid Picovoice key; the built-in
+     "Jarvis" keyword is resolved by the Picovoice SDK at runtime, and a
+     custom `.ppn` (loaded via Settings) must match your key. If Porcupine
+     fails to build, switch the engine back to Sherpa-ONNX.
+   - If Sherpa fails to load you'll see a logged "Sherpa model failed to
+     load" — the bundled assets under `app/src/main/assets/sherpa_kws/`
+     must be present in the APK.
 - Detector errors are SPOKEN (system TTS) and logged — a deaf-but-silent
   assistant is no longer possible.
 - Sensitivity adjustable live in Settings (0–1 slider; applies immediately).
@@ -37,8 +41,10 @@
 
 ### "GigaChat request failed (HTTP ...)"
 - Check credentials/scope (`GIGACHAT_API_PERS`) in **Settings**.
-- If you switched providers, verify base URL ends with `/v1` and the API key
-  is set — the Apply button restarts the service with the new profile.
+- Or switch Settings → Нейросеть (LLM) → **OpenAI-совместимый endpoint**: pick
+  the radio, fill Base URL / model / API key, press **Сохранить**. The change
+  takes effect after the next service restart (Стоп → Запустить on the home
+  screen) — the provider client is built once, when the service starts.
 
 ### "Service keeps getting killed"
 - Huawei PowerGenie: Settings → Apps → App launch → Jarvis → Manage manually
@@ -48,30 +54,69 @@
   user Stop is respected (watchdog cancelled) until reboot or manual start.
 
 ### "Music doesn't pause when Jarvis talks"
-- Enable the notification listener for Jarvis (onboarding screen or system
-  settings). The media-key fallback now also RESUMES playback afterwards.
+- The assistant's TTS now requests transient-may-duck audio focus, so
+  compliant players (Yandex Music included) duck their stream for the
+  confirmation instead of talking over it. If a player ignores ducking the
+  confirmation is still audible — cosmetic only.
+- For a completely silent listening window, enable `pauseMusicOnWake` in
+  the config (default off: music does NOT auto-resume — say «продолжи»).
+
+### «Джарвис, включи <трек>» — first-line diagnostics
+
+```bash
+adb logcat -s MusicDiag
+```
+
+Every play attempt dumps the ground truth: each live session's action mask
+ decoded (playFromSearch/seekTo/rating/repeat/shuffle/speed bits), rating
+ type, queue presence, plus MediaBrowserService discovery. One «включи
+ музыку» attempt on the tablet answers the per-build questions no static
+ audit can: does this Yandex build honor playFromSearch? repeat/shuffle
+ bits? heart rating? browser root? onSearch?
 
 ### «Джарвис, включи <трек>» — Jarvis opens search instead of playing
-Hands-free start depends on the player app implementing the Android
-`onPlayFromSearch` media-session callback (the same API Google Assistant
-uses). Jarvis tries it first and verifies playback actually started:
+The cascade is capability-gated and degrades honestly through up to seven
+strategies: live-session `playFromSearch` (structured extras when the user
+named artist/album/playlist) → browser search + `playFromMediaId` →
+browser session-token dispatch → app launch + poll → legacy
+MEDIA_PLAY_FROM_SEARCH intent → search-screen deep link → launch-only.
 
-1. Jarvis says «Включил…» — `playFromSearch` worked. Done.
-2. Jarvis says «открыл поиск — нажми на трек» — the player ignored the
-   voice-search command; Jarvis deep-linked its search screen for the query.
-   Check:
+1. Jarvis says «Включил…» — a strategy verified playback matching the
+   request. Done. (`adb logcat -s MusicDiag` shows WHICH strategy —
+   `active_session` / `browser_media_id` / `browser_cold_start` /
+   `cold_start` / `legacy_intent`.)
+2. Jarvis says «Секунду…» then plays — normal cold start (bind + verify
+   can take a few seconds).
+3. Jarvis says «открыл поиск — нажми на трек» — every strategy failed or
+   was capability-skipped. Check:
    - Notification listener access granted for Jarvis (Settings → Special
-     access → Notification access). Without it only media keys work.
-   - The player is LOGGED IN and started at least once (a session may not
-     exist before the first manual playback).
-   - Player app is up to date — vendors ship `onPlayFromSearch` with
-     Android Auto / assistant integrations; older builds may lack it.
-3. Yandex Music package: current builds use `ru.yandex.music`, older sideloads
-   `com.yandex.music` — both are matched. Other players (Звук, VK Music) are
-   found by label; name the app in the command («включи X в Звуке») to pin it.
+     access → Notification access). Note: even WITHOUT it, the MediaBrowser
+     token lane works — a refusal there means the player build gates it.
+   - The player is LOGGED IN and started at least once.
+   - Player app is up to date — vendors ship assistant integrations
+     (playFromSearch / onSearch / browser service) per build.
+   - The deep link may be the cause: `yandexmusic://search?query=…` is
+     undocumented and may not resolve on all builds. The `https://`
+     fallback opens a browser, not the app.
+4. Yandex Music package: current builds use `ru.yandex.music`, older
+   sideloads `com.yandex.music` — both are matched. Other players (Звук,
+   VK Music) are found by label; name the app in the command («включи X в
+   Звуке») to pin it.
 
-Status is always honest: `playing` (verified), `search_opened` (user must
-tap), `app_opened` (player on screen), `error` (no player/no access).
+Status is always honest: `playing` (verified against the request),
+`search_opened` (user must tap), `app_opened` (player on screen), `error`
+(no player/no access).
+
+### «Промотай/лайкни/повтори/перемешай» — Jarvis says the player doesn't support it
+That is the capability gate working, not a bug: the session's action mask
+(the MusicDiag dump) genuinely lacks the bit (or the rating type isn't
+"heart", or the tablet is below Android 10 for speed). Older/odd players
+publish minimal masks; nothing can be done from our side.
+
+### «включи музыку» does nothing
+The empty-query semantics need a player that advertises `playFromSearch`
+(session in STOPPED state) or a paused session to resume. If neither
+exists, Jarvis answers instructively instead of pretending.
 
 ### "Alarms don't ring"
 - Alarms fire via `setAlarmClock` — check the system alarm indicator appears.
@@ -83,6 +128,9 @@ tap), `app_opened` (player on screen), `error` (no player/no access).
 ```bash
 # Logs (debug builds)
 adb logcat -s Timber:*
+
+# Music lane ground truth (capability table + browser discovery)
+adb logcat -s MusicDiag
 
 # Logs (release builds — rotating files)
 adb shell run-as com.jarvis.assistant ls files/logs/
@@ -139,12 +187,41 @@ Streaming ASR means these numbers no longer grow with utterance length.
 - **Binary size.** The Sherpa-ONNX AAR (~47 MB) and the bundled model (~17 MB)
   are committed into the repo (no Git LFS configured).
 - **Hands-free music start depends on the player app.** Jarvis drives external
-  players through the standard `playFromSearch` media-session API; if the
-  installed player build does not implement it, Jarvis honestly falls back to
-  opening the app's search screen (`search_opened`) instead of pretending it
-  played something. On-device validation with the current Yandex Music build
-  is still pending.
-- **Music voice confirmation overlaps the just-started track.** Jarvis's TTS
-  and external playback both use the music stream; no transient audio-focus
-  is requested by the TTS player yet, so the «Включил…» confirmation may play
-  over the first seconds of the track.
+  players through a capability-gated cascade (`playFromSearch`, MediaBrowser
+  search/token, legacy intent); if the installed player build implements none
+  of them, Jarvis honestly falls back to opening the app's search screen
+  (`search_opened`) instead of pretending it played something. The MusicDiag
+  logcat dump reveals per-build support on day one.
+- **Background activity starts are restricted (Android 10+).** Launch/deep-link
+  strategies (cold start, legacy intent, search screen) can be silently
+  blocked when Jarvis's own UI is not visible — a foreground service is NOT
+  an exemption. The browser bind is immune (it is not an activity); launch
+  outcomes are phrased as attempts with a contingency instruction.
+- **No acoustic echo cancellation (wake word vs loud music).** The mic hears
+  the speaker: loud external playback can mask the wake word entirely.
+  Ducking softens this; the full mitigation is `pauseMusicOnWake` (config,
+  default off, no auto-resume).
+- **Rich transport is player-dependent.** seek/like/repeat/shuffle/speed are
+  gated on the session's action mask and rating type; media-key fallback only
+  covers play/pause/next/previous/stop. Unsupported actions get an honest
+  refusal naming the limitation.
+- **Deep-link scheme is undocumented.** The `yandexmusic://` URI scheme is
+  not published by Yandex; the `/search?query=` path used in Strategy 6 is
+  inferred from community sources and may not resolve on all builds. The
+  `https://music.yandex.ru/search/…` fallback opens a browser page, not
+  the app. Strategy 6 is a last-resort honest fallback, not a reliable path.
+- **Verification may score related tracks above threshold.** The
+  `VoiceQueryMatcher` uses weighted token overlap (title W=0.65, artist
+  W=0.35) with a `STRONG_THRESHOLD` of 0.5. A cover, remix, or
+  compilation featuring the requested artist can pass verification even
+  when it's not the exact recording the user intended. This is a known
+  trade-off — no exact-match path exists for unstructured search.
+- **Browser mediaIds are short-lived.** `mediaId` values returned by
+  `listPlaylists` / `searchLibrary` are service-scoped identifiers that
+  may become stale if the LLM delays between search and play. Use them
+  immediately in the same conversation turn.
+- **On-device validation with current Yandex Music build pending.**
+  The capability matrix (`MusicDiag` dump) should be verified on the
+  target hardware (Kirin 710A-class) with the latest Yandex Music build
+  to confirm `playFromSearch`, browser `onSearch`, repeat/shuffle bits,
+  and heart rating are still exposed as assumed.

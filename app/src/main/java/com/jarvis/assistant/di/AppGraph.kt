@@ -126,7 +126,16 @@ class AppGraph(
     )
     val player: TtsPlayer = StreamingAudioTrackPlayer(scope)
 
-    val functionRouter = FunctionRouter(appContext, httpClient)
+    // Phase 5 (M6): assistant TTS ducks external players; spoken progress
+    // phrases («Секунду…») reuse the same serialized player.
+    val audioFocus = com.jarvis.assistant.audio.AssistantAudioFocus(
+        com.jarvis.assistant.audio.AndroidAudioFocusAdapter(appContext),
+    )
+    val speechFeedback = com.jarvis.assistant.audio.TtsSpeechFeedback(
+        scope, ttsClient, player, config.ttsVoice, audioFocus,
+    )
+
+    val functionRouter = FunctionRouter(appContext, httpClient, speechFeedback)
 
     val stateMachine = SessionStateMachine()
 
@@ -143,6 +152,18 @@ class AppGraph(
         networkMonitor = networkMonitor,
         config = config,
         scope = scope,
+        focus = audioFocus,
+        // Phase 5 (M7): pause-on-wake reuses the real tool lane — the same
+        // capability-gated control path the LLM uses, incl. the media-key
+        // fallback for the app that owns audio focus.
+        externalMusicPauser = {
+            functionRouter.executeResult(
+                com.jarvis.assistant.model.FunctionCall(
+                    "controlPlayback",
+                    """{"action":"pause"}""",
+                ),
+            )
+        },
     ).also { it.setOnError(onSessionError) }
 
     /**
@@ -171,7 +192,7 @@ class AppGraph(
             keywordPath = wakeKeywordPathFor(appPrefs.wakeWordModel),
             sherpaModelDir = sherpaModelDirFor(),
             sherpaKeyword = "Jarvis",
-            sensitivity = provider.wakeSensitivity,
+            sensitivity = appPrefs.wakeSensitivity,
         )
     }
 
@@ -179,6 +200,11 @@ class AppGraph(
      * Rebuild the live wake-word engine from the current prefs. Safe to call
      * when the assistant is running (it suspends and swaps under the detector's
      * mutex); a no-op if the graph is torn down.
+     *
+     * Sensitivity is re-read from [appPrefs] here — the `provider` snapshot is
+     * sealed at construction, so the old `provider.wakeSensitivity` read made
+     * the Settings sensitivity slider a live no-op (the engine rebuilt with
+     * the stale value; audit finding "slider no-op").
      */
     suspend fun reconfigureWakeWord() {
         val engine = appPrefs.wakeWordEngine
@@ -187,7 +213,7 @@ class AppGraph(
             keywordPath = wakeKeywordPathFor(appPrefs.wakeWordModel),
             sherpaModelDir = sherpaModelDirFor(),
             sherpaKeyword = "Jarvis",
-            sensitivity = provider.wakeSensitivity,
+            sensitivity = appPrefs.wakeSensitivity,
         )
         wakeWordDetector.reconfigure(req)
     }

@@ -1,6 +1,7 @@
 package com.jarvis.assistant.tools
 
 import android.content.Context
+import android.os.Build
 import com.jarvis.assistant.media.AndroidMediaGateway
 import com.jarvis.assistant.media.MusicPlaybackOrchestrator
 import com.jarvis.assistant.model.FunctionCall
@@ -17,6 +18,8 @@ import okhttp3.OkHttpClient
 class FunctionRouter(
     context: Context,
     httpClient: OkHttpClient,
+    /** Phase 5 (M5): spoken cascade progress; null = silent cascade. */
+    speechFeedback: com.jarvis.assistant.audio.SpeechFeedback? = null,
 ) : ToolExecutor {
     private val appContext = context.applicationContext
 
@@ -36,7 +39,15 @@ class FunctionRouter(
             CancelTimerTool(appContext, alarmScheduler),
             WeatherTool(OpenMeteoWeatherClient(httpClient)),
         ) + DeviceTools(appContext).all() +
-            MusicTools(MusicPlaybackOrchestrator(mediaGateway, mediaGateway.resolver)).all(),
+            MusicTools(
+                MusicPlaybackOrchestrator(
+                    mediaGateway,
+                    mediaGateway.resolver,
+                    mediaGateway.browserGateway,
+                    deviceApiLevel = Build.VERSION.SDK_INT,
+                    feedback = speechFeedback,
+                ),
+            ).all(),
     )
 
     override fun getToolDefinitions(): List<ToolDefinition> =

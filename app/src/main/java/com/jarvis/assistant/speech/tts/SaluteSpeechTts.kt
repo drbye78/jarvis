@@ -19,10 +19,8 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
-/** Text-to-speech streaming client contract. */
-interface TtsClient {
-    fun synthesizeStream(text: String, voice: String): Flow<ByteArray>
-}
+// The TtsClient contract itself lives in TtsClient.kt (pure JVM) so the
+// audio-etiquette lane can compile against it without gRPC.
 
 /**
  * SaluteSpeech TTS over gRPC server-streaming Synthesize.

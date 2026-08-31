@@ -97,6 +97,9 @@ dependencies {
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.recyclerview)
+    // MUSIC lane: MediaBrowserCompat (browser lane) + MediaControllerCompat
+    // (compat transport actions: repeat/shuffle/speed) in Phase 4
+    implementation(libs.androidx.media)
 
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)

@@ -33,3 +33,12 @@
 # Coroutines
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+
+# androidx.media (MUSIC lane): MediaBrowserCompat / MediaControllerCompat talk
+# to OTHER apps' services via Binder + the versioned-parcelable protocol —
+# reflection-driven across process boundaries, so the compat surface must
+# survive shrinking. The library ships consumer rules, but the media item /
+# session callback generics occasionally trip aggressive configurations.
+-keep class android.support.v4.media.** { *; }
+-keep class androidx.media.** { *; }
+-dontwarn android.support.v4.media.**

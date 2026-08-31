@@ -61,9 +61,17 @@ class AppPrefs(context: Context) {
         get() = prefs.getString(KEY_CUSTOM_WAKE_PATH, "") ?: ""
         set(value) = prefs.edit().putString(KEY_CUSTOM_WAKE_PATH, value).apply()
 
-    /** Selected wake-word engine: "porcupine" | "sherpa". */
+    /**
+     * Selected wake-word engine: "sherpa" | "porcupine".
+     *
+     * Default SHERPA: it is the zero-config engine (model bundled in assets),
+     * while the previous "porcupine" default required a jarvis_ru.ppn asset
+     * the repo does not ship — a fresh install was DEAF until the user found
+     * the engine setting. Porcupine stays available for users who add a key
+     * and their own .ppn.
+     */
     var wakeWordEngine: String
-        get() = prefs.getString(KEY_WAKE_ENGINE, "porcupine") ?: "porcupine"
+        get() = prefs.getString(KEY_WAKE_ENGINE, "sherpa") ?: "sherpa"
         set(value) = prefs.edit().putString(KEY_WAKE_ENGINE, value).apply()
 
     /**

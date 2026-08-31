@@ -57,10 +57,22 @@ OpenAI-compatible endpoint).
 ## What Jarvis can do
 - **Voice**: wake word «Джарвис», barge-in mid-answer, streaming recognition.
 - **Chat**: GigaChat (or OpenAI-compatible provider) with 20-message context.
-- **Music**: «Джарвис, включи Bohemian Rhapsody» — orders the installed player
-  (Яндекс Музыка by default) to search and play; pause/resume/next/previous;
-  «что играет?» reads the current track. See [ARCHITECTURE.md](ARCHITECTURE.md)
-  (Music lane) for the strategy cascade and its honest fallbacks.
+- **Music**: «Джарвис, включи Bohemian Rhapsody», «включи альбом Группа
+  крови», «включи музыку» — a capability-gated cascade drives the installed
+  player (Яндекс Музыка by default): structured voice search with slots,
+  MediaBrowser library search with deterministic `playFromMediaId`,
+  permission-free session-token cold start, legacy intent, honest search
+  screen fallback — playback is verified against what you asked for.
+  Full transport: pause/resume/next/previous/stop, «промотай на минуту»,
+  «сначала», «лайкни», «повтори трек», «перемешай», «быстрее/медленнее»
+  (each gated on what the player actually supports — honest refusals,
+  never silent no-ops). «что играет?» reads track, artist, queue position
+  («третья из двенадцати»), repeat/shuffle state; «какие плейлисты есть» /
+  «найди в музыке» browse the player's library. The spoken confirmation
+  ducks external music. See [ARCHITECTURE.md](ARCHITECTURE.md) (Music
+  lane) for the strategy cascade and its honest fallbacks, and
+  [RUNBOOK.md](RUNBOOK.md) for `adb logcat -s MusicDiag` — the per-build
+  capability dump.
 - **Alarms & timers**: set/cancel/list by voice or UI; ring over the lock
   screen; survive reboots.
 - **Weather**: current conditions for any city (Open-Meteo).

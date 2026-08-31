@@ -32,10 +32,20 @@ data class MediaAppInfo(
 data class NowPlaying(
     val title: String? = null,
     val artist: String? = null,
+    val album: String? = null,
+    val genre: String? = null,
     /** One of PlaybackState.STATE_* ints; 0 when unknown. */
     val state: Int = 0,
     val positionMs: Long = 0,
     val durationMs: Long = 0,
+    /** Tier 2: queue placement (-1/0 = unknown/empty). */
+    val queueIndex: Int = -1,
+    val queueSize: Int = 0,
+    /** Tier 2: current playback speed (1.0 = normal). */
+    val speed: Float = 1.0f,
+    /** Tier 2: current repeat / shuffle modes (mirror constants). */
+    val repeatMode: Int = 0,
+    val shuffleMode: Int = 0,
 ) {
     val isPlaying: Boolean get() = state == STATE_PLAYING || state == STATE_BUFFERING
 
@@ -68,12 +78,55 @@ object MediaKey {
 interface MediaControllerHandle {
     val packageName: String
     fun snapshot(): NowPlaying
+
+    /**
+     * Tier 0: capabilities decoded from this session's current
+     * PlaybackState action mask. Default [MediaCapabilities.UNKNOWN] keeps
+     * pure-JVM fakes permissive; the Android adapter reads the real mask.
+     */
+    fun capabilities(): MediaCapabilities = MediaCapabilities.UNKNOWN
+
     fun playFromSearch(query: String): Boolean
+
+    /**
+     * Tier 1: the Assistant voice-search contract — playFromSearch with a
+     * structured extras Bundle (focus entry type + artist/album/playlist/
+     * genre/title slots, see [SearchCommand]). Default: degrade to the flat
+     * call (pure-JVM fakes and players that never read extras).
+     */
+    fun playFromSearchStructured(command: SearchCommand): Boolean =
+        playFromSearch(command.query)
+
     fun play(): Boolean
     fun pause(): Boolean
     fun skipToNext(): Boolean
     fun skipToPrevious(): Boolean
     fun stop(): Boolean
+
+    // ------------------------------------------------------------------
+    // Tier 2: compat-protocol transport. Defaults are FALSE (unsupported)
+    // — pure fakes opt in per test; the Android adapter implements them via
+    // MediaControllerCompat. The orchestrator gates every call on the
+    // session's capability bits FIRST, so an honest "не поддерживает"
+    // answer needs no dispatch attempt at all.
+    // ------------------------------------------------------------------
+
+    /** Absolute seek within the current track. */
+    fun seekTo(positionMs: Long): Boolean = false
+
+    /** Jump to a queue item (id from a previous snapshot's queue). */
+    fun skipToQueueItem(queueId: Long): Boolean = false
+
+    /** Heart rating — only meaningful when ratingType == RATING_HEART. */
+    fun like(): Boolean = false
+
+    /** mode: one of the MediaCapabilities.REPEAT_MODE_* mirrors. */
+    fun setRepeatMode(mode: Int): Boolean = false
+
+    fun setShuffleMode(enabled: Boolean): Boolean = false
+
+    /** Framework path requires API 29+ (see the orchestrator's speed gate). */
+    fun setPlaybackSpeed(speed: Float): Boolean = false
 }
 
 /**
@@ -83,6 +136,15 @@ interface MediaControllerHandle {
 interface MediaGateway {
     /** False until the user grants notification-listener access. */
     fun hasNotificationListenerAccess(): Boolean
+
+    /**
+     * M2: whether OUR UI is visible right now. Android 10+ silently blocks
+     * background activity starts (a foreground service is not an exemption),
+     * so launch/deep-link "success" is only believable in the foreground —
+     * the orchestrator phrases launch outcomes as attempts otherwise.
+     * Default true keeps pure-JVM fakes optimistic unless a test opts out.
+     */
+    fun isUiVisible(): Boolean = true
 
     /** Fresh snapshot of every ACTIVE media session on the device. */
     fun activeControllers(): List<MediaControllerHandle>
@@ -95,6 +157,14 @@ interface MediaGateway {
 
     /** Deep-link the target app into its search screen for [query]. */
     fun openAppSearch(app: MediaAppInfo, query: String): Boolean
+
+    /**
+     * Tier 1 (S4): the pre-session legacy protocol — resolve an activity
+     * handling android.media.action.MEDIA_PLAY_FROM_SEARCH and send it the
+     * query (+ structured slot extras). False when the player ships no such
+     * activity (the common case on modern players).
+     */
+    fun sendLegacySearch(app: MediaAppInfo, command: SearchCommand): Boolean = false
 
     /** Best-effort cold start of the target app. */
     fun launchApp(app: MediaAppInfo): Boolean

@@ -42,6 +42,9 @@
 
     <!-- Settings -->
     <string name="provider_label">Нейросеть (LLM)</string>
+    <string name="provider_gigachat">GigaChat (Сбер) — по умолчанию</string>
+    <string name="provider_openai_compat">OpenAI-совместимый endpoint (OpenAI, LocalAI, Ollama…)</string>
+    <string name="provider_restart_hint">Изменения применятся после перезапуска сервиса: Стоп → Запустить на главном экране.</string>
     <string name="base_url_label">Base URL (…/v1)</string>
     <string name="api_key_label">API-ключ</string>
     <string name="model_label">Модель</string>

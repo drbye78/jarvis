@@ -64,6 +64,14 @@ class SessionManager(
     private val networkMonitor: OnlineChecker,
     private val config: JarvisConfig,
     private val scope: CoroutineScope,
+    /** Phase 5 (M6): duck-gate for assistant TTS; null = no ducking. */
+    private val focus: com.jarvis.assistant.audio.AssistantAudioFocus? = null,
+    /**
+     * Phase 5 (M7 mitigation): called at session start when
+     * [JarvisConfig.pauseMusicOnWake] is on. Best-effort pause of external
+     * audio — no auto-resume (the user says «продолжи»).
+     */
+    private val externalMusicPauser: (suspend () -> Unit)? = null,
 ) {
 
     private var sessionJob: Job? = null
@@ -90,6 +98,7 @@ class SessionManager(
             stateMachine::onEvent, this::reportFailure, this::finish,
             { _partialTranscript.value = it },
             isCurrentSession = { it == sessionSeq.get() },
+            focus = focus,
         )
 
     private var onErrorHandler: suspend (String) -> Unit = {}
@@ -157,9 +166,18 @@ class SessionManager(
     fun startSession() {
         sessionJob?.cancel()
         player.flush() // generation bump: current + queued sentences die
+        focus?.onTtsFlushed() // M6: barge-in ends the duck immediately
         val id = sessionSeq.incrementAndGet()
         _partialTranscript.value = "" // fresh utterance, drop any stale partial
         sessionJob = scope.launch {
+            // Phase 5 (M7 mitigation): a clean listening window when the user
+            // opted in — external audio pauses while we listen; NO auto-resume.
+            if (config.pauseMusicOnWake) {
+                externalMusicPauser?.let { pauser ->
+                    runCatching { pauser() }
+                        .onFailure { Timber.w(it, "pauseMusicOnWake failed (ignored)") }
+                }
+            }
             if (!networkMonitor.isCurrentlyOnline()) {
                 stateMachine.onEvent(SessionEvent.WakeWordOrBargeIn)
                 reportFailure(id, "Нет подключения к интернету. Проверьте сеть.")

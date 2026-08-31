@@ -29,10 +29,10 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `llm/` | `SseParser` (pure), `SseLlmClient` (shared SSE transport with correct cancellation), GigaChat / OpenAI-compatible profiles, `TokenManager` (mutex-serialized OAuth refresh). |
 | `speech/asr/` | `StreamingAsrClient` / `AsrStream` — bidi streaming ASR; server-side EOU. |
 | `speech/tts/` | `TtsClient` (SaluteSpeech, cancellable + deadline) and `TtsPlayer` contract. |
-| `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loaded asset-relative), player (generations). |
+| `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loaded asset-relative), player (generations), and the Phase-5 etiquette pair: `AssistantAudioFocus` (duck-during-TTS state machine + `AndroidAudioFocusAdapter`) and `SpeechFeedback` (spoken cascade progress). |
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns; bounded tool loop. |
 | `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. |
-| `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure strategy cascade with playback verification. Android adapter: `AndroidMediaGateway`. |
+| `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure capability-gated strategy cascade (structured playFromSearch, MediaBrowser search/token lane, query-aware verification) with rich transport; `MediaBrowserGateway` + `AndroidMediaBrowserGateway` (bind/search/children); `MediaCapabilities`/`VoiceQuery`/`MediaDiagnostics` (pure models). Android adapters: `AndroidMediaGateway` (compat-wrapped controllers), `AndroidMediaBrowserGateway`. |
 | `data/` | Room: messages (id-ordered, orphan-safe windowing) + alarms. |
 | `service/` | Foreground service (permission gate, retryable init, watchdog semantics), boot receiver, ringing activity, notification listener. |
 | `ui/` | Adapters for transcript and alarm lists. |
@@ -75,40 +75,116 @@ verifying playback takes that long).
 ## Music lane (external player control)
 
 `playMusic` orders an **installed player app** to search and play — Jarvis
-never streams audio itself. Control goes through the documented
-assistant→media-app path: with notification-listener access,
-`MediaSessionManager.getActiveSessions()` +
-`MediaController.TransportControls.playFromSearch()`
-(the same API Google Assistant uses).
+never streams audio itself. The lane is **capability-driven**: vendor docs
+are hints, `PlaybackState.getActions()` / `getRatingType()` / the
+MediaBrowser connection result are ground truth, probed at runtime and
+logged under the `MusicDiag` tag (`adb logcat -s MusicDiag` is the
+first-line troubleshooting step; the dump answers the per-build questions
+no static audit can).
 
-Whether a player implements `onPlayFromSearch` is up to the app, so the
-cascade **verifies playback actually started** and degrades honestly:
+### playMusic cascade (v2)
 
-1. **active_session** — target app has a live MediaSession → `playFromSearch`
-   → verify (was-idle→playing, or title changed, or position near track
-   start; baseline snapshotted BEFORE dispatch).
-2. **cold_start** — no session: launch the app, poll ≤ 8 s for its session,
-   `playFromSearch` → verify.
-3. **deep_link** — open the app's search screen for the query
-   (`yandexmusic://search?query=…`, fallback `music.yandex.ru/search/…`);
-   reported as `search_opened` — the user taps the track; never claimed as
-   success.
+Every strategy verifies that what is playing **matches the request**
+(`VoiceQuery` normalized token-overlap scoring + position-reset rule —
+a player ignoring the command while the old track plays early can never
+produce a confident lie). Structured requests (artist/album/playlist/
+genre slots) are dispatched as the Assistant extras contract
+(`EXTRA_MEDIA_FOCUS` entry types + slot extras); the flat text rides
+along for extras-ignoring players.
 
-Transport commands (`controlPlayback`: play/pause/toggle/next/previous/
-stop) target the app's live session, fall back to global media keys
-(`dispatchMediaKeyEvent`, works without listener access). `getNowPlaying`
-reads session metadata for «что играет?».
+In order:
 
-Target resolution (`MusicAppCatalog`): LLM hint pins the brand (яндекс/звук/
-вк); else known packages in priority order (ru.yandex.music → com.yandex.music
-→ zvooq → vk); else any launchable app with a music-looking label. The whole
-cascade is pure Kotlin over gateway interfaces → fully JVM-tested
-(`MusicOrchestratorTest`).
+1. **active_session** — target app has a live MediaSession with the
+   `PLAY_FROM_SEARCH` bit → structured `playFromSearch` → verify.
+2. **browser_media_id (S0)** — bind the player's MediaBrowserService
+   (permission-free, BAL-immune), `onSearch()` results scored by the same
+   matcher, best hit plays deterministically via `playFromMediaId`.
+3. **browser_cold_start (S2)** — the bound service's session token
+   dispatches `playFromSearch`; works even when the player refuses
+   browsing (empty root still yields the token). Runs BEFORE any
+   activity start — Android 10+ silently blocks background activity
+   launches, and a bind is not an activity.
+4. **cold_start** — launch the app, poll ≤ 8 s for its session,
+   `playFromSearch` → verify (BAL caveat: reliable when Jarvis's UI is
+   visible; outcomes phrased as attempts otherwise).
+5. **legacy_intent** — the pre-session
+   `android.media.action.MEDIA_PLAY_FROM_SEARCH` activity intent with
+   `SearchManager.QUERY` + the same structured extras, verified by
+   strong score only (no baseline exists).
+6. **deep_link** — open the app's search screen
+   (`yandexmusic://search?query=…` with `%20` encoding, fallback
+   `music.yandex.ru/search/…`); reported as `search_opened` — the user
+   taps the track; never claimed as success. **Note:** the
+   `yandexmusic://` URI scheme is undocumented by Yandex; the
+   `/search?query=` path is inferred from community sources and may not
+   work on all builds. The `https://music.yandex.ru/search/…` fallback
+   opens a browser page, not the app.
+7. **launch_only** — honest «открыл приложение, запусти вручную».
 
-Ducking interplay: a Jarvis session pauses external music (existing duck
-logic); after a track switch, unduck resumes whatever is current. The spoken
-confirmation may overlap briefly with the just-started track — both use the
-music stream; no transient audio-focus is requested yet (follow-up).
+One browser bind per attempt, disconnected in `finally` — no leaks.
+Sessions without listener access still reach the browser lane (the token
+path needs no permission); everything else degrades to the deep link
+with an instructive error.
+
+### Rich transport (controlPlayback, 12 actions)
+
+`play|pause|toggle|next|previous|stop|seek|restart|like|repeat|shuffle|
+speed` — every action gated by the session's capability bits (plus the
+heart-rating type for `like`, plus the API-29 guard for `speed` —
+minSdk is 24); unsupported actions get an honest Russian refusal naming
+the limitation, never a silent no-op. The media-key fallback (works
+without listener access) only covers the basic six — a media key cannot
+seek/like/repeat. Session selection: named app → any playing session →
+most recent; a named app with no live session is an instructive miss
+rather than a command to a random player.
+
+### Library lane (Tier 3)
+
+`listPlaylists` (browser root children) and `searchLibrary` (browser
+`onSearch`) return up to 10 items with their `mediaId`; a follow-up
+`playMusic(mediaId, title)` plays the chosen item deterministically.
+mediaIds are short-lived service identifiers — documented as
+"use immediately".
+
+Target resolution (`MusicAppCatalog`): LLM hint pins the brand (яндекс/
+звук/вк); else known packages in priority order (ru.yandex.music →
+com.yandex.music → zvooq → vk); else any launchable app with a
+music-looking label. The whole cascade is pure Kotlin over gateway
+interfaces → fully JVM-tested (`MusicOrchestratorTest`,
+`MediaBrowserGatewayTest`, `VoiceQueryTest`, `TransportToolsTest`).
+
+### Enrichment opportunities
+
+The MediaSession exposes capabilities we don't yet surface to the LLM:
+
+- **Queue management** — `skipToQueueItem(queueId)` exists on the
+  interface but has no LLM tool. Adding a `queueControl` tool would
+  enable "play track 3 from the queue," "what's next in the queue,"
+  "skip the rest" scenarios.
+- **Deterministic browser play** — Strategy 2 (`BROWSER_SEARCH`) is more
+  reliable than `playFromSearch` for exact matches: `onSearch()` returns
+  scored `mediaId` results that can be played deterministically. The LLM
+  could use this for "play the album *A Night at the Opera* by Queen"
+  with higher confidence.
+- **Heart/like prominence** — the `like` action exists in
+  `controlPlayback` but isn't surfaced as a standalone "like this song"
+  command; could be more visible in responses.
+- **Playlist mutation** — browsing is read-only; adding create/edit/delete
+  would enable "add this song to my favorites playlist."
+
+### Audio etiquette
+
+Assistant TTS requests `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` for the
+duration of each spoken generation (first sentence → last drained
+sentence; barge-in flush abandons immediately) — compliant players duck
+to ~20% for the confirmation. Spoken progress («Секунду…» on a
+predicted-long cascade, «Открываю плеер…» before launches) plays through
+the same serialized player, so barge-in kills stale phrases.
+`pauseMusicOnWake` (config, default off) pauses external audio at
+session start for a clean listening window — no auto-resume; the user
+says «продолжи». There is no acoustic echo cancellation: the wake word
+competes with speaker output, and loud music can mask it — pause-on-wake
+is the mitigation.
 
 ## Alarms
 

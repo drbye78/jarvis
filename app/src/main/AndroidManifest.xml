@@ -42,6 +42,14 @@
         <!-- MUSIC lane: target player (current + legacy Yandex Music ids) -->
         <package android:name="ru.yandex.music" />
         <package android:name="com.yandex.music" />
+        <!-- Tier 1 (S4): legacy Assistant voice-search intent resolution -->
+        <intent>
+            <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+        </intent>
+        <!-- Tier 3: MediaBrowserService discovery + binding (headless cold start) -->
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
     </queries>
 
     <application

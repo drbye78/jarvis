@@ -50,6 +50,12 @@ data class JarvisConfig(
     // Speech gRPC endpoint (saluteChannel target). Extracted from the hard-coded
     // value previously in AppGraph so it is configurable in one place (P7/m15).
     val llmEndpoint: String = "smartspeech.sber.ru:443",
+
+    // Phase 5 (M7 mitigation): pause external music at session start for a
+    // clean listening window (there is no AEC — the wake word competes with
+    // speaker output). Default OFF: music stops and does NOT auto-resume —
+    // the user says «продолжи» when they want it back.
+    val pauseMusicOnWake: Boolean = false,
 ) {
     companion object {
         /** Single source of truth for the pre-roll default ([AudioPipeline] references it). */

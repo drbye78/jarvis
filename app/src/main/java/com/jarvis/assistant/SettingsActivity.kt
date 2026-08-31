@@ -35,6 +35,12 @@ interface SettingsCallbacks {
         gigaChatSecret: String,
     )
 
+    /** The LLM backend changed: "gigachat" | "openai". */
+    fun onLlmProviderSelected(type: String)
+
+    /** Persist the OpenAI-compatible endpoint settings (url/model/key). */
+    suspend fun onSaveLlmProviderSettings(baseUrl: String, model: String, apiKey: String)
+
     /** The chosen wake-word model changed (`builtin` | `custom_bundled`). */
     fun onWakeWordSelected(modelId: String)
 
@@ -65,6 +71,12 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var sensitivityBar: SeekBar
     private lateinit var sensitivityValue: TextView
 
+    private lateinit var llmProviderGroup: RadioGroup
+    private lateinit var openAiBlock: View
+    private lateinit var openAiBaseUrl: TextInputEditText
+    private lateinit var openAiModel: TextInputEditText
+    private lateinit var openAiApiKey: TextInputEditText
+
     private lateinit var engineGroup: RadioGroup
     private lateinit var porcupineBlock: View
     private lateinit var sherpaBlock: View
@@ -92,6 +104,12 @@ class SettingsActivity : AppCompatActivity() {
         sensitivityBar = findViewById(R.id.sensitivityBar)
         sensitivityValue = findViewById(R.id.sensitivityValue)
 
+        llmProviderGroup = findViewById(R.id.llmProviderGroup)
+        openAiBlock = findViewById(R.id.openAiBlock)
+        openAiBaseUrl = findViewById(R.id.openAiBaseUrl)
+        openAiModel = findViewById(R.id.openAiModel)
+        openAiApiKey = findViewById(R.id.openAiApiKey)
+
         engineGroup = findViewById(R.id.engineGroup)
         porcupineBlock = findViewById(R.id.porcupineBlock)
         sherpaBlock = findViewById(R.id.sherpaBlock)
@@ -112,6 +130,27 @@ class SettingsActivity : AppCompatActivity() {
         sensitivityBar.max = 100
         sensitivityBar.progress = (appPrefs.wakeSensitivity * 100).toInt()
         updateSensitivityLabel(appPrefs.wakeSensitivity)
+
+        // A0) LLM provider selection. The graph consumes these prefs at
+        // service start (AppGraph builds GigaChatClient or OpenAiCompatClient
+        // from ProviderSettings), so a change takes effect after the next
+        // service restart — the hint under the fields says exactly that.
+        val isOpenAi = appPrefs.providerType == com.jarvis.assistant.config.ProviderSettings.Type.OPENAI_COMPAT
+        llmProviderGroup.check(if (isOpenAi) R.id.providerOpenai else R.id.providerGigachat)
+        openAiBaseUrl.setText(appPrefs.openAiBaseUrl)
+        openAiModel.setText(appPrefs.openAiModel)
+        openAiApiKey.setText(appPrefs.openAiApiKey)
+        applyProviderVisibility(isOpenAi)
+
+        llmProviderGroup.setOnCheckedChangeListener { _, checkedId ->
+            val type = if (checkedId == R.id.providerOpenai) "openai" else "gigachat"
+            callbacks.onLlmProviderSelected(type)
+            applyProviderVisibility(type == "openai")
+        }
+
+        findViewById<Button>(R.id.saveProviderButton).setOnClickListener {
+            saveLlmProviderSettings()
+        }
 
         callbacks = RealCallbacks()
 
@@ -162,6 +201,25 @@ class SettingsActivity : AppCompatActivity() {
                 callbacks.onSensitivityChanged(v)
             }
         })
+    }
+
+    private fun saveLlmProviderSettings() {
+        val url = openAiBaseUrl.text.toString().trim()
+        val model = openAiModel.text.toString().trim()
+        val key = openAiApiKey.text.toString().trim()
+        if (url.isEmpty()) {
+            Toast.makeText(this, R.string.error_base_url, Toast.LENGTH_SHORT).show()
+            return
+        }
+        lifecycleScope.launch {
+            callbacks.onSaveLlmProviderSettings(url, model, key)
+            Toast.makeText(this@SettingsActivity, R.string.settings_saved, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Show the OpenAI-compatible fields only when that provider is selected. */
+    private fun applyProviderVisibility(isOpenAi: Boolean) {
+        openAiBlock.visibility = if (isOpenAi) View.VISIBLE else View.GONE
     }
 
     private fun saveCredentials() {
@@ -244,6 +302,22 @@ class SettingsActivity : AppCompatActivity() {
             GraphHolder.graph?.reconfigureWakeWord()
         }
 
+        override fun onLlmProviderSelected(type: String) {
+            appPrefs.providerType = if (type == "openai") {
+                com.jarvis.assistant.config.ProviderSettings.Type.OPENAI_COMPAT
+            } else {
+                com.jarvis.assistant.config.ProviderSettings.Type.GIGACHAT
+            }
+        }
+
+        override suspend fun onSaveLlmProviderSettings(baseUrl: String, model: String, apiKey: String) {
+            appPrefs.openAiBaseUrl = baseUrl
+            appPrefs.openAiModel = model.ifBlank {
+                com.jarvis.assistant.config.ProviderSettings.DEFAULT.openAiModel
+            }
+            appPrefs.openAiApiKey = apiKey
+        }
+
         override fun onWakeWordSelected(modelId: String) {
             appPrefs.wakeWordModel = modelId
             lifecycleScope.launch(Dispatchers.Default) {
@@ -287,6 +361,10 @@ class SettingsActivity : AppCompatActivity() {
             gigaChatSecret: String,
         ) {
         }
+
+        override fun onLlmProviderSelected(type: String) {}
+
+        override suspend fun onSaveLlmProviderSettings(baseUrl: String, model: String, apiKey: String) {}
 
         override fun onWakeWordSelected(modelId: String) {}
 
