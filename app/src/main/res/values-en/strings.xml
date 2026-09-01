@@ -1,9 +1,143 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name">Jarvis</string>
+
+    <!-- Channels -->
+    <string name="channel_name">Jarvis</string>
+    <string name="channel_errors">Errors</string>
+    <string name="channel_alarm">Alarms</string>
+
+    <!-- States -->
+    <string name="state_idle">Idle</string>
+    <string name="state_listening">Listening…</string>
+    <string name="state_thinking">Thinking…</string>
+    <string name="state_speaking">Speaking…</string>
+    <string name="state_idle_full">Jarvis is listening. Say “Jarvis”</string>
+    <string name="state_listening_full">Listening…</string>
+    <string name="state_thinking_full">Thinking…</string>
+    <string name="state_speaking_full">Speaking…</string>
+    <string name="state_muted">Microphone is off</string>
+    <string name="state_stopped">Assistant stopped</string>
+
+    <!-- Main -->
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+    <string name="mic_mute">Mute microphone</string>
+    <string name="mic_unmute">Unmute microphone</string>
+    <string name="alarms">Alarms</string>
+    <string name="settings">Settings</string>
+    <string name="transcript_title">Conversation</string>
+
+    <!-- Home: redesign -->
+    <string name="wake_hint">Say “Jarvis” and a command — for example, “Jarvis, play music”</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_title">Jarvis setup</string>
+    <string name="onboarding_hint">Required items: microphone and battery optimization. The rest enable extra features.</string>
+    <string name="start_jarvis">Start Jarvis</string>
+    <string name="admin_explanation">The permission is only needed to turn off the screen by voice command. Jarvis performs no other actions on the device.</string>
+    <string name="onboarding_done">Done</string>
+    <string name="onboarding_gate_hint">First complete the required items: microphone and battery optimization</string>
+    <string name="onboarding_action_grant">Grant</string>
+    <string name="onboarding_action_open">Open</string>
+    <string name="onboarding_action_settings">Open settings</string>
+    <string name="onboarding_row_mic">Microphone</string>
+    <string name="onboarding_row_notif">Notification access</string>
+    <string name="onboarding_row_battery">Battery optimization</string>
+    <string name="onboarding_row_write">System settings (brightness)</string>
+    <string name="onboarding_row_dnd">Do Not Disturb</string>
+    <string name="onboarding_row_admin">Screen lock</string>
+    <string name="onboarding_row_keys">Sber keys (GigaChat + Salute)</string>
+    <string name="onboarding_weight_required">required</string>
+    <string name="onboarding_weight_optional">optional</string>
+    <string name="onboarding_weight_music">needed for music control</string>
+    <string name="onboarding_weight_speech">required for speech and the AI model</string>
+
+    <!-- Settings -->
+    <string name="provider_label">AI model (LLM)</string>
+    <string name="provider_gigachat">GigaChat (Sber) — default</string>
+    <string name="provider_openai_compat">OpenAI-compatible endpoint (OpenAI, LocalAI, Ollama…)</string>
+    <string name="provider_restart_hint">Changes apply after a service restart: Stop → Start on the home screen.</string>
+    <string name="base_url_label">Base URL (…/v1)</string>
+    <string name="api_key_label">API key</string>
+    <string name="model_label">Model</string>
+    <string name="sensitivity_label">Wake word sensitivity</string>
+    <string name="sensitivity_value">Sensitivity: %1$.2f</string>
+    <string name="apply">Apply and restart</string>
+    <string name="settings_applied">Settings applied, service restarted</string>
+    <string name="error_base_url">Enter a Base URL</string>
+    <string name="error_api_key">Enter an API key</string>
+
+    <!-- Settings: provider credentials (each user supplies their own) -->
+    <string name="credentials_section">Provider credentials</string>
+    <string name="picovoice_key_label">Picovoice key</string>
+    <string name="salute_id_label">Sber Salute ID</string>
+    <string name="salute_secret_label">Sber Salute secret</string>
+    <string name="gigachat_id_label">GigaChat ID</string>
+    <string name="gigachat_secret_label">GigaChat secret</string>
+    <string name="save">Save</string>
+    <string name="settings_saved">Provider credentials saved</string>
+
+    <!-- Settings: upfront credential validation (mandatory = Salute + GigaChat) -->
+    <string name="credentials_hint">Salute and GigaChat are the mandatory keys — they are validated as you type. The Picovoice key is only needed for the Porcupine engine and is not validated.</string>
+    <string name="credentials_check_button">Check credentials</string>
+    <string name="credentials_checking">Checking credentials…</string>
+    <string name="credentials_ok">Credentials are valid</string>
+    <string name="credentials_invalid">Invalid credentials</string>
+    <string name="credentials_invalid_http">Invalid credentials (HTTP %1$d)</string>
+    <string name="credentials_unverifiable">Could not verify: no connection to the server</string>
+    <string name="error_ppn_file">Invalid wake word file (.ppn required)</string>
+
+    <!-- Settings: music (preferred default player) -->
+    <string name="music_section">Music</string>
+    <string name="player_auto">Auto (Yandex Music first)</string>
+    <string name="player_yandex">Yandex Music</string>
+    <string name="player_zvuk">Zvuk (Sber)</string>
+    <string name="player_vk">VK Music</string>
+    <string name="player_hint">Default player for “play music”. A player named in the command always takes priority: “play in Zvuk”. The selected player must be installed; applies to the next command without a restart.</string>
+
+    <!-- Settings: wake word -->
+    <string name="wake_word_section">Wake word</string>
+    <string name="wake_word_builtin">Jarvis (built-in)</string>
+    <string name="wake_word_custom_bundled">Custom (bundled)</string>
+    <string name="load_custom_wake_word">Load custom wake word…</string>
+    <string name="sensitivity">Sensitivity</string>
+
+    <!-- Settings: wake word engine (HYBRID architecture) -->
+    <string name="engine_label">Wake word engine</string>
+    <string name="engine_porcupine">Picovoice Porcupine</string>
+    <string name="engine_sherpa">Sherpa-ONNX (local, no account)</string>
+    <string name="porcupine_hint">Requires a Picovoice key (see above)</string>
+    <string name="sherpa_hint">Fully on-device, no account. Uses the built-in Sherpa model (offline, no network).</string>
+    <string name="sherpa_bundled_note">Jarvis — bundled Sherpa model, offline, no account</string>
+
+    <!-- Settings: misc -->
+    <string name="close">Close</string>
+
+    <!-- Alarms -->
+    <string name="add_alarm">Add alarm</string>
+    <string name="alarms_empty">No alarms yet. Say “Jarvis, wake me at seven” — or add one with the button below.</string>
+    <string name="alarm_label_hint">Label (optional)</string>
+    <string name="alarm_label_title" formatted="true">Alarm at %02d:%02d — label</string>
+    <string name="default_alarm_label">Alarm</string>
+    <string name="alarm_repeat_daily">daily</string>
+    <string name="alarm_repeat_once">once</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+
+    <!-- Ringing -->
+    <string name="alarm_notification_title">Alarm</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="snooze">Snooze for 10 minutes</string>
+    <string name="snooze_label">Alarm repeat</string>
+    <string name="timer_done">Time is up!</string>
+    <string name="perm_notification_text">Microphone access is required. Tap to open the app.</string>
+
     <!-- TTS speech feedback -->
     <string name="tts_please_wait">One moment.</string>
     <string name="tts_opening_player">Opening %s.</string>
-    <string name="tts_init_failed">Failed to start assistant. Retrying automatically.</string>
+    <string name="tts_init_failed">Failed to start the assistant. I will retry automatically.</string>
 
     <!-- Default labels -->
     <string name="default_timer_label">Timer</string>

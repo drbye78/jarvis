@@ -36,7 +36,10 @@
 - Sensitivity adjustable live in Settings (0–1 slider; applies immediately).
 
 ### "OAuth token request failed (HTTP 401)"
-- Verify Sber credentials entered in **Settings** (gear button).
+- Verify Sber credentials entered in **Settings** (gear button). The settings
+  panel validates them upfront as you type: a red **«Неверные ключи»** status
+  row under the Salute/GigaChat fields means the pair really is wrong — fix it
+  there instead of debugging the runtime error.
 - Or switch Settings → provider to an OpenAI-compatible endpoint.
 
 ### "GigaChat request failed (HTTP ...)"
@@ -45,6 +48,23 @@
   the radio, fill Base URL / model / API key, press **Сохранить**. The change
   takes effect after the next service restart (Стоп → Запустить on the home
   screen) — the provider client is built once, when the service starts.
+
+### "Не удалось проверить: нет связи с сервером" (settings validation)
+The settings panel probes the Sber OAuth endpoint live while you type (debounced,
+~1 probe per pause, plus the **«Проверить ключи»** button and a probe on every
+open/save). The amber status means *no verdict*, not *bad credentials*:
+
+- No internet / captive portal / DNS failure → the probe could not reach
+  `ngw.devices.sberbank.ru:9443`. Saving still works — the pair is stored and
+  validated again next time the panel opens.
+- HTTP 5xx or 429 → Sber side; try the button again later.
+- A **red** row (HTTP 401/403/4xx) is a real rejection: the Client ID/Secret
+  pair (or its scope grant) is wrong. Only Salute and GigaChat pairs are
+  probed — they are the mandatory pair. The Picovoice key is optional
+  (Porcupine engine only) and is validated by engine init, not probed.
+
+Offline note: the probe is the ONLY network call the settings panel makes;
+the app itself works offline with cached tokens.
 
 ### "Service keeps getting killed"
 - Huawei PowerGenie: Settings → Apps → App launch → Jarvis → Manage manually
@@ -242,8 +262,11 @@ Streaming ASR means these numbers no longer grow with utterance length.
   whether `playFromSearch`, browser `onSearch`, repeat/shuffle bits, and
   heart rating are actually exposed. Until that dump is read, every
   capability is an assumption the cascade degrades gracefully around.
-- **English locale is partial.** The i18n pass localized the newest strings
-  (TTS phrases, now-playing, weather, device info); the rest of the UI —
-  including the Settings «Музыка» card and onboarding rows — still renders
-  the Russian defaults under an English locale, and the assistant itself
-  always answers in Russian per the system prompt.
+- **English locale: UI is fully localized, runtime speech is not.** Every
+  user-facing string resource now has an English twin (values-en, 135 keys
+  incl. the new credential-validation rows), so the whole UI — Settings,
+  onboarding, alarms, music card — renders in English under an English locale.
+  Runtime spoken/system messages (turn failures, music outcome details,
+  wake-word engine errors) remain hardcoded Russian, and the assistant always
+  answers in Russian per the system prompt; localizing those requires plumbing
+  a string provider through the session pipeline.

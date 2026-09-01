@@ -78,6 +78,16 @@
     <string name="save">Сохранить</string>
     <string name="settings_saved">Данные провайдеров сохранены</string>
 
+    <!-- Settings: upfront credential validation (mandatory = Salute + GigaChat) -->
+    <string name="credentials_hint">Salute и GigaChat — обязательные ключи, они проверяются сразу при вводе. Ключ Picovoice нужен только для движка Porcupine и не проверяется.</string>
+    <string name="credentials_check_button">Проверить ключи</string>
+    <string name="credentials_checking">Проверяю ключи…</string>
+    <string name="credentials_ok">Ключи верны</string>
+    <string name="credentials_invalid">Неверные ключи</string>
+    <string name="credentials_invalid_http">Неверные ключи (HTTP %1$d)</string>
+    <string name="credentials_unverifiable">Не удалось проверить: нет связи с сервером</string>
+    <string name="error_ppn_file">Неверный файл wake word (нужен .ppn)</string>
+
     <!-- Settings: music (preferred default player) -->
     <string name="music_section">Музыка</string>
     <string name="player_auto">Авто (Яндекс Музыка сначала)</string>
@@ -110,6 +120,8 @@
     <string name="alarm_label_hint">Название (необязательно)</string>
     <string name="alarm_label_title" formatted="true">Будильник на %02d:%02d — название</string>
     <string name="default_alarm_label">Будильник</string>
+    <string name="alarm_repeat_daily">ежедневно</string>
+    <string name="alarm_repeat_once">однократно</string>
     <string name="ok">ОК</string>
     <string name="cancel">Отмена</string>
     <string name="delete">Удалить</string>

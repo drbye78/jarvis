@@ -274,6 +274,14 @@
                         android:text="@string/credentials_section"
                         style="@style/TextAppearance.Jarvis.SectionHeader" />
 
+                    <!-- Which credentials are mandatory, and what gets validated -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/credentials_hint"
+                        style="@style/TextAppearance.Jarvis.Hint" />
+
                     <!-- Picovoice access key (normal text, not a password) -->
                     <com.google.android.material.textfield.TextInputLayout
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
@@ -319,6 +327,15 @@
                             android:inputType="textPassword" />
                     </com.google.android.material.textfield.TextInputLayout>
 
+                    <!-- Live validation status for the Salute pair -->
+                    <TextView
+                        android:id="@+id/saluteCheckStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:visibility="gone"
+                        style="@style/TextAppearance.Jarvis.Hint" />
+
                     <!-- GigaChat: Client ID + Client Secret -->
                     <com.google.android.material.textfield.TextInputLayout
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
@@ -348,6 +365,24 @@
                             android:layout_height="wrap_content"
                             android:inputType="textPassword" />
                     </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- Live validation status for the GigaChat pair -->
+                    <TextView
+                        android:id="@+id/gigaChatCheckStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:visibility="gone"
+                        style="@style/TextAppearance.Jarvis.Hint" />
+
+                    <!-- Immediate re-validation of both mandatory pairs -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/checkCredentialsButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="18dp"
+                        android:text="@string/credentials_check_button" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/saveCredentialsButton"

@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
 import android.widget.Button
 import android.widget.RadioGroup
@@ -11,12 +13,17 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.textfield.TextInputEditText
 import com.jarvis.assistant.di.GraphHolder
+import com.jarvis.assistant.llm.CredentialCheck
+import com.jarvis.assistant.llm.CredentialCheckController
+import com.jarvis.assistant.llm.OAuthCredentialValidator
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.CredentialsStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 /**
@@ -66,6 +73,11 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var saluteSecret: TextInputEditText
     private lateinit var gigaChatId: TextInputEditText
     private lateinit var gigaChatSecret: TextInputEditText
+    private lateinit var saluteCheckStatus: TextView
+    private lateinit var gigaChatCheckStatus: TextView
+
+    /** Upfront validation of the mandatory Salute/GigaChat pairs (as you type). */
+    private lateinit var credentialChecks: CredentialCheckController
 
     private lateinit var wakeWordGroup: RadioGroup
     private lateinit var sensitivityBar: SeekBar
@@ -102,6 +114,8 @@ class SettingsActivity : AppCompatActivity() {
         saluteSecret = findViewById(R.id.saluteSecret)
         gigaChatId = findViewById(R.id.gigaChatId)
         gigaChatSecret = findViewById(R.id.gigaChatSecret)
+        saluteCheckStatus = findViewById(R.id.saluteCheckStatus)
+        gigaChatCheckStatus = findViewById(R.id.gigaChatCheckStatus)
         wakeWordGroup = findViewById(R.id.wakeWordGroup)
         sensitivityBar = findViewById(R.id.sensitivityBar)
         sensitivityValue = findViewById(R.id.sensitivityValue)
@@ -179,11 +193,42 @@ class SettingsActivity : AppCompatActivity() {
 
         callbacks = RealCallbacks()
 
+        // A2) Upfront validation of the mandatory credential pairs. The
+        // controller debounces typing, dedupes confirmed-Ok pairs and discards
+        // stale verdicts; the validator probes the same OAuth endpoint the
+        // token manager uses, so "valid" here means the next token fetch
+        // succeeds. Picovoice is optional (engine-scoped) and never probed.
+        credentialChecks = CredentialCheckController(
+            validator = OAuthCredentialValidator(),
+            scope = lifecycleScope,
+        )
+        attachCredentialWatchers()
+        lifecycleScope.launch {
+            credentialChecks.states.collect { state ->
+                renderCheckStatus(
+                    saluteCheckStatus,
+                    state[CredentialCheckController.Service.SALUTE],
+                )
+                renderCheckStatus(
+                    gigaChatCheckStatus,
+                    state[CredentialCheckController.Service.GIGACHAT],
+                )
+            }
+        }
+        findViewById<Button>(R.id.checkCredentialsButton).setOnClickListener {
+            credentialChecks.checkNow()
+        }
+        // Opening the panel is a health check for the SAVED pair too.
+        credentialChecks.checkNow()
+
         // Close / back affordance (theme is NoActionBar).
         findViewById<View>(R.id.closeButton).setOnClickListener { finish() }
 
-        // A) Save provider credentials.
+        // A) Save provider credentials. Saving stays local-first (works
+        // offline); the status rows above tell the truth about validity, and
+        // save triggers a fresh verdict for whatever is being persisted.
         findViewById<Button>(R.id.saveCredentialsButton).setOnClickListener {
+            credentialChecks.checkNow()
             saveCredentials()
         }
 
@@ -226,6 +271,57 @@ class SettingsActivity : AppCompatActivity() {
                 callbacks.onSensitivityChanged(v)
             }
         })
+    }
+
+    /** Feed the credential controller on every keystroke in the 4 fields. */
+    private fun attachCredentialWatchers() {
+        val saluteWatcher = textWatcher {
+            credentialChecks.onSaluteInput(saluteId.text.toString(), saluteSecret.text.toString())
+        }
+        saluteId.addTextChangedListener(saluteWatcher)
+        saluteSecret.addTextChangedListener(saluteWatcher)
+        val gigaWatcher = textWatcher {
+            credentialChecks.onGigaChatInput(gigaChatId.text.toString(), gigaChatSecret.text.toString())
+        }
+        gigaChatId.addTextChangedListener(gigaWatcher)
+        gigaChatSecret.addTextChangedListener(gigaWatcher)
+    }
+
+    private fun textWatcher(action: () -> Unit): TextWatcher = object : TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        override fun afterTextChanged(s: Editable?) = action()
+    }
+
+    /** Map one service's [CredentialCheckController.UiState] onto its status row. */
+    private fun renderCheckStatus(view: TextView, state: CredentialCheckController.UiState?) {
+        when (state) {
+            null, CredentialCheckController.UiState.Idle -> view.visibility = View.GONE
+            CredentialCheckController.UiState.Checking -> {
+                view.visibility = View.VISIBLE
+                view.text = getString(R.string.credentials_checking)
+                view.setTextColor(ContextCompat.getColor(this, R.color.jarvis_on_surface_variant))
+            }
+            is CredentialCheckController.UiState.Verdict -> {
+                view.visibility = View.VISIBLE
+                when (val check = state.check) {
+                    CredentialCheck.Valid -> {
+                        view.text = getString(R.string.credentials_ok)
+                        view.setTextColor(ContextCompat.getColor(this, R.color.jarvis_status_listening))
+                    }
+                    is CredentialCheck.Invalid -> {
+                        view.text = check.httpCode?.let {
+                            getString(R.string.credentials_invalid_http, it)
+                        } ?: getString(R.string.credentials_invalid)
+                        view.setTextColor(ContextCompat.getColor(this, R.color.jarvis_error))
+                    }
+                    is CredentialCheck.Unverifiable -> {
+                        view.text = getString(R.string.credentials_unverifiable)
+                        view.setTextColor(ContextCompat.getColor(this, R.color.jarvis_status_thinking))
+                    }
+                }
+            }
+        }
     }
 
     private fun saveLlmProviderSettings() {
@@ -280,7 +376,7 @@ class SettingsActivity : AppCompatActivity() {
             if (uri.lastPathSegment?.endsWith(".ppn", ignoreCase = true) != true) {
                 Toast.makeText(
                     this,
-                    "Неверный файл wake word (нужен .ppn)",
+                    R.string.error_ppn_file,
                     Toast.LENGTH_SHORT,
                 ).show()
                 return

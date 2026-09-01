@@ -31,10 +31,14 @@ OpenAI-compatible endpoint).
    - **Picovoice access key** (wake word)
    - **Sber Salute** client ID + secret (ASR/TTS)
    - **GigaChat** client ID + secret (LLM)
-   Credentials are stored encrypted in the Android Keystore
+   The mandatory Salute/GigaChat pairs are **validated upfront in the panel as
+   you type** (a live status row: valid / invalid / unreachable) and on every
+   «Проверить ключи» press — a typo is caught in seconds, not at the next
+   voice command. Credentials are stored encrypted in the Android Keystore
    (`EncryptedSharedPreferences`) on the device — **nothing secret is ever in
    the APK or in `local.properties`**. GigaChat creds are optional if you use
    the OpenAI-compatible provider instead (also configured in Settings).
+   The UI ships in Russian and English (full `values-en`).
 4. **Wake word — two engines (hybrid).** In Settings → Wake word you choose
     the engine:
     - **Sherpa-ONNX (recommended, no account):** a fully on-device wake word

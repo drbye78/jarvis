@@ -77,8 +77,13 @@ class TranscriptAdapter : ListAdapter<Message, TranscriptAdapter.VH>(DIFF) {
         const val ROLE_SYSTEM_PROMPT = "system"
 
         val DIFF = object : DiffUtil.ItemCallback<Message>() {
+            // Row identity (database id), NOT content equality: two identical
+            // replies are distinct rows, and an edited row is a rebind, not a
+            // removal+insert. Fresh messages carry id = 0 before persistence,
+            // where equality is still the only identity available.
             override fun areItemsTheSame(oldItem: Message, newItem: Message): Boolean =
-                oldItem === newItem || oldItem == newItem
+                if (oldItem.id != 0L || newItem.id != 0L) oldItem.id == newItem.id
+                else oldItem == newItem
 
             override fun areContentsTheSame(oldItem: Message, newItem: Message): Boolean =
                 oldItem == newItem

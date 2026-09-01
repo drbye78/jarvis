@@ -137,6 +137,14 @@ class VoiceOrbView @JvmOverloads constructor(
             start()
         }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        // Animators were cancelled in onDetachedFromWindow; a re-attached orb
+        // (config change, back navigation) would otherwise sit frozen until
+        // the next setState. This also starts IDLE breathing on first attach.
+        restartAnimators()
+    }
+
     override fun onDetachedFromWindow() {
         stopAnimators()
         super.onDetachedFromWindow()
