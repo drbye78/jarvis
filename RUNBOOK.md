@@ -115,6 +115,27 @@ The empty-query semantics need a player that advertises `playFromSearch`
 (session in STOPPED state) or a paused session to resume. If neither
 exists, Jarvis answers instructively instead of pretending.
 
+### «включи в Звуке» — Zvuk specifics and the one-minute deep-link check
+Zvuk (`com.zvooq.openplay`) works through the same cascade as everyone
+else: transport controls need an active session, cold starts go through
+the MediaBrowser token lane (Zvuk's official Android Auto support is the
+strongest `playFromSearch`/browser-service signal of any RU player),
+and the launch/legacy lanes cover the rest. The ONE thing Zvuk lacks
+today is a deep-link entry: zvuk.com's web-search URL shape could not be
+verified from the dev environment (geo/bot-blocked), and an unverified
+link would make Jarvis claim «открыл поиск» while the user stares at a
+wrong page — so `SearchLinks` deliberately returns nothing for Zvuk.
+
+The one-minute on-device check that re-enables it:
+1. Open zvuk.com in the tablet's browser, search any track, and look at
+   the address bar: if the URL is a stable `/search?query=…`-shaped path
+   (not a JS hash or a redirect chain), the shape is confirmed.
+2. Check whether that URL opens the Zvuk APP (App Links) or stays in the
+   browser. Only an app-resolving URL is worth adding as a link.
+3. Add the entry to `SearchLinks.searchUris` for `com.zvooq.openplay`
+   and flip the `zvuk intentionally has no unverified deep links` test in
+   `SearchLinksTest` to pin the confirmed shape.
+
 ### "Alarms don't ring"
 - Alarms fire via `setAlarmClock` — check the system alarm indicator appears.
 - Do-not-disturb filters can silence alarms: check DND settings.
@@ -202,3 +223,27 @@ Streaming ASR means these numbers no longer grow with utterance length.
   gated on the session's action mask and rating type; media-key fallback only
   covers play/pause/next/previous/stop. Unsupported actions get an honest
   refusal naming the limitation.
+- **Deep-link schemes are undocumented.** The `yandexmusic://` URI scheme is
+  not published by Yandex; the `/search?query=` path is inferred from
+  community sources and may not resolve on all builds. The
+  `https://music.yandex.ru/search/…` fallback opens a browser page, not the
+  app. Deep links are a last-resort honest fallback, not a reliable path —
+  and Zvuk ships none until its shape is confirmed (see «включи в Звуке»
+  above).
+- **Playback verification is fuzzy, deliberately.** The request-vs-now-playing
+  match uses weighted token overlap (title 0.65 / artist 0.35) with a strong
+  threshold of 0.5. A cover, remix, or compilation featuring the requested
+  artist can verify as "playing" even when it is not the exact recording the
+  user meant. The alternative — reporting `search_opened` for every
+  near-match — is worse; exact-match does not exist for unstructured search.
+- **On-device capability validation is still pending.** The MusicDiag
+  capability matrix (`adb logcat -s MusicDiag` after one play attempt) is
+  designed to answer, on the target hardware and CURRENT player builds,
+  whether `playFromSearch`, browser `onSearch`, repeat/shuffle bits, and
+  heart rating are actually exposed. Until that dump is read, every
+  capability is an assumption the cascade degrades gracefully around.
+- **English locale is partial.** The i18n pass localized the newest strings
+  (TTS phrases, now-playing, weather, device info); the rest of the UI —
+  including the Settings «Музыка» card and onboarding rows — still renders
+  the Russian defaults under an English locale, and the assistant itself
+  always answers in Russian per the system prompt.

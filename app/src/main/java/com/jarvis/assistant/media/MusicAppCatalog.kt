@@ -37,8 +37,20 @@ class MusicAppCatalog(
         val known = KNOWN_PLAYERS.mapNotNull { (pkg, brand) -> info(pkg)?.let { pkg to brand } }
 
         if (hint != null) {
-            known.firstOrNull { (_, brand) -> brand.split('|').any { hint.contains(it) } }
-                ?.let { return info(it.first) }
+            // Specific brand tokens first: a hint that names a brand must
+            // not be captured by ANOTHER player's generic "музык" token —
+            // the playMusic schema itself suggests 'VK Музыка' as an app
+            // value, and "vk музыка" contains "музык", so a single
+            // first-match pass over KNOWN_PLAYERS order (Yandex first)
+            // routed VK requests to Yandex. Two passes: non-generic tokens
+            // only, then the generic token as a bare-«музыка» fallback.
+            val generic = GENERIC_TOKEN
+            known.firstOrNull { (_, brand) ->
+                brand.split('|').filter { it != generic }.any { hint.contains(it) }
+            }?.let { return info(it.first) }
+            known.firstOrNull { (_, brand) ->
+                brand.split('|').any { hint.contains(it) }
+            }?.let { return info(it.first) }
             if (hint.length >= 2) {
                 apps.firstOrNull { (_, label) -> label.lowercase().contains(hint) }
                     ?.let { return MediaAppInfo(it.first, it.second) }
@@ -66,6 +78,13 @@ class MusicAppCatalog(
             "com.zvooq.openplay" to "звук|zvuk|сберзвук",
             "com.vk.music" to "вк|vk",
         )
+
+        /**
+         * The generic token: "музык" appears in Yandex's brand list so a
+         * bare «музыка» hint still lands on the default player, but it must
+         * never override a specific brand marker in the same hint.
+         */
+        const val GENERIC_TOKEN = "музык"
 
         val MUSIC_LABEL_KEYWORDS = listOf("музык", "music", "звук", "zvuk")
     }

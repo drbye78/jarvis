@@ -55,6 +55,15 @@ class SearchLinksTest {
     }
 
     @Test
+    fun `zvuk intentionally has no unverified deep links`() {
+        // Per-player honesty: zvuk.com's web-search URL shape is unverified
+        // from the dev environment, so the cascade must fall through to the
+        // browser/launch lanes rather than open a guess. When the on-device
+        // check (RUNBOOK «Zvuk») confirms a shape, this test flips to pin it.
+        assertTrue(SearchLinks.searchUris("com.zvooq.openplay", "Кино", percentEncoder).isEmpty())
+    }
+
+    @Test
     fun `russian multiword query is fully percent-encoded in the https form`() {
         val links = SearchLinks.searchUris("ru.yandex.music", "Кино Группа крови", percentEncoder)
         assertEquals("https://music.yandex.ru/search/Кино%20Группа%20крови", links[1])
