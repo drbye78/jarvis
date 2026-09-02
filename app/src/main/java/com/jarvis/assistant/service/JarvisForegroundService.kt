@@ -223,6 +223,7 @@ class JarvisForegroundService : Service() {
         AssistantState.LISTENING -> getString(R.string.state_listening)
         AssistantState.THINKING -> getString(R.string.state_thinking)
         AssistantState.SPEAKING -> getString(R.string.state_speaking)
+        AssistantState.FOLLOW_UP_WINDOW -> getString(R.string.state_follow_up)
     }
 
     private fun buildStateNotification(text: String): Notification {
@@ -396,6 +397,36 @@ class JarvisForegroundService : Service() {
     fun setMuted(muted: Boolean) {
         graph?.sessionManager?.setMuted(muted)
     }
+
+    /**
+     * Follow-up window live control (Settings «Продолжение диалога» card):
+     * applies immediately — no service restart needed.
+     */
+    fun setFollowUpWindow(enabled: Boolean, windowMs: Long) {
+        graph?.sessionManager?.setFollowUpWindow(enabled, windowMs)
+    }
+
+    /**
+     * AEC Phase B: start the playback-capture far-end lane with a consented
+     * MediaProjection result. Only acts in SOFTWARE AEC mode (the lane feeds
+     * the built-in canceller; other modes have no consumer).
+     */
+    fun startPlaybackCapture(resultCode: Int, data: Intent) {
+        val g = graph ?: return
+        if (g.aecMode != com.jarvis.assistant.audio.aec.AecMode.SOFTWARE) {
+            Timber.tag("AecDiag").w("playback capture requested outside SOFTWARE aec mode — ignored")
+            return
+        }
+        g.playbackCapture.start(resultCode, data)
+    }
+
+    fun stopPlaybackCapture() {
+        graph?.playbackCapture?.stop()
+    }
+
+    /** AEC probe row for the Settings card (static part; service may be down). */
+    fun aecProbeLine(): String =
+        graph?.let { com.jarvis.assistant.audio.aec.AecProbe.diagLine() } ?: "service not running"
 
     private val binder = object : android.os.Binder() {
         fun getService(): JarvisForegroundService = this@JarvisForegroundService

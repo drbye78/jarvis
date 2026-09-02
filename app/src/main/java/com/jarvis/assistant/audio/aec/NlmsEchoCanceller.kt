@@ -78,12 +78,9 @@ class NlmsEchoCanceller(
     /** NLP: smoothed gate gain (1.0 = fully open). */
     private var gateSmooth = 1.0
 
-    override fun onFarEndFrame(frame: ShortArray, atNanos: Long) {
-        mixer.onFrame(LANE_DEFAULT, frame)
-    }
+    override fun onFarEndFrame(frame: ShortArray) = onFarEndFrame(EchoCanceller.DEFAULT_LANE, frame)
 
-    /** Dedicated-lane feed (TTS tap vs playback capture can be distinct). */
-    fun onFarEndFrame(laneId: String, frame: ShortArray) {
+    override fun onFarEndFrame(laneId: String, frame: ShortArray) {
         mixer.onFrame(laneId, frame)
     }
 
@@ -391,6 +388,6 @@ class NlmsEchoCanceller(
          *  ~3 s instead of never — see updateResidFloor). */
         private const val FREEZE_RESEED_SLOTS = 150
 
-        const val LANE_DEFAULT = "far_end"
+        const val LANE_TTS = EchoCanceller.DEFAULT_LANE
     }
 }

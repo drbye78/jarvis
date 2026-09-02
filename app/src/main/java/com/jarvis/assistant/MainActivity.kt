@@ -154,6 +154,7 @@ class MainActivity : AppCompatActivity() {
             var collectedGraph: com.jarvis.assistant.di.AppGraph? = null
             var stateJob: kotlinx.coroutines.Job? = null
             var partialJob: kotlinx.coroutines.Job? = null
+            var progressJob: kotlinx.coroutines.Job? = null
             while (isActive) {
                 val graph = GraphHolder.graph
                 if (graph != null && graph !== collectedGraph) {
@@ -170,6 +171,13 @@ class MainActivity : AppCompatActivity() {
                     partialJob = launch {
                         graph.sessionManager.partialTranscript.collectLatest { partial ->
                             updatePartial(partial)
+                        }
+                    }
+                    // Follow-up window: countdown arc on the orb + label.
+                    progressJob?.cancel()
+                    progressJob = launch {
+                        graph.sessionManager.followUpProgress.collect { fraction ->
+                            voiceOrb.setFollowUpProgress(fraction)
                         }
                     }
                 } else if (graph == null) {
@@ -208,5 +216,6 @@ class MainActivity : AppCompatActivity() {
         AssistantState.LISTENING -> getString(R.string.state_listening_full)
         AssistantState.THINKING -> getString(R.string.state_thinking_full)
         AssistantState.SPEAKING -> getString(R.string.state_speaking_full)
+        AssistantState.FOLLOW_UP_WINDOW -> getString(R.string.state_follow_up_full)
     }
 }

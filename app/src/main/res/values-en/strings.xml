@@ -173,4 +173,26 @@
     <!-- Device info -->
     <string name="device_time_format">HH:mm, d MMMM</string>
     <string name="device_battery_na">n/a</string>
+
+    <!-- AEC (echo cancellation): Phase A + Phase B, user-controllable, default off -->
+    <string name="aec_section">Echo cancellation</string>
+    <string name="aec_off">Off (default)</string>
+    <string name="aec_hardware">Hardware: tablet DSP (VOICE_COMMUNICATION)</string>
+    <string name="aec_software">Software: built-in echo canceller</string>
+    <string name="aec_hw_probe_available">Hardware AEC: available on this device</string>
+    <string name="aec_hw_probe_unavailable">Hardware AEC: not available on this device</string>
+    <string name="aec_hint">Use for voice commands over music, or so Jarvis hears you while it speaks. Takes effect after a service restart. In hardware mode the platform may shift microphone behavior — validate wake-word detection.</string>
+    <string name="aec_software_hint">Software mode is an experimental adaptive filter: it attenuates Jarvis's own voice echo and (with music capture on) other apps' music echo. Quality is below WebRTC AEC3 grade.</string>
+    <string name="aec_capture_section">Music capture (experimental, Android 10+)</string>
+    <string name="aec_capture_switch">Listen to other apps\' music</string>
+    <string name="aec_capture_grant">Grant capture permission</string>
+    <string name="aec_capture_hint">Lets the echo canceller "hear" the speaker music so Jarvis wakes over music. Requires a system consent (once per service run); some players may opt out of capture.</string>
+
+    <!-- Follow-up window: continue the dialogue without repeating the wake word -->
+    <string name="followup_section">Follow-up dialogue</string>
+    <string name="followup_switch">Continue without the wake word</string>
+    <string name="followup_seconds">Window after replies: %d s</string>
+    <string name="followup_hint">After each spoken reply the mic stays open for a few seconds — just keep talking. The window closes after a pause. Applies immediately, no restart.</string>
+    <string name="state_follow_up">Keep talking…</string>
+    <string name="state_follow_up_full">Keep talking — I\'m listening</string>
 </resources>

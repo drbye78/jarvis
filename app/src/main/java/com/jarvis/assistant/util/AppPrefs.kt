@@ -93,6 +93,32 @@ class AppPrefs(context: Context) {
         get() = prefs.getString(KEY_MUSIC_PLAYER, "auto") ?: "auto"
         set(value) = prefs.edit().putString(KEY_MUSIC_PLAYER, value).apply()
 
+    /**
+     * Echo-cancellation mode (Settings «Эхоподавление»): "off" | "hardware" |
+     * "software". Default OFF — all AEC modes are opt-in; HARDWARE switches
+     * capture to VOICE_COMMUNICATION + platform AEC (Phase A), SOFTWARE runs
+     * the built-in canceller with electrical far-end references (Phase B).
+     * Applies after service restart (the AudioRecord must be rebuilt).
+     */
+    var aecMode: String
+        get() = prefs.getString(KEY_AEC_MODE, "off") ?: "off"
+        set(value) = prefs.edit().putString(KEY_AEC_MODE, value).apply()
+
+    /**
+     * Follow-up window mode (Settings «Продолжение диалога»): opt-in; after a
+     * spoken reply the mic window opens for [followUpWindowMs] and speech
+     * onset starts the next turn WITHOUT the wake word. Live-updatable (no
+     * restart) via the service binder.
+     */
+    var followUpEnabled: Boolean
+        get() = prefs.getBoolean(KEY_FOLLOW_UP_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_FOLLOW_UP_ENABLED, value).apply()
+
+    /** Follow-up window length in ms (clamped 2..12 s by the controller). */
+    var followUpWindowMs: Long
+        get() = prefs.getLong(KEY_FOLLOW_UP_WINDOW_MS, 5_000L)
+        set(value) = prefs.edit().putLong(KEY_FOLLOW_UP_WINDOW_MS, value).apply()
+
     fun loadProviderSettings(): ProviderSettings = ProviderSettings(
         type = providerType,
         openAiBaseUrl = openAiBaseUrl,
@@ -113,5 +139,8 @@ class AppPrefs(context: Context) {
         const val KEY_WAKE_ENGINE = "wake_word_engine"
         const val KEY_SHERPA_ONNX = "sherpa_onnx_path"
         const val KEY_MUSIC_PLAYER = "preferred_music_player"
+        const val KEY_AEC_MODE = "aec_mode"
+        const val KEY_FOLLOW_UP_ENABLED = "follow_up_enabled"
+        const val KEY_FOLLOW_UP_WINDOW_MS = "follow_up_window_ms"
     }
 }

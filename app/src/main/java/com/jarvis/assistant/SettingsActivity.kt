@@ -95,6 +95,17 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var porcupineBlock: View
     private lateinit var sherpaBlock: View
 
+    // AEC (Phase A + Phase B) card
+    private lateinit var aecGroup: RadioGroup
+    private lateinit var aecProbeRow: TextView
+    private lateinit var aecSoftwareHint: TextView
+    private lateinit var aecCaptureSwitch: com.google.android.material.materialswitch.MaterialSwitch
+
+    // Follow-up window card
+    private lateinit var followUpSwitch: com.google.android.material.materialswitch.MaterialSwitch
+    private lateinit var followUpValue: TextView
+    private lateinit var followUpBar: SeekBar
+
     private lateinit var appPrefs: AppPrefs
 
     /**
@@ -190,6 +201,82 @@ class SettingsActivity : AppCompatActivity() {
                 else -> "auto"
             }
         }
+
+        // ------------------------------------------------------------------
+        // AEC card: OFF / HARDWARE / SOFTWARE (opt-in, default OFF; the mode
+        // rebuilds the AudioRecord → applies after service restart).
+        // ------------------------------------------------------------------
+        aecGroup = findViewById(R.id.aecGroup)
+        aecProbeRow = findViewById(R.id.aecProbeRow)
+        aecSoftwareHint = findViewById(R.id.aecSoftwareHint)
+        aecCaptureSwitch = findViewById(R.id.aecCaptureSwitch)
+        aecGroup.check(
+            when (com.jarvis.assistant.audio.aec.AecMode.fromPref(appPrefs.aecMode)) {
+                com.jarvis.assistant.audio.aec.AecMode.HARDWARE -> R.id.aecHardware
+                com.jarvis.assistant.audio.aec.AecMode.SOFTWARE -> R.id.aecSoftware
+                com.jarvis.assistant.audio.aec.AecMode.OFF -> R.id.aecOff
+            }
+        )
+        aecProbeRow.setText(
+            if (com.jarvis.assistant.audio.aec.AecProbe.staticAvailable()) {
+                R.string.aec_hw_probe_available
+            } else {
+                R.string.aec_hw_probe_unavailable
+            }
+        )
+        applyAecVisibility(appPrefs.aecMode)
+        aecGroup.setOnCheckedChangeListener { _, checkedId ->
+            val mode = when (checkedId) {
+                R.id.aecHardware -> "hardware"
+                R.id.aecSoftware -> "software"
+                else -> "off"
+            }
+            appPrefs.aecMode = mode
+            applyAecVisibility(mode)
+        }
+        findViewById<Button>(R.id.aecCaptureGrant).setOnClickListener {
+            // MediaProjection consent → the graph's capture lane (SOFTWARE
+            // mode only; the service guards it too).
+            val intent = GraphHolder.graph?.playbackCapture?.createConsentIntent()
+            if (intent == null) {
+                Toast.makeText(this, R.string.aec_hw_probe_unavailable, Toast.LENGTH_SHORT).show()
+            } else {
+                @Suppress("DEPRECATION")
+                startActivityForResult(intent, CAPTURE_REQUEST)
+            }
+        }
+        aecCaptureSwitch.setOnCheckedChangeListener { _, checked ->
+            if (!checked) GraphHolder.graph?.playbackCapture?.stop()
+            // Enabling alone does nothing: the Grant button runs the consent.
+        }
+
+        // ------------------------------------------------------------------
+        // Follow-up window card: switch + 2..12 s window, LIVE-applied through
+        // the running graph (no service restart).
+        // ------------------------------------------------------------------
+        followUpSwitch = findViewById(R.id.followUpSwitch)
+        followUpValue = findViewById(R.id.followUpValue)
+        followUpBar = findViewById(R.id.followUpBar)
+        followUpSwitch.isChecked = appPrefs.followUpEnabled
+        val windowSeconds = (appPrefs.followUpWindowMs / 1000L).toInt().coerceIn(2, 12)
+        followUpBar.progress = windowSeconds - 2
+        updateFollowUpLabel(windowSeconds)
+        followUpSwitch.setOnCheckedChangeListener { _, checked ->
+            appPrefs.followUpEnabled = checked
+            GraphHolder.graph?.sessionManager?.setFollowUpWindow(checked, followUpSeconds())
+        }
+        followUpBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
+                updateFollowUpLabel(value + 2)
+            }
+
+            override fun onStartTrackingTouch(bar: SeekBar?) {}
+
+            override fun onStopTrackingTouch(bar: SeekBar?) {
+                appPrefs.followUpWindowMs = followUpSeconds()
+                GraphHolder.graph?.sessionManager?.setFollowUpWindow(followUpSwitch.isChecked, followUpSeconds())
+            }
+        })
 
         callbacks = RealCallbacks()
 
@@ -360,6 +447,17 @@ class SettingsActivity : AppCompatActivity() {
         sensitivityValue.text = getString(R.string.sensitivity_value, value)
     }
 
+    /** SOFTWARE hint only matters in software mode. */
+    private fun applyAecVisibility(mode: String) {
+        aecSoftwareHint.visibility = if (mode == "software") View.VISIBLE else View.GONE
+    }
+
+    private fun followUpSeconds(): Long = ((followUpBar.progress + 2).toLong()).coerceIn(2, 12) * 1000L
+
+    private fun updateFollowUpLabel(seconds: Int) {
+        followUpValue.text = getString(R.string.followup_seconds, seconds)
+    }
+
     /** Show the controls for the active engine, hide the other. */
     private fun applyEngineVisibility(engine: String) {
         val isSherpa = engine == "sherpa"
@@ -370,6 +468,20 @@ class SettingsActivity : AppCompatActivity() {
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == CAPTURE_REQUEST && resultCode == RESULT_OK && data != null) {
+            // AEC Phase B: feed the consented projection to the running
+            // graph's playback-capture lane (SOFTWARE mode only).
+            val graph = GraphHolder.graph
+            if (graph == null) {
+                Toast.makeText(this, R.string.settings_saved, Toast.LENGTH_SHORT).show()
+            } else if (graph.aecMode != com.jarvis.assistant.audio.aec.AecMode.SOFTWARE) {
+                Toast.makeText(this, R.string.aec_hw_probe_unavailable, Toast.LENGTH_SHORT).show()
+            } else {
+                graph.playbackCapture.start(resultCode, data)
+                aecCaptureSwitch.isChecked = true
+            }
+            return
+        }
         if (requestCode == PPN_REQUEST && resultCode == RESULT_OK && data != null) {
             val uri = data.data ?: return
             // L2: only a .ppn file is valid.
@@ -498,5 +610,6 @@ class SettingsActivity : AppCompatActivity() {
 
     private companion object {
         const val PPN_REQUEST = 1002
+        const val CAPTURE_REQUEST = 1003
     }
 }

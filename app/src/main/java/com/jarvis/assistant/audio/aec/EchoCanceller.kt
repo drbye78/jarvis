@@ -15,12 +15,15 @@ package com.jarvis.assistant.audio.aec
 interface EchoCanceller {
 
     /**
-     * Feed one far-end reference frame (16 kHz mono PCM, [frame] is copied
-     * internally; caller may reuse its buffer).
-     * @param atNanos monotonic timestamp of when this audio is (or will be)
-     *        audible at the speaker, nanoseconds.
+     * Feed one far-end reference frame on a named lane ("tts",
+     * "playback_capture", …). [frame] is copied internally; the caller may
+     * reuse its buffer. Lanes are mixed on a common time grid — see
+     * [FarEndMixer].
      */
-    fun onFarEndFrame(frame: ShortArray, atNanos: Long = 0L)
+    fun onFarEndFrame(laneId: String, frame: ShortArray)
+
+    /** Default-lane convenience overload. */
+    fun onFarEndFrame(frame: ShortArray) = onFarEndFrame(DEFAULT_LANE, frame)
 
     /**
      * Cancel echo in one mic frame (16 kHz mono, 320 samples = 20 ms).
@@ -49,5 +52,25 @@ interface EchoCanceller {
         val gateGain: Float,
         /** frameErrPower / residFloor — ≈1 means converged echo-only; ≫10 means double-talk. */
         val errorToFloor: Double?,
+    )
+
+    companion object {
+        /** Lane id for the own-TTS electrical tap. */
+        const val DEFAULT_LANE = "far_end"
+    }
+}
+
+/** Do-nothing [EchoCanceller] — for wiring paths where AEC is disabled. */
+object NoopEchoCanceller : EchoCanceller {
+    override fun onFarEndFrame(laneId: String, frame: ShortArray) = Unit
+    override fun process(micFrame: ShortArray): ShortArray = micFrame
+    override fun reset() = Unit
+    override val stats: EchoCanceller.Stats = EchoCanceller.Stats(
+        estimatedDelayMs = null,
+        erleDb = null,
+        adapting = false,
+        diverged = false,
+        gateGain = 1f,
+        errorToFloor = null,
     )
 }
