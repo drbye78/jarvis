@@ -193,6 +193,9 @@ All modes are **opt-in, default OFF** (Settings → «Эхоподавление
 
 1. Settings → Эхоподавление → «Аппаратное». The probe row tells you whether
    `AcousticEchoCanceler.isAvailable()` on THIS device is true.
+   (For the first seconds after Start the service bootstraps on a background
+   thread — the row may show «service not running» until the graph is up;
+   re-open the card after ~5 s.)
 2. Restart the service (mode change rebuilds the AudioRecord). The static
    probe line must be visible **before** restart; the runtime attach outcome
    lands in logcat:

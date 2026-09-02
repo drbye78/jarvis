@@ -125,14 +125,16 @@ class TurnRunner(
         } catch (e: TimeoutCancellationException) {
             Timber.w(e, "Session timed out")
             reportFailure(sessionId, "Превышено время ожидания. Попробуйте ещё раз.")
-            finish(sessionId, false)
+            finish(sessionId, spokeThisTurn.get())
         } catch (e: java.io.IOException) {
             Timber.e(e, "Network error in session")
             reportFailure(sessionId, "Ошибка сети. Проверьте подключение.")
-            finish(sessionId, false)
-        } catch (_: CancellationException) {
-            // Barge-in / shutdown. Only act if still current.
             finish(sessionId, spokeThisTurn.get())
+        } catch (_: CancellationException) {
+            // Barge-in / shutdown — finish first (follow-up eligibility needs
+            // the spoke flag), then rethrow to preserve structured concurrency.
+            finish(sessionId, spokeThisTurn.get())
+            throw CancellationException()
         } catch (e: Exception) {
             Timber.e(e, "Session failed")
             reportFailure(sessionId, "Произошла ошибка. Попробуйте ещё раз.")

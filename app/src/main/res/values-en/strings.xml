@@ -4,9 +4,9 @@
 
     <!-- Channels -->
     <string name="channel_name">Jarvis</string>
+    <string name="channel_bootstrap_name">Jarvis (starting)</string>
     <string name="channel_errors">Errors</string>
     <string name="channel_alarm">Alarms</string>
-    <string name="channel_bootstrap_name">Jarvis (starting)</string>
 
     <!-- States -->
     <string name="state_idle">Idle</string>
@@ -119,7 +119,7 @@
     <string name="add_alarm">Add alarm</string>
     <string name="alarms_empty">No alarms yet. Say “Jarvis, wake me at seven” — or add one with the button below.</string>
     <string name="alarm_label_hint">Label (optional)</string>
-    <string name="alarm_label_title" formatted="false">Alarm at %02d:%02d — label</string>
+    <string name="alarm_label_title" formatted="true">Alarm at %02d:%02d — label</string>
     <string name="default_alarm_label">Alarm</string>
     <string name="alarm_repeat_daily">daily</string>
     <string name="alarm_repeat_once">once</string>
@@ -186,9 +186,9 @@
     <string name="aec_hw_probe_available">Hardware AEC: available on this device</string>
     <string name="aec_hw_probe_unavailable">Hardware AEC: not available on this device</string>
     <string name="aec_hint">Use for voice commands over music, or so Jarvis hears you while it speaks. Takes effect after a service restart. In hardware mode the platform may shift microphone behavior — validate wake-word detection.</string>
-    <string name="aec_software_hint">Software mode is an experimental adaptive filter: it attenuates the assistant voice echo and (with music capture on) other apps\u2019 music echo. Quality is below WebRTC AEC3 grade.</string>
+    <string name="aec_software_hint">Software mode is an experimental adaptive filter: it attenuates Jarvis's own voice echo and (with music capture on) other apps' music echo. Quality is below WebRTC AEC3 grade.</string>
     <string name="aec_capture_section">Music capture (experimental, Android 10+)</string>
-    <string name="aec_capture_switch">Listen to other apps\u2019 music</string>
+    <string name="aec_capture_switch">Listen to other apps\' music</string>
     <string name="aec_capture_grant">Grant capture permission</string>
     <string name="aec_capture_hint">Lets the echo canceller "hear" the speaker music so Jarvis wakes over music. Requires a system consent (once per service run); some players may opt out of capture.</string>
 
@@ -198,5 +198,5 @@
     <string name="followup_seconds">Window after replies: %d s</string>
     <string name="followup_hint">After each spoken reply the mic stays open for a few seconds — just keep talking. The window closes after a pause. Applies immediately, no restart.</string>
     <string name="state_follow_up">Keep talking…</string>
-    <string name="state_follow_up_full">Keep talking \u2014 I\u2019m listening</string>
+    <string name="state_follow_up_full">Keep talking — I\'m listening</string>
 </resources>

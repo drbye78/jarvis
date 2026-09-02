@@ -266,12 +266,12 @@ class SessionManager(
         if (!enabled) closeFollowUpWindow(silent = false)
     }
 
-    private fun maybeOpenFollowUpWindow(spoke: Boolean) {
+    private suspend fun maybeOpenFollowUpWindow(spoke: Boolean) {
         if (!followUpEnabled) return
         when (followUp.onTurnEnded(spoke, enabled = true)) {
             FollowUpWindowController.Effect.OpenWindow -> {
                 Timber.i("Follow-up window open")
-                scope.launch { stateMachine.onEvent(SessionEvent.FollowUpWindowOpened) }
+                stateMachine.onEvent(SessionEvent.FollowUpWindowOpened)
                 startFollowUpCollector()
             }
             FollowUpWindowController.Effect.StartFollowUpTurn,
@@ -342,6 +342,8 @@ class SessionManager(
         windowJob = null
         _followUpProgress.value = 0f
         if (!silent && stateMachine.currentState() == AssistantState.FOLLOW_UP_WINDOW) {
+            // onEvent is suspend (serialized transitions, upstream 9e933c5);
+            // the binder-side callers of this fun are non-suspend, so hop.
             scope.launch { stateMachine.onEvent(SessionEvent.FollowUpWindowExpired) }
         }
     }

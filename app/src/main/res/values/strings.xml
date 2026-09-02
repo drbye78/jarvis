@@ -120,7 +120,7 @@
     <string name="add_alarm">Добавить будильник</string>
     <string name="alarms_empty">Будильников нет. Скажите «Джарвис, разбуди меня в семь» — или добавьте кнопкой ниже.</string>
     <string name="alarm_label_hint">Название (необязательно)</string>
-    <string name="alarm_label_title" formatted="false">Будильник на %02d:%02d — название</string>
+    <string name="alarm_label_title" formatted="true">Будильник на %02d:%02d — название</string>
     <string name="default_alarm_label">Будильник</string>
     <string name="alarm_repeat_daily">ежедневно</string>
     <string name="alarm_repeat_once">однократно</string>

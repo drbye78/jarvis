@@ -93,7 +93,7 @@ class SessionFollowUpWindowTest {
             functionRouter = object : ToolExecutor {
                 override fun getToolDefinitions() = emptyList<com.jarvis.assistant.model.ToolDefinition>()
                 override suspend fun executeResult(call: com.jarvis.assistant.model.FunctionCall) =
-                    com.jarvis.assistant.tools.ToolResult(content = "{}", isError = false)
+                    com.jarvis.assistant.tools.ToolResult("{}", isError = false)
             },
             conversationManager = ConversationManager(FakeMessageDao(), maxMessages = 20),
             stateMachine = stateMachine,

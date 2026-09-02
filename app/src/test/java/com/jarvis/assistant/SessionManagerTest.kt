@@ -670,7 +670,13 @@ class SessionManagerTest {
             // Cancellation alone emits nothing; cancelAll must explicitly and
             // safely bring the machine back to IDLE.
             h.manager.cancelAll()
-            yield() // let the scope-launched onEvent(Cancelled) execute
+            // The Cancelled transition is scope-launched on Dispatchers.Default
+            // (and the cancelled turn's finish(LlmDone) races it from another
+            // pool thread) — a single yield() on the test thread cannot observe
+            // either. Poll with a budget, the file's own idiom for async states.
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
+            }
             assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
         } finally {
             h.shutdown()
