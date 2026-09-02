@@ -15,13 +15,15 @@ import kotlin.math.min
 /**
  * The voice-status orb — the home screen's live indicator of what the
  * assistant is doing right now. Pure Canvas drawing (no drawables, no
- * extra dependencies), driven by four cheap animators:
+ * extra dependencies), driven by cheap animators:
  *
- *  IDLE      — a dim ring that slowly "breathes" (alpha oscillation)
- *  LISTENING — two offset ripples expanding from the core
- *  THINKING  — three rounded arc segments rotating around the ring
- *  SPEAKING  — a pulsing glow around a bright core
- *  MUTED     — flat, gray, motionless (microphone is off)
+ *  IDLE            — a dim ring that slowly "breathes" (alpha oscillation)
+ *  LISTENING       — two offset ripples expanding from the core
+ *  THINKING        — three rounded arc segments rotating around the ring
+ *  SPEAKING        — a pulsing glow around a bright core
+ *  FOLLOW_UP       — listening-tinted ripples + a shrinking countdown arc
+ *                    (remaining window time, driven by setFollowUpProgress)
+ *  MUTED           — flat, gray, motionless (microphone is off)
  *
  * Contract: [setState] may be called from anywhere (it only mutates fields
  * and restarts animators on the UI thread — callers are the activity's
@@ -35,7 +37,10 @@ class VoiceOrbView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     /** Displayed state; derived from [AssistantState] + the muted flag. */
-    enum class OrbState { IDLE, LISTENING, THINKING, SPEAKING, MUTED }
+    enum class OrbState { IDLE, LISTENING, THINKING, SPEAKING, FOLLOW_UP, MUTED }
+
+    /** Remaining follow-up window fraction (0..1); drives the countdown arc. */
+    private var followUpProgress = 0f
 
     private var state = OrbState.IDLE
 
@@ -81,6 +86,7 @@ class VoiceOrbView @JvmOverloads constructor(
                 AssistantState.LISTENING -> OrbState.LISTENING
                 AssistantState.THINKING -> OrbState.THINKING
                 AssistantState.SPEAKING -> OrbState.SPEAKING
+                AssistantState.FOLLOW_UP_WINDOW -> OrbState.FOLLOW_UP
                 AssistantState.IDLE -> OrbState.IDLE
             }
         }
@@ -88,6 +94,12 @@ class VoiceOrbView @JvmOverloads constructor(
         this.state = next
         restartAnimators()
         invalidate()
+    }
+
+    /** Update the follow-up countdown arc (call from the progress collector). */
+    fun setFollowUpProgress(fraction: Float) {
+        followUpProgress = fraction.coerceIn(0f, 1f)
+        if (state == OrbState.FOLLOW_UP) invalidate()
     }
 
     // ------------------------------------------------------------------
@@ -101,6 +113,9 @@ class VoiceOrbView @JvmOverloads constructor(
             OrbState.LISTENING -> rippleAnimator = floatAnimator(2_400L) { ripplePhase = it }
             OrbState.THINKING -> rotationAnimator = degreeAnimator(1_800L) { rotationDegrees = it }
             OrbState.SPEAKING -> pulseAnimator = floatAnimator(1_400L) { pulsePhase = it }
+            // Same ripple energy as LISTENING — the countdown arc (drawn per
+            // progress update, not per animator tick) tells them apart.
+            OrbState.FOLLOW_UP -> rippleAnimator = floatAnimator(2_400L) { ripplePhase = it }
             OrbState.MUTED -> Unit // motionless by design
         }
     }
@@ -170,6 +185,7 @@ class VoiceOrbView @JvmOverloads constructor(
             OrbState.LISTENING -> drawListening(canvas, cx, cy, core, ring)
             OrbState.THINKING -> drawThinking(canvas, cx, cy, core, ring)
             OrbState.SPEAKING -> drawSpeaking(canvas, cx, cy, core, ring)
+            OrbState.FOLLOW_UP -> drawFollowUp(canvas, cx, cy, core, ring)
             OrbState.MUTED -> drawMuted(canvas, cx, cy, core, ring)
         }
     }
@@ -225,6 +241,38 @@ class VoiceOrbView @JvmOverloads constructor(
         canvas.drawCircle(cx, cy, core * (1f + 0.35f * pulsePhase), corePaint)
         ringPaint.color = withAlpha(speakingColor, 0.8f)
         canvas.drawCircle(cx, cy, ring * scale, ringPaint)
+    }
+
+    /**
+     * Follow-up window: LISTENING's ripples (the mic IS open) plus a countdown
+     * arc that sweeps clockwise from 12 o'clock and shrinks as the window
+     * runs out — the "keep talking" affordance, drawn in the speaking accent
+     * so it reads as "the assistant just spoke, mic re-opened".
+     */
+    private fun drawFollowUp(canvas: Canvas, cx: Float, cy: Float, core: Float, ring: Float) {
+        // Ripple base, exactly like LISTENING.
+        corePaint.color = listeningColor
+        canvas.drawCircle(cx, cy, core, corePaint)
+        ringPaint.color = withAlpha(listeningColor, 0.35f)
+        canvas.drawCircle(cx, cy, ring, ringPaint)
+        for (i in 0..1) {
+            val phase = (ripplePhase + i * 0.5f) % 1f
+            val rippleRadius = core + (ring - core) * phase + ring * 0.25f * phase
+            val alpha = (1f - phase) * 0.3f
+            if (alpha > 0.01f) {
+                ringPaint.color = withAlpha(listeningColor, alpha)
+                canvas.drawCircle(cx, cy, rippleRadius, ringPaint)
+            }
+        }
+        // Countdown arc: sweep = remaining fraction of the window.
+        val sweep = 360f * followUpProgress
+        if (sweep > 1f) {
+            ringPaint.color = withAlpha(speakingColor, 0.9f)
+            canvas.drawArc(
+                cx - ring, cy - ring, cx + ring, cy + ring,
+                -90f, sweep, false, ringPaint,
+            )
+        }
     }
 
     private fun drawMuted(canvas: Canvas, cx: Float, cy: Float, core: Float, ring: Float) {

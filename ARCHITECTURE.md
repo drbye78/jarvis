@@ -167,6 +167,47 @@ says «продолжи». There is no acoustic echo cancellation: the wake word
 competes with speaker output, and loud music can mask it — pause-on-wake
 is the mitigation.
 
+
+## Echo cancellation (audio/aec)
+
+Two user-selectable modes + off (Settings, default off; see RUNBOOK for the
+device validation ladders):
+
+- **HARDWARE (Phase A)** — `AudioRecordSource` captures through
+  `VOICE_COMMUNICATION` and attaches the platform `AcousticEchoCanceler`
+  (`AecProbe` records the attach outcome under `AecDiag`); the comms DSP
+  applies AEC/NS/AGC to the whole mic lane (wake word + ASR both benefit).
+  Device-dependent; wake-word accuracy must be validated per device.
+- **SOFTWARE (Phase B)** — `AudioPipeline`'s producer passes every frame
+  through `NlmsEchoCanceller` (single choke point: ring buffer AND frames
+  flow get the same clean snapshot). Far-end references are electrical: the
+  TTS tap (`StreamingAudioTrackPlayer.farEndTap` → `LinearResampler`
+  24 kHz→16 kHz) and, opt-in with a MediaProjection consent, other apps'
+  music (`PlaybackCaptureFarEndSource`, API 29+). The `FarEndMixer` paces
+  all lanes onto the mic's time grid; `DelayAligner` (block
+  cross-correlation) aligns bulk delay; NLMS adapts the echo path; DTD
+  freezes adaptation during double-talk; a min-tracked residual floor drives
+  the suppression gate; a divergence guard + freeze-reseed keep the filter
+  honest across path changes. Bypass: far-end silent > 200 ms ⇒ bit-exact
+  passthrough.
+- The canceller is intentionally an interface (`EchoCanceller`) — the
+  documented drop-in slot for a native WebRTC AEC3 (none is Java-exposed on
+  Maven as of 2026-09; see PLAN-AEC-FOLLOWUP §0).
+
+## Follow-up window
+
+`SessionStateMachine` gained `FOLLOW_UP_WINDOW`: SPEAKING → (reply drained,
+spoke=true, feature on) → IDLE → `FollowUpWindowOpened` → window. Inside the
+window, `SessionManager`'s collector feeds `EnergyVad` (adaptive-floor
+onset detector; 200 ms lead-in absorbs the TTS tail, `forceSilent` recovers
+a swallowed rising edge); speech onset fires a normal turn WITHOUT the wake
+word; silence expires to IDLE. The wake word stays armed and supersedes the
+window. `FollowUpWindowController` is a pure, virtual-clock state machine —
+the session layer only applies its effects. The UI observes
+`followUpProgress` (remaining fraction) for the orb's countdown arc. Every
+spoken reply re-opens the window (chained conversation); mute/cancelAll
+closes it.
+
 ## UI design system
 
 Theme: Material 3 (`Theme.Material3.DayNight.NoActionBar`, material

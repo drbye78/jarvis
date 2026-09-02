@@ -77,7 +77,16 @@ sealed interface LlmChunk {
     data object Done : LlmChunk
 }
 
-enum class AssistantState { IDLE, LISTENING, THINKING, SPEAKING }
+enum class AssistantState {
+    IDLE, LISTENING, THINKING, SPEAKING,
+
+    /**
+     * Follow-up window: the assistant's reply just drained and the mic
+     * window for a wake-word-free continuation is open. VAD onset (or the
+     * wake word) starts the next turn; silence expires back to IDLE.
+     */
+    FOLLOW_UP_WINDOW,
+}
 
 /** Result of a completed ASR utterance. */
 sealed interface AsrOutcome {
