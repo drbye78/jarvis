@@ -22,11 +22,6 @@ import timber.log.Timber
 import java.io.IOException
 import java.util.UUID
 
-/** Streaming chat-completions client contract. */
-interface LlmClient {
-    fun chatStream(request: ChatRequest): Flow<LlmChunk>
-}
-
 /**
  * Shared SSE implementation for OpenAI-compatible endpoints.
  *

@@ -80,6 +80,16 @@
     <string name="save">Сохранить</string>
     <string name="settings_saved">Данные провайдеров сохранены</string>
 
+    <!-- Settings: upfront credential validation (mandatory = Salute + GigaChat) -->
+    <string name="credentials_hint">Salute и GigaChat — обязательные ключи, они проверяются сразу при вводе. Ключ Picovoice нужен только для движка Porcupine и не проверяется.</string>
+    <string name="credentials_check_button">Проверить ключи</string>
+    <string name="credentials_checking">Проверяю ключи…</string>
+    <string name="credentials_ok">Ключи верны</string>
+    <string name="credentials_invalid">Неверные ключи</string>
+    <string name="credentials_invalid_http">Неверные ключи (HTTP %1$d)</string>
+    <string name="credentials_unverifiable">Не удалось проверить: нет связи с сервером</string>
+    <string name="error_ppn_file">Неверный файл wake word (нужен .ppn)</string>
+
     <!-- Settings: music (preferred default player) -->
     <string name="music_section">Музыка</string>
     <string name="player_auto">Авто (Яндекс Музыка сначала)</string>
@@ -110,8 +120,10 @@
     <string name="add_alarm">Добавить будильник</string>
     <string name="alarms_empty">Будильников нет. Скажите «Джарвис, разбуди меня в семь» — или добавьте кнопкой ниже.</string>
     <string name="alarm_label_hint">Название (необязательно)</string>
-    <string name="alarm_label_title" formatted="true">Будильник на %02d:%02d — название</string>
+    <string name="alarm_label_title" formatted="false">Будильник на %02d:%02d — название</string>
     <string name="default_alarm_label">Будильник</string>
+    <string name="alarm_repeat_daily">ежедневно</string>
+    <string name="alarm_repeat_once">однократно</string>
     <string name="ok">ОК</string>
     <string name="cancel">Отмена</string>
     <string name="delete">Удалить</string>
@@ -163,4 +175,26 @@
     <!-- Device info -->
     <string name="device_time_format">HH:mm, d MMMM</string>
     <string name="device_battery_na">н/д</string>
+
+    <!-- AEC (echo cancellation): Phase A + Phase B, user-controllable, default off -->
+    <string name="aec_section">Эхоподавление</string>
+    <string name="aec_off">Выключено (по умолчанию)</string>
+    <string name="aec_hardware">Аппаратное: DSP планшета (VOICE_COMMUNICATION)</string>
+    <string name="aec_software">Программное: встроенный эхокомпенсатор</string>
+    <string name="aec_hw_probe_available">Аппаратный AEC: доступен на этом устройстве</string>
+    <string name="aec_hw_probe_unavailable">Аппаратный AEC: недоступен на этом устройстве</string>
+    <string name="aec_hint">Применяйте для голосовых команд под музыку или чтобы Джарвис слышал вас во время ответа. Изменение вступит в силу после перезапуска службы. В аппаратном режиме система может изменять чувствительность микрофона — проверьте распознавание слова «Джарвис».</string>
+    <string name="aec_software_hint">Программный режим — экспериментальный адаптивный фильтр: он ослабляет эхо собственного голоса Джарвиса и (с включённым захватом музыки) эхо чужой музыки. Качество ниже, чем у AEC3 из WebRTC.</string>
+    <string name="aec_capture_section">Захват музыки (эксперимент, Android 10+)</string>
+    <string name="aec_capture_switch">Слушать музыку других приложений</string>
+    <string name="aec_capture_grant">Разрешить захват звука</string>
+    <string name="aec_capture_hint">Даёт эхокомпенсатору «слышать» музыку из динамиков, чтобы будить Джарвиса под музыку. Требуется разрешение системы (один раз за запуск службы); некоторые плееры могут запретить захват.</string>
+
+    <!-- Follow-up window: continue the dialogue without repeating the wake word -->
+    <string name="followup_section">Продолжение диалога</string>
+    <string name="followup_switch">Продолжать без слова «Джарвис»</string>
+    <string name="followup_seconds">Окно после ответа: %d сек.</string>
+    <string name="followup_hint">После каждого ответа Джарвиса микрофон остаётся активным несколько секунд — просто продолжайте говорить. Окно закрывается после паузы. Работает сразу, без перезапуска.</string>
+    <string name="state_follow_up">Продолжайте говорить…</string>
+    <string name="state_follow_up_full">Продолжайте говорить — я слушаю</string>
 </resources>

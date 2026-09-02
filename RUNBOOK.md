@@ -36,7 +36,10 @@
 - Sensitivity adjustable live in Settings (0–1 slider; applies immediately).
 
 ### "OAuth token request failed (HTTP 401)"
-- Verify Sber credentials entered in **Settings** (gear button).
+- Verify Sber credentials entered in **Settings** (gear button). The settings
+  panel validates them upfront as you type: a red **«Неверные ключи»** status
+  row under the Salute/GigaChat fields means the pair really is wrong — fix it
+  there instead of debugging the runtime error.
 - Or switch Settings → provider to an OpenAI-compatible endpoint.
 
 ### "GigaChat request failed (HTTP ...)"
@@ -45,6 +48,23 @@
   the radio, fill Base URL / model / API key, press **Сохранить**. The change
   takes effect after the next service restart (Стоп → Запустить on the home
   screen) — the provider client is built once, when the service starts.
+
+### "Не удалось проверить: нет связи с сервером" (settings validation)
+The settings panel probes the Sber OAuth endpoint live while you type (debounced,
+~1 probe per pause, plus the **«Проверить ключи»** button and a probe on every
+open/save). The amber status means *no verdict*, not *bad credentials*:
+
+- No internet / captive portal / DNS failure → the probe could not reach
+  `ngw.devices.sberbank.ru:9443`. Saving still works — the pair is stored and
+  validated again next time the panel opens.
+- HTTP 5xx or 429 → Sber side; try the button again later.
+- A **red** row (HTTP 401/403/4xx) is a real rejection: the Client ID/Secret
+  pair (or its scope grant) is wrong. Only Salute and GigaChat pairs are
+  probed — they are the mandatory pair. The Picovoice key is optional
+  (Porcupine engine only) and is validated by engine init, not probed.
+
+Offline note: the probe is the ONLY network call the settings panel makes;
+the app itself works offline with cached tokens.
 
 ### "Service keeps getting killed"
 - Huawei PowerGenie: Settings → Apps → App launch → Jarvis → Manage manually
@@ -115,6 +135,27 @@ The empty-query semantics need a player that advertises `playFromSearch`
 (session in STOPPED state) or a paused session to resume. If neither
 exists, Jarvis answers instructively instead of pretending.
 
+### «включи в Звуке» — Zvuk specifics and the one-minute deep-link check
+Zvuk (`com.zvooq.openplay`) works through the same cascade as everyone
+else: transport controls need an active session, cold starts go through
+the MediaBrowser token lane (Zvuk's official Android Auto support is the
+strongest `playFromSearch`/browser-service signal of any RU player),
+and the launch/legacy lanes cover the rest. The ONE thing Zvuk lacks
+today is a deep-link entry: zvuk.com's web-search URL shape could not be
+verified from the dev environment (geo/bot-blocked), and an unverified
+link would make Jarvis claim «открыл поиск» while the user stares at a
+wrong page — so `SearchLinks` deliberately returns nothing for Zvuk.
+
+The one-minute on-device check that re-enables it:
+1. Open zvuk.com in the tablet's browser, search any track, and look at
+   the address bar: if the URL is a stable `/search?query=…`-shaped path
+   (not a JS hash or a redirect chain), the shape is confirmed.
+2. Check whether that URL opens the Zvuk APP (App Links) or stays in the
+   browser. Only an app-resolving URL is worth adding as a link.
+3. Add the entry to `SearchLinks.searchUris` for `com.zvooq.openplay`
+   and flip the `zvuk intentionally has no unverified deep links` test in
+   `SearchLinksTest` to pin the confirmed shape.
+
 ### "Alarms don't ring"
 - Alarms fire via `setAlarmClock` — check the system alarm indicator appears.
 - Do-not-disturb filters can silence alarms: check DND settings.
@@ -142,6 +183,82 @@ adb shell settings get secure enabled_notification_listeners
 # Run unit tests
 ./gradlew testDebugUnitTest
 ```
+
+
+## Echo cancellation (Phase A + Phase B)
+
+All modes are **opt-in, default OFF** (Settings → «Эхоподавление»).
+
+### Phase A — hardware mode
+
+1. Settings → Эхоподавление → «Аппаратное». The probe row tells you whether
+   `AcousticEchoCanceler.isAvailable()` on THIS device is true.
+2. Restart the service (mode change rebuilds the AudioRecord). The static
+   probe line must be visible **before** restart; the runtime attach outcome
+   lands in logcat:
+   ```
+   adb logcat -s AecDiag
+   # expected: hwAec=attached static=true
+   ```
+3. **Validate wake-word accuracy in comm mode** (the honest risk): play
+   normal-level music from any player, then say «Джарвис» 10× from 2 m.
+   Compare with AEC off. Sherpa is fairly robust, but the platform NS/AGC in
+   VOICE_COMMUNICATION mode can shift the mic characteristics — if detection
+   degrades, keep AEC off and use `pauseMusicOnWake` or Phase B.
+4. ASR check: with hardware AEC on, run a turn WHILE music plays — the
+   transcript should be clean.
+
+### Phase B — software mode (built-in canceller)
+
+What it does: an in-process NLMS adaptive filter (96 ms tail) with
+cross-correlation bulk-delay alignment, double-talk detection (adaptation
+freeze), divergence guard, and a residual suppression gate. Far-end
+references: (a) own TTS — electrical tap of the player's PCM (always on in
+software mode), (b) other apps' music — playback capture (optional,
+see below).
+
+**It is not WebRTC AEC3** — no Java-exposed APM exists on Maven (checked
+2026-09: stream-webrtc-android wraps the *framework* AEC inside its own
+pipeline and exposes no standalone APM). Expected suppression on a linear
+echo path is 20–35 dB; cheap tablet speakers add nonlinearity the filter
+cannot model. The `EchoCanceller` interface is the drop-in slot if a native
+AEC3 becomes linkable.
+
+1. Settings → Эхоподавление → «Программное», restart the service.
+2. Verify the own-TTS lane: say the wake word; while the answer SPEAKS,
+   say «Джарвис» (barge-in). With the tap working, the wake word should be
+   recognisable during playback; without it, the answer's own echo masks it.
+3. Watch convergence:
+   ```
+   adb logcat -s AecDiag
+   # MusicDiag-style: delay estimate should lock near the true path delay
+   # and stay there; errorToFloor ≈ 1 during echo-only spans.
+   ```
+4. **Music lane (optional, experimental):** Settings → «Захват музыки» →
+   «Разрешить захват звука» → system consent dialog (once per service run).
+   Start music in a player, then:
+   ```
+   adb logcat -s AecDiag | grep captureLane
+   # frames=0 while music plays ⇒ the player opted out of capture or the
+   # projection died — nothing we can do; the wake-word-through-music case
+   # then needs pauseMusicOnWake.
+   ```
+5. Recovery after moving the tablet / volume changes: the freeze-reseed
+   logic re-adapts within ~3 s; the divergence guard resets pathological
+   state (logged as `hwAec=...` never changes — watch `diverged=true`).
+
+### Follow-up window (Продолжение диалога)
+
+Settings → «Продолжение диалога»: toggle + window length 2–12 s (default 5 s,
+applies LIVE, no restart). After each spoken reply the orb switches to
+ripples + a shrinking countdown arc; just keep talking — no wake word needed.
+The window closes after silence; the wake word always works too (and
+supersedes the window).
+
+Honest limits: the VAD is energy-based — under loud music it can false-fire
+(suppress with AEC + capture lane, or pause-on-wake) or miss soft speech
+(lengthen the window). A 200 ms lead-in after each reply absorbs the TTS
+tail. Chained conversation: every spoken reply re-opens the window.
 
 ## Performance targets (to be measured on-device)
 
@@ -202,3 +319,30 @@ Streaming ASR means these numbers no longer grow with utterance length.
   gated on the session's action mask and rating type; media-key fallback only
   covers play/pause/next/previous/stop. Unsupported actions get an honest
   refusal naming the limitation.
+- **Deep-link schemes are undocumented.** The `yandexmusic://` URI scheme is
+  not published by Yandex; the `/search?query=` path is inferred from
+  community sources and may not resolve on all builds. The
+  `https://music.yandex.ru/search/…` fallback opens a browser page, not the
+  app. Deep links are a last-resort honest fallback, not a reliable path —
+  and Zvuk ships none until its shape is confirmed (see «включи в Звуке»
+  above).
+- **Playback verification is fuzzy, deliberately.** The request-vs-now-playing
+  match uses weighted token overlap (title 0.65 / artist 0.35) with a strong
+  threshold of 0.5. A cover, remix, or compilation featuring the requested
+  artist can verify as "playing" even when it is not the exact recording the
+  user meant. The alternative — reporting `search_opened` for every
+  near-match — is worse; exact-match does not exist for unstructured search.
+- **On-device capability validation is still pending.** The MusicDiag
+  capability matrix (`adb logcat -s MusicDiag` after one play attempt) is
+  designed to answer, on the target hardware and CURRENT player builds,
+  whether `playFromSearch`, browser `onSearch`, repeat/shuffle bits, and
+  heart rating are actually exposed. Until that dump is read, every
+  capability is an assumption the cascade degrades gracefully around.
+- **English locale: UI is fully localized, runtime speech is not.** Every
+  user-facing string resource now has an English twin (values-en, 135 keys
+  incl. the new credential-validation rows), so the whole UI — Settings,
+  onboarding, alarms, music card — renders in English under an English locale.
+  Runtime spoken/system messages (turn failures, music outcome details,
+  wake-word engine errors) remain hardcoded Russian, and the assistant always
+  answers in Russian per the system prompt; localizing those requires plumbing
+  a string provider through the session pipeline.

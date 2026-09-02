@@ -115,6 +115,14 @@ class StreamingAudioTrackPlayer(
     scope: CoroutineScope,
     spec: AudioSpec = AudioSpec.TTS,
     private val adapter: AudioTrackAdapter = AndroidAudioTrackAdapter(spec),
+    /**
+     * AEC Phase B: electrical far-end tap. Invoked on the ACTOR thread for
+     * every PCM chunk written to the speaker (24 kHz mono 16-bit) — the
+     * software echo canceller's own-TTS reference (zero latency, permission
+     * free; AudioPlaybackCapture cannot capture usage ASSISTANT anyway).
+     * Thread-safety is the tap's concern (FarEndMixer is synchronized).
+     */
+    private val farEndTap: ((ByteArray) -> Unit)? = null,
 ) : TtsPlayer {
 
     private data class PlayJob(
@@ -235,6 +243,9 @@ class StreamingAudioTrackPlayer(
             adapter.play()
             trackStarted = true
         }
+        // Far-end reference first: the echo of THIS chunk is on its way to the
+        // mic; the canceller's mixer paces it onto the far-end grid.
+        farEndTap?.invoke(chunk)
         var offset = 0
         while (offset < chunk.size) {
             coroutineContext.ensureActive() // prompt abort between writes once cancelled

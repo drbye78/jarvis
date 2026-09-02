@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
 import android.widget.Button
 import android.widget.RadioGroup
@@ -11,12 +13,17 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.textfield.TextInputEditText
 import com.jarvis.assistant.di.GraphHolder
+import com.jarvis.assistant.llm.CredentialCheck
+import com.jarvis.assistant.llm.CredentialCheckController
+import com.jarvis.assistant.llm.OAuthCredentialValidator
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.CredentialsStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 /**
@@ -66,6 +73,11 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var saluteSecret: TextInputEditText
     private lateinit var gigaChatId: TextInputEditText
     private lateinit var gigaChatSecret: TextInputEditText
+    private lateinit var saluteCheckStatus: TextView
+    private lateinit var gigaChatCheckStatus: TextView
+
+    /** Upfront validation of the mandatory Salute/GigaChat pairs (as you type). */
+    private lateinit var credentialChecks: CredentialCheckController
 
     private lateinit var wakeWordGroup: RadioGroup
     private lateinit var sensitivityBar: SeekBar
@@ -82,6 +94,17 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var engineGroup: RadioGroup
     private lateinit var porcupineBlock: View
     private lateinit var sherpaBlock: View
+
+    // AEC (Phase A + Phase B) card
+    private lateinit var aecGroup: RadioGroup
+    private lateinit var aecProbeRow: TextView
+    private lateinit var aecSoftwareHint: TextView
+    private lateinit var aecCaptureSwitch: com.google.android.material.materialswitch.MaterialSwitch
+
+    // Follow-up window card
+    private lateinit var followUpSwitch: com.google.android.material.materialswitch.MaterialSwitch
+    private lateinit var followUpValue: TextView
+    private lateinit var followUpBar: SeekBar
 
     private lateinit var appPrefs: AppPrefs
 
@@ -102,6 +125,8 @@ class SettingsActivity : AppCompatActivity() {
         saluteSecret = findViewById(R.id.saluteSecret)
         gigaChatId = findViewById(R.id.gigaChatId)
         gigaChatSecret = findViewById(R.id.gigaChatSecret)
+        saluteCheckStatus = findViewById(R.id.saluteCheckStatus)
+        gigaChatCheckStatus = findViewById(R.id.gigaChatCheckStatus)
         wakeWordGroup = findViewById(R.id.wakeWordGroup)
         sensitivityBar = findViewById(R.id.sensitivityBar)
         sensitivityValue = findViewById(R.id.sensitivityValue)
@@ -177,13 +202,120 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
+        // ------------------------------------------------------------------
+        // AEC card: OFF / HARDWARE / SOFTWARE (opt-in, default OFF; the mode
+        // rebuilds the AudioRecord → applies after service restart).
+        // ------------------------------------------------------------------
+        aecGroup = findViewById(R.id.aecGroup)
+        aecProbeRow = findViewById(R.id.aecProbeRow)
+        aecSoftwareHint = findViewById(R.id.aecSoftwareHint)
+        aecCaptureSwitch = findViewById(R.id.aecCaptureSwitch)
+        aecGroup.check(
+            when (com.jarvis.assistant.audio.aec.AecMode.fromPref(appPrefs.aecMode)) {
+                com.jarvis.assistant.audio.aec.AecMode.HARDWARE -> R.id.aecHardware
+                com.jarvis.assistant.audio.aec.AecMode.SOFTWARE -> R.id.aecSoftware
+                com.jarvis.assistant.audio.aec.AecMode.OFF -> R.id.aecOff
+            }
+        )
+        aecProbeRow.setText(
+            if (com.jarvis.assistant.audio.aec.AecProbe.staticAvailable()) {
+                R.string.aec_hw_probe_available
+            } else {
+                R.string.aec_hw_probe_unavailable
+            }
+        )
+        applyAecVisibility(appPrefs.aecMode)
+        aecGroup.setOnCheckedChangeListener { _, checkedId ->
+            val mode = when (checkedId) {
+                R.id.aecHardware -> "hardware"
+                R.id.aecSoftware -> "software"
+                else -> "off"
+            }
+            appPrefs.aecMode = mode
+            applyAecVisibility(mode)
+        }
+        findViewById<Button>(R.id.aecCaptureGrant).setOnClickListener {
+            // MediaProjection consent → the graph's capture lane (SOFTWARE
+            // mode only; the service guards it too).
+            val intent = GraphHolder.graph?.playbackCapture?.createConsentIntent()
+            if (intent == null) {
+                Toast.makeText(this, R.string.aec_hw_probe_unavailable, Toast.LENGTH_SHORT).show()
+            } else {
+                @Suppress("DEPRECATION")
+                startActivityForResult(intent, CAPTURE_REQUEST)
+            }
+        }
+        aecCaptureSwitch.setOnCheckedChangeListener { _, checked ->
+            if (!checked) GraphHolder.graph?.playbackCapture?.stop()
+            // Enabling alone does nothing: the Grant button runs the consent.
+        }
+
+        // ------------------------------------------------------------------
+        // Follow-up window card: switch + 2..12 s window, LIVE-applied through
+        // the running graph (no service restart).
+        // ------------------------------------------------------------------
+        followUpSwitch = findViewById(R.id.followUpSwitch)
+        followUpValue = findViewById(R.id.followUpValue)
+        followUpBar = findViewById(R.id.followUpBar)
+        followUpSwitch.isChecked = appPrefs.followUpEnabled
+        val windowSeconds = (appPrefs.followUpWindowMs / 1000L).toInt().coerceIn(2, 12)
+        followUpBar.progress = windowSeconds - 2
+        updateFollowUpLabel(windowSeconds)
+        followUpSwitch.setOnCheckedChangeListener { _, checked ->
+            appPrefs.followUpEnabled = checked
+            GraphHolder.graph?.sessionManager?.setFollowUpWindow(checked, followUpSeconds())
+        }
+        followUpBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
+                updateFollowUpLabel(value + 2)
+            }
+
+            override fun onStartTrackingTouch(bar: SeekBar?) {}
+
+            override fun onStopTrackingTouch(bar: SeekBar?) {
+                appPrefs.followUpWindowMs = followUpSeconds()
+                GraphHolder.graph?.sessionManager?.setFollowUpWindow(followUpSwitch.isChecked, followUpSeconds())
+            }
+        })
+
         callbacks = RealCallbacks()
+
+        // A2) Upfront validation of the mandatory credential pairs. The
+        // controller debounces typing, dedupes confirmed-Ok pairs and discards
+        // stale verdicts; the validator probes the same OAuth endpoint the
+        // token manager uses, so "valid" here means the next token fetch
+        // succeeds. Picovoice is optional (engine-scoped) and never probed.
+        credentialChecks = CredentialCheckController(
+            validator = OAuthCredentialValidator(),
+            scope = lifecycleScope,
+        )
+        attachCredentialWatchers()
+        lifecycleScope.launch {
+            credentialChecks.states.collect { state ->
+                renderCheckStatus(
+                    saluteCheckStatus,
+                    state[CredentialCheckController.Service.SALUTE],
+                )
+                renderCheckStatus(
+                    gigaChatCheckStatus,
+                    state[CredentialCheckController.Service.GIGACHAT],
+                )
+            }
+        }
+        findViewById<Button>(R.id.checkCredentialsButton).setOnClickListener {
+            credentialChecks.checkNow()
+        }
+        // Opening the panel is a health check for the SAVED pair too.
+        credentialChecks.checkNow()
 
         // Close / back affordance (theme is NoActionBar).
         findViewById<View>(R.id.closeButton).setOnClickListener { finish() }
 
-        // A) Save provider credentials.
+        // A) Save provider credentials. Saving stays local-first (works
+        // offline); the status rows above tell the truth about validity, and
+        // save triggers a fresh verdict for whatever is being persisted.
         findViewById<Button>(R.id.saveCredentialsButton).setOnClickListener {
+            credentialChecks.checkNow()
             saveCredentials()
         }
 
@@ -228,6 +360,57 @@ class SettingsActivity : AppCompatActivity() {
         })
     }
 
+    /** Feed the credential controller on every keystroke in the 4 fields. */
+    private fun attachCredentialWatchers() {
+        val saluteWatcher = textWatcher {
+            credentialChecks.onSaluteInput(saluteId.text.toString(), saluteSecret.text.toString())
+        }
+        saluteId.addTextChangedListener(saluteWatcher)
+        saluteSecret.addTextChangedListener(saluteWatcher)
+        val gigaWatcher = textWatcher {
+            credentialChecks.onGigaChatInput(gigaChatId.text.toString(), gigaChatSecret.text.toString())
+        }
+        gigaChatId.addTextChangedListener(gigaWatcher)
+        gigaChatSecret.addTextChangedListener(gigaWatcher)
+    }
+
+    private fun textWatcher(action: () -> Unit): TextWatcher = object : TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        override fun afterTextChanged(s: Editable?) = action()
+    }
+
+    /** Map one service's [CredentialCheckController.UiState] onto its status row. */
+    private fun renderCheckStatus(view: TextView, state: CredentialCheckController.UiState?) {
+        when (state) {
+            null, CredentialCheckController.UiState.Idle -> view.visibility = View.GONE
+            CredentialCheckController.UiState.Checking -> {
+                view.visibility = View.VISIBLE
+                view.text = getString(R.string.credentials_checking)
+                view.setTextColor(ContextCompat.getColor(this, R.color.jarvis_on_surface_variant))
+            }
+            is CredentialCheckController.UiState.Verdict -> {
+                view.visibility = View.VISIBLE
+                when (val check = state.check) {
+                    CredentialCheck.Valid -> {
+                        view.text = getString(R.string.credentials_ok)
+                        view.setTextColor(ContextCompat.getColor(this, R.color.jarvis_status_listening))
+                    }
+                    is CredentialCheck.Invalid -> {
+                        view.text = check.httpCode?.let {
+                            getString(R.string.credentials_invalid_http, it)
+                        } ?: getString(R.string.credentials_invalid)
+                        view.setTextColor(ContextCompat.getColor(this, R.color.jarvis_error))
+                    }
+                    is CredentialCheck.Unverifiable -> {
+                        view.text = getString(R.string.credentials_unverifiable)
+                        view.setTextColor(ContextCompat.getColor(this, R.color.jarvis_status_thinking))
+                    }
+                }
+            }
+        }
+    }
+
     private fun saveLlmProviderSettings() {
         val url = openAiBaseUrl.text.toString().trim()
         val model = openAiModel.text.toString().trim()
@@ -264,6 +447,17 @@ class SettingsActivity : AppCompatActivity() {
         sensitivityValue.text = getString(R.string.sensitivity_value, value)
     }
 
+    /** SOFTWARE hint only matters in software mode. */
+    private fun applyAecVisibility(mode: String) {
+        aecSoftwareHint.visibility = if (mode == "software") View.VISIBLE else View.GONE
+    }
+
+    private fun followUpSeconds(): Long = ((followUpBar.progress + 2).toLong()).coerceIn(2, 12) * 1000L
+
+    private fun updateFollowUpLabel(seconds: Int) {
+        followUpValue.text = getString(R.string.followup_seconds, seconds)
+    }
+
     /** Show the controls for the active engine, hide the other. */
     private fun applyEngineVisibility(engine: String) {
         val isSherpa = engine == "sherpa"
@@ -274,13 +468,27 @@ class SettingsActivity : AppCompatActivity() {
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == CAPTURE_REQUEST && resultCode == RESULT_OK && data != null) {
+            // AEC Phase B: feed the consented projection to the running
+            // graph's playback-capture lane (SOFTWARE mode only).
+            val graph = GraphHolder.graph
+            if (graph == null) {
+                Toast.makeText(this, R.string.settings_saved, Toast.LENGTH_SHORT).show()
+            } else if (graph.aecMode != com.jarvis.assistant.audio.aec.AecMode.SOFTWARE) {
+                Toast.makeText(this, R.string.aec_hw_probe_unavailable, Toast.LENGTH_SHORT).show()
+            } else {
+                graph.playbackCapture.start(resultCode, data)
+                aecCaptureSwitch.isChecked = true
+            }
+            return
+        }
         if (requestCode == PPN_REQUEST && resultCode == RESULT_OK && data != null) {
             val uri = data.data ?: return
             // L2: only a .ppn file is valid.
             if (uri.lastPathSegment?.endsWith(".ppn", ignoreCase = true) != true) {
                 Toast.makeText(
                     this,
-                    "Неверный файл wake word (нужен .ppn)",
+                    R.string.error_ppn_file,
                     Toast.LENGTH_SHORT,
                 ).show()
                 return
@@ -402,5 +610,6 @@ class SettingsActivity : AppCompatActivity() {
 
     private companion object {
         const val PPN_REQUEST = 1002
+        const val CAPTURE_REQUEST = 1003
     }
 }

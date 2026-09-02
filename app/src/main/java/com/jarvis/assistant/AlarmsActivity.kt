@@ -122,7 +122,9 @@ class AlarmListAdapter(
         val cal = java.util.Calendar.getInstance().apply { timeInMillis = alarm.triggerAtMillis }
         holder.time.text =
             "%02d:%02d".format(cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE))
-        holder.repeat.text = if (alarm.repeatDaily) "ежедневно" else "однократно"
+        holder.repeat.text = holder.repeat.context.getString(
+            if (alarm.repeatDaily) R.string.alarm_repeat_daily else R.string.alarm_repeat_once
+        )
         holder.enabled.isChecked = alarm.enabled
         holder.enabled.setOnCheckedChangeListener { _, checked ->
             if (checked != alarm.enabled) onToggle(alarm, checked)

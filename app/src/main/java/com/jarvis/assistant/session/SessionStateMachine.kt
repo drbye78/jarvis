@@ -20,6 +20,15 @@ sealed interface SessionEvent {
 
     /** Explicit cancellation of everything (cancelAll) — global reset to IDLE (M6). */
     data object Cancelled : SessionEvent
+
+    /** Follow-up window opened after a spoken turn drained (no barge-in). */
+    data object FollowUpWindowOpened : SessionEvent
+
+    /** VAD onset inside the follow-up window — a wake-word-free turn begins. */
+    data object FollowUpSpeechDetected : SessionEvent
+
+    /** Follow-up window elapsed with no speech. */
+    data object FollowUpWindowExpired : SessionEvent
 }
 
 /**
@@ -44,6 +53,13 @@ object SessionTransitions {
         put(AssistantState.SPEAKING to SessionEvent.LlmDone, AssistantState.IDLE)
         // Tool loop: after a tool result the LLM is consulted again.
         put(AssistantState.SPEAKING to SessionEvent.LlmStarted, AssistantState.THINKING)
+        // Follow-up window: opened from IDLE (the turn's LlmDone fired
+        // first), VAD onset starts the next turn, silence expires to IDLE.
+        put(AssistantState.IDLE to SessionEvent.FollowUpWindowOpened, AssistantState.FOLLOW_UP_WINDOW)
+        put(AssistantState.FOLLOW_UP_WINDOW to SessionEvent.FollowUpSpeechDetected, AssistantState.LISTENING)
+        put(AssistantState.FOLLOW_UP_WINDOW to SessionEvent.FollowUpWindowExpired, AssistantState.IDLE)
+        // Safety: a straggler LlmDone while the window is open must not wedge.
+        put(AssistantState.FOLLOW_UP_WINDOW to SessionEvent.LlmDone, AssistantState.FOLLOW_UP_WINDOW)
     }
 
     fun next(current: AssistantState, event: SessionEvent): AssistantState? = when (event) {

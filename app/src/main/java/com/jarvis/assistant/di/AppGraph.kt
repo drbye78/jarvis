@@ -5,6 +5,12 @@ import com.jarvis.assistant.audio.AudioPipeline
 import com.jarvis.assistant.audio.AudioRecordSource
 import com.jarvis.assistant.audio.HybridWakeWordDetector
 import com.jarvis.assistant.audio.StreamingAudioTrackPlayer
+import com.jarvis.assistant.audio.aec.AecMode
+import com.jarvis.assistant.audio.aec.AecProbe
+import com.jarvis.assistant.audio.aec.LinearResampler
+import com.jarvis.assistant.audio.aec.NlmsEchoCanceller
+import com.jarvis.assistant.audio.aec.NoopEchoCanceller
+import com.jarvis.assistant.audio.aec.PlaybackCaptureFarEndSource
 import com.jarvis.assistant.contracts.WakeWordDetector
 import com.jarvis.assistant.contracts.WakeWordRequest
 import com.jarvis.assistant.config.JarvisConfig
@@ -109,9 +115,60 @@ class AppGraph(
 
     val ttsClient: TtsClient = SaluteSpeechTts(tokenManager, saluteChannel)
 
-    val audioPipeline = AudioPipeline(scope, AudioRecordSource())
-
     val appPrefs = com.jarvis.assistant.util.AppPrefs(appContext)
+
+    // ------------------------------------------------------------------
+    // AEC (Phase A + Phase B), all opt-in via Settings (default OFF).
+    // ------------------------------------------------------------------
+
+    /** User-selected AEC mode from prefs; drives the mic profile / DSP. */
+    val aecMode: AecMode = AecMode.fromPref(appPrefs.aecMode)
+
+    /** Static probe outcome for the Settings row (no active record needed). */
+    val aecHwProbeAvailable: Boolean = AecProbe.staticAvailable()
+
+    /** SOFTWARE mode: the built-in canceller owns all far-end state. */
+    val echoCanceller: NlmsEchoCanceller? =
+        if (aecMode == AecMode.SOFTWARE) NlmsEchoCanceller() else null
+
+    /** 24 kHz TTS → 16 kHz far-end resampler for the own-TTS electrical tap. */
+    private val ttsResampler = LinearResampler(24_000, 16_000)
+
+    /**
+     * Own-TTS far-end tap: every PCM chunk the player writes to the speaker
+     * is resampled and pushed onto the canceller's far-end grid. Runs on the
+     * player's actor thread; the FarEndMixer is synchronized.
+     */
+    private fun ttsFarEndTap(pcm: ByteArray) {
+        val canceller = echoCanceller ?: return
+        // 16-bit mono LE → shorts.
+        val shorts = ShortArray(pcm.size / 2) { i ->
+            (((pcm[2 * i].toInt() and 0xFF) or (pcm[2 * i + 1].toInt() shl 8))).toShort()
+        }
+        val resampled = ttsResampler.process(shorts)
+        if (resampled.isNotEmpty()) {
+            canceller.onFarEndFrame(NlmsEchoCanceller.LANE_TTS, resampled)
+        }
+    }
+
+    val audioPipeline = AudioPipeline(
+        scope,
+        AudioRecordSource(profile = com.jarvis.assistant.audio.aec.MicProfile.forMode(aecMode)),
+        echoCanceller = echoCanceller,
+    )
+
+    /**
+     * Phase B optional lane: capture of other apps' music (API 29+) with a
+     * consented MediaProjection — the wake-word-through-music reference.
+     * Started by the service binder after the user grants consent in
+     * Settings; only meaningful in SOFTWARE mode.
+     */
+    val playbackCapture: PlaybackCaptureFarEndSource = PlaybackCaptureFarEndSource(
+        context = appContext,
+        canceller = echoCanceller ?: NoopEchoCanceller,
+        scope = scope,
+    )
+
     val wakeKeywordPath = wakeKeywordPathFor(appPrefs.wakeWordModel)
 
     /**
@@ -124,7 +181,10 @@ class AppGraph(
         context = appContext,
         initialReq = initialWakeRequest(),
     )
-    val player: TtsPlayer = StreamingAudioTrackPlayer(scope)
+    val player: TtsPlayer = StreamingAudioTrackPlayer(
+        scope,
+        farEndTap = if (aecMode == AecMode.SOFTWARE) ::ttsFarEndTap else null,
+    )
 
     // Phase 5 (M6): assistant TTS ducks external players; spoken progress
     // phrases («Секунду…») reuse the same serialized player.
@@ -153,6 +213,10 @@ class AppGraph(
         config = config,
         scope = scope,
         focus = audioFocus,
+        // Follow-up window: user-controllable, default OFF; the Settings
+        // card updates it live through the service binder.
+        followUpEnabled = appPrefs.followUpEnabled,
+        followUpWindowMs = appPrefs.followUpWindowMs,
         // Phase 5 (M7): pause-on-wake reuses the real tool lane — the same
         // capability-gated control path the LLM uses, incl. the media-key
         // fallback for the app that owns audio focus.
@@ -233,6 +297,7 @@ class AppGraph(
         // if construction/start partially failed (no resource left dangling for
         // the watchdog's next retry).
         runCatching { sessionManager.cancelAll() }
+        runCatching { playbackCapture.stop() }
         runCatching { audioPipeline.release() }
         runCatching { wakeWordDetector.release() }
         runCatching { player.release() }

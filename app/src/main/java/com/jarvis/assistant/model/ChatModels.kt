@@ -16,6 +16,15 @@ data class Message(
     val name: String? = null,
     val toolCalls: List<ToolCall>? = null,
     val toolCallId: String? = null,
+    /**
+     * Row identity when this message was read back from the database
+     * (see `ConversationManager.transcriptLive`); 0 for fresh, never-persisted
+     * messages. Read-side only: `toEntity()` deliberately does NOT copy it,
+     * so inserts always auto-generate a new row id. Used by the transcript
+     * DiffUtil to tell equal-content rows apart. Never serialized (the wire
+     * mapping is explicit field-by-field).
+     */
+    val id: Long = 0,
 ) {
     companion object {
         fun user(text: String) = Message(role = "user", content = text)
@@ -68,7 +77,16 @@ sealed interface LlmChunk {
     data object Done : LlmChunk
 }
 
-enum class AssistantState { IDLE, LISTENING, THINKING, SPEAKING }
+enum class AssistantState {
+    IDLE, LISTENING, THINKING, SPEAKING,
+
+    /**
+     * Follow-up window: the assistant's reply just drained and the mic
+     * window for a wake-word-free continuation is open. VAD onset (or the
+     * wake word) starts the next turn; silence expires back to IDLE.
+     */
+    FOLLOW_UP_WINDOW,
+}
 
 /** Result of a completed ASR utterance. */
 sealed interface AsrOutcome {

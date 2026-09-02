@@ -92,6 +92,44 @@ class MusicAppCatalogTest {
         assertEquals("com.zvooq.openplay", catalog.resolve("сбер звук")?.packageName)
     }
 
+    // ------------------------------------------------------------------
+    // Generic-token collision (regression): a hint containing "музык" AND
+    // another brand's marker must go to that brand, not to Yandex (whose
+    // token list includes the generic "музык"). The playMusic schema
+    // suggests 'VK Музыка' as an app value, so this collision is reachable
+    // straight from the LLM.
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `vk full label hint resolves to VK not Yandex`() {
+        val catalog = MusicAppCatalog({ allPlayers })
+        assertEquals("com.vk.music", catalog.resolve("VK Музыка")?.packageName)
+    }
+
+    @Test
+    fun `hint with vk marker and word muzyka stays VK`() {
+        val catalog = MusicAppCatalog({ allPlayers })
+        assertEquals("com.vk.music", catalog.resolve("музыка вк")?.packageName)
+    }
+
+    @Test
+    fun `bare muzyka hint still resolves Yandex`() {
+        val catalog = MusicAppCatalog({ allPlayers })
+        assertEquals("ru.yandex.music", catalog.resolve("музыка")?.packageName)
+    }
+
+    @Test
+    fun `yandex full label hint stays Yandex`() {
+        val catalog = MusicAppCatalog({ allPlayers })
+        assertEquals("ru.yandex.music", catalog.resolve("Яндекс Музыка")?.packageName)
+    }
+
+    @Test
+    fun `zvuk marker with word muzyka stays Zvuk`() {
+        val catalog = MusicAppCatalog({ allPlayers })
+        assertEquals("com.zvooq.openplay", catalog.resolve("музыка звук")?.packageName)
+    }
+
     @Test
     fun `unknown hint falls through to label match then preference`() {
         val catalog = MusicAppCatalog({ allPlayers }, preferredPackage = { "com.zvooq.openplay" })

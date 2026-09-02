@@ -64,7 +64,7 @@ class TurnRunner(
     private val config: JarvisConfig,
     private val onStateEvent: suspend (SessionEvent) -> Unit,
     private val reportFailure: suspend (id: Int?, msg: String) -> Unit,
-    private val finish: suspend (id: Int) -> Unit,
+    private val finish: suspend (id: Int, spoke: Boolean) -> Unit,
     private val setPartial: (String) -> Unit,
     private val isCurrentSession: (id: Int) -> Boolean,
     /** Phase 5 (M6): duck external music while sentences play; null = off. */
@@ -73,7 +73,15 @@ class TurnRunner(
     /** m10: bounds how many sentence jobs hold a TTS synthesis/playback slot. */
     private val ttsSynthPermits = Semaphore(TTS_SYNTH_PREFETCH)
 
+    /**
+     * Follow-up window: true once any sentence of THIS turn reached the
+     * player. Atomic because sentence coroutines run as session-scope
+     * children while [finish] reads it from the turn body.
+     */
+    private val spokeThisTurn = java.util.concurrent.atomic.AtomicBoolean(false)
+
     suspend fun CoroutineScope.runTurn(sessionId: Int) {
+        spokeThisTurn.set(false)
         try {
             onStateEvent(SessionEvent.WakeWordOrBargeIn) // -> LISTENING
 
@@ -82,7 +90,7 @@ class TurnRunner(
             if (stream == null) {
                 onStateEvent(SessionEvent.AsrFailed())
                 reportFailure(sessionId, "Не удалось открыть распознавание речи.")
-                finish(sessionId)
+                finish(sessionId, false)
                 return
             }
 
@@ -94,7 +102,7 @@ class TurnRunner(
                 is AsrOutcome.Final -> {
                     if (outcome.text.isBlank()) {
                         onStateEvent(SessionEvent.NoSpeech)
-                        finish(sessionId)
+                        finish(sessionId, false)
                         return
                     }
                     onStateEvent(SessionEvent.SpeechCaptured) // -> THINKING
@@ -105,31 +113,30 @@ class TurnRunner(
 
                 AsrOutcome.NoSpeech -> {
                     onStateEvent(SessionEvent.NoSpeech)
-                    finish(sessionId)
+                    finish(sessionId, false)
                 }
 
                 is AsrOutcome.Failed -> {
                     onStateEvent(SessionEvent.AsrFailed(outcome.cause))
                     reportFailure(sessionId, "Ошибка распознавания речи.")
-                    finish(sessionId)
+                    finish(sessionId, false)
                 }
             }
         } catch (e: TimeoutCancellationException) {
             Timber.w(e, "Session timed out")
             reportFailure(sessionId, "Превышено время ожидания. Попробуйте ещё раз.")
-            finish(sessionId)
+            finish(sessionId, false)
         } catch (e: java.io.IOException) {
             Timber.e(e, "Network error in session")
             reportFailure(sessionId, "Ошибка сети. Проверьте подключение.")
-            finish(sessionId)
+            finish(sessionId, false)
         } catch (_: CancellationException) {
-            // Barge-in / shutdown — rethrow to preserve structured concurrency.
-            finish(sessionId)
-            throw CancellationException()
+            // Barge-in / shutdown. Only act if still current.
+            finish(sessionId, spokeThisTurn.get())
         } catch (e: Exception) {
             Timber.e(e, "Session failed")
             reportFailure(sessionId, "Произошла ошибка. Попробуйте ещё раз.")
-            finish(sessionId)
+            finish(sessionId, spokeThisTurn.get())
         }
     }
 
@@ -308,14 +315,14 @@ class TurnRunner(
             } catch (e: TimeoutCancellationException) {
                 Timber.w(e, "LLM stream timed out")
                 reportFailure(id, "Превышено время ожидания ответа.")
-                finish(id)
+                finish(id, spokeThisTurn.get())
                 return
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Timber.e(e, "LLM stream failed")
                 reportFailure(id, "Не удалось получить ответ от нейросети.")
-                finish(id)
+                finish(id, spokeThisTurn.get())
                 return
             }
 
@@ -372,11 +379,11 @@ class TurnRunner(
                 Timber.w("TTS drain budget expired; cancelling %d stragglers", children.count { it.isActive })
                 children.forEach { it.cancel() }
             }
-            finish(id) // -> IDLE even when the drain budget expired
+            finish(id, spokeThisTurn.get()) // -> IDLE (or follow-up window)
             return
         }
 
-        finish(id)
+        finish(id, spokeThisTurn.get())
     }
 
     /**
@@ -423,6 +430,7 @@ class TurnRunner(
      */
     private suspend fun CoroutineScope.speakSentence(text: String) {
         onStateEvent(SessionEvent.PlaybackStarted) // -> SPEAKING
+        spokeThisTurn.set(true) // follow-up window eligibility
         ttsSynthPermits.withPermit {
             val flow = ttsClient.synthesizeStream(text, config.ttsVoice)
             // Phase 5 (M6): the first sentence of a generation requests

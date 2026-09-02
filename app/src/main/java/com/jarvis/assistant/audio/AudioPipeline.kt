@@ -1,5 +1,6 @@
 package com.jarvis.assistant.audio
 
+import com.jarvis.assistant.audio.aec.EchoCanceller
 import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.contracts.AudioSource
 import kotlinx.coroutines.CancellationException
@@ -16,6 +17,13 @@ import kotlin.coroutines.coroutineContext
 /**
  * Owns an [AudioSource] and a SINGLE producer coroutine — the only code path
  * allowed to touch the underlying AudioRecord.
+ *
+ * SOFTWARE AEC (Phase B): when an [EchoCanceller] is injected, every mic
+ * frame passes through it ONCE here — the ring buffer and the SharedFlow
+ * share the SAME echo-cancelled snapshot, so the wake-word engine and ASR
+ * both receive clean audio. The canceller's far-end reference is fed by the
+ * external lanes (TTS tap / playback capture) via
+ * [com.jarvis.assistant.audio.aec.FarEndMixer].
  *
  * Fix for the ring-buffer aliasing defect: [AudioRecordSource.read] returns
  * references to two reused internal buffers, so every frame is defensively
@@ -35,6 +43,8 @@ class AudioPipeline(
     private val scope: CoroutineScope,
     private val source: AudioSource,
     private val preRollMs: Long = JarvisConfig.DEFAULT_PRE_ROLL_MS,
+    /** Software AEC stage; null = raw capture (OFF/HARDWARE modes). */
+    private val echoCanceller: EchoCanceller? = null,
 ) {
     companion object {
         /** One capture frame = 20 ms @ 16 kHz (320 samples), see [AudioRecordSource]. */
@@ -82,9 +92,13 @@ class AudioPipeline(
                 continue
             }
             try {
-                val frame = source.read()
-                if (frame.isNotEmpty()) {
+                val raw = source.read()
+                if (raw.isNotEmpty()) {
                     consecutiveFailures = 0
+                    // Software AEC first — ring buffer AND flow get the clean
+                    // frame. Bypass returns the input instance unchanged
+                    // (copied immediately below).
+                    val frame = echoCanceller?.process(raw) ?: raw
                     // Single defensive copy shared by ring buffer and flow.
                     val snapshot = frame.copyOf()
                     ringBuffer.add(snapshot)

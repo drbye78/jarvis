@@ -31,10 +31,14 @@ OpenAI-compatible endpoint).
    - **Picovoice access key** (wake word)
    - **Sber Salute** client ID + secret (ASR/TTS)
    - **GigaChat** client ID + secret (LLM)
-   Credentials are stored encrypted in the Android Keystore
+   The mandatory Salute/GigaChat pairs are **validated upfront in the panel as
+   you type** (a live status row: valid / invalid / unreachable) and on every
+   «Проверить ключи» press — a typo is caught in seconds, not at the next
+   voice command. Credentials are stored encrypted in the Android Keystore
    (`EncryptedSharedPreferences`) on the device — **nothing secret is ever in
    the APK or in `local.properties`**. GigaChat creds are optional if you use
    the OpenAI-compatible provider instead (also configured in Settings).
+   The UI ships in Russian and English (full `values-en`).
 4. **Wake word — two engines (hybrid).** In Settings → Wake word you choose
     the engine:
     - **Sherpa-ONNX (recommended, no account):** a fully on-device wake word
@@ -76,7 +80,15 @@ Colleagues who want to build their own signed APK generate their own
 keystore with `keytool` and update `local.properties` accordingly.
 
 ## What Jarvis can do
-- **Voice**: wake word «Джарвис», barge-in mid-answer, streaming recognition.
+- **Voice**: wake word «Джарвис», barge-in mid-answer, streaming recognition,
+  **follow-up window** (opt-in: after each reply the mic stays open for
+  2–12 s — keep talking without the wake word; the orb shows a countdown).
+- **Echo cancellation** (opt-in, Settings → «Эхоподавление»): *hardware*
+  mode routes the mic through the tablet's comms DSP; *software* mode runs a
+  built-in adaptive canceller against the assistant's own voice (electrical
+  TTS reference) and, with a one-tap system consent, other apps' music —
+  experimental, see RUNBOOK for the honest quality expectations and
+  validation steps.
 - **Chat**: GigaChat (or OpenAI-compatible provider) with 20-message context.
 - **Music**: «Джарвис, включи Bohemian Rhapsody», «включи альбом Группа
   крови», «включи музыку» — a capability-gated cascade drives the installed

@@ -119,5 +119,7 @@ class ConversationManager(
             }.getOrNull()
         },
         toolCallId = toolCallId,
+        // Row identity for the transcript DiffUtil (see Message.id).
+        id = id,
     )
 }
