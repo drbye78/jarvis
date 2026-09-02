@@ -96,6 +96,9 @@ class SaluteSpeechTts(
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
+            } catch (e: java.io.IOException) {
+                Timber.e(e, "TTS network error")
+                if (!cancellableContext.isCancelled()) close(e)
             } catch (e: Exception) {
                 if (!cancellableContext.isCancelled()) close(e)
             }

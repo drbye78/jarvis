@@ -201,12 +201,12 @@ class SessionManager(
         // session started concurrently (seq moved on), do not stomp its fresh
         // LISTENING state back to IDLE.
         if (sessionSeq.get() == seqBefore) {
-            stateMachine.onEvent(SessionEvent.Cancelled)
+            scope.launch { stateMachine.onEvent(SessionEvent.Cancelled) }
         }
     }
 
     /** Terminal transition, guarded against stale sessions. */
-    private fun finish(id: Int) {
+    private suspend fun finish(id: Int) {
         if (id != sessionSeq.get()) return
         _partialTranscript.value = "" // session end clears any live partial
         stateMachine.onEvent(SessionEvent.LlmDone)

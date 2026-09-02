@@ -36,6 +36,11 @@ class FakeMessageDao : MessageDao {
         rows.removeAll { it.id !in ids }
     }
 
+    override suspend fun deleteAllExceptRecent(maxMessages: Int) {
+        val toKeep = rows.sortedByDescending { it.id }.take(maxMessages).map { it.id }.toSet()
+        rows.removeAll { it.id !in toKeep }
+    }
+
     override suspend fun clear() {
         rows.clear()
     }

@@ -75,6 +75,7 @@ class AudioPipeline(
 
     private suspend fun runProducer() {
         var loggedEvictions = 0L
+        var consecutiveFailures = 0
         while (coroutineContext.isActive) {
             if (!running) {
                 delay(10)
@@ -83,6 +84,7 @@ class AudioPipeline(
             try {
                 val frame = source.read()
                 if (frame.isNotEmpty()) {
+                    consecutiveFailures = 0
                     // Single defensive copy shared by ring buffer and flow.
                     val snapshot = frame.copyOf()
                     ringBuffer.add(snapshot)
@@ -110,7 +112,12 @@ class AudioPipeline(
                 running = false
                 return
             } catch (e: Exception) {
-                Timber.w(e, "AudioPipeline read error")
+                consecutiveFailures++
+                if (consecutiveFailures >= 50) {
+                    Timber.e(e, "AudioPipeline: %d consecutive failures, giving up", consecutiveFailures)
+                    return
+                }
+                Timber.w(e, "AudioPipeline read error (attempt %d)", consecutiveFailures)
                 delay(100)
             }
         }

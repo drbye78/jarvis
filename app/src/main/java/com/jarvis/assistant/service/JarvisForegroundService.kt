@@ -31,6 +31,12 @@ import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.di.AppGraph
 import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.util.AppPrefs
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.Locale
@@ -62,8 +68,19 @@ class JarvisForegroundService : Service() {
     private lateinit var prefs: AppPrefs
 
     @Volatile private var initialized = false
-    private var graph: AppGraph? = null
+    @Volatile private var bootstrapping = false
+    @Volatile private var graph: AppGraph? = null
+    private var initJob: Job? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var powerReceiver: BroadcastReceiver? = null
+
+    /**
+     * Completes when the [AppGraph] is fully constructed and started.
+     * Other components (UI, power receiver) can [await][CompletableDeferred.await]
+     * this before accessing the graph to avoid null-pointer races during the
+     * bootstrapping phase.
+     */
+    val graphReady = CompletableDeferred<AppGraph>()
 
     private lateinit var wakeLock: PowerManager.WakeLock
     private lateinit var wifiLock: WifiManager.WifiLock
@@ -71,6 +88,13 @@ class JarvisForegroundService : Service() {
     private val errorTts by lazy { TextToSpeech(this) { } }
 
     private var wasMusicPlaying = false
+    /**
+     * Holds the MediaController that was paused during ducking so it can be
+     * resumed in [unduck].  MediaController has no lifecycle callback for
+     * remote session death; if the remote app is killed, [lastController] may
+     * become stale.  The surrounding [runCatching] in [unduck] handles this
+     * gracefully (dead controller → swallowed exception → fallback to idle).
+     */
     private var lastController: MediaController? = null
     private var usedMediaKeyFallback = false
 
@@ -81,12 +105,22 @@ class JarvisForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         prefs = AppPrefs(this)
-        val channel = NotificationChannel(
-            CHANNEL_ID, getString(R.string.channel_name),
-            NotificationManager.IMPORTANCE_LOW,
-        )
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.createNotificationChannel(channel)
+        // Main channel: ongoing foreground notification (low importance = no sound).
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_ID, getString(R.string.channel_name),
+                NotificationManager.IMPORTANCE_LOW,
+            )
+        )
+        // Bootstrapping channel: distinct so the user can tell the assistant is
+        // still starting (visible in Settings → Notifications if needed).
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_BOOTSTRAP, getString(R.string.channel_bootstrap_name),
+                NotificationManager.IMPORTANCE_LOW,
+            )
+        )
         startForegroundCompat(buildStateNotification(getString(R.string.state_idle)))
     }
 
@@ -113,7 +147,7 @@ class JarvisForegroundService : Service() {
     // ------------------------------------------------------------------
 
     private fun ensureInitialized() {
-        if (initialized) return
+        if (initialized || bootstrapping) return
 
         // Permission gate FIRST — the original crashed AudioRecord init on
         // fresh installs and never retried.
@@ -126,51 +160,75 @@ class JarvisForegroundService : Service() {
             return
         }
 
-        try {
-            acquireLocks()
-            registerPowerReceiver()
+        // Show bootstrapping notification immediately (main thread, fast).
+        bootstrapping = true
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(NOTIFICATION_ID, buildBootstrapNotification())
 
-            val appGraph = AppGraph(
-                this, config,
-                com.jarvis.assistant.config.ProviderSettings.DEFAULT.copy(
-                    type = prefs.providerType,
-                    openAiBaseUrl = prefs.openAiBaseUrl,
-                    openAiModel = prefs.openAiModel,
-                    wakeSensitivity = prefs.wakeSensitivity,
-                ),
-                onSessionError = { msg -> speakError(msg) },
-            ).also { it.start() }
-            graph = appGraph
-            GraphHolder.graph = appGraph
-            initialized = true
+        // Build AppGraph on a background thread to avoid ANR on low-end
+        // devices (Kirin 710A class). The foreground service must remain
+        // responsive while the heavy object graph is constructed.
+        initJob = serviceScope.launch(Dispatchers.Default) {
+            try {
+                acquireLocks()
+                registerPowerReceiver()
 
-            // Live state -> notification text + ducking.
-            appGraph.scope.launch {
-                appGraph.stateMachine.state.collect { state ->
-                    val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    nm.notify(NOTIFICATION_ID, buildStateNotification(stateLabel(state)))
-                }
-            }
-            appGraph.scope.launch {
-                var wasActive = false
-                appGraph.stateMachine.state.collect { state ->
-                    val isActive = state != AssistantState.IDLE
-                    when {
-                        isActive && !wasActive -> duck()
-                        !isActive && wasActive -> unduck()
+                val appGraph = AppGraph(
+                    this@JarvisForegroundService, config,
+                    com.jarvis.assistant.config.ProviderSettings.DEFAULT.copy(
+                        type = prefs.providerType,
+                        openAiBaseUrl = prefs.openAiBaseUrl,
+                        openAiModel = prefs.openAiModel,
+                        wakeSensitivity = prefs.wakeSensitivity,
+                    ),
+                    onSessionError = { msg -> speakError(msg) },
+                ).also { it.start() }
+
+                graph = appGraph
+                GraphHolder.graph = appGraph
+                initialized = true
+                bootstrapping = false
+
+                // Signal graph readiness before wiring collectors so that any
+                // code awaiting graphReady sees the graph immediately.
+                graphReady.complete(appGraph)
+
+                // Switch back to the main notification channel now that the
+                // pipeline is live.
+                nm.notify(NOTIFICATION_ID, buildStateNotification(getString(R.string.state_idle)))
+
+                // Live state -> notification text + ducking.
+                appGraph.scope.launch {
+                    appGraph.stateMachine.state.collect { state ->
+                        nm.notify(NOTIFICATION_ID, buildStateNotification(stateLabel(state)))
                     }
-                    wasActive = isActive
                 }
+                appGraph.scope.launch {
+                    var wasActive = false
+                    appGraph.stateMachine.state.collect { state ->
+                        val isActive = state != AssistantState.IDLE
+                        when {
+                            isActive && !wasActive -> duck()
+                            !isActive && wasActive -> unduck()
+                        }
+                        wasActive = isActive
+                    }
+                }
+                Timber.i("Jarvis pipeline initialized")
+            } catch (e: Exception) {
+                Timber.e(e, "AppGraph init failed — will retry on next watchdog tick")
+                // Do NOT mark initialized: the 15-minute watchdog (or an
+                // app revisit) retries automatically.
+                bootstrapping = false
+                graph?.shutdown()
+                graph = null
+                GraphHolder.graph = null
+                // Complete exceptionally so any awaiter gets the failure.
+                graphReady.completeExceptionally(e)
+                // Return notification to idle so the user sees a recoverable state.
+                nm.notify(NOTIFICATION_ID, buildStateNotification(getString(R.string.state_idle)))
+                speakError(getString(R.string.tts_init_failed))
             }
-            Timber.i("Jarvis pipeline initialized")
-        } catch (e: Exception) {
-            Timber.e(e, "AppGraph init failed — will retry on next watchdog tick")
-            // Do NOT mark initialized: the 15-minute watchdog (or an
-            // app revisit) retries automatically.
-            graph?.shutdown()
-            graph = null
-            GraphHolder.graph = null
-            speakError(getString(R.string.tts_init_failed))
         }
     }
 
@@ -233,6 +291,24 @@ class JarvisForegroundService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Jarvis")
             .setContentText(text)
+            .setSmallIcon(R.drawable.ic_mic)
+            .setOngoing(true)
+            .setContentIntent(contentIntent)
+            .build()
+    }
+
+    /**
+     * Bootstrapping notification uses a distinct channel so the user can
+     * visually distinguish "still starting" from the normal idle state.
+     */
+    private fun buildBootstrapNotification(): Notification {
+        val contentIntent = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Builder(this, CHANNEL_BOOTSTRAP)
+            .setContentTitle("Jarvis")
+            .setContentText(getString(R.string.state_bootstrapping))
             .setSmallIcon(R.drawable.ic_mic)
             .setOngoing(true)
             .setContentIntent(contentIntent)
@@ -366,6 +442,14 @@ class JarvisForegroundService : Service() {
     // ------------------------------------------------------------------
 
     override fun onDestroy() {
+        // Cancel any in-flight background initialization.
+        initJob?.cancel()
+        serviceScope.cancel()
+        // If bootstrapping was in progress, complete exceptionally so any
+        // code awaiting graphReady doesn't hang forever.
+        if (bootstrapping && !graphReady.isCompleted) {
+            graphReady.completeExceptionally(IllegalStateException("Service destroyed during bootstrap"))
+        }
         // m8: recover ducking no matter which state edge wedged — a teardown
         // must never leave paused media paused forever.
         runCatching { unduck() }
@@ -380,6 +464,7 @@ class JarvisForegroundService : Service() {
         graph = null
         GraphHolder.graph = null
         initialized = false
+        bootstrapping = false
         if (::wakeLock.isInitialized && wakeLock.isHeld) runCatching { wakeLock.release() }
         if (::wifiLock.isInitialized && wifiLock.isHeld) runCatching { wifiLock.release() }
         runCatching { errorTts.shutdown() }
@@ -408,6 +493,7 @@ class JarvisForegroundService : Service() {
         private const val NOTIFICATION_PERMISSION = 2
         private const val RESTART_REQUEST_CODE = 1001
         private const val CHANNEL_ID = "jarvis_foreground"
+        private const val CHANNEL_BOOTSTRAP = "jarvis_bootstrap"
         private const val CHANNEL_ERROR = "jarvis_errors"
         private const val ServiceInfo_MICROPHONE =
             android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE

@@ -4,13 +4,19 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * Version 2: the v1 `alarms` table is replaced by the unified
- * `scheduled_alerts` store (PLAN.md §3.3). No backward compatibility is kept:
- * `fallbackToDestructiveMigration` drops ALL tables on any version jump —
- * including chat history — which is intentional and accepted (v1 → v2 wipes
- * old alarm rows and messages).
+ * Version 3: explicit migration support replaces [fallbackToDestructiveMigration]
+ * so version bumps no longer silently wipe all tables.
+ *
+ * - v1→v2: destructive by design (v1 `alarms` table replaced by unified
+ *   `scheduled_alerts`). No backward-compatible migration is provided for v1
+ *   because the v1 schema was never exported; users still on v1 will receive
+ *   a clear Room error directing them to reinstall.
+ * - v2→v3: no-op — schema is identical; the migration exists solely to
+ *   prevent destructive fallback on future version bumps.
  *
  * `alarmDao()` keeps its historical name (returning the new [AlertDao])
  * because FunctionRouter — owned by another lane — constructs the scheduler
@@ -18,8 +24,8 @@ import androidx.room.RoomDatabase
  */
 @Database(
     entities = [MessageEntity::class, ScheduledAlertEntity::class],
-    version = 2,
-    exportSchema = false,
+    version = 3,
+    exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
@@ -31,6 +37,19 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        /**
+         * Migration from schema v2 → v3.
+         * No-op: the table definitions are identical; this migration exists so that
+         * Room does not fall back to destructive migration on a version bump.
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // No schema changes — data is preserved as-is.
+            }
+        }
+
+        private val ALL_MIGRATIONS = arrayOf(MIGRATION_2_3)
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -38,7 +57,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "jarvis.db",
                 )
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(*ALL_MIGRATIONS)
                     .build()
                     .also { INSTANCE = it }
             }

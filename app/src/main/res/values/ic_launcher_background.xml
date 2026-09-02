@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launcher icon background: deep dark surface matching the project's
+         ringing/night palette (#0E1514).  Deliberately not in values-night/
+         so the background stays dark in both day and night modes — the orb
+         needs maximum contrast to pop. -->
+    <color name="ic_launcher_background">#0E1514</color>
+</resources>

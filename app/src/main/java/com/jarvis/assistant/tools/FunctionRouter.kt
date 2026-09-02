@@ -64,14 +64,6 @@ class FunctionRouter(
         toolRegistry.getToolDefinitions()
 
     /** Structured outcome (m1): classification via [ToolResult.isError]. */
-    suspend fun executeResult(call: FunctionCall): ToolResult =
+    override suspend fun executeResult(call: FunctionCall): ToolResult =
         toolRegistry.executeResult(call)
-
-    /**
-     * Legacy facade kept so out-of-lane callers compile unchanged; routes
-     * through the structured API. P7 removes.
-     */
-    @Deprecated("P7 removes")
-    override suspend fun execute(call: FunctionCall): ToolExecution =
-        executeResult(call).let { ToolExecution(call, it.content, it.isError) }
 }

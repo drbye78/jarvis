@@ -23,7 +23,7 @@ import com.jarvis.assistant.speech.asr.AsrStream
 import com.jarvis.assistant.speech.asr.StreamingAsrClient
 import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
-import com.jarvis.assistant.tools.ToolExecution
+import com.jarvis.assistant.tools.ToolResult
 import com.jarvis.assistant.tools.ToolExecutor
 import com.jarvis.assistant.util.OnlineChecker
 import com.jarvis.assistant.wire.WireToolCall
@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -185,19 +186,19 @@ open class FakeTools(var result: String = """{"status":"ok"}""") : ToolExecutor 
     )
 
     // 'override' members are open by default, so HangOnNthTools can re-execute.
-    override suspend fun execute(call: FunctionCall): ToolExecution {
+    override suspend fun executeResult(call: FunctionCall): ToolResult {
         executed.add(call)
-        return ToolExecution(call, result, isError = false)
+        return ToolResult(result, isError = false)
     }
 }
 
 /** The first [hangFrom]-1 calls return normally; from the Nth on, hang until cancelled. */
 class HangOnNthTools(private val hangFrom: Int) : FakeTools() {
     private val count = java.util.concurrent.atomic.AtomicInteger(0)
-    override suspend fun execute(call: FunctionCall): ToolExecution {
+    override suspend fun executeResult(call: FunctionCall): ToolResult {
         executed.add(call)
         if (count.incrementAndGet() >= hangFrom) awaitCancellation()
-        return ToolExecution(call, result, isError = false)
+        return ToolResult(result, isError = false)
     }
 }
 
@@ -669,6 +670,7 @@ class SessionManagerTest {
             // Cancellation alone emits nothing; cancelAll must explicitly and
             // safely bring the machine back to IDLE.
             h.manager.cancelAll()
+            yield() // let the scope-launched onEvent(Cancelled) execute
             assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
         } finally {
             h.shutdown()
@@ -807,7 +809,9 @@ class SessionManagerTest {
             // Muting is a user intent: pipeline stops AND active session dies.
             h.manager.setMuted(true)
             assertTrue(h.manager.muted.value)
-            assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
+            // cancelAll launches onEvent(Cancelled) on the session scope; wait
+            // for the state machine to reach IDLE (mirrors the cancelAll test).
+            withTimeout(5_000) { while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20) }
             assertFalse(h.pipeline.isRunning())
 
             // Power receiver fires CONNECTED while muted: restart respects mute.

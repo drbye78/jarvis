@@ -88,25 +88,25 @@ class ToolRegistryTest {
     @Test
     fun `unknown tool produces error result`() = runBlocking {
         val registry = ToolRegistry(listOf(OkTool()))
-        val result = registry.execute(FunctionCall("nope", "{}"))
+        val result = registry.executeResult(FunctionCall("nope", "{}"))
         assertTrue(result.isError)
-        assertTrue(result.result.contains("Unknown function"))
+        assertTrue(result.content.contains("Unknown function"))
     }
 
     @Test
     fun `tool exception is converted to error result`() = runBlocking {
         val registry = ToolRegistry(listOf(ThrowingTool()))
-        val result = registry.execute(FunctionCall("boom", "{}"))
+        val result = registry.executeResult(FunctionCall("boom", "{}"))
         assertTrue(result.isError)
-        assertTrue(result.result.contains("kaput"))
+        assertTrue(result.content.contains("kaput"))
     }
 
     @Test
     fun `hanging tool times out`() = runBlocking {
         val registry = ToolRegistry(listOf(HangingTool()), perToolTimeoutMs = 100)
-        val result = registry.execute(FunctionCall("hang", "{}"))
+        val result = registry.executeResult(FunctionCall("hang", "{}"))
         assertTrue(result.isError)
-        assertTrue(result.result.contains("timed out"))
+        assertTrue(result.content.contains("timed out"))
     }
 
     @Test
@@ -136,8 +136,6 @@ class ToolRegistryTest {
         val registry = ToolRegistry(listOf(ErrorWordTool()))
         val structured = registry.executeResult(FunctionCall("errword", "{}"))
         assertFalse(structured.isError)
-        // Legacy facade agrees with the structured classification.
-        assertFalse(registry.execute(FunctionCall("errword", "{}")).isError)
     }
 
     @Test
@@ -168,12 +166,12 @@ class ToolRegistryTest {
     fun `per-tool timeout override beats the registry default`() = runBlocking {
         // Registry default 100 ms would kill a 1 s tool — the override saves it.
         val registry = ToolRegistry(listOf(SlowButOverrideTool()), perToolTimeoutMs = 100)
-        val result = registry.execute(FunctionCall("slowOverride", "{}"))
+        val result = registry.executeResult(FunctionCall("slowOverride", "{}"))
         assertFalse(result.isError)
-        assertTrue(result.result.contains("late"))
+        assertTrue(result.content.contains("late"))
 
         // Without an override the same duration still times out.
         val registry2 = ToolRegistry(listOf(HangingTool()), perToolTimeoutMs = 100)
-        assertTrue(registry2.execute(FunctionCall("hang", "{}")).isError)
+        assertTrue(registry2.executeResult(FunctionCall("hang", "{}")).isError)
     }
 }

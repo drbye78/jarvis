@@ -46,30 +46,10 @@ class ConversationManager(
         trim()
     }
 
-    /** Keeps the newest [maxMessages] messages plus their tool results. */
+    /** Keeps the newest [maxMessages] messages. Tool results always have higher
+     *  ids than their assistant, so a simple id-based cutoff preserves pairs. */
     private suspend fun trim() {
-        val all = dao.all() // ordered by id ASC
-        if (all.size <= maxMessages) return
-
-        val keep = all.takeLast(maxMessages).map { it.id }.toMutableSet()
-
-        // Tool messages whose parent assistant message is kept must survive.
-        val assistantToolCallIds = all
-            .filter { it.id in keep && it.role == "assistant" && it.toolCallsJson != null }
-            .flatMap { entity ->
-                entity.toolCallsJson?.let { jsonStr ->
-                    runCatching {
-                        json.decodeFromString(ListSerializer(WireToolCall.serializer()), jsonStr)
-                            .map { it.id }
-                    }.getOrDefault(emptyList())
-                } ?: emptyList()
-            }
-            .toSet()
-
-        all.filter { it.role == "tool" && it.toolCallId in assistantToolCallIds }
-            .forEach { keep.add(it.id) }
-
-        dao.trimToIds(keep)
+        dao.deleteAllExceptRecent(maxMessages)
     }
 
     /**

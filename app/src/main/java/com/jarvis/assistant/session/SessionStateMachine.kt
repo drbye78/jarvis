@@ -4,6 +4,8 @@ import com.jarvis.assistant.model.AssistantState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 
 sealed interface SessionEvent {
@@ -63,14 +65,15 @@ object SessionTransitions {
 class SessionStateMachine {
     private val _state = MutableStateFlow(AssistantState.IDLE)
     val state: StateFlow<AssistantState> = _state.asStateFlow()
+    private val mutex = Mutex()
 
     fun currentState(): AssistantState = _state.value
 
-    fun onEvent(event: SessionEvent) {
+    suspend fun onEvent(event: SessionEvent) = mutex.withLock {
         val next = SessionTransitions.next(_state.value, event)
         if (next == null) {
             Timber.w("Rejected transition: state=%s event=%s", _state.value, event)
-            return
+            return@withLock
         }
         if (next != _state.value) {
             Timber.d("State: %s --%s--> %s", _state.value, event.javaClass.simpleName, next)

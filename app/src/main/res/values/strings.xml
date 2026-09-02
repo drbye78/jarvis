@@ -4,6 +4,7 @@
 
     <!-- Channels -->
     <string name="channel_name">Джарвис</string>
+    <string name="channel_bootstrap_name">Джарвис (запуск)</string>
     <string name="channel_errors">Ошибки</string>
     <string name="channel_alarm">Будильники</string>
 
@@ -18,6 +19,7 @@
     <string name="state_speaking_full">Говорю…</string>
     <string name="state_muted">Микрофон выключен</string>
     <string name="state_stopped">Ассистент остановлен</string>
+    <string name="state_bootstrapping">Запуск…</string>
 
     <!-- Main -->
     <string name="start">Запустить</string>

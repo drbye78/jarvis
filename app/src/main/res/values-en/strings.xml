@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Channels -->
+    <string name="channel_bootstrap_name">Jarvis (starting)</string>
+
     <!-- TTS speech feedback -->
     <string name="tts_please_wait">One moment.</string>
     <string name="tts_opening_player">Opening %s.</string>
     <string name="tts_init_failed">Failed to start assistant. Retrying automatically.</string>
+
+    <!-- States -->
+    <string name="state_bootstrapping">Starting…</string>
 
     <!-- Default labels -->
     <string name="default_timer_label">Timer</string>

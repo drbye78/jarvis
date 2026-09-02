@@ -41,6 +41,15 @@ class SherpaKwsEngine(
     private val stream: OnlineStream
 
     init {
+        // H5: Guard against passing an absolute file path instead of a Context.
+        // The Sherpa AAR loads models from APK assets via AssetManager using
+        // relative paths. An absolute path triggers a native crash in
+        // AAssetManager_open. Fail early with a clear message.
+        require(context is Context) {
+            "Sherpa-ONNX requires a non-null context for AssetManager. " +
+                "Passing absolute file paths will crash natively."
+        }
+
         val assetManager = requireNotNull(context?.assets) {
             "Context (for AssetManager) required to build Sherpa-ONNX KeywordSpotter"
         }
@@ -104,11 +113,13 @@ class SherpaKwsEngine(
     override fun release() {
         try {
             stream.release()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Timber.d(e, "Sherpa engine stream release error")
         }
         try {
             spotter.release()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Timber.d(e, "Sherpa engine spotter release error")
         }
     }
 }

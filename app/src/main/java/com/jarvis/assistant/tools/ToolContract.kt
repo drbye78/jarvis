@@ -2,7 +2,6 @@ package com.jarvis.assistant.tools
 
 import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.model.ToolDefinition
-import com.jarvis.assistant.model.ToolCall
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -31,13 +30,6 @@ interface ToolContract {
     suspend fun execute(arguments: String): String
 }
 
-/** Uniform result of a tool execution. */
-data class ToolExecution(
-    val call: FunctionCall,
-    val result: String,
-    val isError: Boolean,
-)
-
 /**
  * Structured outcome of a tool execution (m1). Classification is carried by
  * [isError] instead of sniffing the content for an `"error"` substring —
@@ -48,7 +40,7 @@ data class ToolResult(val content: String, val isError: Boolean = false)
 /** Tool facade used by the session layer (interface for JVM testing). */
 interface ToolExecutor {
     fun getToolDefinitions(): List<ToolDefinition>
-    suspend fun execute(call: FunctionCall): ToolExecution
+    suspend fun executeResult(call: FunctionCall): ToolResult
 }
 
 /**
@@ -98,8 +90,6 @@ class ToolRegistry(
         }
     }
 
-    suspend fun execute(call: FunctionCall): ToolExecution =
-        executeResult(call).let { ToolExecution(call, it.content, it.isError) }
 }
 
 /** Shared argument parsing helper for tools. */

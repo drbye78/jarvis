@@ -41,6 +41,10 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE id NOT IN (:ids)")
     suspend fun trimToIds(ids: Set<Long>)
 
+    /** Deletes all messages except the most recent [maxMessages] by id. */
+    @Query("DELETE FROM messages WHERE id NOT IN (SELECT id FROM messages ORDER BY id DESC LIMIT :maxMessages)")
+    suspend fun deleteAllExceptRecent(maxMessages: Int)
+
     @Query("DELETE FROM messages")
     suspend fun clear()
 }

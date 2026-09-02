@@ -143,11 +143,23 @@ class DeviceTools(private val context: Context) {
                 val panel = Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                runCatching { context.startActivity(panel) }
-                JsonOut.obj(
-                    "status" to "panel_opened",
-                    "detail" to "Система не позволяет менять Wi-Fi напрямую — открыл панель настроек.",
-                )
+                val resolved = context.packageManager.resolveActivity(panel, 0) != null
+                if (!resolved) {
+                    return JsonOut.error(
+                        "Системная панель Wi-Fi недоступна на этом устройстве."
+                    )
+                }
+                val result = runCatching { context.startActivity(panel) }
+                if (result.isFailure) {
+                    JsonOut.error(
+                        "Не удалось открыть панель Wi-Fi: ${result.exceptionOrNull()?.message}"
+                    )
+                } else {
+                    JsonOut.obj(
+                        "status" to "panel_opened",
+                        "detail" to "Система не позволяет менять Wi-Fi напрямую — открыл панель настроек.",
+                    )
+                }
             }
         }
     }
@@ -185,6 +197,29 @@ class DeviceTools(private val context: Context) {
             val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
             val adapter: BluetoothAdapter = bm?.adapter
                 ?: return JsonOut.error("Bluetooth adapter unavailable")
+            if (Build.VERSION.SDK_INT >= 33) {
+                // API 33+: adapter.enable()/disable() are deprecated;
+                // open the Bluetooth settings screen instead.
+                val panel = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                val resolved = context.packageManager.resolveActivity(panel, 0) != null
+                if (!resolved) {
+                    return JsonOut.error(
+                        "Настройки Bluetooth недоступны на этом устройстве."
+                    )
+                }
+                val result = runCatching { context.startActivity(panel) }
+                if (result.isFailure) {
+                    return JsonOut.error(
+                        "Не удалось открыть настройки Bluetooth: ${result.exceptionOrNull()?.message}"
+                    )
+                }
+                return JsonOut.obj(
+                    "status" to "panel_opened",
+                    "detail" to "Bluetooth переключается через настройки системы.",
+                )
+            }
             val ok = if (enable) adapter.enable() else adapter.disable()
             return if (ok || adapter.isEnabled == enable) {
                 JsonOut.obj("status" to "ok", "bluetooth" to state)
@@ -285,8 +320,9 @@ class DeviceTools(private val context: Context) {
                 pm.getApplicationLabel(it).toString().lowercase().contains(query)
             } ?: return JsonOut.error("Приложение '$app' не найдено")
 
-            val intent = pm.getLaunchIntentForPackage(match.packageName)!!
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val intent = pm.getLaunchIntentForPackage(match.packageName)
+                ?: return JsonOut.error("Приложение '$app' недоступно для запуска")
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
             return JsonOut.obj("status" to "ok", "app" to pm.getApplicationLabel(match).toString())
         }

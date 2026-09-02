@@ -31,6 +31,12 @@ object AlarmRinger {
 
     private const val DEFAULT_MAX_DURATION_MS = 5 * 60 * 1000L
 
+    /**
+     * Process-scoped coroutine scope (singleton object — lives as long as the
+     * process).  Intentional for this always-on appliance profile: the ringer
+     * must survive configuration changes and activity lifecycle events; there
+     * is no "destroy" path for the singleton itself.
+     */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lock = Any()
 

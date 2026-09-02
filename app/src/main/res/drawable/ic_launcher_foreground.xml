@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Jarvis Voice Orb — adaptive icon foreground (108dp viewport).
+     Proportions mirror VoiceOrbView.kt: ring at 46%, core at 16% of radius,
+     stroke at 4.5%.  All elements fit within the inner 72dp safe zone.
+     Layered glows give the orb its "alive" luminosity. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 1. Ambient aura — large, diffuse glow behind everything -->
+    <path
+        android:fillColor="@color/jarvis_status_speaking"
+        android:fillAlpha="0.10"
+        android:pathData="M54,54m-34,0a34,34,0,1,1,68,0a34,34,0,1,1,-68,0" />
+
+    <!-- 2. Ring outer glow — soft halo around the ring stroke -->
+    <path
+        android:strokeColor="@color/jarvis_status_speaking"
+        android:strokeAlpha="0.22"
+        android:strokeWidth="5"
+        android:pathData="M54,54m-24.84,0a24.84,24.84,0,1,1,49.68,0a24.84,24.84,0,1,1,-49.68,0" />
+
+    <!-- 3. Ring — the sharp, defined stroke -->
+    <path
+        android:strokeColor="@color/jarvis_status_speaking"
+        android:strokeAlpha="0.92"
+        android:strokeWidth="2.43"
+        android:strokeLineCap="round"
+        android:pathData="M54,54m-24.84,0a24.84,24.84,0,1,1,49.68,0a24.84,24.84,0,1,1,-49.68,0" />
+
+    <!-- 4. Core glow — soft halo expanding from the core dot -->
+    <path
+        android:fillColor="@color/jarvis_status_speaking"
+        android:fillAlpha="0.18"
+        android:pathData="M54,54m-14,0a14,14,0,1,1,28,0a14,14,0,1,1,-28,0" />
+
+    <!-- 5. Core dot — bright, solid, energetic -->
+    <path
+        android:fillColor="@color/jarvis_status_speaking"
+        android:pathData="M54,54m-8.64,0a8.64,8.64,0,1,1,17.28,0a8.64,8.64,0,1,1,-17.28,0" />
+
+    <!-- 6. Inner highlight — bright white center for depth and luminosity -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.55"
+        android:pathData="M54,54m-3.5,0a3.5,3.5,0,1,1,7,0a3.5,3.5,0,1,1,-7,0" />
+</vector>

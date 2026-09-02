@@ -4,6 +4,7 @@ import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.session.SessionEvent
 import com.jarvis.assistant.session.SessionStateMachine
 import com.jarvis.assistant.session.SessionTransitions
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -11,7 +12,7 @@ import org.junit.Test
 class SessionStateMachineTest {
 
     @Test
-    fun `normal turn transitions`() {
+    fun `normal turn transitions`() = runBlocking {
         val sm = SessionStateMachine()
         assertEquals(AssistantState.IDLE, sm.currentState())
 
@@ -55,7 +56,7 @@ class SessionStateMachineTest {
     }
 
     @Test
-    fun `asr failure with a cause unwedges LISTENING`() {
+    fun `asr failure with a cause unwedges LISTENING`() = runBlocking {
         // Regression: the transition table keyed on the data class
         // AsrFailed() — a lookup with AsrFailed(cause) missed the entry, the
         // transition was REJECTED, and the machine stayed wedged in LISTENING
@@ -98,7 +99,7 @@ class SessionStateMachineTest {
     }
 
     @Test
-    fun `state machine ignores rejected events without crashing`() {
+    fun `state machine ignores rejected events without crashing`() = runBlocking {
         val sm = SessionStateMachine()
         sm.onEvent(SessionEvent.PlaybackStarted) // illegal from IDLE
         assertEquals(AssistantState.IDLE, sm.currentState())

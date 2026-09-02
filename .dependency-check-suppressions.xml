@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+    <!--
+        OWASP Dependency-Check suppressions for false positives.
+        Add suppressions below when a CVE is confirmed not applicable.
+        See: https://jeremylong.github.io/DependencyCheck/general/suppression.html
+
+        Example suppression:
+        <suppress>
+            <notes>Not applicable — this library is not used in production code.</notes>
+            <filePath regex="true">.*protobuf-java-3\.25\.3\.jar</filePath>
+            <cve>CVE-2024-XXXXX</cve>
+        </suppress>
+    -->
+</suppressions>

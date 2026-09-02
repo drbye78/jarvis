@@ -290,6 +290,26 @@ class HybridWakeWordDetector(
         }
     }
 
+    /**
+     * Synchronously tears down the wake-word engine and transitions to
+     * [DetectorState.Released].
+     *
+     * **Why `runBlocking`?** The native engines (Porcupine, Sherpa-ONNX) require
+     * synchronous deallocation: if `release()` returns before the actor finishes
+     * its in-flight `process()` call, the freed native memory could be accessed
+     * (use-after-free). `runBlocking` ensures we suspend until the actor completes
+     * (or the timeout fires) and the native engine is deleted under [processMutex]
+     * before we return.
+     *
+     * **Why 1-second timeout?** The bound prevents an ANR if this method is called
+     * from the main thread (e.g. during foreground-service teardown on low-end
+     * devices). If the actor does not finish within 1 s, we proceed with teardown
+     * anyway — the native engine may leak, but the app stays responsive.
+     *
+     * **Threading contract:** Must be called from a background thread. Callers
+     * should prefer `Dispatchers.IO`. The 1-second bound is a safety net, not
+     * an invitation to call from the main thread.
+     */
     override fun release() {
         // Snapshot BEFORE nulling: joining via the field after clearing it
         // would join nothing and leave release() unbounded on processMutex.

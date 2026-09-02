@@ -955,8 +955,8 @@ class MusicOrchestratorTest {
             }
         }
         val registry = com.jarvis.assistant.tools.ToolRegistry(listOf(slow), perToolTimeoutMs = 100)
-        val result = registry.execute(com.jarvis.assistant.model.FunctionCall("slow", "{}"))
+        val result = registry.executeResult(com.jarvis.assistant.model.FunctionCall("slow", "{}"))
         assertFalse(result.isError)
-        assertTrue(result.result.contains("late"))
+        assertTrue(result.content.contains("late"))
     }
 }

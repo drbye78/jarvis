@@ -56,6 +56,9 @@ class MusicPlaybackOrchestrator(
     private val feedback: com.jarvis.assistant.audio.SpeechFeedback? = null,
 ) {
 
+    private val transportControl = TransportControl(gateway, resolver, deviceApiLevel)
+    private val libraryBrowser = LibraryBrowser(browser, resolver, budgets)
+
     /** Latency budgets — kept in one place so tests can shrink them. */
     data class Budgets(
         val verifyPollMs: Long = 300,
@@ -350,11 +353,11 @@ class MusicPlaybackOrchestrator(
         if (mediaId.isBlank()) {
             return Outcome(Status.ERROR, app, detail = "Пустой идентификатор трека — скажи название, я найду его поиском.", isError = true)
         }
-        val session = connectBrowser(app)
-            ?: return browserUnavailable(app)
+        val session = libraryBrowser.connectBrowser(app)
+            ?: return libraryBrowser.browserUnavailable(app)
         try {
             val handle = session.controller()
-                ?: return browserUnavailable(app)
+                ?: return libraryBrowser.browserUnavailable(app)
             val before = runCatching { handle.snapshot() }.getOrDefault(NowPlaying())
             if (!session.playFromMediaId(mediaId)) {
                 return Outcome(
@@ -383,130 +386,38 @@ class MusicPlaybackOrchestrator(
         }
     }
 
+    // ------------------------------------------------------------------
+    // Delegated commands — thin wrappers preserving the public API
+    // ------------------------------------------------------------------
+
+    /** Back-compat overload: basic transport, no parameters. */
+    suspend fun control(action: Action, appHint: String?): Outcome =
+        transportControl.control(action, appHint)
+
+    /**
+     * Tier 2: rich transport with per-action capability gating. A player
+     * whose action mask (or rating type) says it cannot honor the command
+     * gets an honest Russian refusal — never a silent no-op, never a fake
+     * success. Selection (M4) and the media-key fallback are unchanged for
+     * the basic six; the rich actions require a live session (a media key
+     * cannot seek/like/repeat).
+     */
+    suspend fun control(spec: ControlSpec, appHint: String?): Outcome =
+        transportControl.control(spec, appHint)
+
+    suspend fun nowPlaying(appHint: String?): Outcome =
+        transportControl.nowPlaying(appHint)
+
     /** Tier 3: top-level library sections / playlists (root children). */
-    suspend fun listPlaylists(appHint: String?): Outcome {
-        val app = resolver.resolve(appHint)
-            ?: return Outcome(
-                Status.ERROR, null,
-                detail = "Не нашёл музыкальное приложение на планшете.",
-                isError = true,
-            )
-        val session = connectBrowser(app)
-            ?: return browserUnavailable(app)
-        try {
-            val rootId = session.root()
-            if (rootId.isBlank()) {
-                return browserUnavailable(app)
-            }
-            val children = session.children(rootId, budgets.browserSearchTimeoutMs, budgets.maxLibraryItems)
-                ?: return browserUnavailable(app)
-            if (children.isEmpty()) {
-                return Outcome(
-                    Status.DISPATCHED, app, strategy = "browser_children",
-                    detail = "В библиотеке ${app.label} ничего не нашлось.",
-                )
-            }
-            return Outcome(
-                Status.DISPATCHED, app, strategy = "browser_children",
-                items = children,
-                detail = "Вот что есть в библиотеке ${app.label}. Назови название — включу.",
-            )
-        } finally {
-            session.disconnect()
-        }
-    }
+    suspend fun listPlaylists(appHint: String?): Outcome =
+        libraryBrowser.listPlaylists(appHint)
 
     /** Tier 3: search the player's own library (onSearch results). */
-    suspend fun searchLibrary(rawQuery: String, appHint: String?): Outcome {
-        val query = rawQuery.trim().replace(Regex("\\s+"), " ").take(budgets.maxQueryLength)
-        val app = resolver.resolve(appHint)
-            ?: return Outcome(
-                Status.ERROR, null,
-                detail = "Не нашёл музыкальное приложение на планшете.",
-                isError = true,
-            )
-        if (query.isBlank()) {
-            return Outcome(Status.ERROR, app, detail = "Не понял, что искать — назови трек, исполнителя или плейлист.", isError = true)
-        }
-        val session = connectBrowser(app)
-            ?: return browserUnavailable(app)
-        try {
-            val results = session.search(query, budgets.browserSearchTimeoutMs)
-                ?: return Outcome(
-                    Status.ERROR, app,
-                    detail = "${app.label} не поддерживает поиск по библиотеке. " +
-                        "Скажи название трека — я включу его через голосовой поиск.",
-                    isError = true,
-                )
-            val playable = results.filter { it.playable }.take(budgets.maxLibraryItems)
-            if (playable.isEmpty()) {
-                return Outcome(
-                    Status.DISPATCHED, app, strategy = "browser_search",
-                    detail = "В библиотеке ничего не нашлось по «$query».",
-                )
-            }
-            return Outcome(
-                Status.DISPATCHED, app, strategy = "browser_search",
-                items = playable,
-                detail = "Вот что нашлось по «$query». Назови номер или название — включу.",
-            )
-        } finally {
-            session.disconnect()
-        }
-    }
-
-    private suspend fun connectBrowser(app: MediaAppInfo): BrowserSession? {
-        val browserGateway = browser ?: return null
-        if (browserGateway.discover().none { it.packageName == app.packageName }) return null
-        return browserGateway.connect(app.packageName, budgets.browserConnectTimeoutMs)
-    }
-
-    private fun browserUnavailable(app: MediaAppInfo): Outcome =
-        Outcome(
-            Status.ERROR, app,
-            detail = "${app.label} не открывает свою библиотеку для голосового помощника. " +
-                "Скажи название трека — я включу его поиском.",
-            isError = true,
-        )
-
-    /**
-     * Tier 1: the empty-query semantics of the Assistant contract. A PAUSED
-     * session resumes (predictable); a STOPPED/NONE session has nothing to
-     * resume, so on players advertising playFromSearch we send the EMPTY
-     * query — "play my recent mix / something" — and only then fall back to
-     * a plain play(). «включи музыку» stops being a dead command.
-     */
-    private fun playOrResume(controller: MediaControllerHandle) {
-        val np = controller.snapshot()
-        when {
-            np.isPlaying || np.state == NowPlaying.STATE_PAUSED -> controller.play()
-            else -> {
-                val dispatched = controller.capabilities()
-                    .supports(TransportAction.PLAY_FROM_SEARCH) &&
-                    controller.playFromSearchStructured(
-                        SearchCommand(query = "", focus = null, extras = emptyMap()),
-                    )
-                if (!dispatched) controller.play()
-            }
-        }
-    }
-
-    /**
-     * M2: how to describe a deep-link launch, depending on whether we are
-     * allowed to start activities at all. In the foreground the start either
-     * happened or threw; in the background Android may have silently dropped
-     * it — so we say we TRIED and tell the user what to do if nothing opened.
-     */
-    private fun launchAttemptPhrasing(query: String, app: MediaAppInfo): String =
-        if (gateway.isUiVisible()) {
-            "Открыл поиск «$query» в ${app.label}. Нажми на трек."
-        } else {
-            "Пытаюсь открыть поиск «$query» в ${app.label}; если экран не появился — " +
-                "планшет блокирует запуск из фона, открой плеер вручную."
-        }
+    suspend fun searchLibrary(rawQuery: String, appHint: String?): Outcome =
+        libraryBrowser.searchLibrary(rawQuery, appHint)
 
     // ------------------------------------------------------------------
-    // Transport commands
+    // Transport types — kept here for public API compatibility
     // ------------------------------------------------------------------
 
     enum class Action {
@@ -572,225 +483,23 @@ class MusicPlaybackOrchestrator(
         )
     }
 
-    /** Russian name of an action — used in honest-refusal answers. */
-    private fun actionName(action: Action): String = when (action) {
-        Action.PLAY -> "воспроизведение"
-        Action.PAUSE -> "паузу"
-        Action.TOGGLE -> "паузу"
-        Action.NEXT -> "следующий трек"
-        Action.PREVIOUS -> "предыдущий трек"
-        Action.STOP -> "стоп"
-        Action.SEEK -> "перемотку"
-        Action.RESTART -> "перемотку"
-        Action.LIKE -> "лайки"
-        Action.REPEAT -> "повтор"
-        Action.SHUFFLE -> "перемешивание"
-        Action.SPEED -> "смену скорости"
-    }
+    // ------------------------------------------------------------------
+    // M2: BAL honesty — background launch outcomes are attempts, not facts
+    // ------------------------------------------------------------------
 
     /**
-     * M4: session selection for transport commands. Order: the NAMED app's
-     * session → any PLAYING session → the most recent session → media key.
-     * A named app that is installed but has no live session is a miss: we
-     * answer instructively instead of silently commanding a random player.
+     * M2: how to describe a deep-link launch, depending on whether we are
+     * allowed to start activities at all. In the foreground the start either
+     * happened or threw; in the background Android may have silently dropped
+     * it — so we say we TRIED and tell the user what to do if nothing opened.
      */
-    internal fun selectController(
-        controllers: List<MediaControllerHandle>,
-        target: MediaAppInfo?,
-    ): MediaControllerHandle? {
-        if (target != null) {
-            controllers.firstOrNull { it.packageName == target.packageName }?.let { return it }
-            return null // named-app miss — the caller answers honestly (M4)
-        }
-        return controllers.firstOrNull { it.snapshot().isPlaying }
-            ?: controllers.firstOrNull()
-    }
-
-    /** Back-compat overload: basic transport, no parameters. */
-    suspend fun control(action: Action, appHint: String?): Outcome =
-        control(ControlSpec(action), appHint)
-
-    /**
-     * Tier 2: rich transport with per-action capability gating. A player
-     * whose action mask (or rating type) says it cannot honor the command
-     * gets an honest Russian refusal — never a silent no-op, never a fake
-     * success. Selection (M4) and the media-key fallback are unchanged for
-     * the basic six; the rich actions require a live session (a media key
-     * cannot seek/like/repeat).
-     */
-    suspend fun control(spec: ControlSpec, appHint: String?): Outcome {
-        val action = spec.action
-        val target = if (appHint != null) resolver.resolve(appHint) else null
-        val controllers = gateway.activeControllers()
-        val controller = selectController(controllers, target)
-
-        // M4: the named app is installed but nothing is playing in it — do
-        // NOT fall through to some other player's session.
-        if (controller == null && target != null) {
-            return Outcome(
-                Status.ERROR, target, strategy = "named_app_miss",
-                detail = "В ${target.label} сейчас ничего не играет. Скажи, какой трек включить, " +
-                    "или запусти плеер вручную.",
-                isError = true,
-            )
-        }
-
-        val namedApp = target ?: controller?.let { MediaAppInfo(it.packageName, it.packageName) }
-        fun detail(what: String) = Outcome(Status.DISPATCHED, namedApp, strategy = "session", detail = what)
-        fun unsupported(what: String) = Outcome(
-            Status.ERROR, namedApp, strategy = "unsupported",
-            detail = "Этот плеер не поддерживает $what.", isError = true,
-        )
-
-        if (controller != null) {
-            val caps = controller.capabilities()
-
-            // R7: the API gate lives BEFORE any dispatch — on API < 29 the
-            // framework transport has no setPlaybackSpeed at all.
-            if (action == Action.SPEED && !TransportPolicy.speedAllowed(deviceApiLevel)) {
-                return Outcome(
-                    Status.ERROR, namedApp, strategy = "api_guard",
-                    detail = "Смену скорости этот планшет не поддерживает (нужен Android 10+).",
-                    isError = true,
-                )
-            }
-            val required = TransportPolicy.requiredAction(action)
-            if (required != null && !caps.supports(required)) {
-                return unsupported(actionName(action))
-            }
-            if (action == Action.LIKE && !TransportPolicy.likeAllowed(caps)) {
-                return unsupported("лайки (у плеера другой тип оценки)")
-            }
-
-            val dispatched = when (action) {
-                Action.PLAY -> {
-                    playOrResume(controller)
-                    true
-                }
-                Action.PAUSE -> controller.pause()
-                Action.TOGGLE -> {
-                    val playing = controller.snapshot().isPlaying
-                    if (playing) controller.pause() else controller.play()
-                }
-                Action.NEXT -> controller.skipToNext()
-                Action.PREVIOUS -> controller.skipToPrevious()
-                Action.STOP -> controller.stop()
-                Action.SEEK -> {
-                    val current = controller.snapshot().positionMs
-                    val target2 = spec.positionMs ?: (current + (spec.deltaMs ?: 0L))
-                    controller.seekTo(target2.coerceAtLeast(0))
-                }
-                Action.RESTART -> controller.seekTo(0)
-                Action.LIKE -> controller.like()
-                Action.REPEAT -> controller.setRepeatMode(
-                    spec.repeatMode?.wire ?: MediaCapabilities.REPEAT_MODE_ALL,
-                )
-                Action.SHUFFLE -> controller.setShuffleMode(spec.shuffle ?: true)
-                Action.SPEED -> controller.setPlaybackSpeed(
-                    (spec.speed ?: 1.0f).coerceIn(0.25f, 4.0f),
-                )
-            }
-            return if (dispatched) {
-                detail("Команда отправлена плееру (${controller.packageName}).")
-            } else {
-                Outcome(
-                    Status.ERROR, namedApp, strategy = "dispatch_failed",
-                    detail = "Плеер не принял команду (возможно, перезапустился) — попробуй ещё раз.",
-                    isError = true,
-                )
-            }
-        }
-
-        // No live session: the media-key fallback only exists for the basic
-        // six actions — a media key cannot seek, like, repeat or set speed.
-        if (!TransportPolicy.mediaKeyEligible(action)) {
-            return Outcome(
-                Status.ERROR, namedApp, strategy = "no_session",
-                detail = "Нет запущенного плеера — ${actionName(action)} работает только при включённой музыке.",
-                isError = true,
-            )
-        }
-
-        val key = when (action) {
-            Action.PLAY -> MediaKey.PLAY
-            Action.PAUSE -> MediaKey.PAUSE
-            Action.TOGGLE -> MediaKey.PLAY_PAUSE
-            Action.NEXT -> MediaKey.NEXT
-            Action.PREVIOUS -> MediaKey.PREVIOUS
-            Action.STOP -> MediaKey.STOP
-            else -> throw IllegalStateException("unreachable")
-        }
-        return if (action == Action.STOP) {
-            gateway.dispatchMediaKey(key)
-            Outcome(Status.DISPATCHED, namedApp, strategy = "media_key", detail = "Отправил стоп.")
+    private fun launchAttemptPhrasing(query: String, app: MediaAppInfo): String =
+        if (gateway.isUiVisible()) {
+            "Открыл поиск «$query» в ${app.label}. Нажми на трек."
         } else {
-            if (action == Action.PLAY && gateway.hasNotificationListenerAccess() && controllers.isEmpty()) {
-                // Nothing has EVER played: opening the player is more useful
-                // than a dead media key.
-                val app = target ?: resolver.resolve(null)
-                if (app != null && gateway.launchApp(app)) {
-                    gateway.dispatchMediaKey(key)
-                    return Outcome(Status.APP_OPENED, app, strategy = "launch_and_key", detail = "Открыл ${app.label}.")
-                }
-            }
-            gateway.dispatchMediaKey(key)
-            Outcome(
-                Status.DISPATCHED, namedApp, strategy = "media_key",
-                detail = "Живой сессии плеера нет — отправил команду медиаклавишей.",
-            )
+            "Пытаюсь открыть поиск «$query» в ${app.label}; если экран не появился — " +
+                "планшет блокирует запуск из фона, открой плеер вручную."
         }
-    }
-
-    // ------------------------------------------------------------------
-    // What is playing
-    // ------------------------------------------------------------------
-
-    suspend fun nowPlaying(appHint: String?): Outcome {
-        val target = if (appHint != null) resolver.resolve(appHint) else null
-        val controllers = gateway.activeControllers()
-        val controller = selectController(controllers, target)
-
-        // M4: asking about a NAMED player must not report some other app's
-        // track as if it were the answer.
-        if (controller == null) {
-            return if (target != null) {
-                Outcome(
-                    Status.ERROR, target, strategy = "named_app_miss",
-                    detail = "В ${target.label} сейчас ничего не играет.",
-                    isError = true,
-                )
-            } else {
-                Outcome(
-                    Status.ERROR, null,
-                    detail = "Сейчас ничего не играет — нет активного плеера.",
-                    isError = true,
-                )
-            }
-        }
-
-        val np = controller.snapshot()
-        val what = listOfNotNull(np.title, np.artist).joinToString(" — ")
-            .ifBlank { "неизвестный трек" }
-        val stateWord = if (np.isPlaying) "играет" else "на паузе"
-        val queueWord = if (np.queueSize > 0 && np.queueIndex >= 0) {
-            ", ${np.queueIndex + 1} из ${np.queueSize}"
-        } else ""
-        val extras = buildList {
-            if (np.speed != 1.0f && np.speed > 0f) add("скорость ${np.speed}x")
-            when (np.repeatMode) {
-                MediaCapabilities.REPEAT_MODE_ONE -> add("повтор трека")
-                MediaCapabilities.REPEAT_MODE_ALL, MediaCapabilities.REPEAT_MODE_GROUP -> add("повтор всего")
-            }
-            if (MediaCapabilities.shuffleEnabled(np.shuffleMode) == true) add("перемешано")
-        }.joinToString(", ").ifBlank { "" }
-        val extrasWord = if (extras.isBlank()) "" else ", $extras"
-        return Outcome(
-            Status.DISPATCHED,
-            target ?: MediaAppInfo(controller.packageName, controller.packageName),
-            nowPlaying = np,
-            detail = "Играет: $what ($stateWord$queueWord$extrasWord).",
-        )
-    }
 
     // ------------------------------------------------------------------
     // Internals

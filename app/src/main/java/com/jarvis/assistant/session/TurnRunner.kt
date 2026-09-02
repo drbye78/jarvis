@@ -62,9 +62,9 @@ class TurnRunner(
     private val functionRouter: ToolExecutor,
     private val conversationManager: ConversationManager,
     private val config: JarvisConfig,
-    private val onStateEvent: (SessionEvent) -> Unit,
+    private val onStateEvent: suspend (SessionEvent) -> Unit,
     private val reportFailure: suspend (id: Int?, msg: String) -> Unit,
-    private val finish: (id: Int) -> Unit,
+    private val finish: suspend (id: Int) -> Unit,
     private val setPartial: (String) -> Unit,
     private val isCurrentSession: (id: Int) -> Boolean,
     /** Phase 5 (M6): duck external music while sentences play; null = off. */
@@ -114,9 +114,18 @@ class TurnRunner(
                     finish(sessionId)
                 }
             }
-        } catch (_: CancellationException) {
-            // Barge-in / shutdown. Only act if still current.
+        } catch (e: TimeoutCancellationException) {
+            Timber.w(e, "Session timed out")
+            reportFailure(sessionId, "Превышено время ожидания. Попробуйте ещё раз.")
             finish(sessionId)
+        } catch (e: java.io.IOException) {
+            Timber.e(e, "Network error in session")
+            reportFailure(sessionId, "Ошибка сети. Проверьте подключение.")
+            finish(sessionId)
+        } catch (_: CancellationException) {
+            // Barge-in / shutdown — rethrow to preserve structured concurrency.
+            finish(sessionId)
+            throw CancellationException()
         } catch (e: Exception) {
             Timber.e(e, "Session failed")
             reportFailure(sessionId, "Произошла ошибка. Попробуйте ещё раз.")
@@ -324,11 +333,11 @@ class TurnRunner(
                 try {
                     for (call in pending) {
                         val toolResult = withContext(Dispatchers.IO) {
-                            functionRouter.execute(call.function)
+                            functionRouter.executeResult(call.function)
                         }
                         completed += call to Message(
                             role = "tool",
-                            content = toolResult.result.ifBlank { "{}" },
+                            content = toolResult.content.ifBlank { "{}" },
                             toolCallId = call.id,
                             name = call.function.name,
                         )

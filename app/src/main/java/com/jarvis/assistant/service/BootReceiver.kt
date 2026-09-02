@@ -10,6 +10,7 @@ import com.jarvis.assistant.util.AppPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
@@ -31,13 +32,17 @@ class BootReceiver : BroadcastReceiver() {
         val prefs = AppPrefs(context)
 
         // Re-arm persisted alerts first — they must survive reboots.
+        // Scope is cancelled after pending.finish() so it never outlives the
+        // BroadcastReceiver's 10-second goAsync() window.
         val pending = goAsync()
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        scope.launch {
             try {
                 val dao = AppDatabase.getInstance(context).alarmDao()
                 AndroidAlarmScheduler(context, dao).rescheduleAllOnBoot()
             } finally {
                 pending.finish()
+                scope.cancel()
             }
         }
 
