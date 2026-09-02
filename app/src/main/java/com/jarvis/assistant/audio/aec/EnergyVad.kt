@@ -104,6 +104,32 @@ class EnergyVad(
     val onset: Boolean
         get() = onsetLatch
 
+    /** Drop all adaptation (noise floor, streaks, hangover). */
+    fun reset() {
+        state = State.SILENT
+        onsetStreak = 0
+        offsetStreak = 0
+        hangover = 0
+        onsetLatch = false
+        lastRms = 0.0
+        // noiseFloor deliberately NOT reset: the room did not get quieter
+        // because a new window opened.
+    }
+
+    /**
+     * Force SILENT without touching the adapted noise floor — used at the end
+     * of a lead-in that swallowed an onset (e.g. speech already in progress
+     * when the window opened). Continuous speech re-fires [onset] within two
+     * frames against the KEPT floor; a decaying transient does not.
+     */
+    fun forceSilent() {
+        state = State.SILENT
+        onsetStreak = 0
+        offsetStreak = 0
+        hangover = 0
+        onsetLatch = false
+    }
+
     private fun rmsOf(frame: ShortArray): Double {
         if (frame.isEmpty()) return 0.0
         var acc = 0.0

@@ -1,6 +1,7 @@
 package com.jarvis.assistant.session
 
 import com.jarvis.assistant.audio.AudioPipeline
+import com.jarvis.assistant.audio.aec.EnergyVad
 import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.contracts.Detection
 import com.jarvis.assistant.contracts.DetectorState
@@ -13,8 +14,10 @@ import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
 import com.jarvis.assistant.tools.ToolExecutor
 import com.jarvis.assistant.data.ConversationManager
+import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.util.NetworkMonitor
 import com.jarvis.assistant.util.OnlineChecker
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -72,11 +75,35 @@ class SessionManager(
      * audio — no auto-resume (the user says «продолжи»).
      */
     private val externalMusicPauser: (suspend () -> Unit)? = null,
+    /** Follow-up window: feature toggle + window length (user-controllable). */
+    private var followUpEnabled: Boolean = false,
+    followUpWindowMs: Long = FollowUpWindowController.DEFAULT_WINDOW_MS,
 ) {
 
     private var sessionJob: Job? = null
     private var detectionJob: Job? = null
+    private var windowJob: Job? = null
     private val sessionSeq = AtomicInteger(0)
+
+    /** Follow-up window decision core (pure, injectable clock). */
+    private val followUp = FollowUpWindowController(
+        windowMs = followUpWindowMs,
+        nowMs = System::currentTimeMillis,
+    )
+
+    /** VAD for the follow-up window lane (reused across windows). */
+    private val followUpVad = EnergyVad()
+
+    /** UI: remaining fraction of the open follow-up window (0 when closed). */
+    private val _followUpProgress = MutableStateFlow(0f)
+    val followUpProgress: StateFlow<Float> = _followUpProgress.asStateFlow()
+
+    /**
+     * Frames at window open whose onset is IGNORED — the TTS tail may still
+     * be audible (and the VAD floor cold); 200 ms keeps both from firing a
+     * phantom follow-up turn.
+     */
+    private var followUpLeadIn = 0
 
     /** S1: live ASR partials for the UI (UI wiring happens in a later phase). */
     private val _partialTranscript = MutableStateFlow("")
@@ -115,7 +142,7 @@ class SessionManager(
      * Pass id=null for lifecycle-scoped failures (wake-word engine) that have
      * no session identity of their own.
      */
-    internal suspend fun reportFailure(id: Int?, message: String) {
+    suspend fun reportFailure(id: Int?, message: String) {
         if (id != null && id != sessionSeq.get()) {
             Timber.w("Dropping stale session %d failure: %s", id, message)
             return
@@ -155,6 +182,8 @@ class SessionManager(
                         }
 
                         Detection.WakeWord -> {
+                            // The wake word supersedes any open follow-up window.
+                            closeFollowUpWindow(silent = true)
                             startSession()
                         }
                     }
@@ -164,6 +193,8 @@ class SessionManager(
 
     /** Begin (or restart) a listening session — also the barge-in entry point. */
     fun startSession() {
+        windowJob?.cancel()
+        windowJob = null
         sessionJob?.cancel()
         player.flush() // generation bump: current + queued sentences die
         focus?.onTtsFlushed() // M6: barge-in ends the duck immediately
@@ -195,6 +226,7 @@ class SessionManager(
         sessionJob = null
         detectionJob?.cancel()
         detectionJob = null
+        closeFollowUpWindow(silent = true)
         _partialTranscript.value = ""
         // M6: cancellation itself emits no terminal event, so without this the
         // machine stays wedged in THINKING/SPEAKING forever. Guarded: if a new
@@ -206,10 +238,110 @@ class SessionManager(
     }
 
     /** Terminal transition, guarded against stale sessions. */
-    private fun finish(id: Int) {
+    private fun finish(id: Int, spoke: Boolean) {
         if (id != sessionSeq.get()) return
         _partialTranscript.value = "" // session end clears any live partial
         stateMachine.onEvent(SessionEvent.LlmDone)
+        maybeOpenFollowUpWindow(spoke)
+    }
+
+    // ------------------------------------------------------------------
+    // Follow-up window (wake-word-free continuation)
+    // ------------------------------------------------------------------
+
+    /**
+     * Live runtime control for the Settings «Продолжение диалога» card.
+     * Disabling mid-window closes it immediately.
+     */
+    fun setFollowUpWindow(enabled: Boolean, windowMs: Long) {
+        followUpEnabled = enabled
+        followUp.setWindowMs(windowMs)
+        if (!enabled) closeFollowUpWindow(silent = false)
+    }
+
+    private fun maybeOpenFollowUpWindow(spoke: Boolean) {
+        if (!followUpEnabled) return
+        when (followUp.onTurnEnded(spoke, enabled = true)) {
+            FollowUpWindowController.Effect.OpenWindow -> {
+                Timber.i("Follow-up window open")
+                stateMachine.onEvent(SessionEvent.FollowUpWindowOpened)
+                startFollowUpCollector()
+            }
+            FollowUpWindowController.Effect.StartFollowUpTurn,
+            FollowUpWindowController.Effect.ExpireWindow -> Unit // not emitted here
+            null -> Unit
+        }
+    }
+
+    /**
+     * The window collector: consumes the mic lane (already AEC-cleaned when
+     * SOFTWARE mode is on), feeds the VAD, drives the countdown progress and
+     * fires the wake-word-free turn on speech onset. Expires on silence.
+     * Exits by CancellationException on ALL terminals (trigger / expiry /
+     * supersede) — one catch, no dangling subscriber.
+     */
+    private fun startFollowUpCollector() {
+        windowJob?.cancel()
+        followUpLeadIn = LEAD_IN_SLOTS
+        followUpVad.reset()
+        _followUpProgress.value = 1f
+        windowJob = scope.launch {
+            try {
+                audioPipeline.frames.collect { frame ->
+                    if (followUpLeadIn > 0) {
+                        followUpLeadIn--
+                        // Still feeding the VAD so the noise floor adapts.
+                        followUpVad.process(frame)
+                        if (followUpLeadIn == 0) {
+                            // The lead-in may have swallowed a genuine onset
+                            // (speech already in progress when the window
+                            // opened). Forget the edge, keep the floor:
+                            // continuous speech re-fires within 2 frames.
+                            followUpVad.forceSilent()
+                        }
+                    } else {
+                        followUpVad.process(frame)
+                        if (followUpVad.onset) {
+                            Timber.i("Follow-up speech detected — starting turn")
+                            stateMachine.onEvent(SessionEvent.FollowUpSpeechDetected)
+                            followUp.onVadActive()
+                            startSession() // cancels this collector via windowJob
+                            throw CancellationException("follow-up turn started")
+                        }
+                    }
+                    _followUpProgress.value = followUp.remainingFraction()
+                    if (followUp.transition() != null) {
+                        Timber.i("Follow-up window expired")
+                        stateMachine.onEvent(SessionEvent.FollowUpWindowExpired)
+                        _followUpProgress.value = 0f
+                        throw CancellationException("follow-up window expired")
+                    }
+                }
+            } catch (e: CancellationException) {
+                // Terminal of this window (trigger / expiry / superseded by
+                // wake word, cancelAll or shutdown). Nothing to clean here —
+                // the callers already drove the state machine.
+            }
+        }
+    }
+
+    /**
+     * Close any open window. [silent]=true keeps the state machine untouched
+     * (the caller is about to drive it somewhere else, e.g. LISTENING).
+     */
+    private fun closeFollowUpWindow(silent: Boolean) {
+        followUp.onCancelled()
+        windowJob?.cancel()
+        windowJob = null
+        _followUpProgress.value = 0f
+        if (!silent && stateMachine.currentState() == AssistantState.FOLLOW_UP_WINDOW) {
+            stateMachine.onEvent(SessionEvent.FollowUpWindowExpired)
+        }
+    }
+
+    private companion object {
+        /** Ignored-onset frames at window open (TTS tail + VAD warm-up). */
+        const val LEAD_IN_SLOTS = 10 // 200 ms
     }
 
     // ------------------------------------------------------------------

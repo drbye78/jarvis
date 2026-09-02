@@ -1,8 +1,9 @@
 package com.jarvis.assistant.audio
 
 import android.media.AudioFormat
-import android.media.MediaRecorder
-import android.media.audiofx.AcousticEchoCanceler
+import com.jarvis.assistant.audio.aec.AecMode
+import com.jarvis.assistant.audio.aec.AecProbe
+import com.jarvis.assistant.audio.aec.MicProfile
 import com.jarvis.assistant.contracts.AudioSource
 import com.jarvis.assistant.contracts.AudioSpec
 
@@ -12,9 +13,17 @@ import com.jarvis.assistant.contracts.AudioSpec
  * Captures 16 kHz / mono / 16-bit PCM in 320-sample (20 ms) frames. The
  * double-buffered [read] returns REUSED internal arrays — callers must copy
  * before retaining (see [AudioPipeline]).
+ *
+ * AEC Phase A: the capture profile is [MicProfile] instead of a hard-wired
+ * VOICE_RECOGNITION. HARDWARE mode captures through VOICE_COMMUNICATION and
+ * attaches the platform AcousticEchoCanceler via [AecProbe] (probe outcome
+ * lands in AecDiag + Settings). OFF/SOFTWARE keep the clean VOICE_RECOGNITION
+ * lane (SOFTWARE cancellation happens downstream in [AudioPipeline] — a HW
+ * effect on the mic would break the electrical reference's linearity).
  */
 class AudioRecordSource(
     private val spec: AudioSpec = AudioSpec.MIC,
+    private val profile: MicProfile = MicProfile.forMode(AecMode.OFF),
 ) : AudioSource {
 
     companion object {
@@ -34,7 +43,7 @@ class AudioRecordSource(
     }
 
     private var audioRecord: android.media.AudioRecord? = null
-    private var echoCanceler: AcousticEchoCanceler? = null
+    private var echoCanceler: android.media.audiofx.AcousticEchoCanceler? = null
 
     // Fail fast (constructor-time) on a degenerate getMinBufferSize result.
     private val bufferSize = validatedBufferSize(
@@ -56,7 +65,7 @@ class AudioRecordSource(
     override fun start() {
         if (audioRecord != null) return
         val record = android.media.AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            profile.androidAudioSource,
             spec.sampleRate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
@@ -66,10 +75,9 @@ class AudioRecordSource(
             record.release()
             throw IllegalStateException("AudioRecord failed to initialize")
         }
-        if (AcousticEchoCanceler.isAvailable()) {
-            val aec = AcousticEchoCanceler.create(record.audioSessionId)
-            aec?.enabled = true
-            echoCanceler = aec
+        if (profile.attachHardwareAec) {
+            // AecProbe records the outcome (AecDiag + persisted for Settings).
+            echoCanceler = AecProbe.attach(record.audioSessionId)
         }
         record.startRecording()
         audioRecord = record
