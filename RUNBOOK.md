@@ -184,6 +184,82 @@ adb shell settings get secure enabled_notification_listeners
 ./gradlew testDebugUnitTest
 ```
 
+
+## Echo cancellation (Phase A + Phase B)
+
+All modes are **opt-in, default OFF** (Settings → «Эхоподавление»).
+
+### Phase A — hardware mode
+
+1. Settings → Эхоподавление → «Аппаратное». The probe row tells you whether
+   `AcousticEchoCanceler.isAvailable()` on THIS device is true.
+2. Restart the service (mode change rebuilds the AudioRecord). The static
+   probe line must be visible **before** restart; the runtime attach outcome
+   lands in logcat:
+   ```
+   adb logcat -s AecDiag
+   # expected: hwAec=attached static=true
+   ```
+3. **Validate wake-word accuracy in comm mode** (the honest risk): play
+   normal-level music from any player, then say «Джарвис» 10× from 2 m.
+   Compare with AEC off. Sherpa is fairly robust, but the platform NS/AGC in
+   VOICE_COMMUNICATION mode can shift the mic characteristics — if detection
+   degrades, keep AEC off and use `pauseMusicOnWake` or Phase B.
+4. ASR check: with hardware AEC on, run a turn WHILE music plays — the
+   transcript should be clean.
+
+### Phase B — software mode (built-in canceller)
+
+What it does: an in-process NLMS adaptive filter (96 ms tail) with
+cross-correlation bulk-delay alignment, double-talk detection (adaptation
+freeze), divergence guard, and a residual suppression gate. Far-end
+references: (a) own TTS — electrical tap of the player's PCM (always on in
+software mode), (b) other apps' music — playback capture (optional,
+see below).
+
+**It is not WebRTC AEC3** — no Java-exposed APM exists on Maven (checked
+2026-09: stream-webrtc-android wraps the *framework* AEC inside its own
+pipeline and exposes no standalone APM). Expected suppression on a linear
+echo path is 20–35 dB; cheap tablet speakers add nonlinearity the filter
+cannot model. The `EchoCanceller` interface is the drop-in slot if a native
+AEC3 becomes linkable.
+
+1. Settings → Эхоподавление → «Программное», restart the service.
+2. Verify the own-TTS lane: say the wake word; while the answer SPEAKS,
+   say «Джарвис» (barge-in). With the tap working, the wake word should be
+   recognisable during playback; without it, the answer's own echo masks it.
+3. Watch convergence:
+   ```
+   adb logcat -s AecDiag
+   # MusicDiag-style: delay estimate should lock near the true path delay
+   # and stay there; errorToFloor ≈ 1 during echo-only spans.
+   ```
+4. **Music lane (optional, experimental):** Settings → «Захват музыки» →
+   «Разрешить захват звука» → system consent dialog (once per service run).
+   Start music in a player, then:
+   ```
+   adb logcat -s AecDiag | grep captureLane
+   # frames=0 while music plays ⇒ the player opted out of capture or the
+   # projection died — nothing we can do; the wake-word-through-music case
+   # then needs pauseMusicOnWake.
+   ```
+5. Recovery after moving the tablet / volume changes: the freeze-reseed
+   logic re-adapts within ~3 s; the divergence guard resets pathological
+   state (logged as `hwAec=...` never changes — watch `diverged=true`).
+
+### Follow-up window (Продолжение диалога)
+
+Settings → «Продолжение диалога»: toggle + window length 2–12 s (default 5 s,
+applies LIVE, no restart). After each spoken reply the orb switches to
+ripples + a shrinking countdown arc; just keep talking — no wake word needed.
+The window closes after silence; the wake word always works too (and
+supersedes the window).
+
+Honest limits: the VAD is energy-based — under loud music it can false-fire
+(suppress with AEC + capture lane, or pause-on-wake) or miss soft speech
+(lengthen the window). A 200 ms lead-in after each reply absorbs the TTS
+tail. Chained conversation: every spoken reply re-opens the window.
+
 ## Performance targets (to be measured on-device)
 
 | Stage | Target |

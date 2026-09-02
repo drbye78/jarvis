@@ -1,6 +1,6 @@
 # PLAN — AEC (Phase A + Phase B) & Follow-up Window Mode
 
-Status: **approved for implementation** (user re-order, 2026-09-02).
+Status: **IMPLEMENTED** (2026-09-02) — commits 0962524, eada709, cd436d9 on `feat/aec-followup`; gates: 246 pure-JVM tests + 32-file Android compile + router wiring. Device validation ladders live in RUNBOOK.
 Branch: `feat/aec-followup` off `main` (`bbe5ae2`). No backward compatibility
 required. All new features are **optional and user-controllable, default off**.
 
