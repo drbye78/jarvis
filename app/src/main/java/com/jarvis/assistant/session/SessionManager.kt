@@ -193,13 +193,20 @@ class SessionManager(
 
     /** Begin (or restart) a listening session — also the barge-in entry point. */
     fun startSession() {
+        // M1 (hardened): SUPERSEDE FIRST. The old order (cancel → flush →
+        // increment) left a micro-window where the interrupted session's
+        // guarded writes (persistCompletedToolPass / finish / reportFailure)
+        // could still read the OLD seq and legally land after the user had
+        // barged in. Incrementing first invalidates the stale session's
+        // guards immediately; anything it writes from this point is dropped
+        // deterministically.
+        val id = sessionSeq.incrementAndGet()
+        _partialTranscript.value = "" // fresh utterance, drop any stale partial
         windowJob?.cancel()
         windowJob = null
         sessionJob?.cancel()
         player.flush() // generation bump: current + queued sentences die
         focus?.onTtsFlushed() // M6: barge-in ends the duck immediately
-        val id = sessionSeq.incrementAndGet()
-        _partialTranscript.value = "" // fresh utterance, drop any stale partial
         sessionJob = scope.launch {
             // Phase 5 (M7 mitigation): a clean listening window when the user
             // opted in — external audio pauses while we listen; NO auto-resume.
