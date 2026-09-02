@@ -14,8 +14,10 @@ import timber.log.Timber
  */
 class AndroidAudioFocusAdapter(context: Context) : AudioFocusAdapter {
 
+    // Audit #12: null-safe lookup — no AudioManager means ducking is simply
+    // unavailable (every request returns false, abandon is a no-op).
     private val audioManager =
-        context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
     private val listener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
@@ -31,29 +33,33 @@ class AndroidAudioFocusAdapter(context: Context) : AudioFocusAdapter {
 
     private var request: AudioFocusRequest? = null
 
-    override fun requestDuckFocus(): Boolean = runCatching {
-        val focus = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-        val result: Int = if (Build.VERSION.SDK_INT >= 26) {
-            val req = AudioFocusRequest.Builder(focus)
-                .setOnAudioFocusChangeListener(listener)
-                .build()
-            request = req
-            audioManager.requestAudioFocus(req)
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.requestAudioFocus(listener, AudioManager.STREAM_MUSIC, focus)
-        }
-        result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-    }.getOrDefault(false)
+    override fun requestDuckFocus(): Boolean {
+        val manager = audioManager ?: return false
+        return runCatching {
+            val focus = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+            val result: Int = if (Build.VERSION.SDK_INT >= 26) {
+                val req = AudioFocusRequest.Builder(focus)
+                    .setOnAudioFocusChangeListener(listener)
+                    .build()
+                request = req
+                manager.requestAudioFocus(req)
+            } else {
+                @Suppress("DEPRECATION")
+                manager.requestAudioFocus(listener, AudioManager.STREAM_MUSIC, focus)
+            }
+            result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        }.getOrDefault(false)
+    }
 
     override fun abandonFocus() {
+        val manager = audioManager ?: return
         runCatching {
             val req = request
             if (req != null) {
-                audioManager.abandonAudioFocusRequest(req)
+                manager.abandonAudioFocusRequest(req)
             } else {
                 @Suppress("DEPRECATION")
-                audioManager.abandonAudioFocus(listener)
+                manager.abandonAudioFocus(listener)
             }
         }
         request = null

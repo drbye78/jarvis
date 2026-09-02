@@ -76,14 +76,28 @@ class SessionManager(
      */
     private val externalMusicPauser: (suspend () -> Unit)? = null,
     /** Follow-up window: feature toggle + window length (user-controllable). */
-    private var followUpEnabled: Boolean = false,
+    // @Volatile (audit #29): written from the Settings binder thread, read by
+    // the session coroutine inside maybeOpenFollowUpWindow.
+    @Volatile private var followUpEnabled: Boolean = false,
     followUpWindowMs: Long = FollowUpWindowController.DEFAULT_WINDOW_MS,
+    /** Runtime spoken phrases (i18n); defaults to the RU literals. */
+    private val phrases: SpeechPhrases = SpeechPhrases.Default,
 ) {
 
     private var sessionJob: Job? = null
     private var detectionJob: Job? = null
     private var windowJob: Job? = null
     private val sessionSeq = AtomicInteger(0)
+
+    /**
+     * Serializes every mutation of [sessionJob] / [detectionJob] /
+     * [windowJob] (audit #5: binder-thread `startSession` vs `cancelAll`
+     * could cancel a JUST-launched job or leak an uncancelled one through a
+     * plain read-modify-write race). A plain monitor is enough: the guarded
+     * blocks contain NO suspension points (monitors must never be held
+     * across suspension). Reentrant, so locked helpers may nest.
+     */
+    private val controlLock = Any()
 
     /** Follow-up window decision core (pure, injectable clock). */
     private val followUp = FollowUpWindowController(
@@ -102,8 +116,11 @@ class SessionManager(
      * Frames at window open whose onset is IGNORED — the TTS tail may still
      * be audible (and the VAD floor cold); 200 ms keeps both from firing a
      * phantom follow-up turn.
+     *
+     * @Volatile (audit #29): written by the session coroutine that opens the
+     * window, read by the window collector coroutine.
      */
-    private var followUpLeadIn = 0
+    @Volatile private var followUpLeadIn = 0
 
     /** S1: live ASR partials for the UI (UI wiring happens in a later phase). */
     private val _partialTranscript = MutableStateFlow("")
@@ -128,7 +145,9 @@ class SessionManager(
             focus = focus,
         )
 
-    private var onErrorHandler: suspend (String) -> Unit = {}
+    // @Volatile: registered once at construction, read from session
+    // coroutines on other dispatchers.
+    @Volatile private var onErrorHandler: suspend (String) -> Unit = {}
 
     fun setOnError(handler: suspend (String) -> Unit) {
         onErrorHandler = handler
@@ -159,7 +178,6 @@ class SessionManager(
 
     /** Start the wake-word collector. Idempotent. */
     fun startListening() {
-        detectionJob?.cancel()
         // M1: an init failure is emitted into a SharedFlow nobody subscribes
         // to yet, so it would be dropped silently. Read the detector state
         // synchronously and route a dead engine into the error path instead
@@ -168,26 +186,31 @@ class SessionManager(
         if (detectorState is DetectorState.Failed) {
             scope.launch {
                 // No session identity: lifecycle-scoped failure (id = null).
-                reportFailure(null, "Ошибка движка wake word: ${detectorState.reason}")
+                reportFailure(null, phrases.wakeWordEngineError(detectorState.reason))
             }
             return
         }
-        detectionJob = scope.launch {
-            wakeWordDetector.detections()
-                .gatedBy(BargeInPolicy.from(config), stateMachine.state)
-                .collect { detection ->
-                    when (detection) {
-                        is Detection.DetectorError -> {
-                            reportFailure(null, "Ошибка движка wake word: ${detection.message}")
-                        }
+        // #5: the cancel + relaunch hand-off is atomic — a concurrent
+        // cancelAll between them must not leave a stray collector running.
+        synchronized(controlLock) {
+            detectionJob?.cancel()
+            detectionJob = scope.launch {
+                wakeWordDetector.detections()
+                    .gatedBy(BargeInPolicy.from(config), stateMachine.state)
+                    .collect { detection ->
+                        when (detection) {
+                            is Detection.DetectorError -> {
+                                reportFailure(null, phrases.wakeWordEngineError(detection.message))
+                            }
 
-                        Detection.WakeWord -> {
-                            // The wake word supersedes any open follow-up window.
-                            closeFollowUpWindow(silent = true)
-                            startSession()
+                            Detection.WakeWord -> {
+                                // The wake word supersedes any open follow-up window.
+                                closeFollowUpWindow(silent = true)
+                                startSession()
+                            }
                         }
                     }
-                }
+            }
         }
     }
 
@@ -200,46 +223,67 @@ class SessionManager(
         // barged in. Incrementing first invalidates the stale session's
         // guards immediately; anything it writes from this point is dropped
         // deterministically.
-        val id = sessionSeq.incrementAndGet()
-        _partialTranscript.value = "" // fresh utterance, drop any stale partial
-        windowJob?.cancel()
-        windowJob = null
-        sessionJob?.cancel()
-        player.flush() // generation bump: current + queued sentences die
-        focus?.onTtsFlushed() // M6: barge-in ends the duck immediately
-        sessionJob = scope.launch {
-            // Phase 5 (M7 mitigation): a clean listening window when the user
-            // opted in — external audio pauses while we listen; NO auto-resume.
-            if (config.pauseMusicOnWake) {
-                externalMusicPauser?.let { pauser ->
-                    runCatching { pauser() }
-                        .onFailure { Timber.w(it, "pauseMusicOnWake failed (ignored)") }
-                }
+        //
+        // #5: the whole supersede sequence (seq bump, job cancel, flush,
+        // relaunch, sessionJob assignment) runs under [controlLock] so a
+        // concurrent cancelAll/startSession can never tear the hand-off —
+        // e.g. cancel a JUST-launched job, or null a job reference before
+        // the launch is even assigned (leaking an uncancelled coroutine).
+        val id: Int
+        synchronized(controlLock) {
+            id = sessionSeq.incrementAndGet()
+            _partialTranscript.value = "" // fresh utterance, drop any stale partial
+            windowJob?.cancel()
+            windowJob = null
+            sessionJob?.cancel()
+            player.flush() // generation bump: current + queued sentences die
+            focus?.onTtsFlushed() // M6: barge-in ends the duck immediately
+            sessionJob = scope.launch { runSession(id) }
+        }
+    }
+
+    /** Body of one session — launched under [controlLock] by [startSession]. */
+    private suspend fun CoroutineScope.runSession(id: Int) {
+        // Phase 5 (M7 mitigation): a clean listening window when the user
+        // opted in — external audio pauses while we listen; NO auto-resume.
+        if (config.pauseMusicOnWake) {
+            externalMusicPauser?.let { pauser ->
+                runCatching { pauser() }
+                    .onFailure { Timber.w(it, "pauseMusicOnWake failed (ignored)") }
             }
-            if (!networkMonitor.isCurrentlyOnline()) {
-                stateMachine.onEvent(SessionEvent.WakeWordOrBargeIn)
-                reportFailure(id, "Нет подключения к интернету. Проверьте сеть.")
-                return@launch
-            }
-            with(turnRunner) {
-                runTurn(id)
-            }
+        }
+        if (!networkMonitor.isCurrentlyOnline()) {
+            stateMachine.onEvent(SessionEvent.WakeWordOrBargeIn)
+            reportFailure(id, phrases.offline)
+            return
+        }
+        with(turnRunner) {
+            runTurn(id)
         }
     }
 
     fun cancelAll() {
-        val seqBefore = sessionSeq.get()
-        sessionJob?.cancel()
-        sessionJob = null
-        detectionJob?.cancel()
-        detectionJob = null
-        closeFollowUpWindow(silent = true)
-        _partialTranscript.value = ""
+        // Invalidate FIRST (M1 philosophy, audit #5): bumping the seq atomically
+        // with the teardown drops every guarded write an in-flight turn might
+        // still produce (finish / reportFailure / persistCompletedToolPass) —
+        // including the CancellationException path's finish(), which previously
+        // raced cancelAll and could open a follow-up window AFTER the user had
+        // stopped the assistant.
+        val seqAfterInvalidate: Int
+        synchronized(controlLock) {
+            seqAfterInvalidate = sessionSeq.incrementAndGet()
+            sessionJob?.cancel()
+            sessionJob = null
+            detectionJob?.cancel()
+            detectionJob = null
+            closeFollowUpWindow(silent = true) // reentrant: controlLock is a monitor
+            _partialTranscript.value = ""
+        }
         // M6: cancellation itself emits no terminal event, so without this the
         // machine stays wedged in THINKING/SPEAKING forever. Guarded: if a new
         // session started concurrently (seq moved on), do not stomp its fresh
         // LISTENING state back to IDLE.
-        if (sessionSeq.get() == seqBefore) {
+        if (sessionSeq.get() == seqAfterInvalidate) {
             scope.launch { stateMachine.onEvent(SessionEvent.Cancelled) }
         }
     }
@@ -288,46 +332,49 @@ class SessionManager(
      * supersede) — one catch, no dangling subscriber.
      */
     private fun startFollowUpCollector() {
-        windowJob?.cancel()
-        followUpLeadIn = LEAD_IN_SLOTS
-        followUpVad.reset()
-        _followUpProgress.value = 1f
-        windowJob = scope.launch {
-            try {
-                audioPipeline.frames.collect { frame ->
-                    if (followUpLeadIn > 0) {
-                        followUpLeadIn--
-                        // Still feeding the VAD so the noise floor adapts.
-                        followUpVad.process(frame)
-                        if (followUpLeadIn == 0) {
-                            // The lead-in may have swallowed a genuine onset
-                            // (speech already in progress when the window
-                            // opened). Forget the edge, keep the floor:
-                            // continuous speech re-fires within 2 frames.
-                            followUpVad.forceSilent()
+        // #5: windowJob hand-off under the same lock as every other job field.
+        synchronized(controlLock) {
+            windowJob?.cancel()
+            followUpLeadIn = LEAD_IN_SLOTS
+            followUpVad.reset()
+            _followUpProgress.value = 1f
+            windowJob = scope.launch {
+                try {
+                    audioPipeline.frames.collect { frame ->
+                        if (followUpLeadIn > 0) {
+                            followUpLeadIn--
+                            // Still feeding the VAD so the noise floor adapts.
+                            followUpVad.process(frame)
+                            if (followUpLeadIn == 0) {
+                                // The lead-in may have swallowed a genuine onset
+                                // (speech already in progress when the window
+                                // opened). Forget the edge, keep the floor:
+                                // continuous speech re-fires within 2 frames.
+                                followUpVad.forceSilent()
+                            }
+                        } else {
+                            followUpVad.process(frame)
+                            if (followUpVad.onset) {
+                                Timber.i("Follow-up speech detected — starting turn")
+                                stateMachine.onEvent(SessionEvent.FollowUpSpeechDetected)
+                                followUp.onVadActive()
+                                startSession() // cancels this collector via windowJob
+                                throw CancellationException("follow-up turn started")
+                            }
                         }
-                    } else {
-                        followUpVad.process(frame)
-                        if (followUpVad.onset) {
-                            Timber.i("Follow-up speech detected — starting turn")
-                            stateMachine.onEvent(SessionEvent.FollowUpSpeechDetected)
-                            followUp.onVadActive()
-                            startSession() // cancels this collector via windowJob
-                            throw CancellationException("follow-up turn started")
+                        _followUpProgress.value = followUp.remainingFraction()
+                        if (followUp.transition() != null) {
+                            Timber.i("Follow-up window expired")
+                            stateMachine.onEvent(SessionEvent.FollowUpWindowExpired)
+                            _followUpProgress.value = 0f
+                            throw CancellationException("follow-up window expired")
                         }
                     }
-                    _followUpProgress.value = followUp.remainingFraction()
-                    if (followUp.transition() != null) {
-                        Timber.i("Follow-up window expired")
-                        stateMachine.onEvent(SessionEvent.FollowUpWindowExpired)
-                        _followUpProgress.value = 0f
-                        throw CancellationException("follow-up window expired")
-                    }
+                } catch (e: CancellationException) {
+                    // Terminal of this window (trigger / expiry / superseded by
+                    // wake word, cancelAll or shutdown). Nothing to clean here —
+                    // the callers already drove the state machine.
                 }
-            } catch (e: CancellationException) {
-                // Terminal of this window (trigger / expiry / superseded by
-                // wake word, cancelAll or shutdown). Nothing to clean here —
-                // the callers already drove the state machine.
             }
         }
     }
@@ -337,14 +384,24 @@ class SessionManager(
      * (the caller is about to drive it somewhere else, e.g. LISTENING).
      */
     private fun closeFollowUpWindow(silent: Boolean) {
-        followUp.onCancelled()
-        windowJob?.cancel()
-        windowJob = null
-        _followUpProgress.value = 0f
-        if (!silent && stateMachine.currentState() == AssistantState.FOLLOW_UP_WINDOW) {
-            // onEvent is suspend (serialized transitions, upstream 9e933c5);
-            // the binder-side callers of this fun are non-suspend, so hop.
-            scope.launch { stateMachine.onEvent(SessionEvent.FollowUpWindowExpired) }
+        synchronized(controlLock) {
+            followUp.onCancelled()
+            windowJob?.cancel()
+            windowJob = null
+            _followUpProgress.value = 0f
+        }
+        if (!silent) {
+            // #17: read the machine state INSIDE the coroutine. The machine's
+            // transitions are serialized (mutex, upstream 9e933c5), so an
+            // unprotected read on this thread can be stale before the launched
+            // onEvent runs — the UI orb would clear while the machine stays
+            // wedged in FOLLOW_UP_WINDOW. Reading inside the hop keeps the
+            // check and the transition on the same serialized timeline.
+            scope.launch {
+                if (stateMachine.currentState() == AssistantState.FOLLOW_UP_WINDOW) {
+                    stateMachine.onEvent(SessionEvent.FollowUpWindowExpired)
+                }
+            }
         }
     }
 

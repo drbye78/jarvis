@@ -91,7 +91,11 @@ class PlaybackCaptureFarEndSource(
         stop()
         try {
             val projectionManager =
-                context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
+            if (projectionManager == null) {
+                Timber.tag("AecDiag").e("MediaProjectionManager unavailable — playback capture not started")
+                return
+            }
             val proj = projectionManager.getMediaProjection(resultCode, data)
             projection = proj
 

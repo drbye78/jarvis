@@ -10,9 +10,11 @@ import com.jarvis.assistant.contracts.AudioSpec
 /**
  * On-device microphone source backed by AudioRecord.
  *
- * Captures 16 kHz / mono / 16-bit PCM in 320-sample (20 ms) frames. The
- * double-buffered [read] returns REUSED internal arrays — callers must copy
- * before retaining (see [AudioPipeline]).
+ * Captures 16 kHz / mono / 16-bit PCM in 320-sample (20 ms) frames. [read]
+ * ALWAYS returns a private copy of the internal capture buffer (audit #8:
+ * the full-frame fast path used to return the reused internal array itself —
+ * safe only while every downstream consumer happened to copy; any future
+ * EchoCanceller implementation that retains its input would corrupt audio).
  *
  * AEC Phase A: the capture profile is [MicProfile] instead of a hard-wired
  * VOICE_RECOGNITION. HARDWARE mode captures through VOICE_COMMUNICATION and
@@ -90,7 +92,9 @@ class AudioRecordSource(
         useA = !useA
         val read = record.read(buf, 0, frameSize)
         if (read <= 0) return ShortArray(0)
-        return if (read == frameSize) buf else buf.copyOf(read)
+        // Audit #8: always hand out a private copy — never the reused internal
+        // buffer — so every downstream consumer may safely retain the frame.
+        return buf.copyOf(read)
     }
 
     override fun stop() {

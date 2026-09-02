@@ -197,4 +197,16 @@
     <string name="followup_hint">После каждого ответа Джарвиса микрофон остаётся активным несколько секунд — просто продолжайте говорить. Окно закрывается после паузы. Работает сразу, без перезапуска.</string>
     <string name="state_follow_up">Продолжайте говорить…</string>
     <string name="state_follow_up_full">Продолжайте говорить — я слушаю</string>
+    <!-- Runtime spoken phrases (session lane, audit PROJECT report: TurnRunner/SessionManager had
+         hardcoded Russian strings; now locale-aware like the rest of the UI) -->
+    <string name="phrase_asr_open_failed">Не удалось открыть распознавание речи.</string>
+    <string name="phrase_asr_failed">Ошибка распознавания речи.</string>
+    <string name="phrase_turn_timeout">Превышено время ожидания. Попробуйте ещё раз.</string>
+    <string name="phrase_network_error">Ошибка сети. Проверьте подключение.</string>
+    <string name="phrase_generic_error">Произошла ошибка. Попробуйте ещё раз.</string>
+    <string name="phrase_too_many_tool_steps">Слишком много шагов, останавливаюсь.</string>
+    <string name="phrase_llm_timeout">Превышено время ожидания ответа.</string>
+    <string name="phrase_llm_failed">Не удалось получить ответ от нейросети.</string>
+    <string name="phrase_offline">Нет подключения к интернету. Проверьте сеть.</string>
+    <string name="phrase_wake_engine_error">Ошибка движка wake word: %1$s</string>
 </resources>

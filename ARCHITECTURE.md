@@ -30,7 +30,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `speech/asr/` | `StreamingAsrClient` / `AsrStream` — bidi streaming ASR; server-side EOU. |
 | `speech/tts/` | `TtsClient` (SaluteSpeech, cancellable + deadline) and `TtsPlayer` contract. |
 | `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loaded asset-relative), player (generations), and the Phase-5 etiquette pair: `AssistantAudioFocus` (duck-during-TTS state machine + `AndroidAudioFocusAdapter`) and `SpeechFeedback` (spoken cascade progress). |
-| `session/` | Validated state machine; SessionManager orchestrating streaming turns; bounded tool loop. |
+| `session/` | Validated state machine; SessionManager orchestrating streaming turns (job hand-offs under a monitor, seq-guarded supersede/cancel); TurnRunner (bounded tool loop; error turns end via reportFailure only); `SpeechPhrases` — locale-aware runtime spoken phrases (RU default + resource-backed values/values-en). |
 | `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. |
 | `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure capability-gated strategy cascade (structured playFromSearch, MediaBrowser search/token lane, query-aware verification) with rich transport; `MediaBrowserGateway` + `AndroidMediaBrowserGateway` (bind/search/children); `MediaCapabilities`/`VoiceQuery`/`MediaDiagnostics` (pure models). Android adapters: `AndroidMediaGateway` (compat-wrapped controllers), `AndroidMediaBrowserGateway`. |
 | `data/` | Room: messages (id-ordered, orphan-safe windowing) + alarms. |
@@ -39,13 +39,35 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 
 ## Concurrency model
 
-- **One microphone producer** — the only thread touching AudioRecord.
+- **One microphone producer** — the only thread touching AudioRecord. Its
+  lifecycle is lock-guarded (`producerLock`): overlapping `start()` calls
+  can never launch duplicate producers, and the give-up path (50
+  consecutive read failures) leaves honest state (`running=false`,
+  `hasGivenUp()=true`) that the service watchdog revives on its 15-min ping.
 - **One wake-word actor** — engine-agnostic `process()` behind a Mutex, 512-sample re-chunking (rebuilds serialized by `reconfigureMutex`).
+  Teardown is bounded on BOTH waits: the actor join (1 s) and the
+  engine-mutex acquisition (1.5 s) — a wedged native `process()` leaks the
+  engine on purpose (releasing it mid-call is a use-after-free) instead of
+  blocking the releasing thread forever.
 - **One AudioTrack actor** — sentences serialized through a Channel; a
   generation counter makes `flush()` cancel current + queued playback.
 - **Session children** — every session coroutine is a child of `sessionJob`;
   barge-in cancels the whole tree, and each transport cancels its call
-  (OkHttp `call.cancel()`, gRPC cancellable `Context`).
+  (OkHttp `call.cancel()`, gRPC cancellable `Context`). Cancellation is
+  NEVER converted into a tool-error result (`ToolRegistry` and tools
+  rethrow `CancellationException`).
+- **Session job hand-offs under a monitor** — `SessionManager.controlLock`
+  serializes every mutation of the session/detection/window jobs (binder
+  thread vs coroutine races), with no suspension inside the guarded
+  blocks. `startSession`/`cancelAll` bump the session sequence number
+  BEFORE cancelling, so every guarded write of the interrupted turn
+  (finish / failure / persistence) is dropped deterministically — a
+  cancelled turn can never open a follow-up window afterwards.
+- **Turn terminal-event ownership** — error turns end via `reportFailure`
+  ONLY (ErrorOccurred → IDLE + error voice); clean turns end via `finish()`
+  after the TTS drain. A trailing `finish()` after `reportFailure` emits a
+  machine-rejected `LlmDone` and opens a phantom follow-up window — guarded
+  by tests.
 - **State** — a single `StateFlow` per session state machine, observed by the
   notification, ducking and UI.
 
@@ -163,9 +185,10 @@ predicted-long cascade, «Открываю плеер…» before launches) play
 the same serialized player, so barge-in kills stale phrases.
 `pauseMusicOnWake` (config, default off) pauses external audio at
 session start for a clean listening window — no auto-resume; the user
-says «продолжи». There is no acoustic echo cancellation: the wake word
-competes with speaker output, and loud music can mask it — pause-on-wake
-is the mitigation.
+says «продолжи». With AEC off (the default), the wake word competes with
+speaker output and loud music can mask it — pause-on-wake remains the
+zero-config mitigation; the AEC modes (previous section) are the opt-in
+fix.
 
 
 ## Echo cancellation (audio/aec)
@@ -189,7 +212,11 @@ device validation ladders):
   freezes adaptation during double-talk; a min-tracked residual floor drives
   the suppression gate; a divergence guard + freeze-reseed keep the filter
   honest across path changes. Bypass: far-end silent > 200 ms ⇒ bit-exact
-  passthrough.
+  passthrough. Honest trade-off: soft near-end speech within
+  `GATE_OPEN_FACTOR` (15×) of the residual floor is partially attenuated
+  during double-talk — the knob and its device-tuning guidance live in the
+  RUNBOOK. Lane-overflow drops in `FarEndMixer` are counted
+  (`Stats.droppedFarEndFrames`) and logged under `AecDiag`.
 - The canceller is intentionally an interface (`EchoCanceller`) — the
   documented drop-in slot for a native WebRTC AEC3 (none is Java-exposed on
   Maven as of 2026-09; see PLAN-AEC-FOLLOWUP §0).
@@ -238,7 +265,11 @@ controls in onboarding are framework TextViews with theme ripples
 `AlarmManager.setAlarmClock` + Room persistence + full-screen ringing
 activity (showWhenLocked/turnScreenOn), looping alarm sound + vibration,
 Dismiss/Snooze, 5-minute auto-timeout, daily re-arm, boot re-scheduling.
-Timer tool uses `setExactAndAllowWhileIdle` one-shots.
+Timer tool uses `setExactAndAllowWhileIdle` one-shots. Identity is the DB
+row id EVERYWHERE — AlarmManager request codes, the ringing notification
+id and the full-screen-intent request code — so two near-simultaneous
+alerts can never overwrite each other's notification extras. Schema v1
+(pre-release) upgrades destructively; v2→v3 is a real migration.
 
 ## Lifecycle semantics
 
@@ -249,6 +280,30 @@ Timer tool uses `setExactAndAllowWhileIdle` one-shots.
   cleared, service starts.
 - **Init failure** (e.g. missing permission) → `initialized` stays false,
   actionable notification shown, watchdog retries.
+
+## Graceful degradation matrix
+
+Every failure mode has a defined, honest fallback — none of them is a
+silent no-op or a crash:
+
+| Failure | Degradation | Recovery |
+|---|---|---|
+| Offline / captive portal | Session start speaks the offline phrase; no ASR open | NetworkMonitor re-check next wake word |
+| ASR open fails | 2 retries w/ backoff → error voice, IDLE | next wake word |
+| LLM stream dies mid-turn | error voice, IDLE; partial sentence already spoken stays | next wake word |
+| LLM times out (45 s) | error voice, IDLE | next wake word |
+| Tool throws / hangs | JSON error result (isError) within 15 s (30 s playMusic) | same turn — LLM reacts |
+| Barge-in during tool | cancellation propagates (never a fake tool error); completed subset persisted | new turn |
+| TTS sentence fails | sentence dropped, rest of the answer still speaks | next turn |
+| TTS drain exceeds 60 s | stragglers cancelled, turn ends | next turn |
+| Mic source dies (50 fails) | producer exits honestly (`hasGivenUp`), notification shows idle | watchdog revive ≤ 15 min (never while muted) |
+| Wake-word engine build fails | `DetectorState.Failed` + DetectorError → spoken reason | engine reconfigure / restart |
+| Native process() wedges | detector degrades; release() bounded (leak, not UAF/ANR) | process restart |
+| Room v1 install | destructive wipe (documented) | clean re-setup |
+| OEM null service lookup | `as?` + log/instructive JSON error everywhere | n/a (per-call) |
+| Token response w/o expiry | 5-min conservative cache + warning | refresh-on-401 |
+| Malformed SSE chunk | skipped + logged; stream continues | n/a |
+| AppGraph init fails | error TTS + idle notification, no `initialized` | watchdog retry |
 
 ## Build
 
@@ -272,10 +327,27 @@ LLM endpoint is config-driven (`JarvisConfig.llmEndpoint`) rather than hardcoded
 - `allowBackup=false` (Keystore key is device-bound; a restore can't decrypt
   the creds, so the user simply re-enters them)
 - WakeLock released on power disconnect; notification listener reads nothing
+- **No certificate pinning (deliberate, audit #31).** The Sber endpoints'
+  certificate rotation schedule is unknown to us; a pin set that goes stale
+  bricks EVERY install at once (no remote kill-switch exists in this app).
+  With per-user credentials, no secrets in the APK, HTTPS-only and
+  `usesCleartextTraffic=false`, MITM on a compromised device yields the
+  attacker the same token material the device's own user already holds.
+  Revisit ONLY if Sber publishes a pin-worthy stable intermediate CA and a
+  rotation contract.
+- **HTTP timeouts are total.** connect 10 s / read 60 s / whole-call 120 s
+  (the call cap sits above every legit use — 45 s LLM cap, per-sentence TTS
+  deadlines, 5–15 s credential probes — so it only fires on stuck calls).
 
 ## Tests
 
-JVM unit suite: wire DTOs, SSE parser, state machine,
-sentence splitter, conversation windowing, alarm times, tool registry,
-and session orchestration with fakes (including the tool-loop wire-format
-regression). Run with `./gradlew testDebugUnitTest`.
+JVM unit suite (352 tests, all green; runs in CI on every push/PR):
+wire DTOs (incl. non-null user content), SSE parser (incl. spec multi-line
+assembly), state machine, sentence splitter, conversation windowing, alarm
+times + notification identity, tool registry (incl. cancellation
+propagation), credential store, token manager, AEC DSP (delay aligner,
+resampler, mixer incl. drop accounting, NLMS convergence + gate arithmetic),
+follow-up controller + VAD, session orchestration with fakes (incl.
+error-turn terminal semantics, cancelAll mid-turn, wedged-engine release,
+producer give-up/revive), music cascade, router tool surface.
+Run with `./gradlew testDebugUnitTest`.

@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      # LFS: the Sherpa-ONNX AAR (and any .ppn/.onnx assets) are LFS-tracked.
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Gradle wrapper + build cache.
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests (full JVM suite)
+        run: ./gradlew --no-daemon testDebugUnitTest
+
+      # Compile gate for every Android-bound source the JVM suite cannot
+      # type-check (activities, service, fragments of the media lane).
+      - name: Assemble debug APK
+        run: ./gradlew --no-daemon assembleDebug

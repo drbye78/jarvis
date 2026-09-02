@@ -1,5 +1,7 @@
 # Jarvis — Voice Assistant for Android 11 / HarmonyOS 2.0+
 
+[![CI](https://github.com/drbye78/jarvis/actions/workflows/ci.yml/badge.svg)](https://github.com/drbye78/jarvis/actions/workflows/ci.yml)
+
 > **Status: in active development (pre-1.0).** Version `0.2.0`. APIs, behavior, and on-device storage may change between releases.
 
 Always-listening voice assistant for Android 11 (API 30) / HarmonyOS 2.0+ devices.
@@ -38,7 +40,9 @@ OpenAI-compatible endpoint).
    (`EncryptedSharedPreferences`) on the device — **nothing secret is ever in
    the APK or in `local.properties`**. GigaChat creds are optional if you use
    the OpenAI-compatible provider instead (also configured in Settings).
-   The UI ships in Russian and English (full `values-en`).
+   The UI ships in Russian and English (full `values-en`), and the runtime
+   spoken phrases follow the locale too (see RUNBOOK for the honest
+   English-voice caveat).
 4. **Wake word — two engines (hybrid).** In Settings → Wake word you choose
     the engine:
     - **Sherpa-ONNX (recommended, no account):** a fully on-device wake word
@@ -57,6 +61,15 @@ OpenAI-compatible endpoint).
 ```bash
 ./gradlew testDebugUnitTest
 ```
+
+CI runs the same suite plus `assembleDebug` on every push/PR (see the badge
+above — includes the Git-LFS-tracked native assets).
+
+## Upgrading from pre-release builds
+
+Installs on schema v1 (the old `alarms` table, never exported) upgrade
+destructively: alarms and chat history are wiped once, in exchange for a
+non-crashing upgrade. v2→v3 and later upgrades migrate for real.
 
 ## Building a signed release APK
 

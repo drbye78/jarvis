@@ -25,12 +25,11 @@ import kotlin.coroutines.coroutineContext
  * external lanes (TTS tap / playback capture) via
  * [com.jarvis.assistant.audio.aec.FarEndMixer].
  *
- * Fix for the ring-buffer aliasing defect: [AudioRecordSource.read] returns
- * references to two reused internal buffers, so every frame is defensively
- * copied ONCE here, and the same snapshot is shared (read-only) between the
- * ring buffer and the SharedFlow. Previously the ring buffer retained aliased
- * buffers that were overwritten by the next reads, corrupting the
- * pre-subscription recovery audio fed to ASR.
+ * One defensive copy remains here even though [AudioRecordSource.read] now
+ * always returns a private copy (audit #8): an injected [EchoCanceller] may
+ * return its OWN internal buffer (the bypass path returns the input
+ * instance), so the single copy below is what guarantees the ring buffer and
+ * the flow share one immutable snapshot that no later stage can overwrite.
  *
  * M8: ring capacity derives from [JarvisConfig.preRollMs] instead of a fixed
  * 160 ms; evictions of unread pre-roll frames are counted and logged.
@@ -53,6 +52,15 @@ class AudioPipeline(
         /** After the first eviction, re-log only every Nth eviction to avoid log floods. */
         private const val EVICTION_LOG_STRIDE = 50L
 
+        /** Park interval while the producer waits for [start] (m5). */
+        private const val PRODUCER_IDLE_PARK_MS = 10L
+
+        /** Backoff between consecutive read retries. */
+        private const val READ_RETRY_DELAY_MS = 100L
+
+        /** Consecutive read failures after which the producer gives up (#25). */
+        private const val GIVE_UP_AFTER_CONSECUTIVE_FAILURES = 50
+
         /**
          * Ring capacity in frames for a given pre-roll window. Coerced so even
          * degenerate config values keep at least one frame of headroom.
@@ -72,15 +80,37 @@ class AudioPipeline(
     val ringBuffer = AudioRingBuffer(ringCapacity(preRollMs))
 
     @Volatile private var running = false
+
+    /**
+     * True when the producer exited after [GIVE_UP_AFTER_CONSECUTIVE_FAILURES]
+     * consecutive read failures (audit #25). Distinct from a clean stop
+     * ([stop]) or a source-unavailable exit: only a give-up means "the source
+     * itself is failing repeatedly", which is exactly the condition the
+     * service watchdog should retry. Cleared by a successful [start].
+     */
+    @Volatile private var gaveUp = false
+
     private var producerJob: Job? = null
+
+    /**
+     * Serializes [producerJob] hand-offs (audit #11): [start] can be called
+     * from the init thread, a binder thread (unmute) and the power receiver,
+     * and two overlapping `ensureProducer()` calls used to race their
+     * `isActive` check and launch DUPLICATE capture coroutines (double
+     * AudioRecord reads, doubled frame flow). Monitor-only, never held
+     * across suspension.
+     */
+    private val producerLock = Any()
 
     init {
         ensureProducer()
     }
 
     private fun ensureProducer() {
-        if (producerJob?.isActive == true) return
-        producerJob = scope.launch { runProducer() }
+        synchronized(producerLock) {
+            if (producerJob?.isActive == true) return
+            producerJob = scope.launch { runProducer() }
+        }
     }
 
     private suspend fun runProducer() {
@@ -88,7 +118,7 @@ class AudioPipeline(
         var consecutiveFailures = 0
         while (coroutineContext.isActive) {
             if (!running) {
-                delay(10)
+                delay(PRODUCER_IDLE_PARK_MS)
                 continue
             }
             try {
@@ -127,37 +157,62 @@ class AudioPipeline(
                 return
             } catch (e: Exception) {
                 consecutiveFailures++
-                if (consecutiveFailures >= 50) {
+                if (consecutiveFailures >= GIVE_UP_AFTER_CONSECUTIVE_FAILURES) {
                     Timber.e(e, "AudioPipeline: %d consecutive failures, giving up", consecutiveFailures)
+                    // #25: leave observable, actionable state behind. With
+                    // running still true the pipeline REPORTED active while
+                    // producing nothing, and the only revival path (an
+                    // external start()) never fires on its own. running=false
+                    // + gaveUp=true lets the service watchdog (15-min ping)
+                    // distinguish "source is failing" from "user stopped" and
+                    // revive the capture on the next tick.
+                    running = false
+                    gaveUp = true
                     return
                 }
                 Timber.w(e, "AudioPipeline read error (attempt %d)", consecutiveFailures)
-                delay(100)
+                delay(READ_RETRY_DELAY_MS)
             }
         }
     }
 
     fun start() {
-        if (!running) {
-            running = true
-            source.start()
+        synchronized(producerLock) {
+            if (!running) {
+                // Start the SOURCE first, then flip running: if source.start()
+                // throws, isRunning() must not claim active with a dead source.
+                // The exception still propagates to the caller (unchanged
+                // contract — e.g. AppGraph.start() turns it into a retryable
+                // init failure).
+                source.start()
+                running = true
+            }
+            gaveUp = false // a successful start clears the give-up flag
         }
         // Revive a producer that exited cleanly on an unavailable source.
         ensureProducer()
     }
 
     fun stop() {
-        if (!running) return
-        running = false
-        source.stop()
+        synchronized(producerLock) {
+            if (!running) return
+            running = false
+            source.stop()
+        }
     }
 
     fun isRunning(): Boolean = running
 
+    /** True when the producer gave up after repeated read failures (audit #25). */
+    fun hasGivenUp(): Boolean = gaveUp
+
     fun release() {
-        running = false
-        source.stop()
-        producerJob?.cancel()
-        producerJob = null
+        synchronized(producerLock) {
+            running = false
+            gaveUp = false
+            source.stop()
+            producerJob?.cancel()
+            producerJob = null
+        }
     }
 }

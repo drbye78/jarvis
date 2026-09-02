@@ -1,5 +1,7 @@
 package com.jarvis.assistant.audio.aec
 
+import timber.log.Timber
+
 /**
  * Time-slotted far-end reference mixer.
  *
@@ -9,7 +11,9 @@ package com.jarvis.assistant.audio.aec
  * so the mixer paces EVERY lane to the mic's time grid:
  *
  * - Each lane owns a pending-frame queue; [onFrame] appends (bounded —
- *   overflow drops oldest, a stalled consumer must not grow without bound).
+ *   overflow drops oldest, a stalled consumer must not grow without bound;
+ *   drops are COUNTED and logged under `AecDiag`, audit #24: silent drops
+ *   used to degrade AEC quality with zero diagnostic visibility).
  * - [drainSlot] consumes exactly [slotSamples] from every lane per call —
  *   starving lanes contribute zeros (their speaker was silent), burst-fed
  *   lanes are consumed at real-time rate (no time compression).
@@ -47,6 +51,17 @@ class FarEndMixer(
     @Volatile var lastSlotEnergy: Double = 0.0
         private set
 
+    /**
+     * Far-end frames dropped by lane-overflow so far (audit #24). Lifetime
+     * total — deliberately NOT reset by [reset]: "has this mixer ever dropped"
+     * is the diagnostic question. Surface via `adb logcat -s AecDiag`.
+     */
+    @Volatile var droppedFrames: Long = 0L
+        private set
+
+    /** Last logged drop-watermark (log stride bookkeeping, guarded by [lock]). */
+    private var loggedDrops = 0L
+
     /** Ensure a far-end lane exists. Idempotent; not required before [onFrame]. */
     @Synchronized
     fun lane(id: String) {
@@ -63,9 +78,23 @@ class FarEndMixer(
             val lane = lanes.getOrPut(id) { Lane() }
             lane.pending.addLast(frame.copyOf())
             lane.pendingSamples += frame.size
+            var dropped = 0
             while (lane.pendingSamples > maxQueuedSlotsPerLane * slotSamples) {
-                val dropped = lane.pending.removeFirstOrNull() ?: break
-                lane.pendingSamples -= dropped.size
+                val d = lane.pending.removeFirstOrNull() ?: break
+                lane.pendingSamples -= d.size
+                dropped++
+            }
+            if (dropped > 0) {
+                droppedFrames += dropped
+                // First drop logs immediately; afterwards every stride.
+                if (loggedDrops == 0L || droppedFrames - loggedDrops >= DROP_LOG_STRIDE) {
+                    loggedDrops = droppedFrames
+                    Timber.tag("AecDiag").w(
+                        "far-end lane '%s' overflow: dropped oldest %d frame(s), %d total so far " +
+                            "(queue cap = %d slots) — AEC reference is starved, check the lane's producer pacing",
+                        id, dropped, droppedFrames, maxQueuedSlotsPerLane,
+                    )
+                }
             }
         }
     }
@@ -132,5 +161,8 @@ class FarEndMixer(
     private companion object {
         /** Below this a slot counts as silent (int16² scale, ~-60 dBFS). */
         const val ACTIVE_ENERGY_FLOOR = 320.0 * 4.0
+
+        /** Re-log lane drops only every Nth dropped frame (audit #24). */
+        const val DROP_LOG_STRIDE = 50L
     }
 }

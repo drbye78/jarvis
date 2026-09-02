@@ -52,6 +52,8 @@ interface EchoCanceller {
         val gateGain: Float,
         /** frameErrPower / residFloor — ≈1 means converged echo-only; ≫10 means double-talk. */
         val errorToFloor: Double?,
+        /** Far-end reference frames dropped by mixer lane overflow (audit #24). */
+        val droppedFarEndFrames: Long,
     )
 
     companion object {
@@ -72,5 +74,6 @@ object NoopEchoCanceller : EchoCanceller {
         diverged = false,
         gateGain = 1f,
         errorToFloor = null,
+        droppedFarEndFrames = 0L,
     )
 }

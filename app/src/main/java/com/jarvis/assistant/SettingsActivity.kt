@@ -142,11 +142,11 @@ class SettingsActivity : AppCompatActivity() {
         sherpaBlock = findViewById(R.id.sherpaBlock)
 
         // Pre-fill credential fields from the keystore-backed store.
-        picovoiceKey.setText(CredentialsStore.picovoiceKey)
-        saluteId.setText(CredentialsStore.saluteClientId)
-        saluteSecret.setText(CredentialsStore.saluteClientSecret)
-        gigaChatId.setText(CredentialsStore.gigaChatClientId)
-        gigaChatSecret.setText(CredentialsStore.gigaChatClientSecret)
+        picovoiceKey.setText(CredentialsStore.get().picovoiceKey)
+        saluteId.setText(CredentialsStore.get().saluteClientId)
+        saluteSecret.setText(CredentialsStore.get().saluteClientSecret)
+        gigaChatId.setText(CredentialsStore.get().gigaChatClientId)
+        gigaChatSecret.setText(CredentialsStore.get().gigaChatClientSecret)
 
         // Pre-select the current wake-word model.
         wakeWordGroup.check(
@@ -523,11 +523,11 @@ class SettingsActivity : AppCompatActivity() {
             gigaChatId: String,
             gigaChatSecret: String,
         ) {
-            CredentialsStore.picovoiceKey = picovoiceKey
-            CredentialsStore.saluteClientId = saluteId
-            CredentialsStore.saluteClientSecret = saluteSecret
-            CredentialsStore.gigaChatClientId = gigaChatId
-            CredentialsStore.gigaChatClientSecret = gigaChatSecret
+            CredentialsStore.get().picovoiceKey = picovoiceKey
+            CredentialsStore.get().saluteClientId = saluteId
+            CredentialsStore.get().saluteClientSecret = saluteSecret
+            CredentialsStore.get().gigaChatClientId = gigaChatId
+            CredentialsStore.get().gigaChatClientSecret = gigaChatSecret
             // Force a token refresh so a changed Picovoice/Sber key applies now.
             GraphHolder.graph?.tokenManager?.invalidate()
             // Apply a changed Picovoice key live to the wake-word engine (this

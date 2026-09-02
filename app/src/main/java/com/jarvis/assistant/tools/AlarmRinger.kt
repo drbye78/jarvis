@@ -92,7 +92,8 @@ object AlarmRinger {
 
     private fun startVibration(appContext: Context) {
         try {
-            val v = appContext.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            // Audit #12: null-safe lookup — skip vibration, keep the sound.
+            val v = appContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
             vibrator = v
             vibrating = true
             val pattern = longArrayOf(0, 500, 500)

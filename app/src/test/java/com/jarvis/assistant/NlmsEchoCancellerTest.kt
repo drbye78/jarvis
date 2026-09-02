@@ -135,6 +135,37 @@ class NlmsEchoCancellerTest {
     }
 
     @Test
+    fun `lane overflow drops oldest frames and counts them (audit 24)`() {
+        val m = FarEndMixer(maxQueuedSlotsPerLane = 2) // 640 samples of queue
+        val f = ShortArray(320) { 100 }
+        repeat(10) { m.onFrame("tts", f) } // 3200 samples queued → 8 dropped
+
+        assertEquals(8L, m.droppedFrames)
+        assertEquals(0L, FarEndMixer().droppedFrames) // fresh mixer starts clean
+
+        // reset() clears lane state but the lifetime drop counter is the
+        // diagnostic — it must SURVIVE a reset.
+        m.reset()
+        assertEquals(8L, m.droppedFrames)
+    }
+
+    @Test
+    fun `soft double-talk keeps more gate than the old 25x margin (audit 23)`() {
+        // The gate TARGET for an error/floor ratio: at 10x the residual floor
+        // the old GATE_OPEN_FACTOR=25 gave 0.4 (soft speech dragged toward
+        // MIN_GATE 0.15 during double-talk); at 15 it gives ~0.67.
+        assertEquals(0.667, NlmsEchoCanceller.residualGateTarget(10.0, 1.0), 0.01)
+        // At the factor itself the gate is fully open.
+        assertEquals(1.0, NlmsEchoCanceller.residualGateTarget(15.0, 1.0), 1e-9)
+        // Converged echo-only (error ≈ floor): still clamped to MIN_GATE —
+        // the suppression of pure residual echo is unchanged.
+        assertEquals(0.15, NlmsEchoCanceller.residualGateTarget(1.0, 1.0), 1e-9)
+        assertEquals(0.15, NlmsEchoCanceller.residualGateTarget(0.5, 1.0), 1e-9)
+        // No usable floor yet (startup / silent far-end): fully open.
+        assertEquals(1.0, NlmsEchoCanceller.residualGateTarget(10.0, 0.0), 1e-9)
+    }
+
+    @Test
     fun `silent far-end is bit-exact passthrough`() {
         val c = NlmsEchoCanceller(tailMs = 32)
         val gen = Lcg(3)

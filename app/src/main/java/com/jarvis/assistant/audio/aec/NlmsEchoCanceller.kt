@@ -18,8 +18,11 @@ package com.jarvis.assistant.audio.aec
  *  4. Residual suppression ("NLP-lite"): while the far-end is audible and
  *     the filter is converged, the output gain follows the smoothed
  *     error/mic power ratio with a hard floor — protects against residual
- *     echo but never gates near-end speech (double-talk raises the ratio
- *     and releases the gain).
+ *     echo. Near-end speech comfortably above the residual floor (>
+ *     GATE_OPEN_FACTOR ×, see the constant's doc) releases the gain fully;
+ *     SOFT speech within that margin is still partially attenuated toward
+ *     MIN_GATE — the honest double-talk trade-off, not a guarantee (audit
+ *     #23; on-device tuning guidance lives in the RUNBOOK).
  *  5. Far-end silent for > [BYPASS_SILENCE_MS] ⇒ bit-exact passthrough —
  *     the canceller NEVER touches near-end-only audio.
  *
@@ -118,6 +121,7 @@ class NlmsEchoCanceller(
             errorToFloor = if (residFloor < Double.MAX_VALUE && residFloor > 0 && lastFrameErrPower > 0) {
                 lastFrameErrPower / residFloor
             } else null,
+            droppedFarEndFrames = mixer.droppedFrames,
         )
 
     override fun process(micFrame: ShortArray): ShortArray {
@@ -239,8 +243,8 @@ class NlmsEchoCanceller(
         updateResidFloor(frameErrPower, farActive)
         lastFrameErrPower = frameErrPower
         val gate: Float = if (farActive || farEndSilentSlots < RELEASE_SLOTS) {
-            val target = if (residFloor < Double.MAX_VALUE && residFloor > MIN_SIGNAL_POWER) {
-                (frameErrPower / (residFloor * GATE_OPEN_FACTOR)).coerceIn(MIN_GATE, 1.0)
+            val target = if (residFloor < Double.MAX_VALUE) {
+                residualGateTarget(frameErrPower, residFloor)
             } else 1.0
             smoothGate(target)
         } else {
@@ -374,8 +378,28 @@ class NlmsEchoCanceller(
         private const val MIN_GATE = 0.15
         private const val GATE_ALPHA = 0.35
 
-        /** Error this many × the residual floor opens the gate fully (~14 dB). */
-        private const val GATE_OPEN_FACTOR = 25.0
+        /**
+         * Error this many × the residual floor opens the gate fully (~11.8 dB).
+         *
+         * Audit #23: was 25 (~14 dB), which suppressed soft near-end speech
+         * toward MIN_GATE (0.15) during double-talk — a soft-spoken user got
+         * eaten for up to the FREEZE_RESEED_SLOTS horizon. 15 keeps echo-only
+         * suppression (converged residual sits at ≈1× the floor, still clamped
+         * to MIN_GATE by [MIN_GATE]) while preserving noticeably more soft
+         * speech. Honest scope: this trades residual leakage for speech —
+         * on-device tuning guidance is in the RUNBOOK (AEC section).
+         */
+        private const val GATE_OPEN_FACTOR = 15.0
+
+        /**
+         * Pure gate target for the error/floor ratio (audit #23): open when the
+         * error towers over the converged residual floor, clamped to [MIN_GATE]
+         * when it sits at it. Extracted for unit tests.
+         */
+        internal fun residualGateTarget(frameErrPower: Double, residFloor: Double): Double {
+            if (residFloor <= MIN_SIGNAL_POWER) return 1.0
+            return (frameErrPower / (residFloor * GATE_OPEN_FACTOR)).coerceIn(MIN_GATE, 1.0)
+        }
 
         /** Residual-floor rise rate per frame while far-end is active. */
         private const val FLOOR_RISE_ALPHA = 0.005

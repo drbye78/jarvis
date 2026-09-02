@@ -4,8 +4,17 @@ import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.tools.ToolContract
 import com.jarvis.assistant.tools.ToolRegistry
 import com.jarvis.assistant.tools.AlarmTimes
+import com.jarvis.assistant.tools.AlarmReceiver
+import com.jarvis.assistant.tools.WeatherClient
+import com.jarvis.assistant.tools.WeatherTool
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -13,6 +22,20 @@ import org.junit.Test
 import java.util.Calendar
 
 class AlarmTimesTest {
+
+    @Test
+    fun `ringing notification identity is per-alert, non-negative and stable`() {
+        // Audit #20: the ringing notification id (and FSI request code) is the
+        // alert row id itself — distinct alerts must never share one, and the
+        // degenerate unknown-id (-1) must still be a legal notification id.
+        assertEquals(7, AlarmReceiver.ringingNotificationId(7))
+        assertEquals(0, AlarmReceiver.ringingNotificationId(-1))
+        assertEquals(0, AlarmReceiver.ringingNotificationId(0))
+        assertTrue(
+            "distinct alerts must have distinct notification ids",
+            AlarmReceiver.ringingNotificationId(3) != AlarmReceiver.ringingNotificationId(4),
+        )
+    }
 
     @Test
     fun `parse valid times`() {
@@ -173,5 +196,61 @@ class ToolRegistryTest {
         // Without an override the same duration still times out.
         val registry2 = ToolRegistry(listOf(HangingTool()), perToolTimeoutMs = 100)
         assertTrue(registry2.executeResult(FunctionCall("hang", "{}")).isError)
+    }
+
+    /** Audit #4: cancellation must propagate, never become a tool error. */
+    private class AwaitingTool(val entered: CompletableDeferred<Unit>) : ToolContract {
+        override val name = "awaitForever"
+        override val description = "suspends until cancelled"
+        override val parametersJson = """{"type":"object","properties":{}}"""
+        override suspend fun execute(arguments: String): String {
+            entered.complete(Unit)
+            kotlinx.coroutines.awaitCancellation()
+        }
+    }
+
+    @Test
+    fun `barge-in cancellation propagates instead of becoming an error result`() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val registry = ToolRegistry(listOf(AwaitingTool(entered)), perToolTimeoutMs = 60_000)
+        val outcome = CompletableDeferred<Throwable?>()
+        val job = launch(Dispatchers.Default) {
+            try {
+                registry.executeResult(FunctionCall("awaitForever", "{}"))
+                outcome.complete(null)
+            } catch (t: Throwable) {
+                outcome.complete(t)
+            }
+        }
+        withTimeout(5_000) { entered.await() } // tool is suspended inside execute()
+        job.cancelAndJoin() // barge-in
+        val thrown = outcome.await()
+        assertTrue("expected CancellationException to propagate, got $thrown", thrown is CancellationException)
+    }
+
+    @Test
+    fun `weather tool rethrows cancellation instead of converting it to an error`() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val tool = WeatherTool(
+            object : WeatherClient {
+                override suspend fun getWeather(location: String): String {
+                    entered.complete(Unit)
+                    kotlinx.coroutines.awaitCancellation()
+                }
+            },
+        )
+        val outcome = CompletableDeferred<Throwable?>()
+        val job = launch(Dispatchers.Default) {
+            try {
+                tool.execute("""{"location":"Москва"}""")
+                outcome.complete(null)
+            } catch (t: Throwable) {
+                outcome.complete(t)
+            }
+        }
+        withTimeout(5_000) { entered.await() }
+        job.cancelAndJoin()
+        val thrown = outcome.await()
+        assertTrue("expected CancellationException to propagate, got $thrown", thrown is CancellationException)
     }
 }

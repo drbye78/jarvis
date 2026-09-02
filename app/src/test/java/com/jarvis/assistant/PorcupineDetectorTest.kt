@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Collections
@@ -219,5 +220,67 @@ class PorcupineDetectorTest {
         assertEquals(1, released.get()) // previous engine released on swap
         detector.release()
         assertEquals(2, released.get()) // engine freed exactly once more
+    }
+
+    @Test
+    fun `release returns promptly when a native process wedges forever`() {
+        // Audit #1 regression: a native process() stuck past the join budget
+        // holds processMutex; the old unbounded withLock inside runBlocking
+        // then blocked the releasing thread FOREVER (ANR on shutdown). The
+        // mutex acquisition is now deadline-bounded — release() must return
+        // and report Released, deliberately leaking the wedged engine.
+        val entered = CountDownLatch(1)
+        val never = CountDownLatch(1)
+        val engine = object : WakeWordEngine {
+            override fun process(chunk: ShortArray): Int {
+                entered.countDown()
+                never.await() // wedged "native" call — never returns
+                return -1
+            }
+
+            override fun release() {} // must never be reached (use-after-free)
+        }
+
+        // Real dispatcher: with Unconfined the actor would run the blocking
+        // process() on THIS thread and the emit below would never return.
+        val frames = MutableSharedFlow<ShortArray>(extraBufferCapacity = 16)
+        val detector = HybridWakeWordDetector(
+            frames = frames,
+            context = null,
+            initialReq = WakeWordRequest(
+                engine = "porcupine",
+                keywordPath = "kw.ppn",
+                sherpaModelDir = null,
+                sherpaKeyword = "",
+                sensitivity = 0.6f,
+            ),
+            engineFactory = { _ -> engine },
+        )
+
+        // Wait for the engine to be live, then wedge it inside process().
+        runBlocking {
+            withTimeout(5_000) {
+                while (detector.state.value != DetectorState.Ready) delay(10)
+            }
+            frames.emit(ShortArray(512))
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+        }
+
+        // Run release() on its own thread so a regression (unbounded block)
+        // surfaces as a FAILED assertion instead of a hung test runner.
+        val releaser = Thread { detector.release() }
+        releaser.isDaemon = true
+        val t0 = System.nanoTime()
+        releaser.start()
+        try {
+            releaser.join(10_000)
+            val elapsedMs = (System.nanoTime() - t0) / 1_000_000
+            assertFalse("release() hung on a wedged engine", releaser.isAlive)
+            // Bounded by join (1 s) + engine-lock (1.5 s) budgets.
+            assertTrue("release() took ${elapsedMs}ms", elapsedMs < 6_000)
+            assertEquals(DetectorState.Released, detector.state.value)
+        } finally {
+            never.countDown() // un-wedge the daemon threads for a clean exit
+        }
     }
 }

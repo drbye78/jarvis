@@ -111,24 +111,20 @@ abstract class SseLlmClient(
                             return@launch
                         }
 
-                    while (true) {
-                        // Stop consuming mid-stream as soon as we are cancelled.
-                        ensureActive()
-                        val line = try {
-                            source.readUtf8Line() ?: break // EOF
-                        } catch (e: IOException) {
-                            if (httpCall.isCanceled()) return@launch // barge-in: stop silently
-                            close(e)
-                            return@launch
-                        }
+                    // Audit #13: events are assembled per the SSE spec — all
+                    // `data:` lines of one event (terminated by a blank line)
+                    // are joined with \n. Single-line events (GigaChat/OpenAI)
+                    // are byte-identical to the old line-at-a-time behavior.
+                    val assembler = SseParser.EventAssembler()
+                    var done = false
 
-                        val data = SseParser.dataPayload(line) ?: continue
+                    suspend fun handleEventData(data: String): Boolean {
                         if (SseParser.isDone(data)) {
                             finalizeToolCalls()
-                            break
+                            return true
                         }
 
-                        val parsed = SseParser.parseChunk(json, data) ?: continue
+                        val parsed = SseParser.parseChunk(json, data) ?: return false
 
                         parsed.text?.takeIf { it.isNotEmpty() }?.let { send(LlmChunk.Text(it)) }
 
@@ -144,7 +140,26 @@ abstract class SseLlmClient(
                             finalizeToolCalls()
                             acc = mutableMapOf() // defensive: no double-finalize
                         }
+                        return false
                     }
+
+                    while (!done) {
+                        // Stop consuming mid-stream as soon as we are cancelled.
+                        ensureActive()
+                        val line = try {
+                            source.readUtf8Line() ?: break // EOF
+                        } catch (e: IOException) {
+                            if (httpCall.isCanceled()) return@launch // barge-in: stop silently
+                            close(e)
+                            return@launch
+                        }
+
+                        val data = assembler.offer(line) ?: continue
+                        done = handleEventData(data)
+                    }
+                    // EOF tolerance: a server that omits the final blank line
+                    // still delivers its last event.
+                    assembler.flush()?.let { done = handleEventData(it) }
                     // Normal end ([DONE] or EOF): finalize, emit Done, and
                     // CLOSE the channel — the producer ending alone does not
                     // complete a channelFlow parked in awaitClose, and without

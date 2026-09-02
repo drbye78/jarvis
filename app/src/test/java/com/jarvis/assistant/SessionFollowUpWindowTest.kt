@@ -31,6 +31,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import timber.log.Timber
 
 /**
  * Follow-up window integration: the SessionManager's window collector wired
@@ -70,14 +71,33 @@ class SessionFollowUpWindowTest {
         }
     }
 
-    private class MiniHarness {
+    /** Player whose playback never completes — pins a turn in SPEAKING/drain. */
+    private class ParkingPlayer : TtsPlayer {
+        override fun play(pcm: Flow<ByteArray>): kotlinx.coroutines.Deferred<Unit> =
+            kotlinx.coroutines.CompletableDeferred()
+        override fun flush() {}
+        override fun release() {}
+    }
+
+    /** LLM that speaks one sentence, then breaks the stream (error turn). */
+    private class FailingAfterSpeechLlm : LlmClient {
+        override fun chatStream(request: ChatRequest): Flow<LlmChunk> = flow {
+            emit(LlmChunk.Text("Сначала всё было хорошо."))
+            throw java.io.IOException("upstream broke mid-stream")
+        }
+    }
+
+    private class MiniHarness(
+        parkPlayback: Boolean = false,
+        llmOverride: LlmClient? = null,
+    ) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val source = SpeechPumpAudioSource()
         val pipeline = AudioPipeline(scope, source)
         val stateMachine = SessionStateMachine()
         val asr = FakeAsrClient()
         val wake = MiniWake()
-        val llm = ScriptedLlm(
+        val llm: LlmClient = llmOverride ?: ScriptedLlm(
             mutableListOf(
                 // Every scripted turn says something → window-eligible.
                 listOf(LlmChunk.Text("Готово."), LlmChunk.Done),
@@ -89,7 +109,7 @@ class SessionFollowUpWindowTest {
             asrClient = asr,
             llm = llm,
             ttsClient = FakeTtsClient(),
-            player = FakePlayer(),
+            player = if (parkPlayback) ParkingPlayer() else FakePlayer(),
             functionRouter = object : ToolExecutor {
                 override fun getToolDefinitions() = emptyList<com.jarvis.assistant.model.ToolDefinition>()
                 override suspend fun executeResult(call: com.jarvis.assistant.model.FunctionCall) =
@@ -211,6 +231,104 @@ class SessionFollowUpWindowTest {
             h.awaitState(AssistantState.LISTENING)
         } finally {
             h.shutdown()
+        }
+    }
+
+    @Test
+    fun `cancelAll mid-turn never opens a follow-up window`() = runBlocking {
+        // Audit #5/#18 regression: cancelAll used to leave the interrupted
+        // turn's CancellationException path eligible to call finish() AFTER
+        // the cancel — opening a follow-up window (and with it a VAD collector
+        // able to restart sessions) while the user believed the assistant was
+        // stopped. cancelAll now bumps the session seq atomically with the
+        // teardown, so the stale finish() is guard-dropped.
+        val h = MiniHarness(parkPlayback = true)
+        try {
+            h.startMic()
+            h.manager.setFollowUpWindow(enabled = true, windowMs = 8_000)
+            h.runTurn("расскажи что-нибудь")
+
+            // The turn is parked in SPEAKING: playback never completes, so
+            // the drain holds the turn open until cancelAll lands.
+            h.awaitState(AssistantState.SPEAKING)
+
+            h.manager.cancelAll()
+            h.awaitState(AssistantState.IDLE)
+
+            // Long enough for a would-be window (lead-in 200 ms) to have
+            // opened if the stale finish() had landed.
+            delay(1_500)
+            assertEquals(
+                "no follow-up window may open after cancelAll",
+                AssistantState.IDLE,
+                h.stateMachine.currentState(),
+            )
+            assertEquals(0f, h.manager.followUpProgress.value, 0f)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `error turn with speech already played opens no follow-up window`() = runBlocking {
+        // Audit #18: the old error paths called reportFailure (→ IDLE + error
+        // voice) and THEN finish(spoke=true) — so a failed turn that had
+        // already spoken a sentence opened a follow-up window right after the
+        // error message. Now reportFailure is the single terminal.
+        val h = MiniHarness(llmOverride = FailingAfterSpeechLlm())
+        try {
+            h.startMic()
+            h.manager.setFollowUpWindow(enabled = true, windowMs = 8_000)
+            h.runTurn("что делаешь")
+
+            // The error voice drove the machine to IDLE.
+            h.awaitState(AssistantState.IDLE)
+
+            // Long enough for the would-be window to have opened.
+            delay(1_500)
+            assertEquals(
+                "no follow-up window may open after an error turn",
+                AssistantState.IDLE,
+                h.stateMachine.currentState(),
+            )
+            assertEquals(0f, h.manager.followUpProgress.value, 0f)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `error turn ends with exactly one terminal event - no rejected transitions`() = runBlocking {
+        // Audit #19: the old double-finish (reportFailure → IDLE, then
+        // finish → LlmDone from IDLE) was rejected by the machine and logged
+        // "Rejected transition" on every error turn, masking real issues.
+        val recorded = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val tree = object : Timber.Tree() {
+            override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
+                recorded.add(message)
+            }
+        }
+        Timber.plant(tree)
+        val h = MiniHarness(llmOverride = FailingAfterSpeechLlm())
+        try {
+            h.startMic()
+            h.runTurn("привет")
+            h.awaitState(AssistantState.IDLE)
+            delay(300) // let any would-be trailing terminal land
+            // Scoped to the #19 defect: the double-finish's LlmDone from IDLE.
+            // (A straggler sentence racing ErrorOccurred can still reject
+            // PlaybackStarted from IDLE — a pre-existing, log-level-only race
+            // that does not wedge anything and is out of this fix's scope.)
+            val rejectedLlmDone = recorded.filter {
+                it.contains("Rejected transition") && it.contains("LlmDone")
+            }
+            assertTrue(
+                "expected no rejected LlmDone transitions, got: $rejectedLlmDone",
+                rejectedLlmDone.isEmpty(),
+            )
+        } finally {
+            h.shutdown()
+            Timber.uproot(tree)
         }
     }
 }

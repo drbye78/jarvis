@@ -125,6 +125,10 @@ class WeatherTool(private val weatherClient: WeatherClient) : ToolContract {
             ?: return JsonOut.error("Missing required parameter: location")
         return try {
             weatherClient.getWeather(location)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // Audit #4: barge-in cancellation must propagate (the client's
+            // own rethrow in httpGet would otherwise be undone here).
+            throw e
         } catch (e: Exception) {
             JsonOut.error("Weather lookup failed: ${e.message}")
         }

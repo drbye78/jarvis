@@ -67,6 +67,8 @@ class TurnRunner(
     private val finish: suspend (id: Int, spoke: Boolean) -> Unit,
     private val setPartial: (String) -> Unit,
     private val isCurrentSession: (id: Int) -> Boolean,
+    /** Runtime spoken phrases (i18n); defaults to the RU literals. */
+    private val phrases: SpeechPhrases = SpeechPhrases.Default,
     /** Phase 5 (M6): duck external music while sentences play; null = off. */
     private val focus: com.jarvis.assistant.audio.AssistantAudioFocus? = null,
 ) {
@@ -89,8 +91,12 @@ class TurnRunner(
             val stream = openAsrWithRetry()
             if (stream == null) {
                 onStateEvent(SessionEvent.AsrFailed())
-                reportFailure(sessionId, "Не удалось открыть распознавание речи.")
-                finish(sessionId, false)
+                // #18/#19: reportFailure IS the terminal for error turns
+                // (ErrorOccurred -> IDLE + error voice). A trailing finish()
+                // would emit LlmDone from IDLE — rejected by the machine
+                // (log noise) and, with spoke=true, open a follow-up window
+                // after an ERROR turn. Error turns end exactly once, here.
+                reportFailure(sessionId, phrases.asrOpenFailed)
                 return
             }
 
@@ -101,8 +107,10 @@ class TurnRunner(
             when (outcome) {
                 is AsrOutcome.Final -> {
                     if (outcome.text.isBlank()) {
+                        // NoSpeech itself drives LISTENING -> IDLE; that is the
+                        // single terminal for this turn (a follow-up finish()
+                        // would emit a rejected LlmDone from IDLE).
                         onStateEvent(SessionEvent.NoSpeech)
-                        finish(sessionId, false)
                         return
                     }
                     onStateEvent(SessionEvent.SpeechCaptured) // -> THINKING
@@ -113,32 +121,31 @@ class TurnRunner(
 
                 AsrOutcome.NoSpeech -> {
                     onStateEvent(SessionEvent.NoSpeech)
-                    finish(sessionId, false)
                 }
 
                 is AsrOutcome.Failed -> {
                     onStateEvent(SessionEvent.AsrFailed(outcome.cause))
-                    reportFailure(sessionId, "Ошибка распознавания речи.")
-                    finish(sessionId, false)
+                    // reportFailure is the terminal (see the ASR-open path).
+                    reportFailure(sessionId, phrases.asrFailed)
                 }
             }
         } catch (e: TimeoutCancellationException) {
             Timber.w(e, "Session timed out")
-            reportFailure(sessionId, "Превышено время ожидания. Попробуйте ещё раз.")
-            finish(sessionId, spokeThisTurn.get())
+            reportFailure(sessionId, phrases.turnTimeout)
         } catch (e: java.io.IOException) {
             Timber.e(e, "Network error in session")
-            reportFailure(sessionId, "Ошибка сети. Проверьте подключение.")
-            finish(sessionId, spokeThisTurn.get())
+            reportFailure(sessionId, phrases.networkError)
         } catch (_: CancellationException) {
             // Barge-in / shutdown — finish first (follow-up eligibility needs
             // the spoke flag), then rethrow to preserve structured concurrency.
+            // The seq guard makes this a no-op whenever the cancellation came
+            // through startSession/cancelAll (both bump the seq first), so it
+            // can never open a window the user does not expect.
             finish(sessionId, spokeThisTurn.get())
             throw CancellationException()
         } catch (e: Exception) {
             Timber.e(e, "Session failed")
-            reportFailure(sessionId, "Произошла ошибка. Попробуйте ещё раз.")
-            finish(sessionId, spokeThisTurn.get())
+            reportFailure(sessionId, phrases.genericError)
         }
     }
 
@@ -156,7 +163,7 @@ class TurnRunner(
                 }
                 attempts++
                 Timber.w(e, "ASR open attempt $attempts failed, retrying")
-                delay(500L * attempts)
+                delay(ASR_RETRY_BACKOFF_BASE_MS * attempts)
             }
         }
     }
@@ -203,7 +210,7 @@ class TurnRunner(
             if (!result.isCompleted) {
                 stream.finish()
                 // Grace window for the server to flush its final transcript.
-                delay(3000)
+                delay(ASR_FINAL_GRACE_MS)
                 if (!result.isCompleted) {
                     result.complete(AsrOutcome.NoSpeech)
                 }
@@ -244,8 +251,11 @@ class TurnRunner(
             pass++
             if (pass > config.maxToolPasses) {
                 Timber.w("Tool loop exceeded %d passes, aborting turn", config.maxToolPasses)
-                reportFailure(id, "Слишком много шагов, останавливаюсь.")
-                break
+                // reportFailure is the terminal — no trailing finish() (the
+                // machine is already IDLE; LlmDone from IDLE is rejected and
+                // would open a follow-up window after a failed turn).
+                reportFailure(id, phrases.tooManyToolSteps)
+                return
             }
 
             val history = conversationManager.getHistoryForLLM()
@@ -316,15 +326,13 @@ class TurnRunner(
                 }
             } catch (e: TimeoutCancellationException) {
                 Timber.w(e, "LLM stream timed out")
-                reportFailure(id, "Превышено время ожидания ответа.")
-                finish(id, spokeThisTurn.get())
+                reportFailure(id, phrases.llmTimeout)
                 return
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Timber.e(e, "LLM stream failed")
-                reportFailure(id, "Не удалось получить ответ от нейросети.")
-                finish(id, spokeThisTurn.get())
+                reportFailure(id, phrases.llmFailed)
                 return
             }
 
@@ -382,10 +390,8 @@ class TurnRunner(
                 children.forEach { it.cancel() }
             }
             finish(id, spokeThisTurn.get()) // -> IDLE (or follow-up window)
-            return
+            return // the plain-answer turn ends here — no further LLM pass
         }
-
-        finish(id, spokeThisTurn.get())
     }
 
     /**
@@ -465,6 +471,12 @@ class TurnRunner(
          * phase; promote to config later if tuning is ever needed.
          */
         private const val TTS_SYNTH_PREFETCH = 2
+
+        /** PROJECT-AUDIT: named retry constants (was a bare delay(500 * n)). */
+        private const val ASR_RETRY_BACKOFF_BASE_MS = 500L
+
+        /** PROJECT-AUDIT: named grace window (was a bare delay(3000)). */
+        private const val ASR_FINAL_GRACE_MS = 3_000L
 
         private val SYSTEM_PROMPT = """
             Ты — Джарвис, голосовой ассистент на планшете Android.

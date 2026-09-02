@@ -90,4 +90,24 @@ class WireDtoTest {
         val wire = msg.toWire()
         assertNull(wire.content)
     }
+
+    @Test
+    fun `blank user content stays non-null - spec requires it (audit 22)`() {
+        // A null content on a user message makes the whole request fail
+        // HTTP 400 on spec-strict endpoints; blank is upgraded to a space.
+        val wire = Message(role = "user", content = "").toWire()
+        assertEquals(" ", wire.content)
+        assertEquals("user", wire.role)
+    }
+
+    @Test
+    fun `blank tool content stays non-null too`() {
+        val wire = Message(role = "tool", content = "", toolCallId = "c1").toWire()
+        assertEquals(" ", wire.content)
+    }
+
+    @Test
+    fun `normal user content passes through untouched`() {
+        assertEquals("включи таймер", Message(role = "user", content = "включи таймер").toWire().content)
+    }
 }

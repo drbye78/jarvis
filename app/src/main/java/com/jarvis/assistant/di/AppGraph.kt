@@ -70,6 +70,14 @@ class AppGraph(
     val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS) // long enough for SSE streams
+        // Audit #15: total-call safety net. 120 s exceeds every legitimate
+        // user of this client — the session layer caps LLM streams at
+        // config.llmTimeoutMs = 45 s, TTS has a per-sentence deadline, the
+        // credential probes use 5–15 s — so this only fires on a genuinely
+        // stuck call whose socket-level timeouts were being kept alive by
+        // trickling data. It must ALWAYS exceed llmTimeoutMs, or it would
+        // truncate legitimately slow streams.
+        .callTimeout(120, TimeUnit.SECONDS)
         .build()
 
     val saluteChannel: ManagedChannel = OkHttpChannelBuilder
@@ -199,6 +207,9 @@ class AppGraph(
 
     val stateMachine = SessionStateMachine()
 
+    /** Locale-aware spoken phrases (values / values-en, phrase_* keys). */
+    private val speechPhrases = com.jarvis.assistant.session.AndroidSpeechPhrases(appContext)
+
     val sessionManager = SessionManager(
         audioPipeline = audioPipeline,
         wakeWordDetector = wakeWordDetector,
@@ -213,6 +224,7 @@ class AppGraph(
         config = config,
         scope = scope,
         focus = audioFocus,
+        phrases = speechPhrases,
         // Follow-up window: user-controllable, default OFF; the Settings
         // card updates it live through the service binder.
         followUpEnabled = appPrefs.followUpEnabled,

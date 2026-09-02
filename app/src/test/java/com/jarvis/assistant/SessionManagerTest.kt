@@ -231,7 +231,6 @@ class PumpAudioSource : AudioSource {
 private class Harness(
     val llm: ScriptedLlm,
     val config: JarvisConfig = JarvisConfig(
-        
         maxUtteranceMs = Long.MAX_VALUE,
         ttsSentenceTimeoutMs = 5_000,
         ttsDrainTimeoutMs = 5_000,
@@ -240,6 +239,7 @@ private class Harness(
     toolsOverride: FakeTools? = null,
     ttsOverride: TtsClient? = null,
     playerOverride: TtsPlayer? = null,
+    phrasesOverride: com.jarvis.assistant.session.SpeechPhrases? = null,
 ) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val dao = FakeMessageDao()
@@ -266,6 +266,7 @@ private class Harness(
         networkMonitor = online,
         config = config,
         scope = scope,
+        phrases = phrasesOverride ?: com.jarvis.assistant.session.SpeechPhrases.Default,
     )
 
     fun shutdown() {
@@ -370,6 +371,43 @@ class SessionManagerTest {
             assertTrue(error!!.contains("интернету"))
             assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
             assertEquals(0, h.asr.streams.size) // never opened ASR
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `spoken phrases flow through the injected provider - not hardcoded`() = runBlocking {
+        // i18n wiring: with a custom provider (production passes the
+        // resource-backed AndroidSpeechPhrases), the error voice must speak
+        // the provider's string — the old hardcoded Russian literal leaked
+        // through regardless of locale.
+        val fake = object : com.jarvis.assistant.session.SpeechPhrases {
+            override val asrOpenFailed = "PHRASE-asrOpenFailed"
+            override val asrFailed = "PHRASE-asrFailed"
+            override val turnTimeout = "PHRASE-turnTimeout"
+            override val networkError = "PHRASE-networkError"
+            override val genericError = "PHRASE-genericError"
+            override val tooManyToolSteps = "PHRASE-tooManyToolSteps"
+            override val llmTimeout = "PHRASE-llmTimeout"
+            override val llmFailed = "PHRASE-llmFailed"
+            override val offline = "PHRASE-offline"
+            override fun wakeWordEngineError(reason: String) = "PHRASE-wake:$reason"
+        }
+        val llm = ScriptedLlm(mutableListOf())
+        val h = Harness(llm, phrasesOverride = fake)
+        try {
+            h.online.online = false
+            var error: String? = null
+            h.manager.setOnError { error = it }
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+
+            withTimeout(5_000) {
+                while (error == null) delay(20)
+            }
+            assertEquals("PHRASE-offline", error)
         } finally {
             h.shutdown()
         }

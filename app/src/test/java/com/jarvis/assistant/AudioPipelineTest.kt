@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -136,10 +137,67 @@ class AudioPipelineTest {
         val p = AudioPipeline(scope, source, preRollMs = 1_000)
 
         p.start()
-        // IOException path retries (delay(100)); pipeline stays up.
+        // IOException path retries (READ_RETRY_DELAY_MS); pipeline stays up.
         awaitUntil { source.reads.get() >= 3 }
+        assertTrue(p.isRunning())
+        assertTrue(!p.hasGivenUp())
+
+        p.release()
+    }
+
+    @Test
+    fun `producer gives up after repeated failures and reports it honestly`() = runBlocking {
+        // Audit #25: after GIVE_UP_AFTER_CONSECUTIVE_FAILURES consecutive
+        // non-lifecycle failures the producer must exit with running=false
+        // AND a distinct gave-up flag (so the service watchdog can revive it
+        // later); it must actually STOP reading instead of spinning forever.
+        val source = RetryThenHealSource()
+        val p = AudioPipeline(scope, source, preRollMs = 1_000)
+
+        p.start()
+        awaitUntil(timeoutMs = 20_000) { p.hasGivenUp() && !p.isRunning() }
+
+        // Reads stopped at the give-up point (50 + a bounded overshoot).
+        val frozen = source.reads.get()
+        delay(250)
+        assertEquals("reads must stop after give-up", frozen, source.reads.get())
+        assertTrue("gave up around 50 reads, was ${source.reads.get()}", source.reads.get() in 50..65)
+
+        p.release()
+    }
+
+    @Test
+    fun `start revives a pipeline that gave up`() = runBlocking {
+        val source = RetryThenHealSource()
+        val p = AudioPipeline(scope, source, preRollMs = 1_000)
+
+        p.start()
+        awaitUntil(timeoutMs = 20_000) { p.hasGivenUp() }
+
+        val received = AtomicInteger()
+        val collector = scope.launch { p.frames.collect { received.incrementAndGet() } }
+        source.healthy.set(true)
+        p.start() // watchdog-style revive
+
+        awaitUntil(timeoutMs = 5_000) { received.get() >= 3 }
+        assertTrue("revived producer must deliver frames", received.get() >= 3)
+        assertFalse("successful start clears the give-up flag", p.hasGivenUp())
         assertTrue(p.isRunning())
 
         p.release()
+        collector.cancel()
+    }
+}
+
+/** Fails with a non-lifecycle error until flipped healthy (give-up path). */
+private class RetryThenHealSource : AudioSource {
+    val reads = AtomicInteger()
+    val healthy = AtomicBoolean(false)
+    override fun start() {}
+    override fun stop() {}
+    override fun read(): ShortArray {
+        reads.incrementAndGet()
+        if (!healthy.get()) throw java.io.IOException("hardware glitch")
+        return ShortArray(320)
     }
 }

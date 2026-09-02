@@ -106,9 +106,15 @@ class OnboardingActivity : AppCompatActivity() {
                 getString(R.string.onboarding_weight_required),
                 mandatory = true,
                 check = {
-                    val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                    Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-                        pm.isIgnoringBatteryOptimizations(packageName)
+                    // Audit #12: null-safe lookups — an unavailable service
+                    // reports the row as not-done (the action button still
+                    // opens the matching settings screen) instead of crashing
+                    // the onboarding refresh loop.
+                    val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                    pm != null && (
+                        Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+                            pm.isIgnoringBatteryOptimizations(packageName)
+                        )
                 },
                 action = { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) },
             ),
@@ -122,8 +128,8 @@ class OnboardingActivity : AppCompatActivity() {
                 getString(R.string.onboarding_row_dnd),
                 getString(R.string.onboarding_weight_optional),
                 check = {
-                    val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-                    nm.isNotificationPolicyAccessGranted
+                    val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+                    nm?.isNotificationPolicyAccessGranted == true
                 },
                 action = { startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) },
             ),
@@ -131,15 +137,15 @@ class OnboardingActivity : AppCompatActivity() {
                 getString(R.string.onboarding_row_admin),
                 getString(R.string.onboarding_weight_optional),
                 check = {
-                    val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                    dpm.isAdminActive(ComponentName(this, JarvisDeviceAdmin::class.java))
+                    val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
+                    dpm?.isAdminActive(ComponentName(this, JarvisDeviceAdmin::class.java)) == true
                 },
                 action = { startActivity(addDeviceAdminIntent()) },
             ),
             PermRow(
                 getString(R.string.onboarding_row_keys),
                 getString(R.string.onboarding_weight_speech),
-                check = { CredentialsStore.hasRequiredSber() },
+                check = { CredentialsStore.get().hasMandatoryApiKeys() },
                 action = { startActivity(Intent(this, SettingsActivity::class.java)) },
             ),
         )

@@ -126,8 +126,8 @@ class MainActivity : AppCompatActivity() {
         val column = findViewById<View>(R.id.homeColumn)
         val dm: DisplayMetrics = resources.displayMetrics
         val dp = { v: Int -> (v * dm.density).toInt() }
-        if (dm.widthPixels > dp(900)) {
-            column.layoutParams = column.layoutParams.apply { width = dp(840) }
+        if (dm.widthPixels > dp(TABLET_TWO_COLUMN_MIN_WIDTH_DP)) {
+            column.layoutParams = column.layoutParams.apply { width = dp(TABLET_COLUMN_WIDTH_DP) }
         }
     }
 
@@ -189,7 +189,7 @@ class MainActivity : AppCompatActivity() {
                         voiceOrb.setState(null, micMuted)
                     }
                 }
-                delay(500)
+                delay(SERVICE_STATE_POLL_MS)
             }
         }
     }
@@ -217,5 +217,14 @@ class MainActivity : AppCompatActivity() {
         AssistantState.THINKING -> getString(R.string.state_thinking_full)
         AssistantState.SPEAKING -> getString(R.string.state_speaking_full)
         AssistantState.FOLLOW_UP_WINDOW -> getString(R.string.state_follow_up_full)
+    }
+
+    private companion object {
+        /** PROJECT-AUDIT: named layout logic — two-column comfort zone on tablets. */
+        const val TABLET_TWO_COLUMN_MIN_WIDTH_DP = 900
+        const val TABLET_COLUMN_WIDTH_DP = 840
+
+        /** UI poll for service/graph state (cheap StateFlow read). */
+        const val SERVICE_STATE_POLL_MS = 500L
     }
 }

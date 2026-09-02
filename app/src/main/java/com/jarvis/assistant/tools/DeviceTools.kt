@@ -28,7 +28,9 @@ import kotlinx.serialization.json.jsonObject
  */
 class DeviceTools(private val context: Context) {
 
-    private val audioManager get() = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    /** Null-safe audio service lookup (audit #12: `as` threw on odd OEM ROMs). */
+    private val audioManager: AudioManager?
+        get() = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
     // ------------------------------------------------------------------
     // Volume
@@ -58,9 +60,11 @@ class DeviceTools(private val context: Context) {
                 "system" -> AudioManager.STREAM_SYSTEM
                 else -> AudioManager.STREAM_MUSIC
             }
-            val max = audioManager.getStreamMaxVolume(stream)
+            val am = audioManager
+                ?: return JsonOut.error("Аудиосервис недоступен на этом устройстве")
+            val max = am.getStreamMaxVolume(stream)
             val target = (level * max + 50) / 100
-            audioManager.setStreamVolume(stream, target, 0)
+            am.setStreamVolume(stream, target, 0)
             return JsonOut.obj("status" to "ok", "level" to level)
         }
     }
@@ -249,7 +253,8 @@ class DeviceTools(private val context: Context) {
                 ?: return JsonOut.error("Invalid JSON arguments")
             val state = obj.string("state")
                 ?: return JsonOut.error("Missing required parameter: state")
-            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+                ?: return JsonOut.error("Не удалось получить доступ к сервису уведомлений")
             if (!nm.isNotificationPolicyAccessGranted) {
                 return JsonOut.error(
                     "Нет доступа к режиму «Не беспокоить». Открой настройки → Звук → Не беспокоить → доступ для приложений → Джарвис."
@@ -280,7 +285,8 @@ class DeviceTools(private val context: Context) {
         override val parametersJson = schema(emptyMap())
 
         override suspend fun execute(arguments: String): String {
-            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
+                ?: return JsonOut.error("Сервис администрирования устройства недоступен")
             val admin = ComponentName(context, JarvisDeviceAdmin::class.java)
             return if (dpm.isAdminActive(admin)) {
                 dpm.lockNow()
@@ -339,9 +345,9 @@ class DeviceTools(private val context: Context) {
         override val parametersJson = schema(emptyMap())
 
         override suspend fun execute(arguments: String): String {
-            val bm = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-            val level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-            val charging = bm.isCharging
+            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+            val level = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+            val charging = bm?.isCharging == true
             val time = java.text.SimpleDateFormat(context.getString(R.string.device_time_format), java.util.Locale.getDefault())
                 .format(java.util.Date())
             return JsonOut.obj(

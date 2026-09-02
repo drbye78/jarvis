@@ -199,4 +199,15 @@
     <string name="followup_hint">After each spoken reply the mic stays open for a few seconds — just keep talking. The window closes after a pause. Applies immediately, no restart.</string>
     <string name="state_follow_up">Keep talking…</string>
     <string name="state_follow_up_full">Keep talking — I\'m listening</string>
+    <!-- Runtime spoken phrases (session lane) -->
+    <string name="phrase_asr_open_failed">Could not start speech recognition.</string>
+    <string name="phrase_asr_failed">Speech recognition error.</string>
+    <string name="phrase_turn_timeout">Timed out. Please try again.</string>
+    <string name="phrase_network_error">Network error. Check the connection.</string>
+    <string name="phrase_generic_error">Something went wrong. Please try again.</string>
+    <string name="phrase_too_many_tool_steps">Too many steps — stopping.</string>
+    <string name="phrase_llm_timeout">The answer took too long.</string>
+    <string name="phrase_llm_failed">Could not get an answer from the model.</string>
+    <string name="phrase_offline">No internet connection. Check the network.</string>
+    <string name="phrase_wake_engine_error">Wake word engine error: %1$s</string>
 </resources>

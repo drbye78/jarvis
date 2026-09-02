@@ -37,7 +37,10 @@ private class PorcupineWakeWordEngine(
     context: Context?,
 ) : WakeWordEngine {
     private val porcupine: Porcupine = Porcupine.Builder()
-        .setAccessKey(CredentialsStore.picovoiceKey)
+        // Audit #30: peek() — a JVM test or a pre-init path constructing this
+        // engine degrades to an empty key (Porcupine's own validation then
+        // fails the build honestly) instead of crashing on a store lookup.
+        .setAccessKey(CredentialsStore.peek()?.picovoiceKey.orEmpty())
         .apply {
             if (keywordPath != null) setKeywordPath(keywordPath)
             else setKeyword(Porcupine.BuiltInKeyword.JARVIS)
@@ -123,6 +126,18 @@ class HybridWakeWordDetector(
     // L4: serialize concurrent engine builds (initial build + reconfigure) so
     // native engine builds don't pile up on top of each other.
     private val reconfigureMutex = Mutex()
+
+    private companion object {
+        /** Bounded wait for the frame actor to finish its in-flight process(). */
+        const val RELEASE_ACTOR_JOIN_MS = 1_000L
+
+        /**
+         * Bounded wait for [processMutex] during engine teardown (audit #1):
+         * a native process() wedged past the join budget holds the mutex, and
+         * an unbounded lock here would block the releasing thread forever.
+         */
+        const val RELEASE_ENGINE_LOCK_MS = 1_500L
+    }
     private var engine: WakeWordEngine? = null
     private var actorJob: Job? = null
 
@@ -166,10 +181,11 @@ class HybridWakeWordDetector(
             // (and the actor) alive instead of going deaf.
             withContext(NonCancellable) {
                 if (_state.value != DetectorState.Released && engine == null) {
+                    val store = CredentialsStore.peek()
                     val reason = when {
                         req.engine == "sherpa" ->
                             "Sherpa model failed to load (bundled assets missing)"
-                        !CredentialsStore.isInitialized || CredentialsStore.picovoiceKey.isBlank() ->
+                        store == null || !store.hasPicovoiceKey() ->
                             "Picovoice access key is missing (set it in Settings → Настройки)"
                         else -> "Wake-word model failed to load. Check that jarvis_ru.ppn is in app assets."
                     }
@@ -301,14 +317,19 @@ class HybridWakeWordDetector(
      * (or the timeout fires) and the native engine is deleted under [processMutex]
      * before we return.
      *
-     * **Why 1-second timeout?** The bound prevents an ANR if this method is called
-     * from the main thread (e.g. during foreground-service teardown on low-end
-     * devices). If the actor does not finish within 1 s, we proceed with teardown
-     * anyway — the native engine may leak, but the app stays responsive.
+     * **Bounded on BOTH waits (audit #1).** The join budget alone was not
+     * enough: a native `process()` wedged past it keeps holding
+     * [processMutex], and an unbounded `withLock` then blocked the caller
+     * forever — the very ANR the join timeout exists to prevent. The mutex
+     * acquisition now has its own deadline. If the engine is STILL busy when
+     * that deadline fires we leak it deliberately: freeing native memory
+     * while another thread is inside `process()` is a use-after-free, while a
+     * leak during process shutdown is safe. Total worst-case blocking:
+     * [RELEASE_ACTOR_JOIN_MS] + [RELEASE_ENGINE_LOCK_MS].
      *
      * **Threading contract:** Must be called from a background thread. Callers
-     * should prefer `Dispatchers.IO`. The 1-second bound is a safety net, not
-     * an invitation to call from the main thread.
+     * should prefer `Dispatchers.IO`. The bounds are a safety net, not an
+     * invitation to call from the main thread.
      */
     override fun release() {
         // Snapshot BEFORE nulling: joining via the field after clearing it
@@ -319,13 +340,28 @@ class HybridWakeWordDetector(
         runBlocking {
             // Bounded join: let an in-flight process() finish before freeing
             // the native engine (use-after-free otherwise).
-            withTimeoutOrNull(1_000) { job?.join() }
-            processMutex.withLock {
+            withTimeoutOrNull(RELEASE_ACTOR_JOIN_MS) { job?.join() }
+            // Bounded engine teardown: engine?.release() must only run while
+            // holding processMutex (no in-flight process()), but ACQUIRING
+            // the mutex is itself deadline-bounded — a wedged native call
+            // must not turn teardown into an infinite block.
+            val engineReleased = withTimeoutOrNull(RELEASE_ENGINE_LOCK_MS) {
+                processMutex.lock()
                 try {
-                    engine?.release()
-                } finally {
+                    runCatching { engine?.release() }
+                        .onFailure { Timber.w(it, "Wake-word engine release() threw (ignored)") }
                     engine = null
+                    true
+                } finally {
+                    processMutex.unlock()
                 }
+            } ?: false
+            if (!engineReleased) {
+                Timber.e(
+                    "Wake-word engine still busy after %d ms — leaking the native engine " +
+                        "on purpose (release() during an in-flight process() is a use-after-free)",
+                    RELEASE_ENGINE_LOCK_MS,
+                )
             }
             _state.value = DetectorState.Released
         }

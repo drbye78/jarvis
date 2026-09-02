@@ -84,4 +84,56 @@ class SseParserTest {
     fun `missing choices array is skipped`() {
         assertNull(SseParser.parseChunk(json, """{"object":"chat.completion.chunk"}"""))
     }
+
+    // ------------------------------------------------------------------
+    // Event assembly (audit #13): spec-compliant multi-line data payloads
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `single data line dispatches on the terminating blank line`() {
+        val a = SseParser.EventAssembler()
+        assertNull(a.offer("data: {\"a\":1}"))
+        assertEquals("""{"a":1}""", a.offer(""))
+        // Assembler is reset after dispatch.
+        assertNull(a.offer(""))
+    }
+
+    @Test
+    fun `multi-line data payloads are joined with newline per the sse spec`() {
+        val a = SseParser.EventAssembler()
+        assertNull(a.offer("data: first"))
+        assertNull(a.offer("data: second"))
+        assertNull(a.offer("data: third"))
+        assertEquals("first\nsecond\nthird", a.offer(""))
+    }
+
+    @Test
+    fun `comments and other field lines do not terminate or join the event`() {
+        val a = SseParser.EventAssembler()
+        assertNull(a.offer("data: payload"))
+        assertNull(a.offer(": keep-alive"))
+        assertNull(a.offer("event: message"))
+        assertNull(a.offer("id: 42"))
+        assertNull(a.offer("data: continued"))
+        assertEquals("payload\ncontinued", a.offer(""))
+    }
+
+    @Test
+    fun `flush emits a pending unterminated event and empties the assembler`() {
+        val a = SseParser.EventAssembler()
+        assertNull(a.offer("data: tail"))
+        assertEquals("tail", a.flush())
+        assertNull(a.flush())
+    }
+
+    @Test
+    fun `multi-line assembled payload parses as one chunk`() {
+        // A JSON payload split across two data: lines by a quirky proxy.
+        val a = SseParser.EventAssembler()
+        assertNull(a.offer("""data: {"choices":[{"delta":{"content":"При"}"""))
+        assertNull(a.offer("""data: ,"index":0}]}"""))
+        val payload = a.offer("")!!
+        val parsed = SseParser.parseChunk(json, payload)!!
+        assertEquals("При", parsed.text)
+    }
 }

@@ -2,6 +2,7 @@ package com.jarvis.assistant.tools
 
 import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.model.ToolDefinition
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -74,6 +75,13 @@ class ToolRegistry(
      * or timeout → isError=true with JSON error content. The old
      * `result.contains("\"error\"")` substring sniffing is gone — a payload
      * that merely mentions "error" is no longer misclassified.
+     *
+     * Audit #4: [CancellationException] is RETHROWN, never converted to an
+     * error result. Barge-in cancels the session mid tool call; swallowing
+     * that cancellation here would break structured concurrency (the turn
+     * would keep running and persist a bogus tool error instead of being
+     * cancelled). [TimeoutCancellationException] is re-caught first: it is
+     * a CancellationException subclass, but the per-tool timeout is OURS.
      */
     suspend fun executeResult(call: FunctionCall): ToolResult {
         val tool = tools.find { it.name == call.name }
@@ -84,6 +92,8 @@ class ToolRegistry(
         } catch (e: TimeoutCancellationException) {
             Timber.w("Tool %s timed out after %d ms", call.name, timeout)
             ToolResult("""{"error":"Tool timed out"}""", isError = true)
+        } catch (e: CancellationException) {
+            throw e // barge-in / shutdown — the session must observe it
         } catch (e: Exception) {
             Timber.e(e, "Tool %s failed", call.name)
             ToolResult("""{"error":"Tool execution failed: ${e.message}"}""", isError = true)

@@ -105,22 +105,28 @@ class JarvisForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         prefs = AppPrefs(this)
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        // Main channel: ongoing foreground notification (low importance = no sound).
-        nm.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID, getString(R.string.channel_name),
-                NotificationManager.IMPORTANCE_LOW,
+        // Audit #12: `as` on getSystemService throws on non-standard OEM ROMs
+        // where the service lookup can be null — degrade honestly instead.
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        if (nm != null) {
+            // Main channel: ongoing foreground notification (low importance = no sound).
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID, getString(R.string.channel_name),
+                    NotificationManager.IMPORTANCE_LOW,
+                )
             )
-        )
-        // Bootstrapping channel: distinct so the user can tell the assistant is
-        // still starting (visible in Settings → Notifications if needed).
-        nm.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_BOOTSTRAP, getString(R.string.channel_bootstrap_name),
-                NotificationManager.IMPORTANCE_LOW,
+            // Bootstrapping channel: distinct so the user can tell the assistant is
+            // still starting (visible in Settings → Notifications if needed).
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_BOOTSTRAP, getString(R.string.channel_bootstrap_name),
+                    NotificationManager.IMPORTANCE_LOW,
+                )
             )
-        )
+        } else {
+            Timber.e("NotificationManager unavailable — notification channels not created")
+        }
         startForegroundCompat(buildStateNotification(getString(R.string.state_idle)))
     }
 
@@ -133,6 +139,19 @@ class JarvisForegroundService : Service() {
                     Timber.i("Watchdog fired but user stopped the assistant — shutting down")
                     stopSelf()
                     return START_NOT_STICKY
+                }
+                // Audit #25: self-heal a capture pipeline that gave up after
+                // 50 consecutive read failures. hasGivenUp() is true ONLY for
+                // that case — never for a user stop/mute or the power-receiver
+                // stop — so the ping cannot silently undo a user intent.
+                val g = graph
+                if (g != null && initialized &&
+                    g.audioPipeline.hasGivenUp() &&
+                    !g.sessionManager.muted.value
+                ) {
+                    Timber.w("Watchdog: audio pipeline gave up — reviving capture")
+                    runCatching { g.audioPipeline.start() }
+                        .onFailure { Timber.w(it, "Pipeline revive failed — retrying next tick") }
                 }
             }
         }
@@ -162,8 +181,8 @@ class JarvisForegroundService : Service() {
 
         // Show bootstrapping notification immediately (main thread, fast).
         bootstrapping = true
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIFICATION_ID, buildBootstrapNotification())
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        nm?.notify(NOTIFICATION_ID, buildBootstrapNotification())
 
         // Build AppGraph on a background thread to avoid ANR on low-end
         // devices (Kirin 710A class). The foreground service must remain
@@ -195,12 +214,12 @@ class JarvisForegroundService : Service() {
 
                 // Switch back to the main notification channel now that the
                 // pipeline is live.
-                nm.notify(NOTIFICATION_ID, buildStateNotification(getString(R.string.state_idle)))
+                nm?.notify(NOTIFICATION_ID, buildStateNotification(getString(R.string.state_idle)))
 
                 // Live state -> notification text + ducking.
                 appGraph.scope.launch {
                     appGraph.stateMachine.state.collect { state ->
-                        nm.notify(NOTIFICATION_ID, buildStateNotification(stateLabel(state)))
+                        nm?.notify(NOTIFICATION_ID, buildStateNotification(stateLabel(state)))
                     }
                 }
                 appGraph.scope.launch {
@@ -226,25 +245,36 @@ class JarvisForegroundService : Service() {
                 // Complete exceptionally so any awaiter gets the failure.
                 graphReady.completeExceptionally(e)
                 // Return notification to idle so the user sees a recoverable state.
-                nm.notify(NOTIFICATION_ID, buildStateNotification(getString(R.string.state_idle)))
+                nm?.notify(NOTIFICATION_ID, buildStateNotification(getString(R.string.state_idle)))
                 speakError(getString(R.string.tts_init_failed))
             }
         }
     }
 
     private fun acquireLocks() {
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK, "Jarvis::WakeLock",
-        ).apply { setReferenceCounted(false) }
-        wakeLock.acquire()
+        // Audit #12: null-safe service lookups — a missing manager skips that
+        // lock with a log line instead of crashing init (the lateinit guards
+        // in onDestroy/release handle the never-assigned case).
+        val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        if (powerManager != null) {
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK, "Jarvis::WakeLock",
+            ).apply { setReferenceCounted(false) }
+            wakeLock.acquire()
+        } else {
+            Timber.e("PowerManager unavailable — running without the CPU wake lock")
+        }
 
-        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        @Suppress("MissingPermission")
-        wifiLock = wifiManager.createWifiLock(
-            WifiManager.WIFI_MODE_FULL_HIGH_PERF, "Jarvis::WifiLock",
-        ).apply { setReferenceCounted(false) }
-        wifiLock.acquire()
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        if (wifiManager != null) {
+            @Suppress("MissingPermission")
+            wifiLock = wifiManager.createWifiLock(
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF, "Jarvis::WifiLock",
+            ).apply { setReferenceCounted(false) }
+            wifiLock.acquire()
+        } else {
+            Timber.e("WifiManager unavailable — running without the wifi lock")
+        }
     }
 
     private fun registerPowerReceiver() {
@@ -328,7 +358,11 @@ class JarvisForegroundService : Service() {
             .setAutoCancel(true)
             .setContentIntent(intent)
             .build()
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            ?: run {
+                Timber.e("NotificationManager unavailable — permission notification not posted")
+                return
+            }
         val channel = NotificationChannel(
             CHANNEL_ERROR, getString(R.string.channel_errors),
             NotificationManager.IMPORTANCE_DEFAULT,
@@ -351,7 +385,14 @@ class JarvisForegroundService : Service() {
 
     private fun duck() {
         if (wasMusicPlaying) return
-        val msm = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+        val msm = getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
+        if (msm == null) {
+            Timber.e("MediaSessionManager unavailable — falling back to the media key")
+            dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
+            wasMusicPlaying = true
+            usedMediaKeyFallback = true
+            return
+        }
         val component = ComponentName(this, JarvisNotificationListener::class.java)
         val controllers = try {
             msm.getActiveSessions(component)
@@ -387,7 +428,11 @@ class JarvisForegroundService : Service() {
     }
 
     private fun dispatchMediaKey(keyCode: Int) {
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: run {
+                Timber.e("AudioManager unavailable — media key %d not dispatched", keyCode)
+                return
+            }
         audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
         audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
     }
@@ -409,7 +454,11 @@ class JarvisForegroundService : Service() {
     // ------------------------------------------------------------------
 
     private fun scheduleRestartAlarm() {
-        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            ?: run {
+                Timber.e("AlarmManager unavailable — watchdog NOT scheduled")
+                return
+            }
         val intent = Intent(this, JarvisForegroundService::class.java)
             .setAction(ACTION_WATCHDOG)
         val pending = PendingIntent.getService(
@@ -425,7 +474,11 @@ class JarvisForegroundService : Service() {
     }
 
     private fun cancelRestartAlarm() {
-        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            ?: run {
+                Timber.e("AlarmManager unavailable — watchdog cancel skipped")
+                return
+            }
         // Must match scheduleRestartAlarm()'s Intent (filterEquals compares
         // the action) or alarmManager.cancel is a silent no-op.
         val intent = Intent(this, JarvisForegroundService::class.java)

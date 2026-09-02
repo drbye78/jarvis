@@ -107,7 +107,13 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
         )
 
     override fun arm(id: Int, triggerAtMillis: Long, kind: String, label: String) {
-        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        // Audit #12: null-safe lookups — a missing manager logs and skips
+        // instead of crashing the scheduling call.
+        val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            ?: run {
+                Timber.e("AlarmManager unavailable — alert %d NOT armed", id)
+                return
+            }
         val operation = fireOperation(id, kind, label)
         if (kind == ScheduledAlertEntity.KIND_TIMER) {
             am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, operation)
@@ -122,7 +128,11 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
     }
 
     override fun cancel(id: Int, kind: String) {
-        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            ?: run {
+                Timber.e("AlarmManager unavailable — alert %d cancel skipped", id)
+                return
+            }
         am.cancel(fireOperation(id, kind, ""))
     }
 }
@@ -322,7 +332,19 @@ class AlarmReceiver : BroadcastReceiver() {
         const val ACTION_SNOOZE = "com.jarvis.assistant.ALARM_SNOOZE"
         const val ACTION_DISMISS = "com.jarvis.assistant.ALARM_DISMISS"
 
-        private const val ALARM_NOTIFICATION_ID = 500
+        /**
+         * Notification identity for an alert's ringing notification (audit #20).
+         *
+         * The row id IS the notification id (and the full-screen PendingIntent
+         * request code): unique per alert, positive by construction, and STABLE
+         * across the receiver's post, the ringing activity's re-post and its
+         * cancel — parity by construction, exactly like the AlarmManager
+         * request codes in SystemAlertArmer. The old fixed id (500) + request
+         * code 0 meant two near-simultaneous alarms overwrote each other's
+         * notification extras: tapping the notification launched the WRONG
+         * alert's ringing screen.
+         */
+        fun ringingNotificationId(alertId: Int): Int = alertId.coerceAtLeast(0)
 
         private fun postRingingNotification(
             context: Context,
@@ -330,7 +352,12 @@ class AlarmReceiver : BroadcastReceiver() {
             isTimer: Boolean,
             alertId: Int,
         ) {
-            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val notificationId = ringingNotificationId(alertId)
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            if (nm == null) {
+                Timber.e("NotificationManager unavailable — alarm notification not posted (id=%d)", notificationId)
+                return
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 nm.createNotificationChannel(
                     NotificationChannel(
@@ -346,8 +373,10 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra(EXTRA_ALERT_ID, alertId)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
+            // Request code = the alert row id, so FLAG_UPDATE_CURRENT updates
+            // only THIS alert's pending intent — not every concurrent alarm's.
             val fullScreen = PendingIntent.getActivity(
-                context, 0, activityIntent,
+                context, notificationId, activityIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             val notification = NotificationCompat.Builder(context, "jarvis_alarm")
@@ -358,7 +387,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 .setFullScreenIntent(fullScreen, true)
                 .setOngoing(true)
                 .build()
-            nm.notify(ALARM_NOTIFICATION_ID, notification)
+            nm.notify(notificationId, notification)
         }
         const val EXTRA_ALERT_ID = "alert_id"
         const val EXTRA_LABEL = "label"

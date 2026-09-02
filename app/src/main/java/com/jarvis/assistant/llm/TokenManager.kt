@@ -47,11 +47,13 @@ class TokenManager(
     private val config: JarvisConfig = JarvisConfig(),
     prefsOverride: SharedPreferences? = null,
     private val credentials: (scope: String) -> Pair<String, String> = { scope ->
-        CredentialsStore.run {
-            when (scope) {
-                SCOPE_GIGACHAT -> gigaChatClientId to gigaChatClientSecret
-                else -> saluteClientId to saluteClientSecret
-            }
+        // Audit #30: peek() — outside the app lifecycle (JVM tests without a
+        // constructed store) this yields empty credentials, which fail the
+        // request honestly (HTTP 401) instead of crashing a lateinit lookup.
+        val store = CredentialsStore.peek()
+        when (scope) {
+            SCOPE_GIGACHAT -> (store?.gigaChatClientId ?: "") to (store?.gigaChatClientSecret ?: "")
+            else -> (store?.saluteClientId ?: "") to (store?.saluteClientSecret ?: "")
         }
     },
 ) {
@@ -174,7 +176,19 @@ class TokenManager(
             val expiryMillis = when {
                 expiresAt != null -> expiresAt * 1000L // Sber returns epoch seconds
                 expiresIn != null -> System.currentTimeMillis() + expiresIn * 1000L
-                else -> System.currentTimeMillis() + 60 * 60 * 1000L
+                else -> {
+                    // Audit #14: the response carried NO expiry hint. The old
+                    // 1-hour blind cache could serve a long-dead token (Sber
+                    // tokens are short-lived); the conservative fallback is
+                    // 5 minutes + a warning, so an odd provider response shape
+                    // degrades into an early refresh, never a stale-token hour.
+                    Timber.w(
+                        "OAuth response carried neither expires_at nor expires_in — " +
+                            "caching token for the conservative %d ms fallback",
+                        FALLBACK_EXPIRY_MS,
+                    )
+                    System.currentTimeMillis() + FALLBACK_EXPIRY_MS
+                }
             }
 
             prefs.edit()
@@ -193,5 +207,8 @@ class TokenManager(
         const val KEY_SALUTE_EXPIRY = "salute_token_expiry"
         const val SCOPE_GIGACHAT = "GIGACHAT_API_PERS"
         const val SCOPE_SALUTE = "SALUTE_SPEECH_PERS"
+
+        /** Token cache lifetime when the OAuth response has no expiry hint (audit #14). */
+        const val FALLBACK_EXPIRY_MS = 5 * 60 * 1000L
     }
 }

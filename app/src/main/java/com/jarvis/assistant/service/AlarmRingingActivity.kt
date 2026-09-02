@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 /**
  * Full-screen alarm ringing experience (the original AlarmReceiver only
@@ -67,7 +68,7 @@ class AlarmRingingActivity : Activity() {
             finish()
         }
 
-        postRingingNotification(label)
+        postRingingNotification(label, alertId)
         AlarmRinger.start(this)
 
         if (alertId >= 0) {
@@ -83,8 +84,16 @@ class AlarmRingingActivity : Activity() {
         stopRingingNotification()
     }
 
-    private fun postRingingNotification(label: String) {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private fun postRingingNotification(label: String, alertId: Int) {
+        // Same identity the AlarmReceiver used (audit #20: per-alert id, so
+        // re-posting here UPDATES this alert's notification instead of
+        // another alert's, and the cancel below hits the same one).
+        val notificationId = AlarmReceiver.ringingNotificationId(alertId)
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        if (nm == null) {
+            Timber.e("NotificationManager unavailable — ringing notification not posted")
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
                 NotificationChannel(
@@ -94,7 +103,7 @@ class AlarmRingingActivity : Activity() {
             )
         }
         val fullScreen = PendingIntent.getActivity(
-            this, 0, intent,
+            this, notificationId, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(this, "jarvis_alarm")
@@ -105,12 +114,16 @@ class AlarmRingingActivity : Activity() {
             .setFullScreenIntent(fullScreen, true)
             .setOngoing(true)
             .build()
-        nm.notify(ALARM_NOTIFICATION_ID, notification)
+        nm.notify(notificationId, notification)
     }
 
     private fun stopRingingNotification() {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.cancel(ALARM_NOTIFICATION_ID)
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        nm.cancel(
+            AlarmReceiver.ringingNotificationId(
+                intent.getIntExtra(AlarmReceiver.EXTRA_ALERT_ID, -1),
+            ),
+        )
     }
 
     private fun currentTime(): String =
@@ -123,8 +136,6 @@ class AlarmRingingActivity : Activity() {
     }
 
     companion object {
-        private const val ALARM_NOTIFICATION_ID = 500
-
         /**
          * Application-lifetime scope shared by every ringing instance: a fast
          * dismiss destroys the activity before its launch dispatches, and the

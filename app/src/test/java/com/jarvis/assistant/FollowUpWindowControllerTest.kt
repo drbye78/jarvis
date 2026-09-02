@@ -166,7 +166,13 @@ class EnergyVadTest {
         val vad = EnergyVad()
         repeat(50) { vad.process(frame(150.0)) }
         val floorQuiet = vad.noiseFloor
-        repeat(400) { vad.process(frame(1200.0)) }
+        // Loud but BELOW the 6x onset ratio (steady music-like level): onset
+        // must NOT fire — speech would FREEZE the floor by design, and a
+        // level that trips the onset ratio is speech as far as the VAD is
+        // concerned. The slow attack then tracks the new room level within
+        // the 400-frame (~8 s) budget.
+        repeat(400) { vad.process(frame(600.0)) }
+        assertEquals("level music must stay SILENT", EnergyVad.State.SILENT, vad.state)
         assertTrue("floor must rise: ${vad.noiseFloor}", vad.noiseFloor > floorQuiet * 2)
         // Speech above the NEW floor still triggers.
         var onset = false

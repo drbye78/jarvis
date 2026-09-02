@@ -69,7 +69,9 @@ class AndroidMediaGateway(
     }.getOrDefault(false)
 
     override fun activeControllers(): List<MediaControllerHandle> = runCatching {
-        val msm = appContext.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+        // Audit #12: null-safe lookup — "no sessions" on odd OEM ROMs.
+        val msm = appContext.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
+            ?: return@runCatching emptyList<MediaControllerHandle>()
         msm.getActiveSessions(listenerComponent).mapNotNull { fw ->
             // Compat-wrap via the session token (MediaControllerCompat.wrap()
             // no longer exists in androidx.media 1.7): every handle exposes
@@ -87,7 +89,12 @@ class AndroidMediaGateway(
     }
 
     override fun dispatchMediaKey(keyCode: Int) {
-        val am = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        // Audit #12: null-safe lookup — log instead of crashing the fallback.
+        val am = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: run {
+                Timber.e("AudioManager unavailable — media key %d not dispatched", keyCode)
+                return
+            }
         runCatching {
             am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
             am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))

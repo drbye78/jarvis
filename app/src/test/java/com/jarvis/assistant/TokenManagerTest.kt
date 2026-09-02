@@ -155,4 +155,31 @@ class TokenManagerTest {
         assertEquals("tok-1", tm.getGigaChatToken()) // served from cache
         assertEquals(1, server.requestCount)
     }
+
+    @Test
+    fun `response without any expiry hint caches for the short fallback only (audit 14)`() = runBlocking {
+        // Neither expires_at nor expires_in: the old code cached for a blind
+        // hour; the conservative fallback must be ~5 minutes so an odd
+        // provider response degrades into an early refresh, not a stale token.
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"access_token":"t-no-expiry"}""")
+        )
+        val prefs = FakePrefs()
+        val tm = TokenManager(
+            null,
+            OkHttpClient(),
+            JarvisConfig(oauthEndpoint = server.url("/oauth").toString()),
+            prefs,
+        ) { _ -> "test-client" to "test-secret" }
+
+        assertEquals("t-no-expiry", tm.getGigaChatToken())
+
+        val expiry = prefs.map["gigachat_token_expiry"] as Long
+        val now = System.currentTimeMillis()
+        assertTrue(
+            "fallback expiry must stay under 6 min from now, was +${expiry - now} ms",
+            expiry in (now + 4 * 60 * 1000L)..(now + 6 * 60 * 1000L),
+        )
+    }
 }

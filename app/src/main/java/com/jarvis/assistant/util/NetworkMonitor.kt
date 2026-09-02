@@ -24,12 +24,15 @@ fun isNetworkUsable(capabilities: NetworkCapabilities): Boolean = isNetworkUsabl
 )
 
 class NetworkMonitor(context: Context) : OnlineChecker {
+    // Audit #12: null-safe lookup — a null manager reports offline (the
+    // session layer's offline gate then speaks the honest error).
     private val cm =
-        context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
 
     override fun isCurrentlyOnline(): Boolean {
-        val active = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(active) ?: return false
+        val manager = cm ?: return false
+        val active = manager.activeNetwork ?: return false
+        val caps = manager.getNetworkCapabilities(active) ?: return false
         return isNetworkUsable(caps)
     }
 }
