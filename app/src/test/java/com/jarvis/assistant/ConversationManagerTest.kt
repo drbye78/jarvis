@@ -196,4 +196,77 @@ class ConversationManagerTest {
         val history = cm.getHistoryForLLM()
         assertEquals(listOf(paired), history.single { it.role == "assistant" }.toolCalls)
     }
+
+    // ------------------------------------------------------------------
+    // Y5: char-budget trim
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `char budget drops oldest messages first`() = runBlocking {
+        val dao = FakeMessageDao()
+        // Estimate per short message: content + 12 overhead = 14. Budget 30
+        // fits exactly the two NEWEST (28) but not three (42).
+        val cm = ConversationManager(dao, maxMessages = 20, maxChars = 30)
+        cm.addMessage(Message(role = "user", content = "u1"))
+        cm.addMessage(Message(role = "assistant", content = "a1"))
+        cm.addMessage(Message(role = "user", content = "u2"))
+        cm.addMessage(Message(role = "assistant", content = "a2"))
+
+        val history = cm.getHistoryForLLM()
+        // Oldest dropped, newest kept, order oldest-first preserved.
+        assertEquals(listOf("u2", "a2"), history.map { it.content })
+    }
+
+    @Test
+    fun `oversized newest message is truncated - never dropped`() = runBlocking {
+        val dao = FakeMessageDao()
+        val cm = ConversationManager(dao, maxMessages = 20, maxChars = 200)
+        val huge = "A".repeat(2_000)
+        cm.addMessage(Message(role = "user", content = "u1"))
+        cm.addMessage(Message(role = "assistant", content = huge))
+
+        val history = cm.getHistoryForLLM()
+        // The oversized newest survives alone, truncated with the marker.
+        assertEquals(1, history.size)
+        assertEquals("assistant", history[0].role)
+        assertTrue("no truncation marker: ${history[0].content.take(80)}…", history[0].content.contains("[truncated]"))
+        // Head 70% + mark + tail 20% of the budget.
+        assertTrue(history[0].content.length < 250)
+        assertTrue(history[0].content.startsWith("AAAA"))
+        assertTrue(history[0].content.endsWith("AAAA"))
+    }
+
+    @Test
+    fun `budget cut that splits a tool pair is sanitized`() = runBlocking {
+        val dao = FakeMessageDao()
+        // Estimates: a2=14, u2=14, tool "ok"=14 (sum 42 fits), the
+        // assistant-with-calls=60 (102 total would overflow). Budget 50 →
+        // kept suffix = [tool, u2, a2]: the tool row is DANGLING (its
+        // assistant fell out of the budget) — the sanitizer must drop it,
+        // exactly like the message-count window already does.
+        val cm = ConversationManager(dao, maxMessages = 20, maxChars = 50)
+        val call = ToolCall("t1", function = FunctionCall("setAlarm", """{"time":"07:30"}"""))
+        cm.addAssistantWithToolResults(
+            assistant = Message(role = "assistant", content = "", toolCalls = listOf(call)),
+            results = listOf(Message(role = "tool", content = "ok", toolCallId = "t1")),
+        )
+        cm.addMessage(Message(role = "user", content = "u2"))
+        cm.addMessage(Message(role = "assistant", content = "a2"))
+
+        val history = cm.getHistoryForLLM()
+        assertTrue("dangling tool row survived: $history", history.none { it.role == "tool" })
+        // The newest turns survive.
+        assertTrue(history.any { it.content == "u2" })
+        assertTrue(history.any { it.content == "a2" })
+    }
+
+    @Test
+    fun `zero budget disables the trim`() = runBlocking {
+        val dao = FakeMessageDao()
+        val cm = ConversationManager(dao, maxMessages = 20, maxChars = 0)
+        repeat(6) { i -> cm.addMessage(Message(role = "user", content = "message number $i with some length")) }
+
+        val history = cm.getHistoryForLLM()
+        assertEquals(6, history.size)
+    }
 }

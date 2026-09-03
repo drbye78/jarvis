@@ -117,9 +117,36 @@ class ScriptedLlm(private val scripts: MutableList<List<LlmChunk>>) : LlmClient 
 
 class FakeTtsClient : TtsClient {
     val spoken = CopyOnWriteArrayList<String>()
+    val voices = CopyOnWriteArrayList<String>()
     override fun synthesizeStream(text: String, voice: String): Flow<ByteArray> = flow {
         spoken.add(text)
+        voices.add(voice)
         emit(ByteArray(1024))
+    }
+}
+
+/**
+ * G4 harness: an LLM that FAILS the first [failures] attempts with [error]
+ * (before emitting anything, so a retry is legal), then streams the script.
+ * With [emitBeforeFail] the failing attempt FIRST streams one text chunk —
+ * partial output that must NEVER be retried (it would duplicate speech).
+ */
+class FlakyLlm(
+    private val failures: Int,
+    private val error: Exception,
+    private val failWithPartialOutput: Boolean = false,
+) : LlmClient {
+    val attempts = java.util.concurrent.atomic.AtomicInteger(0)
+    val requests = CopyOnWriteArrayList<ChatRequest>()
+
+    override fun chatStream(request: ChatRequest): Flow<LlmChunk> = flow {
+        requests.add(request)
+        if (attempts.incrementAndGet() <= failures) {
+            if (failWithPartialOutput) emit(LlmChunk.Text("Половин"))
+            throw error
+        }
+        emit(LlmChunk.Text("Готово."))
+        emit(LlmChunk.Done)
     }
 }
 
@@ -235,11 +262,16 @@ private class Harness(
         ttsSentenceTimeoutMs = 5_000,
         ttsDrainTimeoutMs = 5_000,
         llmTimeoutMs = 10_000,
+        llmRetryBackoffMs = 50, // fast retries under test
     ),
     toolsOverride: FakeTools? = null,
     ttsOverride: TtsClient? = null,
     playerOverride: TtsPlayer? = null,
     phrasesOverride: com.jarvis.assistant.session.SpeechPhrases? = null,
+    /** G4: replaces the scripted LLM entirely (FlakyLlm retry scenarios). */
+    llmOverride: LlmClient? = null,
+    /** Y6: pinned voice for asserting the per-sentence voiceSource read. */
+    voiceSourceOverride: (() -> String)? = null,
 ) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val dao = FakeMessageDao()
@@ -257,7 +289,7 @@ private class Harness(
         audioPipeline = pipeline,
         wakeWordDetector = wake,
         asrClient = asr,
-        llm = llm,
+        llm = llmOverride ?: llm,
         ttsClient = tts,
         player = player,
         functionRouter = tools,
@@ -267,6 +299,7 @@ private class Harness(
         config = config,
         scope = scope,
         phrases = phrasesOverride ?: com.jarvis.assistant.session.SpeechPhrases.Default,
+        voiceSource = voiceSourceOverride ?: { config.ttsVoice },
     )
 
     fun shutdown() {
@@ -876,4 +909,214 @@ class SessionManagerTest {
         Json { ignoreUnknownKeys = true }
             .decodeFromString(ListSerializer(WireToolCall.serializer()), entity.toolCallsJson!!)
             .map { it.id }
+
+    // ------------------------------------------------------------------
+    // G4: transient LLM failures are retried (zero output only)
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `transient LLM failure with no output is retried and turn completes`() = runBlocking {
+        val flaky = FlakyLlm(failures = 1, error = java.io.IOException("connection reset"))
+        val h = Harness(ScriptedLlm(mutableListOf()), llmOverride = flaky)
+        try {
+            var error: String? = null
+            h.manager.setOnError { error = it }
+            h.runTurn("Привет, Джарвис")
+
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
+            }
+            // First attempt failed, retry succeeded.
+            assertEquals(2, flaky.attempts.get())
+            // No error voice: the turn completed normally.
+            assertEquals(null, error)
+            assertTrue(h.conversation.getHistoryForLLM().any { it.role == "assistant" && it.content.contains("Готово") })
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `retry budget exhausted speaks the error once`() = runBlocking {
+        // Default llmMaxRetries = 1 → two attempts total, both fail.
+        val flaky = FlakyLlm(failures = 2, error = java.io.IOException("connection reset"))
+        val h = Harness(ScriptedLlm(mutableListOf()), llmOverride = flaky)
+        try {
+            var error: String? = null
+            h.manager.setOnError { error = it }
+            h.runTurn("Привет, Джарвис")
+
+            withTimeout(5_000) { while (error == null) delay(20) }
+            assertEquals(2, flaky.attempts.get()) // no third attempt
+            assertTrue(error!!.contains("нейросети")) // phrase_llmFailed
+            assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `partial output is never retried`() = runBlocking {
+        // The failing attempt EMITS a text chunk first — a retry would
+        // duplicate spoken sentences, so the turn must fail immediately.
+        val flaky = FlakyLlm(
+            failures = 1,
+            error = java.io.IOException("mid-stream drop"),
+            failWithPartialOutput = true,
+        )
+        val h = Harness(ScriptedLlm(mutableListOf()), llmOverride = flaky)
+        try {
+            var error: String? = null
+            h.manager.setOnError { error = it }
+            h.runTurn("Привет, Джарвис")
+
+            withTimeout(5_000) { while (error == null) delay(20) }
+            assertEquals(1, flaky.attempts.get()) // never retried
+            assertTrue(error!!.contains("нейросети"))
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `HTTP 401 is fatal and not retried`() = runBlocking {
+        val flaky = FlakyLlm(failures = 1, error = com.jarvis.assistant.llm.LlmHttpException(401))
+        val h = Harness(ScriptedLlm(mutableListOf()), llmOverride = flaky)
+        try {
+            var error: String? = null
+            h.manager.setOnError { error = it }
+            h.runTurn("Привет, Джарвис")
+
+            withTimeout(5_000) { while (error == null) delay(20) }
+            assertEquals(1, flaky.attempts.get()) // 4xx: fail fast
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `HTTP 503 is transient and retried`() = runBlocking {
+        val flaky = FlakyLlm(failures = 1, error = com.jarvis.assistant.llm.LlmHttpException(503))
+        val h = Harness(ScriptedLlm(mutableListOf()), llmOverride = flaky)
+        try {
+            var error: String? = null
+            h.manager.setOnError { error = it }
+            h.runTurn("Привет, Джарвис")
+
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
+            }
+            assertEquals(2, flaky.attempts.get()) // 5xx: one retry
+            assertEquals(null, error)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // G3: turn activity drives the THINKING status pill
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `tool run publishes ToolRunning and clears at turn end`() = runBlocking {
+        val llm = ScriptedLlm(
+            mutableListOf(
+                listOf( // pass 1: tool call
+                    LlmChunk.FunctionCallComplete(
+                        ToolCall("call_1", function = FunctionCall("setAlarm", """{"time":"07:30"}"""))
+                    ),
+                    LlmChunk.Done,
+                ),
+                listOf( // pass 2: final answer
+                    LlmChunk.Text("Будильник поставлен."),
+                    LlmChunk.Done,
+                ),
+            )
+        )
+        val h = Harness(llm)
+        try {
+            val seen = CopyOnWriteArrayList<com.jarvis.assistant.session.TurnActivity?>()
+            val job = launch {
+                h.manager.turnActivity.collect { seen.add(it) }
+            }
+            // StateFlow emits its current value to a new subscriber — the
+            // first [null] proves the collector is live BEFORE the turn runs.
+            withTimeout(5_000) { while (seen.isEmpty()) delay(10) }
+            h.runTurn("поставь будильник на семь тридцать")
+
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
+            }
+            job.cancel()
+            // Thinking precedes the tool label; the label carries the tool name.
+            assertTrue("no Thinking seen: $seen", seen.any { it is com.jarvis.assistant.session.TurnActivity.Thinking })
+            val tool = seen.filterIsInstance<com.jarvis.assistant.session.TurnActivity.ToolRunning>()
+            assertEquals(1, tool.size)
+            assertEquals("setAlarm", tool[0].tool)
+            // Cleared (null) by the terminal.
+            assertEquals(null, seen.last())
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `failed turn clears the activity label`() = runBlocking {
+        val flaky = FlakyLlm(failures = 2, error = java.io.IOException("dead"))
+        val h = Harness(ScriptedLlm(mutableListOf()), llmOverride = flaky)
+        try {
+            var error: String? = null
+            h.manager.setOnError { error = it }
+            h.runTurn("Привет, Джарвис")
+
+            withTimeout(5_000) { while (error == null) delay(20) }
+            assertEquals(null, h.manager.turnActivity.value)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // G1 + Y6: composed system prompt and per-sentence voice
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `request carries the composed time-aware system prompt`() = runBlocking {
+        val llm = ScriptedLlm(
+            mutableListOf(listOf(LlmChunk.Text("Готово."), LlmChunk.Done))
+        )
+        val h = Harness(llm)
+        try {
+            h.runTurn("Привет, Джарвис")
+            withTimeout(5_000) {
+                while (llm.requests.isEmpty()) delay(20)
+            }
+            val first = llm.requests[0].messages.first()
+            assertEquals("system", first.role)
+            // Identity + live time context + policies all present.
+            assertTrue(first.content.contains("Ты — Джарвис"))
+            assertTrue(Regex("Сейчас \\d{2}:\\d{2},").containsMatchIn(first.content))
+            assertTrue(first.content.contains("уточняющий вопрос"))
+            assertTrue(first.content.contains("playMusic"))
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `voice is resolved per sentence from the injected source`() = runBlocking {
+        val llm = ScriptedLlm(
+            mutableListOf(listOf(LlmChunk.Text("Готово."), LlmChunk.Done))
+        )
+        val h = Harness(llm, voiceSourceOverride = { "Anton" })
+        try {
+            h.runTurn("Привет, Джарвис")
+            withTimeout(5_000) {
+                while ((h.tts as FakeTtsClient).spoken.isEmpty() && h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
+            }
+            assertEquals(listOf("Anton"), (h.tts as FakeTtsClient).voices)
+        } finally {
+            h.shutdown()
+        }
+    }
 }

@@ -49,6 +49,15 @@
   takes effect after the next service restart (Стоп → Запустить on the home
   screen) — the provider client is built once, when the service starts.
 
+### "Модель иногда подвисает / ошибка сети, но со второй попытки отвечает"
+That is the built-in transient-failure retry doing its job: a failed LLM pass
+that produced **zero output** is retried once automatically (connection
+resets, HTTP 5xx/429, zero-output timeouts). It is NOT retried when partial
+output was already spoken (that would duplicate sentences), and 4xx
+(bad credentials) fails immediately — see ARCHITECTURE.md «LLM
+transient-failure retry». A turn still fails with the spoken error phrase
+after the retry budget is exhausted; the user just re-invokes the wake word.
+
 ### "Не удалось проверить: нет связи с сервером" (settings validation)
 The settings panel probes the Sber OAuth endpoint live while you type (debounced,
 ~1 probe per pause, plus the **«Проверить ключи»** button and a probe on every
@@ -276,6 +285,18 @@ Honest limits: the VAD is energy-based — under loud music it can false-fire
 (suppress with AEC + capture lane, or pause-on-wake) or miss soft speech
 (lengthen the window). A 200 ms lead-in after each reply absorbs the TTS
 tail. Chained conversation: every spoken reply re-opens the window.
+
+### Voice selection (Голос)
+
+Settings → «Голос»: Mila (`May_24000`) is the only voice ID verified against
+the Salute synthesis pool by this project; the card also accepts a free-text
+Salute voice ID for advanced users. «Проверить голос» speaks one sample
+sentence through the real synthesis+player lane (requires a running
+assistant — otherwise the toast says so). The voice is resolved **per spoken
+sentence**, so a change applies immediately — no service restart. If a custom
+ID produces silence or a logcat `TTS stream error`, the ID is not in the pool
+for your account/endpoint: return to Mila. The system prompt language
+(Russian) does not change with the voice.
 
 ## Performance targets (to be measured on-device)
 

@@ -16,6 +16,7 @@ import okio.BufferedSource
 import okio.ForwardingSource
 import okio.buffer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.After
 import org.junit.Before
@@ -121,5 +122,24 @@ class SseLlmClientTest {
         assertTrue(error != null)
         assertTrue(error!!.message!!.contains("HTTP 500"))
         assertEquals("body not closed on error exit", 1, counter.closedCount.get())
+    }
+
+    @Test
+    fun `http error is TYPED so the session lane can classify it`() = runBlocking {
+        // G4: 5xx must be distinguishable from 4xx WITHOUT message parsing —
+        // the retry predicate depends on it.
+        server.enqueue(MockResponse().setResponseCode(503).setBody("overloaded"))
+        val llm5xx = clientWith(CloseCountingInterceptor())
+        val error5xx = runCatching { llm5xx.chatStream(request()).toList() }.exceptionOrNull()
+        assertTrue(error5xx is com.jarvis.assistant.llm.LlmHttpException)
+        assertEquals(503, (error5xx as com.jarvis.assistant.llm.LlmHttpException).code)
+        assertTrue(error5xx.isTransient)
+
+        server.enqueue(MockResponse().setResponseCode(401).setBody("unauthorized"))
+        val llm4xx = clientWith(CloseCountingInterceptor())
+        val error4xx = runCatching { llm4xx.chatStream(request()).toList() }.exceptionOrNull()
+        assertTrue(error4xx is com.jarvis.assistant.llm.LlmHttpException)
+        assertEquals(401, (error4xx as com.jarvis.assistant.llm.LlmHttpException).code)
+        assertFalse(error4xx.isTransient)
     }
 }

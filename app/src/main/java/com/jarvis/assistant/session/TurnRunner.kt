@@ -3,6 +3,7 @@ package com.jarvis.assistant.session
 import com.jarvis.assistant.audio.AudioPipeline
 import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.llm.LlmClient
+import com.jarvis.assistant.llm.LlmHttpException
 import com.jarvis.assistant.llm.ToolCallAccumulator
 import com.jarvis.assistant.model.AsrOutcome
 import com.jarvis.assistant.model.ChatRequest
@@ -71,6 +72,12 @@ class TurnRunner(
     private val phrases: SpeechPhrases = SpeechPhrases.Default,
     /** Phase 5 (M6): duck external music while sentences play; null = off. */
     private val focus: com.jarvis.assistant.audio.AssistantAudioFocus? = null,
+    /** G1: composed per-pass system prompt (identity + time + policies). */
+    private val systemPrompt: SystemPromptProvider = TimeAwareSystemPrompt(),
+    /** G3: what the turn engine is doing while THINKING (status pill). */
+    private val onActivity: (TurnActivity?) -> Unit = {},
+    /** Y6: TTS voice resolved per sentence so Settings changes apply live. */
+    private val voiceSource: () -> String = { config.ttsVoice },
 ) {
     /** m10: bounds how many sentence jobs hold a TTS synthesis/playback slot. */
     private val ttsSynthPermits = Semaphore(TTS_SYNTH_PREFETCH)
@@ -261,7 +268,7 @@ class TurnRunner(
             val history = conversationManager.getHistoryForLLM()
             val tools = functionRouter.getToolDefinitions()
             val request = ChatRequest(
-                messages = listOf(Message.system(SYSTEM_PROMPT)) + history,
+                messages = listOf(Message.system(systemPrompt.build())) + history,
                 tools = tools,
                 model = null, // profile default
                 temperature = config.gigaChatTemperature,
@@ -273,67 +280,94 @@ class TurnRunner(
             val toolAccum = mutableMapOf<Int, ToolCallAccumulator>()
             val toolCallsPending = mutableListOf<ToolCall>()
 
-            try {
-                withTimeout(config.llmTimeoutMs) {
-                    llm.chatStream(request).collect { chunk ->
-                        when (chunk) {
-                            is LlmChunk.Text -> {
-                                assistantText.append(chunk.text)
-                                // Launch on the SESSION scope, NOT the enclosing
-                                // withTimeout(llm) scope: withTimeout's block is
-                                // `suspend CoroutineScope.() -> T`, so an unqualified
-                                // launch here makes sentences CHILDREN OF THE TIMEOUT
-                                // job, which then cannot complete while audio plays
-                                // (structured-concurrency completion waits for
-                                // children) — the drain below would never run and
-                                // the LLM timeout would kill mid-playback audio.
-                                sentenceBuffer.append(chunk.text).forEach { sentence ->
-                                    this@processLlm.launch { speakSentence(sentence) }
-                                }
-                            }
+            // G3: THINKING begins — the pill leaves the generic label only
+            // when a finer-grained tool label takes over below.
+            onActivity(TurnActivity.Thinking)
 
-                            is LlmChunk.FunctionCallDelta -> {
-                                val a = toolAccum.getOrPut(chunk.index) {
-                                    ToolCallAccumulator(chunk.index)
+            // G4: transient-failure retry. Safe ONLY while the stream emitted
+            // nothing: a retried stream that had already produced chunks would
+            // duplicate spoken sentences. Zero-output timeouts / IOExceptions /
+            // 5xx-429 are transient; 4xx is fatal; partial output is never retried.
+            val emittedAnything = java.util.concurrent.atomic.AtomicBoolean(false)
+            var llmAttempts = 0
+            var collected = false
+            while (!collected) {
+                try {
+                    withTimeout(config.llmTimeoutMs) {
+                        llm.chatStream(request).collect { chunk ->
+                            emittedAnything.set(true)
+                            when (chunk) {
+                                is LlmChunk.Text -> {
+                                    assistantText.append(chunk.text)
+                                    // Launch on the SESSION scope, NOT the enclosing
+                                    // withTimeout(llm) scope: withTimeout's block is
+                                    // `suspend CoroutineScope.() -> T`, so an unqualified
+                                    // launch here makes sentences CHILDREN OF THE TIMEOUT
+                                    // job, which then cannot complete while audio plays
+                                    // (structured-concurrency completion waits for
+                                    // children) — the drain below would never run and
+                                    // the LLM timeout would kill mid-playback audio.
+                                    sentenceBuffer.append(chunk.text).forEach { sentence ->
+                                        this@processLlm.launch { speakSentence(sentence) }
+                                    }
                                 }
-                                if (chunk.name != null) a.name = chunk.name
-                                a.args.append(chunk.argsDelta)
-                            }
 
-                            is LlmChunk.FunctionCallComplete -> {
-                                toolCallsPending.add(chunk.call)
-                            }
-
-                            LlmChunk.Done -> {
-                                sentenceBuffer.flushRemaining()?.let { rest ->
-                                    this@processLlm.launch { speakSentence(rest) }
+                                is LlmChunk.FunctionCallDelta -> {
+                                    val a = toolAccum.getOrPut(chunk.index) {
+                                        ToolCallAccumulator(chunk.index)
+                                    }
+                                    if (chunk.name != null) a.name = chunk.name
+                                    a.args.append(chunk.argsDelta)
                                 }
-                                // Fallback for providers without Complete events.
-                                if (toolCallsPending.isEmpty() && toolAccum.isNotEmpty()) {
-                                    toolAccum.toSortedMap().forEach { (_, a) ->
-                                        val name = a.name ?: return@forEach
-                                        toolCallsPending.add(
-                                            ToolCall(
-                                                id = a.id ?: java.util.UUID.randomUUID().toString(),
-                                                function = FunctionCall(name, a.args.toString()),
+
+                                is LlmChunk.FunctionCallComplete -> {
+                                    toolCallsPending.add(chunk.call)
+                                }
+
+                                LlmChunk.Done -> {
+                                    sentenceBuffer.flushRemaining()?.let { rest ->
+                                        this@processLlm.launch { speakSentence(rest) }
+                                    }
+                                    // Fallback for providers without Complete events.
+                                    if (toolCallsPending.isEmpty() && toolAccum.isNotEmpty()) {
+                                        toolAccum.toSortedMap().forEach { (_, a) ->
+                                            val name = a.name ?: return@forEach
+                                            toolCallsPending.add(
+                                                ToolCall(
+                                                    id = a.id ?: java.util.UUID.randomUUID().toString(),
+                                                    function = FunctionCall(name, a.args.toString()),
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                    collected = true
+                } catch (e: TimeoutCancellationException) {
+                    if (shouldRetryLlm(e, emittedAnything.get(), llmAttempts)) {
+                        llmAttempts++
+                        Timber.w(e, "LLM attempt %d timed out with no output, retrying", llmAttempts)
+                        delay(config.llmRetryBackoffMs * llmAttempts)
+                        continue
+                    }
+                    Timber.w(e, "LLM stream timed out after $llmAttempts retries")
+                    reportFailure(id, phrases.llmTimeout)
+                    return
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (shouldRetryLlm(e, emittedAnything.get(), llmAttempts)) {
+                        llmAttempts++
+                        Timber.w(e, "LLM attempt %d failed with no output, retrying", llmAttempts)
+                        delay(config.llmRetryBackoffMs * llmAttempts)
+                        continue
+                    }
+                    Timber.e(e, "LLM stream failed after $llmAttempts retries")
+                    reportFailure(id, phrases.llmFailed)
+                    return
                 }
-            } catch (e: TimeoutCancellationException) {
-                Timber.w(e, "LLM stream timed out")
-                reportFailure(id, phrases.llmTimeout)
-                return
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Timber.e(e, "LLM stream failed")
-                reportFailure(id, phrases.llmFailed)
-                return
             }
 
             // Tool calls? Execute ALL of them first, buffering results in
@@ -349,6 +383,8 @@ class TurnRunner(
                 val completed = mutableListOf<Pair<ToolCall, Message>>()
                 try {
                     for (call in pending) {
+                        // G3: the pill shows WHAT is running while the user waits.
+                        onActivity(TurnActivity.ToolRunning(call.function.name))
                         val toolResult = withContext(Dispatchers.IO) {
                             functionRouter.executeResult(call.function)
                         }
@@ -426,6 +462,21 @@ class TurnRunner(
     }
 
     /**
+     * G4 retry predicate: only transient causes, only zero-output streams,
+     * only within the configured attempt budget.
+     */
+    private fun shouldRetryLlm(e: Exception, emittedAnything: Boolean, attemptsMade: Int): Boolean {
+        if (emittedAnything) return false // never re-emit partial output
+        if (attemptsMade >= config.llmMaxRetries) return false
+        return when (e) {
+            is LlmHttpException -> e.isTransient
+            is java.io.IOException -> true
+            is TimeoutCancellationException -> true // hung upstream, zero tokens
+            else -> false // 4xx, protocol errors, unknown — fail fast
+        }
+    }
+
+    /**
      * Speak one sentence: enqueue TTS flow on the player and await drain.
      * Player flush (barge-in) cancels the Deferred, which surfaces here as
      * CancellationException of the await — we treat it as "sentence dropped".
@@ -440,7 +491,9 @@ class TurnRunner(
         onStateEvent(SessionEvent.PlaybackStarted) // -> SPEAKING
         spokeThisTurn.set(true) // follow-up window eligibility
         ttsSynthPermits.withPermit {
-            val flow = ttsClient.synthesizeStream(text, config.ttsVoice)
+            // Y6: resolve the voice per sentence — a Settings change applies
+            // to the very next synthesis, no service restart.
+            val flow = ttsClient.synthesizeStream(text, voiceSource())
             // Phase 5 (M6): the first sentence of a generation requests
             // duck focus; the last drained sentence abandons it. Barge-in
             // flush abandons via SessionManager's onTtsFlushed hook.
@@ -477,25 +530,5 @@ class TurnRunner(
 
         /** PROJECT-AUDIT: named grace window (was a bare delay(3000)). */
         private const val ASR_FINAL_GRACE_MS = 3_000L
-
-        private val SYSTEM_PROMPT = """
-            Ты — Джарвис, голосовой ассистент на планшете Android.
-            Отвечай кратко и разговорно, ВСЕГДА на русском языке.
-            Если запрос пользователя соответствует одному из доступных
-            инструментов (будильник, таймер, погода, управление устройством,
-            яркость, громкость, музыка и т.д.) — вызывай инструмент вместо ответа
-            из памяти. Не упоминай технические детали и JSON.
-            Для музыки: назван трек/исполнитель/альбом/плейлист — вызывай
-            playMusic, заполни слоты artist/album/playlist/genre отдельными
-            параметрами, в query — только название трека (не склеивай всё в
-            один запрос); просто «включи музыку», «пауза», «дальше» —
-            controlPlayback; «что играет» — getNowPlaying; «какие плейлисты»,
-            «что послушать» — listPlaylists; «найди в библиотеке» —
-            searchLibrary. Если listPlaylists или searchLibrary уже вернули
-            список — играть выбранное вызывай playMusic с mediaId и title.
-            «промотай на минуту» — controlPlayback seek с deltaMs;
-            «сначала» — restart; «лайкни» — like; «повтори трек» — repeat
-            one; «перемешай» — shuffle; «быстрее»/«медленнее» — speed.
-        """.trimIndent()
     }
 }

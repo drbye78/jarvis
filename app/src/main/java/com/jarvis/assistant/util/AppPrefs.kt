@@ -119,6 +119,17 @@ class AppPrefs(context: Context) {
         get() = prefs.getLong(KEY_FOLLOW_UP_WINDOW_MS, 5_000L)
         set(value) = prefs.edit().putLong(KEY_FOLLOW_UP_WINDOW_MS, value).apply()
 
+    /**
+     * Y6: TTS voice for the assistant's speech (Settings «Голос» card).
+     * "Mila" is the verified default; a free-text Salute voice ID is stored
+     * as-is for advanced users. Read PER SENTENCE by the session lane
+     * (TurnRunner voiceSource), so a change applies to the next spoken
+     * sentence — no service restart.
+     */
+    var ttsVoice: String
+        get() = prefs.getString(KEY_TTS_VOICE, "Mila") ?: "Mila"
+        set(value) = prefs.edit().putString(KEY_TTS_VOICE, value).apply()
+
     fun loadProviderSettings(): ProviderSettings = ProviderSettings(
         type = providerType,
         openAiBaseUrl = openAiBaseUrl,
@@ -142,5 +153,6 @@ class AppPrefs(context: Context) {
         const val KEY_AEC_MODE = "aec_mode"
         const val KEY_FOLLOW_UP_ENABLED = "follow_up_enabled"
         const val KEY_FOLLOW_UP_WINDOW_MS = "follow_up_window_ms"
+        const val KEY_TTS_VOICE = "tts_voice"
     }
 }

@@ -106,6 +106,11 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var followUpValue: TextView
     private lateinit var followUpBar: SeekBar
 
+    // Voice (Y6) card
+    private lateinit var voiceGroup: RadioGroup
+    private lateinit var voiceCustomInput: View
+    private lateinit var voiceCustomId: TextInputEditText
+
     private lateinit var appPrefs: AppPrefs
 
     /**
@@ -277,6 +282,50 @@ class SettingsActivity : AppCompatActivity() {
                 GraphHolder.graph?.sessionManager?.setFollowUpWindow(followUpSwitch.isChecked, followUpSeconds())
             }
         })
+
+        // ------------------------------------------------------------------
+        // Voice card (Y6): preset (Mila, verified) or a custom Salute voice
+        // ID. The voice is resolved PER SENTENCE from prefs by the running
+        // graph, so a change applies to the next spoken sentence — NO
+        // service restart. «Проверить голос» probes through the real
+        // synthesis + player lane.
+        // ------------------------------------------------------------------
+        voiceGroup = findViewById(R.id.voiceGroup)
+        voiceCustomInput = findViewById(R.id.voiceCustomInput)
+        voiceCustomId = findViewById(R.id.voiceCustomId)
+        val savedVoice = appPrefs.ttsVoice
+        val savedIsPreset = com.jarvis.assistant.speech.tts.VoiceCatalog.PRESETS.any {
+            it.id.equals(savedVoice, ignoreCase = true)
+        }
+        if (savedIsPreset) {
+            voiceGroup.check(R.id.voiceMila)
+        } else {
+            voiceGroup.check(R.id.voiceCustom)
+            voiceCustomId.setText(savedVoice)
+            voiceCustomInput.visibility = View.VISIBLE
+        }
+        voiceGroup.setOnCheckedChangeListener { _, checkedId ->
+            if (checkedId == R.id.voiceMila) {
+                appPrefs.ttsVoice = "Mila"
+                voiceCustomInput.visibility = View.GONE
+            } else {
+                voiceCustomInput.visibility = View.VISIBLE
+                persistCustomVoice()
+            }
+        }
+        // Persist the custom ID as it is typed (blank keeps the previous
+        // value; the test button falls back to Mila when blank).
+        voiceCustomId.addTextChangedListener(
+            textWatcher { if (voiceGroup.checkedRadioButtonId == R.id.voiceCustom) persistCustomVoice() }
+        )
+        findViewById<Button>(R.id.voiceTestButton).setOnClickListener {
+            val graph = GraphHolder.graph
+            if (graph == null) {
+                Toast.makeText(this, R.string.voice_service_not_running, Toast.LENGTH_SHORT).show()
+            } else {
+                graph.speakVoiceSample(selectedVoice())
+            }
+        }
 
         callbacks = RealCallbacks()
 
@@ -453,6 +502,20 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun followUpSeconds(): Long = ((followUpBar.progress + 2).toLong()).coerceIn(2, 12) * 1000L
+
+    /** Current custom-ID text, or Mila when blank. */
+    private fun selectedVoice(): String =
+        if (voiceGroup.checkedRadioButtonId == R.id.voiceMila) {
+            "Mila"
+        } else {
+            voiceCustomId.text.toString().trim().ifBlank { "Mila" }
+        }
+
+    /** Saves the custom voice ID (trimmed); blank is ignored. */
+    private fun persistCustomVoice() {
+        val id = voiceCustomId.text.toString().trim()
+        if (id.isNotEmpty()) appPrefs.ttsVoice = id
+    }
 
     private fun updateFollowUpLabel(seconds: Int) {
         followUpValue.text = getString(R.string.followup_seconds, seconds)

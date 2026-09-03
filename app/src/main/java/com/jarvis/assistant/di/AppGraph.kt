@@ -23,6 +23,7 @@ import com.jarvis.assistant.llm.OpenAiCompatClient
 import com.jarvis.assistant.llm.TokenManager
 import com.jarvis.assistant.session.SessionManager
 import com.jarvis.assistant.session.SessionStateMachine
+import com.jarvis.assistant.session.TimeAwareSystemPrompt
 import com.jarvis.assistant.speech.asr.SberStreamingAsr
 import com.jarvis.assistant.speech.tts.SaluteSpeechTts
 import com.jarvis.assistant.speech.tts.TtsClient
@@ -37,6 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
@@ -86,7 +88,11 @@ class AppGraph(
         .build()
 
     val database: AppDatabase = AppDatabase.getInstance(appContext)
-    val conversationManager = ConversationManager(database.messageDao(), config.historyMaxMessages)
+    val conversationManager = ConversationManager(
+        database.messageDao(),
+        config.historyMaxMessages,
+        config.historyMaxChars,
+    )
 
     val networkMonitor = NetworkMonitor(appContext)
 
@@ -199,8 +205,17 @@ class AppGraph(
     val audioFocus = com.jarvis.assistant.audio.AssistantAudioFocus(
         com.jarvis.assistant.audio.AndroidAudioFocusAdapter(appContext),
     )
+
+    /**
+     * Y6: the TTS voice resolved LIVE from prefs (Settings «Голос» card),
+     * falling back to the config default when the pref is blank. Read per
+     * sentence by the turn lane and per phrase by [speechFeedback], so a
+     * Settings change applies with no service restart.
+     */
+    val voiceSource: () -> String = { appPrefs.ttsVoice.ifBlank { config.ttsVoice } }
+
     val speechFeedback = com.jarvis.assistant.audio.TtsSpeechFeedback(
-        scope, ttsClient, player, config.ttsVoice, audioFocus, appContext,
+        scope, ttsClient, player, voiceSource, audioFocus, appContext,
     )
 
     val functionRouter = FunctionRouter(appContext, httpClient, speechFeedback)
@@ -225,6 +240,8 @@ class AppGraph(
         scope = scope,
         focus = audioFocus,
         phrases = speechPhrases,
+        systemPrompt = TimeAwareSystemPrompt(),
+        voiceSource = voiceSource,
         // Follow-up window: user-controllable, default OFF; the Settings
         // card updates it live through the service binder.
         followUpEnabled = appPrefs.followUpEnabled,
@@ -292,6 +309,38 @@ class AppGraph(
             sensitivity = appPrefs.wakeSensitivity,
         )
         wakeWordDetector.reconfigure(req)
+    }
+
+    /**
+     * Y6: «Проверить голос» from the Settings card — speaks one sample
+     * sentence through the REAL synthesis + player lane, focus-bracketed
+     * like a turn sentence, best-effort (a failed probe is logged, not
+     * surfaced as a session error).
+     *
+     * @param voiceOverride the voice to probe; null = the currently saved pref.
+     */
+    fun speakVoiceSample(voiceOverride: String? = null) {
+        val voice = voiceOverride ?: voiceSource()
+        scope.launch {
+            try {
+                val text = appContext.getString(com.jarvis.assistant.R.string.phrase_voice_sample)
+                val flow = ttsClient.synthesizeStream(text, voice)
+                audioFocus.onTtsSentenceStarted()
+                val done = player.play(flow)
+                try {
+                    kotlinx.coroutines.withTimeout(20_000) { done.await() }
+                } finally {
+                    audioFocus.onTtsSentenceFinished()
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                audioFocus.onTtsFlushed()
+            } catch (t: Throwable) {
+                // A dead synthesis must never crash the app scope from a
+                // Settings button; the toast-free failure lands in the log.
+                Timber.w(t, "Voice sample probe failed (best-effort)")
+                audioFocus.onTtsFlushed()
+            }
+        }
     }
 
     fun start() {

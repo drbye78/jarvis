@@ -212,4 +212,36 @@
     <string name="phrase_llm_failed">Не удалось получить ответ от нейросети.</string>
     <string name="phrase_offline">Нет подключения к интернету. Проверьте сеть.</string>
     <string name="phrase_wake_engine_error">Ошибка движка wake word: %1$s</string>
+
+    <!-- Turn activity labels (G3: status pill while THINKING — what exactly is running) -->
+    <string name="activity_tool_set_alarm">Ставлю будильник…</string>
+    <string name="activity_tool_cancel_alarm">Отменяю будильник…</string>
+    <string name="activity_tool_list_alarms">Смотрю будильники…</string>
+    <string name="activity_tool_set_timer">Ставлю таймер…</string>
+    <string name="activity_tool_cancel_timer">Отменяю таймер…</string>
+    <string name="activity_tool_get_weather">Проверяю погоду…</string>
+    <string name="activity_tool_get_device_info">Смотрю состояние устройства…</string>
+    <string name="activity_tool_set_brightness">Настраиваю яркость…</string>
+    <string name="activity_tool_set_volume">Настраиваю громкость…</string>
+    <string name="activity_tool_set_wifi">Переключаю Wi-Fi…</string>
+    <string name="activity_tool_set_bluetooth">Переключаю Bluetooth…</string>
+    <string name="activity_tool_set_dnd">Переключаю «Не беспокоить»…</string>
+    <string name="activity_tool_lock_screen">Блокирую экран…</string>
+    <string name="activity_tool_open_app">Открываю приложение…</string>
+    <string name="activity_tool_play_music">Включаю музыку…</string>
+    <string name="activity_tool_control_playback">Управляю воспроизведением…</string>
+    <string name="activity_tool_get_now_playing">Смотрю, что играет…</string>
+    <string name="activity_tool_list_playlists">Смотрю плейлисты…</string>
+    <string name="activity_tool_search_library">Ищу в фонотеке…</string>
+    <string name="activity_tool_unknown">Выполняю команду…</string>
+
+    <!-- Voice selection (Y6): live-appliable TTS voice from the Settings card -->
+    <string name="voice_section">Голос</string>
+    <string name="voice_mila">Мила (по умолчанию)</string>
+    <string name="voice_custom">Другой голос Salute (ID)</string>
+    <string name="voice_custom_hint_field">ID голоса, например May_24000</string>
+    <string name="voice_test_button">Проверить голос</string>
+    <string name="voice_hint">Мила — проверенный голос по умолчанию. Дополнительные идентификаторы голосов из пула Salute можно ввести вручную и проверить кнопкой. Смена применяется к следующей фразе — без перезапуска сервиса.</string>
+    <string name="voice_service_not_running">Запустите ассистента, чтобы проверить голос</string>
+    <string name="phrase_voice_sample">Привет! Я Джарвис. Так будет звучать мой голос.</string>
 </resources>

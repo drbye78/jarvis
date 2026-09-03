@@ -23,10 +23,19 @@ import kotlinx.serialization.json.Json
  *    assistant whose ids have no tool results keeps its content with
  *    `tool_calls` cleared. Either half alone would make the chat-completions
  *    request schema-invalid (HTTP 400).
+ * 4. Y5: a hard char budget ([maxChars]) bounds the window BEFORE the pair
+ *    sanitizer runs — verbose tool results can no longer overflow the model
+ *    context. Oldest messages are dropped first; the newest is always kept
+ *    (truncated head+tail if it alone overflows) so the current turn never
+ *    loses its own context. A budget cut can split an assistant/tool pair —
+ *    the sanitizer that runs right after drops the dangling half, exactly as
+ *    it already does for the message-count window.
  */
 class ConversationManager(
     private val dao: MessageDao,
     private val maxMessages: Int = 20,
+    /** Char budget for [getHistoryForLLM]; ~4 chars ≈ 1 token. 0 = unlimited. */
+    private val maxChars: Int = 0,
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -54,12 +63,14 @@ class ConversationManager(
 
     /**
      * History for the LLM: last [maxMessages] messages, oldest first, with
-     * broken tool pairs removed position-independently (see class doc).
+     * broken tool pairs removed position-independently (see class doc) and
+     * the [maxChars] budget applied (see class doc, point 4).
      */
     suspend fun getHistoryForLLM(): List<Message> {
         val window = dao.recentDesc(maxMessages)
             .reversed()
             .map { it.toMessage() }
+            .let { applyCharBudget(it) }
 
         val assistantToolCallIds = window
             .filter { it.role == "assistant" }
@@ -94,6 +105,51 @@ class ConversationManager(
     fun transcriptLive(limit: Int = 100): Flow<List<Message>> =
         dao.recentDescLive(limit).map { list -> list.reversed().map { it.toMessage() } }
 
+    // ------------------------------------------------------------------
+    // Y5: char-budget trim (runs BEFORE the tool-pair sanitizer)
+    // ------------------------------------------------------------------
+
+    /**
+     * Keeps the newest messages whose combined estimated size fits [maxChars].
+     * The newest message is ALWAYS kept — even when it alone overflows — so
+     * the turn that is about to run is never answered without its own
+     * context; an oversized newest is truncated (head + marker + tail) rather
+     * than dropped, preserving JSON-ish tool results' head and tail.
+     */
+    private fun applyCharBudget(window: List<Message>): List<Message> {
+        if (maxChars <= 0 || window.isEmpty()) return window
+
+        var kept = 0
+        var total = 0
+        for (i in window.indices.reversed()) {
+            val cost = estimateChars(window[i])
+            if (kept > 0 && total + cost > maxChars) break // oldest overflow: stop
+            total += cost
+            kept++
+            if (total > maxChars) break // the newest alone already overflows
+        }
+        val budgeted = window.takeLast(kept).toMutableList()
+        if (budgeted.isNotEmpty() && estimateChars(budgeted.last()) > maxChars) {
+            budgeted[kept - 1] = truncate(budgeted.last(), maxChars)
+        }
+        return budgeted
+    }
+
+    /** Crude token proxy: content + tool-call names/args + small overheads. */
+    private fun estimateChars(m: Message): Int {
+        val toolCalls = m.toolCalls?.sumOf {
+            it.function.name.length + it.function.arguments.length + 24
+        } ?: 0
+        return m.content.length + toolCalls + 12
+    }
+
+    /** Head 70% + neutral marker + tail 20% of the budget (ASCII marker: survives any content encoding). */
+    private fun truncate(m: Message, budget: Int): Message {
+        val head = m.content.take((budget * 0.7f).toInt())
+        val tail = m.content.takeLast((budget * 0.2f).toInt())
+        return m.copy(content = head + TRUNCATION_MARK + tail)
+    }
+
     suspend fun clear() {
         dao.clear()
     }
@@ -122,4 +178,9 @@ class ConversationManager(
         // Row identity for the transcript DiffUtil (see Message.id).
         id = id,
     )
+
+    private companion object {
+        /** Neutral ASCII marker: legible to the LLM inside any JSON-ish content. */
+        const val TRUNCATION_MARK = " …[truncated]… "
+    }
 }

@@ -96,13 +96,27 @@ keystore with `keytool` and update `local.properties` accordingly.
 - **Voice**: wake word «Джарвис», barge-in mid-answer, streaming recognition,
   **follow-up window** (opt-in: after each reply the mic stays open for
   2–12 s — keep talking without the wake word; the orb shows a countdown).
+  The status pill shows **what the assistant is doing** while thinking
+  («Ставлю будильник…», «Проверяю погоду…»), not a generic «Думаю…».
+- **Time-aware assistant**: the system prompt carries the live clock, weekday
+  and a time-of-day hint (at 3 a.m. answers get shorter), a stable personality,
+  clarification of ambiguous requests, confirmation before irreversible
+  actions, and harm-refusal rules. Transient LLM failures (5xx, connection
+  resets, zero-output timeouts) are retried once automatically — partial
+  answers are never re-emitted, so nothing is ever spoken twice.
 - **Echo cancellation** (opt-in, Settings → «Эхоподавление»): *hardware*
   mode routes the mic through the tablet's comms DSP; *software* mode runs a
   built-in adaptive canceller against the assistant's own voice (electrical
   TTS reference) and, with a one-tap system consent, other apps' music —
   experimental, see RUNBOOK for the honest quality expectations and
   validation steps.
-- **Chat**: GigaChat (or OpenAI-compatible provider) with 20-message context.
+- **Chat**: GigaChat (or OpenAI-compatible provider) with a 20-message context
+  bounded by a character budget — verbose tool results can no longer overflow
+  the model's context window (the newest turn is always kept, truncated if
+  needed).
+- **Voice picker** (Settings → «Голос»): Mila by default, any other Salute
+  voice ID by hand, with a «Проверить голос» preview button. Applies to the
+  next spoken sentence — no restart.
 - **Music**: «Джарвис, включи Bohemian Rhapsody», «включи альбом Группа
   крови», «включи музыку» — a capability-gated cascade drives the installed
   player (Яндекс Музыка by default): structured voice search with slots,

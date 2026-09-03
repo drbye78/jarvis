@@ -5,10 +5,12 @@ Compact ramp-up for agents. Every line is something easy to miss.
 ## Build & verify
 - Single Gradle module `:app` (root `settings.gradle.kts` includes only `:app`). Use the wrapper: `./gradlew ...`.
 - Build APK: `./gradlew :app:assembleDebug`
-- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~352 tests)
+- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~389 tests)
 - Single test class: `./gradlew :app:testDebugUnitTest --tests "com.jarvis.assistant.PorcupineDetectorTest"`
 - **Gate before claiming done:** `./gradlew :app:assembleDebug :app:testDebugUnitTest`
 - Instrumentation tests (`androidTest`) need a device/emulator; the gate above does not.
+- **Resource parity is test-enforced** (`ResourceParityTest`): a string key added to `values/strings.xml` but not `values-en/` (or vice versa) FAILS the suite. Same for `phrase_*` and `activity_tool_*` groups. Add new keys to BOTH locales in the same change.
+- The system prompt is built per LLM pass by `session/TimeAwareSystemPrompt` (identity + live time + dialogue policies). Tests pin it with a fixed clock + `TimeZone.setDefault` in `@Before`/`@After`; the formats are constructed PER CALL so a timezone set after class-load is honored — do not cache `SimpleDateFormat` singletons there.
 - The Gradle daemon is not guaranteed to persist between tool calls — the first build after a shell reset is cold (~1–2 min). Don't assume warm incremental builds.
 - **CI exists**: `.github/workflows/ci.yml` runs the full JVM suite + `assembleDebug` on every push to `main` and every PR (LFS checkout included). A red check means the suite is broken — fix before merging. Several test files define MULTIPLE top-level test classes (e.g. `AlarmAndRegistryTest.kt` → `AlarmTimesTest` + `ToolRegistryTest`) — run by class, not file.
 - NOTE: several tests are real-time budgeted (bounded waits on latches/polling, e.g. the wedged-engine release test ~2.5 s). They are deterministic but not instant; don't "optimize" them into thread-yield assertions.

@@ -20,6 +20,17 @@ data class JarvisConfig(
     val llmTimeoutMs: Long = 45_000,
     val gigaChatTemperature: Double = 0.7,
     val gigaChatMaxTokens: Int = 2048,
+
+    /**
+     * G4 (dialogue audit): transient LLM failures are retried when the stream
+     * produced ZERO output (so no sentence can be spoken twice). Applies to
+     * IOExceptions, 5xx/429 [com.jarvis.assistant.llm.LlmHttpException] and
+     * zero-output timeouts. 4xx never retries.
+     */
+    val llmMaxRetries: Int = 1,
+
+    /** Base for the linear retry backoff (first retry waits this long). */
+    val llmRetryBackoffMs: Long = 800,
     val gigaChatEndpoint: String = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
     val gigaChatModel: String = "GigaChat-Pro",
 
@@ -38,6 +49,15 @@ data class JarvisConfig(
     // History
     val historyMaxMessages: Int = 20,
 
+    /**
+     * Y5 (dialogue audit): hard char budget for the history window. A crude
+     * chars/4 ≈ tokens estimate — no tokenizer dependency — that keeps the
+     * request inside the model context even with verbose tool results.
+     * 0 disables the budget. The newest message is always kept (truncated
+     * if it alone overflows) so the turn is never answered contextless.
+     */
+    val historyMaxChars: Int = 24_000,
+
     // Audio pre-roll (M8): how much recent mic audio the ring buffer keeps so
     // the first words are not clipped between wake word and ASR stream open.
     val preRollMs: Long = DEFAULT_PRE_ROLL_MS,
@@ -52,9 +72,11 @@ data class JarvisConfig(
     val llmEndpoint: String = "smartspeech.sber.ru:443",
 
     // Phase 5 (M7 mitigation): pause external music at session start for a
-    // clean listening window (there is no AEC — the wake word competes with
-    // speaker output). Default OFF: music stops and does NOT auto-resume —
-    // the user says «продолжи» when they want it back.
+    // clean listening window. Default OFF: music stops and does NOT auto-resume —
+    // the user says «продолжи» when they want it back. (AEC-aware: in SOFTWARE
+    // mode the wake word can also survive music via the canceller, but the
+    // explicit pause remains the most reliable path — the canceller is
+    // experimental NLMS, not AEC3.)
     val pauseMusicOnWake: Boolean = false,
 ) {
     companion object {

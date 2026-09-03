@@ -39,12 +39,16 @@ interface SpeechFeedback {
  * TTS-backed implementation. Synthesis + playback run on the supplied scope
  * so a slow gRPC call cannot stall the tool call that triggered it; the
  * focus gate brackets the phrase exactly like a turn sentence.
+ *
+ * Y6: the voice is resolved PER PHRASE through [voiceSource] (prefs-backed)
+ * so a Settings «Голос» change applies to the next spoken cue without a
+ * service restart — same live semantics as the turn lane.
  */
 class TtsSpeechFeedback(
     private val scope: CoroutineScope,
     private val tts: TtsClient,
     private val player: TtsPlayer,
-    private val voice: String,
+    private val voiceSource: () -> String,
     private val focus: AssistantAudioFocus? = null,
     private val context: Context? = null,
 ) : SpeechFeedback {
@@ -61,7 +65,7 @@ class TtsSpeechFeedback(
     private fun speak(text: String) {
         scope.launch {
             try {
-                val flow = tts.synthesizeStream(text, voice)
+                val flow = tts.synthesizeStream(text, voiceSource())
                 focus?.onTtsSentenceStarted()
                 val done = player.play(flow)
                 try {

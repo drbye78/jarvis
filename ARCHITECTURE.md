@@ -89,10 +89,47 @@ tool-history writes to keep the conversation coherent.
 OpenAI-compatible, serialized through the wire layer: assistant
 `tool_calls` (with ids) → tool results with `tool_call_id`. History windowing
 keeps assistant+tool pairs together and never leaves a leading orphan tool
-message. The tool loop is iterative and bounded (`maxToolPasses = 5`);
+message. The window is additionally bounded by a **character budget**
+(`historyMaxChars`, ~4 chars ≈ 1 token): oldest messages are dropped first,
+the newest is always kept (truncated head+tail if it alone overflows) — a
+budget cut that splits a pair is cleaned by the same position-independent
+sanitizer that handles the message-count window. The tool loop is iterative
+and bounded (`maxToolPasses = 5`);
 each tool execution has a 15 s default timeout — a tool may override it via
 `ToolContract.timeoutMs` (playMusic uses 30 s: cold-starting a player and
 verifying playback takes that long).
+
+## System prompt & dialogue policy
+
+The system message is composed per LLM pass by `TimeAwareSystemPrompt`
+(`session/SystemPrompt.kt`), not a hardcoded literal: identity + personality,
+a live time line (clock, weekday, date — formats built per call so a device
+timezone change is honored), a time-of-day hint (deep night → shorter
+answers), and the dialogue policies from the dialogue-system audit: tool-first
+routing, ONE clarifying question for ambiguous requests, confirmation before
+irreversible actions unless the command is explicit, no technical details,
+honest failure with an alternative, harm refusal. The music routing rules
+live in the same prompt. Deliberately RU-only: the ASR is ru-RU and the
+Salute voice pool is Russian; the EN UI translates the *interface*, not the
+assistant's brain (RUNBOOK documents the honest caveat).
+
+## LLM transient-failure retry
+
+`TurnRunner` retries a failed LLM pass ONLY when the stream produced **zero
+chunks** (re-emitting partial output would duplicate spoken sentences) and
+the cause is transient: `IOException`, 5xx/429 (`LlmHttpException` — typed in
+`llm/LlmClient.kt`, classified without message parsing), or a zero-output
+timeout. 4xx and unknown exceptions fail fast. Budget:
+`llmMaxRetries` (default 1) with linear backoff (`llmRetryBackoffMs`).
+
+## Turn activity (status pill)
+
+While THINKING, `TurnRunner` publishes what it is doing on
+`SessionManager.turnActivity` (`StateFlow<TurnActivity?>`): `Thinking` per
+LLM pass, `ToolRunning(tool)` before each execution. `MainActivity` renders
+the per-tool label (`activity_tool_*` resources, RU+EN) instead of the generic
+«Думаю…»; every terminal (finish / reportFailure / startSession / cancelAll)
+clears the flow so a stale label never outlives its turn.
 
 ## Music lane (external player control)
 
@@ -341,13 +378,16 @@ LLM endpoint is config-driven (`JarvisConfig.llmEndpoint`) rather than hardcoded
 
 ## Tests
 
-JVM unit suite (352 tests, all green; runs in CI on every push/PR):
+JVM unit suite (389 tests, all green; runs in CI on every push/PR):
 wire DTOs (incl. non-null user content), SSE parser (incl. spec multi-line
-assembly), state machine, sentence splitter, conversation windowing, alarm
+assembly), state machine, sentence splitter, conversation windowing (incl.
+char-budget trim), alarm
 times + notification identity, tool registry (incl. cancellation
 propagation), credential store, token manager, AEC DSP (delay aligner,
 resampler, mixer incl. drop accounting, NLMS convergence + gate arithmetic),
 follow-up controller + VAD, session orchestration with fakes (incl.
 error-turn terminal semantics, cancelAll mid-turn, wedged-engine release,
-producer give-up/revive), music cascade, router tool surface.
+producer give-up/revive), music cascade, router tool surface, system prompt
+sections + time injection, turn-activity lifecycle, LLM retry semantics
+(transient vs fatal, partial-output safety), RU/EN resource parity.
 Run with `./gradlew testDebugUnitTest`.

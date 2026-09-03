@@ -166,7 +166,7 @@ class SpeechFeedbackTest {
         val focus = AssistantAudioFocus(adapter)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
-        val fb = TtsSpeechFeedback(scope, tts, player, "Mila", focus)
+        val fb = TtsSpeechFeedback(scope, tts, player, { "Mila" }, focus)
         fb.onCascadeStarted(predictedLong = true)
         fb.onLaunchingPlayer("Яндекс Музыку")
 
@@ -188,7 +188,7 @@ class SpeechFeedbackTest {
         val tts = FakeTts()
         val fb = TtsSpeechFeedback(
             CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
-            tts, FakePlayer(), "Mila",
+            tts, FakePlayer(), { "Mila" },
         )
         fb.onCascadeStarted(predictedLong = false)
         assertEquals(emptyList<String>(), tts.spoken)
@@ -203,7 +203,7 @@ class SpeechFeedbackTest {
         })
         val fb = TtsSpeechFeedback(
             CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
-            tts, FakePlayer(), "Mila", focus,
+            tts, FakePlayer(), { "Mila" }, focus,
         )
 
         fb.onCascadeStarted(predictedLong = true)
@@ -219,7 +219,7 @@ class SpeechFeedbackTest {
     fun `player exception is swallowed`() = runTest {
         val fb = TtsSpeechFeedback(
             CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
-            FakeTts(), FakePlayer().apply { playThrows = true }, "Mila",
+            FakeTts(), FakePlayer().apply { playThrows = true }, { "Mila" },
         )
 
         fb.onCascadeStarted(predictedLong = true)

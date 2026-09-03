@@ -82,6 +82,10 @@ class SessionManager(
     followUpWindowMs: Long = FollowUpWindowController.DEFAULT_WINDOW_MS,
     /** Runtime spoken phrases (i18n); defaults to the RU literals. */
     private val phrases: SpeechPhrases = SpeechPhrases.Default,
+    /** G1: per-pass system prompt provider (time-aware in production). */
+    private val systemPrompt: SystemPromptProvider = TimeAwareSystemPrompt(),
+    /** Y6: TTS voice resolved per sentence (Settings-appliable live). */
+    private val voiceSource: () -> String = { config.ttsVoice },
 ) {
 
     private var sessionJob: Job? = null
@@ -126,6 +130,15 @@ class SessionManager(
     private val _partialTranscript = MutableStateFlow("")
     val partialTranscript: StateFlow<String> = _partialTranscript.asStateFlow()
 
+    /**
+     * G3: what the turn engine is doing while THINKING (null = generic label).
+     * TurnRunner pushes; every terminal below (finish / reportFailure /
+     * startSession / cancelAll) clears so a stale «Настраиваю громкость…»
+     * never outlives its turn. StateFlow writes are atomic from any thread.
+     */
+    private val _turnActivity = MutableStateFlow<TurnActivity?>(null)
+    val turnActivity: StateFlow<TurnActivity?> = _turnActivity.asStateFlow()
+
     /** m12: user mute intent; survives power-receiver restarts. */
     private val _muted = MutableStateFlow(false)
     val muted: StateFlow<Boolean> = _muted.asStateFlow()
@@ -143,6 +156,9 @@ class SessionManager(
             { _partialTranscript.value = it },
             isCurrentSession = { it == sessionSeq.get() },
             focus = focus,
+            systemPrompt = systemPrompt,
+            onActivity = { _turnActivity.value = it },
+            voiceSource = voiceSource,
         )
 
     // @Volatile: registered once at construction, read from session
@@ -168,6 +184,7 @@ class SessionManager(
         }
         Timber.e("Session failure: %s", message)
         _partialTranscript.value = ""
+        _turnActivity.value = null
         stateMachine.onEvent(SessionEvent.ErrorOccurred)
         onErrorHandler(message)
     }
@@ -233,6 +250,7 @@ class SessionManager(
         synchronized(controlLock) {
             id = sessionSeq.incrementAndGet()
             _partialTranscript.value = "" // fresh utterance, drop any stale partial
+            _turnActivity.value = null // fresh turn, drop any stale activity
             windowJob?.cancel()
             windowJob = null
             sessionJob?.cancel()
@@ -278,6 +296,7 @@ class SessionManager(
             detectionJob = null
             closeFollowUpWindow(silent = true) // reentrant: controlLock is a monitor
             _partialTranscript.value = ""
+            _turnActivity.value = null
         }
         // M6: cancellation itself emits no terminal event, so without this the
         // machine stays wedged in THINKING/SPEAKING forever. Guarded: if a new
@@ -292,6 +311,7 @@ class SessionManager(
     private suspend fun finish(id: Int, spoke: Boolean) {
         if (id != sessionSeq.get()) return
         _partialTranscript.value = "" // session end clears any live partial
+        _turnActivity.value = null // and the live activity label
         stateMachine.onEvent(SessionEvent.LlmDone)
         maybeOpenFollowUpWindow(spoke)
     }

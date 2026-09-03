@@ -213,4 +213,36 @@
     <string name="phrase_llm_failed">Could not get an answer from the model.</string>
     <string name="phrase_offline">No internet connection. Check the network.</string>
     <string name="phrase_wake_engine_error">Wake word engine error: %1$s</string>
+
+    <!-- Turn activity labels (G3: status pill while THINKING — what exactly is running) -->
+    <string name="activity_tool_set_alarm">Setting the alarm…</string>
+    <string name="activity_tool_cancel_alarm">Cancelling the alarm…</string>
+    <string name="activity_tool_list_alarms">Checking alarms…</string>
+    <string name="activity_tool_set_timer">Setting the timer…</string>
+    <string name="activity_tool_cancel_timer">Cancelling the timer…</string>
+    <string name="activity_tool_get_weather">Checking the weather…</string>
+    <string name="activity_tool_get_device_info">Checking device status…</string>
+    <string name="activity_tool_set_brightness">Adjusting brightness…</string>
+    <string name="activity_tool_set_volume">Adjusting volume…</string>
+    <string name="activity_tool_set_wifi">Toggling Wi-Fi…</string>
+    <string name="activity_tool_set_bluetooth">Toggling Bluetooth…</string>
+    <string name="activity_tool_set_dnd">Toggling Do Not Disturb…</string>
+    <string name="activity_tool_lock_screen">Locking the screen…</string>
+    <string name="activity_tool_open_app">Opening the app…</string>
+    <string name="activity_tool_play_music">Starting music…</string>
+    <string name="activity_tool_control_playback">Controlling playback…</string>
+    <string name="activity_tool_get_now_playing">Checking what\'s playing…</string>
+    <string name="activity_tool_list_playlists">Browsing playlists…</string>
+    <string name="activity_tool_search_library">Searching the library…</string>
+    <string name="activity_tool_unknown">Working on it…</string>
+
+    <!-- Voice selection (Y6): live-appliable TTS voice from the Settings card -->
+    <string name="voice_section">Voice</string>
+    <string name="voice_mila">Mila (default)</string>
+    <string name="voice_custom">Custom Salute voice (ID)</string>
+    <string name="voice_custom_hint_field">Voice ID, e.g. May_24000</string>
+    <string name="voice_test_button">Test voice</string>
+    <string name="voice_hint">Mila is the verified default voice. Other Salute voice pool IDs can be entered manually and previewed with the button. Changes apply to the next spoken sentence — no service restart.</string>
+    <string name="voice_service_not_running">Start the assistant to test the voice</string>
+    <string name="phrase_voice_sample">Hi! I\'m Jarvis. This is how my voice sounds.</string>
 </resources>

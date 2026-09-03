@@ -102,7 +102,9 @@ abstract class SseLlmClient(
                         // rotating file log via collectors). Log a bounded
                         // length only.
                         Timber.e("LLM request failed: HTTP %d, body length=%d", response.code, err.length)
-                        close(RuntimeException("LLM request failed (HTTP ${response.code})"))
+                        // TYPED so the session layer can classify 4xx (fatal)
+                        // vs 5xx/429 (transient, retried) without parsing text.
+                        close(LlmHttpException(response.code))
                         return@launch
                     }
                     val source = response.body?.source()

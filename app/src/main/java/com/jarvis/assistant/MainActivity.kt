@@ -16,6 +16,8 @@ import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.service.JarvisForegroundService
+import com.jarvis.assistant.session.TurnActivity
+import com.jarvis.assistant.session.TurnActivityLabels
 import com.jarvis.assistant.ui.TranscriptAdapter
 import com.jarvis.assistant.ui.VoiceOrbView
 import kotlinx.coroutines.delay
@@ -112,7 +114,7 @@ class MainActivity : AppCompatActivity() {
                 // F7: setMuted(false) restarts listening without a state
                 // transition (StateFlow does not re-emit IDLE), so the label
                 // would stay "Микрофон выключен" until the next wake word.
-                statusText.text = currentState?.let { labelFor(it) } ?: getString(R.string.state_idle_full)
+                renderStatus()
             }
             voiceOrb.setState(currentState, micMuted)
         }
@@ -159,22 +161,32 @@ class MainActivity : AppCompatActivity() {
             var stateJob: kotlinx.coroutines.Job? = null
             var partialJob: kotlinx.coroutines.Job? = null
             var progressJob: kotlinx.coroutines.Job? = null
+            var activityJob: kotlinx.coroutines.Job? = null
             while (isActive) {
                 val graph = GraphHolder.graph
                 if (graph != null && graph !== collectedGraph) {
                     stateJob?.cancel()
                     partialJob?.cancel()
+                    activityJob?.cancel()
                     collectedGraph = graph
                     stateJob = launch {
                         graph.stateMachine.state.collectLatest { state ->
                             currentState = state
                             voiceOrb.setState(state, micMuted)
-                            if (!micMuted) statusText.text = labelFor(state)
+                            renderStatus()
                         }
                     }
                     partialJob = launch {
                         graph.sessionManager.partialTranscript.collectLatest { partial ->
                             updatePartial(partial)
+                        }
+                    }
+                    // G3: what the engine is doing while THINKING —
+                    // «Ставлю будильник…» instead of a flat «Думаю…».
+                    activityJob = launch {
+                        graph.sessionManager.turnActivity.collectLatest { activity ->
+                            currentActivity = activity
+                            renderStatus()
                         }
                     }
                     // Follow-up window: countdown arc on the orb + label.
@@ -190,6 +202,7 @@ class MainActivity : AppCompatActivity() {
                         // screen stops claiming a live assistant.
                         collectedGraph = null
                         currentState = null
+                        currentActivity = null
                         voiceOrb.setState(null, micMuted)
                     }
                 }
@@ -200,6 +213,26 @@ class MainActivity : AppCompatActivity() {
 
     /** Last observed state — kept so the mute toggle can redraw the orb. */
     private var currentState: AssistantState? = null
+
+    /** G3: last observed turn activity (null = generic THINKING label). */
+    private var currentActivity: TurnActivity? = null
+
+    /**
+     * One render path for the status pill: state label by default, but a
+     * finer-grained activity label while THINKING. Called from both the state
+     * and the activity collectors so either change re-renders consistently.
+     */
+    private fun renderStatus() {
+        if (micMuted) return // the muted label owns the pill until unmute
+        val state = currentState ?: return
+        val activity = currentActivity
+        statusText.text =
+            if (state == AssistantState.THINKING && activity != null) {
+                getString(TurnActivityLabels.labelRes(activity))
+            } else {
+                labelFor(state)
+            }
+    }
 
     /**
      * Renders the live ASR partial as a muted, in-progress bubble above the
