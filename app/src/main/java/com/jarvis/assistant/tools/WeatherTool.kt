@@ -26,8 +26,16 @@ interface WeatherClient {
  * interpolation into JSON (the original produced invalid JSON when the
  * temperature field was missing, writing `"temp":?`).
  * The location is URL-encoded to prevent query injection.
+ *
+ * F6: condition names resolve through [conditionFor] so production can pass
+ * the locale-aware `weather_*` string resources (values/ AND values-en/ ship
+ * all 15 — the translations existed but were dead resources). The default
+ * keeps the original RU literals for non-Android callers and tests.
  */
-class OpenMeteoWeatherClient(private val httpClient: OkHttpClient) : WeatherClient {
+class OpenMeteoWeatherClient(
+    private val httpClient: OkHttpClient,
+    private val conditionFor: (Int?) -> String = ::weatherCodeToRussianDefault,
+) : WeatherClient {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -74,7 +82,7 @@ class OpenMeteoWeatherClient(private val httpClient: OkHttpClient) : WeatherClie
             put("temp", JsonPrimitive(temp ?: "н/д"))
             put("feels_like", JsonPrimitive(feels ?: "н/д"))
             put("wind_kmh", JsonPrimitive(wind ?: "н/д"))
-            put("condition", JsonPrimitive(weatherCodeToRussian(code)))
+            put("condition", JsonPrimitive(conditionFor(code)))
         }.toString()
     }
 
@@ -87,26 +95,54 @@ class OpenMeteoWeatherClient(private val httpClient: OkHttpClient) : WeatherClie
     } catch (e: Exception) {
         null
     }
-
-    private fun weatherCodeToRussian(code: Int?): String = when (code) {
-        null -> "неизвестно"
-        0 -> "ясно"
-        1, 2 -> "малооблачно"
-        3 -> "облачно"
-        45, 48 -> "туман"
-        51, 53, 55 -> "морось"
-        56, 57 -> "ледяная морось"
-        61, 63, 65 -> "дождь"
-        66, 67 -> "ледяной дождь"
-        71, 73, 75 -> "снег"
-        77 -> "снежные зёрна"
-        80, 81, 82 -> "ливень"
-        85, 86 -> "снегопад"
-        95 -> "гроза"
-        96, 99 -> "гроза с градом"
-        else -> "облачно"
-    }
 }
+
+/** The original RU condition names — the non-Android default. */
+private fun weatherCodeToRussianDefault(code: Int?): String = when (code) {
+    null -> "неизвестно"
+    0 -> "ясно"
+    1, 2 -> "малооблачно"
+    3 -> "облачно"
+    45, 48 -> "туман"
+    51, 53, 55 -> "морось"
+    56, 57 -> "ледяная морось"
+    61, 63, 65 -> "дождь"
+    66, 67 -> "ледяной дождь"
+    71, 73, 75 -> "снег"
+    77 -> "снежные зёрна"
+    80, 81, 82 -> "ливень"
+    85, 86 -> "снегопад"
+    95 -> "гроза"
+    96, 99 -> "гроза с градом"
+    else -> "облачно"
+}
+
+/**
+ * F6: locale-aware weather-code → condition-name resolver backed by the
+ * `weather_*` string resources. Wired in FunctionRouter so English-locale
+ * devices hear "partly cloudy" instead of "малооблачно".
+ */
+fun weatherConditionName(context: android.content.Context, code: Int?): String =
+    context.getString(
+        when (code) {
+            null -> com.jarvis.assistant.R.string.weather_unknown
+            0 -> com.jarvis.assistant.R.string.weather_clear
+            1, 2 -> com.jarvis.assistant.R.string.weather_partly_cloudy
+            3 -> com.jarvis.assistant.R.string.weather_cloudy
+            45, 48 -> com.jarvis.assistant.R.string.weather_fog
+            51, 53, 55 -> com.jarvis.assistant.R.string.weather_drizzle
+            56, 57 -> com.jarvis.assistant.R.string.weather_icy_drizzle
+            61, 63, 65 -> com.jarvis.assistant.R.string.weather_rain
+            66, 67 -> com.jarvis.assistant.R.string.weather_icy_rain
+            71, 73, 75 -> com.jarvis.assistant.R.string.weather_snow
+            77 -> com.jarvis.assistant.R.string.weather_snow_grains
+            80, 81, 82 -> com.jarvis.assistant.R.string.weather_rain_shower
+            85, 86 -> com.jarvis.assistant.R.string.weather_snow_shower
+            95 -> com.jarvis.assistant.R.string.weather_thunderstorm
+            96, 99 -> com.jarvis.assistant.R.string.weather_thunderstorm_hail
+            else -> com.jarvis.assistant.R.string.weather_cloudy
+        },
+    )
 
 class WeatherTool(private val weatherClient: WeatherClient) : ToolContract {
     override val name = "getWeather"

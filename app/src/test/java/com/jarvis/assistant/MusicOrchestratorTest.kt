@@ -13,6 +13,7 @@ import com.jarvis.assistant.tools.MusicTools
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -442,6 +443,58 @@ class MusicOrchestratorTest {
 
         assertEquals(MusicPlaybackOrchestrator.Status.SEARCH_OPENED, out.status)
         assertEquals("deep_link", out.strategy)
+    }
+
+    // ------------------------------------------------------------------
+    // Playlist-only requests: state-evidence verification (the score is 0
+    // by construction — a playlist name never appears in track metadata)
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `playlist-only request verifies via state evidence`() = runTest {
+        // The player complies: the track switches when the playlist starts.
+        // The OLD code scored 0 (nothing scoreable), burned the whole verify
+        // budget, then re-dispatched through the cascade and opened a search
+        // screen while the playlist was audibly playing.
+        val gw = FakeGateway()
+        val handle = FakeHandle(
+            "ru.yandex.music",
+            np = NowPlaying(title = "Старая песня", state = NowPlaying.STATE_PLAYING, positionMs = 30_000),
+            onPlayFromSearch = { h, _ ->
+                h.np = NowPlaying(title = "Новая песня", state = NowPlaying.STATE_PLAYING, positionMs = 0)
+            },
+        )
+        gw.handles.add(handle)
+
+        val out = orchestrator(gw).playSearchQuery("", artist = null, album = null, playlist = "Для тренировки", genre = null, appHint = null)
+
+        assertEquals(MusicPlaybackOrchestrator.Status.PLAYING, out.status)
+        assertEquals("active_session", out.strategy)
+        assertFalse(out.isError)
+    }
+
+    @Test
+    fun `playlist-only request a player ignores falls through to search`() = runTest {
+        // The live session ignores the dispatch (same track, same position);
+        // the cold-started fake also ignores it; no legacy activity ships —
+        // the honest end state is the deep-link search screen, NOT a
+        // fabricated PLAYING from the active session.
+        val gw = FakeGateway(
+            launchedSessionBehavior = { h, _ -> h.np = h.np }, // ignore
+            legacySearchHandled = false,
+            searchOpens = true,
+        )
+        val handle = FakeHandle(
+            "ru.yandex.music",
+            np = NowPlaying(title = "Старая песня", state = NowPlaying.STATE_PLAYING, positionMs = 30_000),
+            onPlayFromSearch = { _, _ -> }, // ignore
+        )
+        gw.handles.add(handle)
+
+        val out = orchestrator(gw).playSearchQuery("", artist = null, album = null, playlist = "Для тренировки", genre = null, appHint = null)
+
+        assertEquals(MusicPlaybackOrchestrator.Status.SEARCH_OPENED, out.status)
+        assertNotEquals("active_session", out.strategy)
     }
 
     @Test

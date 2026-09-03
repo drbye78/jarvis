@@ -315,5 +315,11 @@ class AppGraph(
         runCatching { player.release() }
         runCatching { scope.cancel() }
         runCatching { saluteChannel.shutdown().awaitTermination(2, TimeUnit.SECONDS) }
+        // C3: the gRPC channel was torn down but the OkHttp client's pooled
+        // connections and dispatcher threads were not — every graph rebuild
+        // (provider change, watchdog restart) previously left them lingering
+        // for their 60-s/5-s idle timeouts, holding sockets to LLM endpoints.
+        runCatching { httpClient.connectionPool.evictAll() }
+        runCatching { httpClient.dispatcher.executorService.shutdown() }
     }
 }

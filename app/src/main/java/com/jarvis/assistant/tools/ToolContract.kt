@@ -118,7 +118,13 @@ fun kotlinx.serialization.json.JsonObject.string(key: String): String? =
     this[key]?.jsonPrimitive?.contentOrNull
 
 fun kotlinx.serialization.json.JsonObject.int(key: String): Int? =
-    this[key]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+    this[key]?.jsonPrimitive?.contentOrNull?.let { content ->
+        // F9: LLMs occasionally emit integer fields in float form ("50.0").
+        // toIntOrNull() rejected those outright, so SetVolumeTool et al.
+        // answered "Missing required parameter" for a value the model DID
+        // supply. Accept float-form numbers by parsing through Double.
+        content.toIntOrNull() ?: content.toDoubleOrNull()?.toInt()
+    }
 
 fun kotlinx.serialization.json.JsonObject.bool(key: String): Boolean? =
     this[key]?.jsonPrimitive?.contentOrNull?.let {

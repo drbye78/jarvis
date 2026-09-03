@@ -178,6 +178,9 @@
     <string name="device_time_format">HH:mm, d MMMM</string>
     <string name="device_battery_na">n/a</string>
 
+    <!-- AEC playback-capture grant with the service stopped (F8) -->
+    <string name="aec_service_not_running">The assistant is not running — start it, then re-enable audio capture.</string>
+
     <!-- AEC (echo cancellation): Phase A + Phase B, user-controllable, default off -->
     <string name="aec_section">Echo cancellation</string>
     <string name="aec_off">Off (default)</string>
@@ -186,7 +189,7 @@
     <string name="aec_hw_probe_available">Hardware AEC: available on this device</string>
     <string name="aec_hw_probe_unavailable">Hardware AEC: not available on this device</string>
     <string name="aec_hint">Use for voice commands over music, or so Jarvis hears you while it speaks. Takes effect after a service restart. In hardware mode the platform may shift microphone behavior — validate wake-word detection.</string>
-    <string name="aec_software_hint">Software mode is an experimental adaptive filter: it attenuates Jarvis's own voice echo and (with music capture on) other apps' music echo. Quality is below WebRTC AEC3 grade.</string>
+    <string name="aec_software_hint">Software mode is an experimental adaptive filter: it attenuates Jarvis\'s own voice echo and (with music capture on) other apps\' music echo. Quality is below WebRTC AEC3 grade.</string>
     <string name="aec_capture_section">Music capture (experimental, Android 10+)</string>
     <string name="aec_capture_switch">Listen to other apps\' music</string>
     <string name="aec_capture_grant">Grant capture permission</string>

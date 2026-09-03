@@ -22,19 +22,19 @@ class CredentialsStore(private val prefs: SharedPreferences) {
 
     var picovoiceKey: String
         get() = prefs.getString(KEY_PICOVOICE, "") ?: ""
-        set(v) { prefs.edit().putString(KEY_PICOVOICE, v.trim()).commit() }
+        set(v) { prefs.edit().putString(KEY_PICOVOICE, v.trim()).apply() }
     var saluteClientId: String
         get() = prefs.getString(KEY_SALUTE_ID, "") ?: ""
-        set(v) { prefs.edit().putString(KEY_SALUTE_ID, v.trim()).commit() }
+        set(v) { prefs.edit().putString(KEY_SALUTE_ID, v.trim()).apply() }
     var saluteClientSecret: String
         get() = prefs.getString(KEY_SALUTE_SECRET, "") ?: ""
-        set(v) { prefs.edit().putString(KEY_SALUTE_SECRET, v.trim()).commit() }
+        set(v) { prefs.edit().putString(KEY_SALUTE_SECRET, v.trim()).apply() }
     var gigaChatClientId: String
         get() = prefs.getString(KEY_GIGA_ID, "") ?: ""
-        set(v) { prefs.edit().putString(KEY_GIGA_ID, v.trim()).commit() }
+        set(v) { prefs.edit().putString(KEY_GIGA_ID, v.trim()).apply() }
     var gigaChatClientSecret: String
         get() = prefs.getString(KEY_GIGA_SECRET, "") ?: ""
-        set(v) { prefs.edit().putString(KEY_GIGA_SECRET, v.trim()).commit() }
+        set(v) { prefs.edit().putString(KEY_GIGA_SECRET, v.trim()).apply() }
 
     /**
      * The MANDATORY keys: SaluteSpeech (ASR+TTS) and GigaChat (LLM).

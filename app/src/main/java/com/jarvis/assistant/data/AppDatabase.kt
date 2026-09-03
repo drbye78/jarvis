@@ -21,6 +21,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  *   launch after update.
  * - v2→v3: no-op — schema is identical; the migration exists solely to
  *   prevent destructive fallback on future version bumps.
+ * - DOWNGRADE: pre-release schema policy — an APK rollback (sideload, QA
+ *   build) previously hit Room's IllegalStateException("Can't downgrade…")
+ *   on first DB open; it now wipes destructively like the v1 stance instead
+ *   of crashing.
  *
  * `alarmDao()` keeps its historical name (returning the new [AlertDao])
  * because FunctionRouter — owned by another lane — constructs the scheduler
@@ -66,6 +70,8 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .addMigrations(*ALL_MIGRATIONS)
                     .fallbackToDestructiveMigrationFrom(*DESTRUCTIVE_FROM_VERSIONS)
+                    // B5: rollback safety — see the class KDoc.
+                    .fallbackToDestructiveMigrationOnDowngrade(true)
                     .build()
                     .also { INSTANCE = it }
             }

@@ -35,6 +35,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -85,7 +86,13 @@ class JarvisForegroundService : Service() {
     private lateinit var wakeLock: PowerManager.WakeLock
     private lateinit var wifiLock: WifiManager.WifiLock
 
-    private val errorTts by lazy { TextToSpeech(this) { } }
+    /**
+     * Error voice. Nullable + created on first SPEAK (F10): the old
+     * `by lazy` field was CONSTRUCTED by onDestroy's shutdown() when no
+     * error was ever spoken — spinning up a whole TTS engine just to tear
+     * it down on the main thread during service destruction.
+     */
+    @Volatile private var errorTts: TextToSpeech? = null
 
     private var wasMusicPlaying = false
     /**
@@ -188,11 +195,12 @@ class JarvisForegroundService : Service() {
         // devices (Kirin 710A class). The foreground service must remain
         // responsive while the heavy object graph is constructed.
         initJob = serviceScope.launch(Dispatchers.Default) {
+            var built: AppGraph? = null
             try {
                 acquireLocks()
                 registerPowerReceiver()
 
-                val appGraph = AppGraph(
+                built = AppGraph(
                     this@JarvisForegroundService, config,
                     com.jarvis.assistant.config.ProviderSettings.DEFAULT.copy(
                         type = prefs.providerType,
@@ -203,28 +211,39 @@ class JarvisForegroundService : Service() {
                     onSessionError = { msg -> speakError(msg) },
                 ).also { it.start() }
 
-                graph = appGraph
-                GraphHolder.graph = appGraph
+                // F1 (zombie-graph race): graph construction is long and
+                // NON-SUSPENDING, so Job.cancel() from onDestroy cannot
+                // interrupt it. If the user stopped the service while we
+                // were building, onDestroy saw graph == null and will never
+                // release this instance — release it HERE, then bail.
+                if (!isActive) {
+                    Timber.w("Service destroyed during graph init — releasing the built graph")
+                    runCatching { built.shutdown() }
+                    return@launch
+                }
+
+                graph = built
+                GraphHolder.graph = built
                 initialized = true
                 bootstrapping = false
 
                 // Signal graph readiness before wiring collectors so that any
                 // code awaiting graphReady sees the graph immediately.
-                graphReady.complete(appGraph)
+                graphReady.complete(built)
 
                 // Switch back to the main notification channel now that the
                 // pipeline is live.
                 nm?.notify(NOTIFICATION_ID, buildStateNotification(getString(R.string.state_idle)))
 
                 // Live state -> notification text + ducking.
-                appGraph.scope.launch {
-                    appGraph.stateMachine.state.collect { state ->
+                built.scope.launch {
+                    built.stateMachine.state.collect { state ->
                         nm?.notify(NOTIFICATION_ID, buildStateNotification(stateLabel(state)))
                     }
                 }
-                appGraph.scope.launch {
+                built.scope.launch {
                     var wasActive = false
-                    appGraph.stateMachine.state.collect { state ->
+                    built.stateMachine.state.collect { state ->
                         val isActive = state != AssistantState.IDLE
                         when {
                             isActive && !wasActive -> duck()
@@ -239,7 +258,16 @@ class JarvisForegroundService : Service() {
                 // Do NOT mark initialized: the 15-minute watchdog (or an
                 // app revisit) retries automatically.
                 bootstrapping = false
-                graph?.shutdown()
+                // C1: the ctor/start may have thrown AFTER acquireLocks() and
+                // registerPowerReceiver() ran — graph is still null here, so
+                // the old cleanup (graph?.shutdown()) released NOTHING while
+                // onDestroy can only release the LATEST lock/receiver
+                // instances. Release them explicitly so each 15-minute retry
+                // does not stack another held wake lock + system receiver
+                // (battery drain on an always-on appliance).
+                releaseLocks()
+                unregisterPowerReceiver()
+                built?.let { runCatching { it.shutdown() } }
                 graph = null
                 GraphHolder.graph = null
                 // Complete exceptionally so any awaiter gets the failure.
@@ -252,6 +280,9 @@ class JarvisForegroundService : Service() {
     }
 
     private fun acquireLocks() {
+        // F3: idempotent — a watchdog retry must not stack a SECOND held
+        // wake lock on top of a leaked one; release any held instance first.
+        releaseLocks()
         // Audit #12: null-safe service lookups — a missing manager skips that
         // lock with a log line instead of crashing init (the lateinit guards
         // in onDestroy/release handle the never-assigned case).
@@ -275,6 +306,16 @@ class JarvisForegroundService : Service() {
         } else {
             Timber.e("WifiManager unavailable — running without the wifi lock")
         }
+    }
+
+    private fun releaseLocks() {
+        if (::wakeLock.isInitialized && wakeLock.isHeld) runCatching { wakeLock.release() }
+        if (::wifiLock.isInitialized && wifiLock.isHeld) runCatching { wifiLock.release() }
+    }
+
+    private fun unregisterPowerReceiver() {
+        powerReceiver?.let { runCatching { unregisterReceiver(it) } }
+        powerReceiver = null
     }
 
     private fun registerPowerReceiver() {
@@ -444,8 +485,9 @@ class JarvisForegroundService : Service() {
     private fun speakError(message: String) {
         Timber.e("Voice error: %s", message)
         runCatching {
-            errorTts.language = Locale.getDefault()
-            errorTts.speak(message, TextToSpeech.QUEUE_FLUSH, null, null)
+            val tts = errorTts ?: TextToSpeech(this) { }.also { errorTts = it }
+            tts.language = Locale.getDefault()
+            tts.speak(message, TextToSpeech.QUEUE_FLUSH, null, null)
         }
     }
 
@@ -514,14 +556,32 @@ class JarvisForegroundService : Service() {
             cancelRestartAlarm()
         }
         runCatching { powerReceiver?.let { unregisterReceiver(it) } }
-        graph?.shutdown()
+        powerReceiver = null
+        // B1 (main-thread ANR): AppGraph.shutdown() contains BLOCKING
+        // teardown — HybridWakeWordDetector.release() runs runBlocking with
+        // bounded waits up to ~2.5 s and the gRPC channel drains for up to
+        // 2 s more. Service.onDestroy runs on the MAIN thread (input-dispatch
+        // ANR threshold is 5 s), and the detector's own contract demands a
+        // background caller. Run the teardown on a dedicated thread; the
+        // fields are nulled synchronously so a restart builds a fresh graph
+        // while the old one drains.
+        val graphToShutdown = graph
         graph = null
         GraphHolder.graph = null
+        if (graphToShutdown != null) {
+            Thread {
+                runCatching { graphToShutdown.shutdown() }
+                    .onFailure { Timber.w(it, "Graph shutdown failed") }
+            }.apply {
+                name = "jarvis-graph-shutdown"
+                isDaemon = true
+            }.start()
+        }
         initialized = false
         bootstrapping = false
-        if (::wakeLock.isInitialized && wakeLock.isHeld) runCatching { wakeLock.release() }
-        if (::wifiLock.isInitialized && wifiLock.isHeld) runCatching { wifiLock.release() }
-        runCatching { errorTts.shutdown() }
+        releaseLocks()
+        runCatching { errorTts?.shutdown() }
+        errorTts = null
         super.onDestroy()
     }
 

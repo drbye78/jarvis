@@ -42,12 +42,28 @@ class FunctionRouter(
 
     private val toolRegistry = ToolRegistry(
         listOf(
-            SetAlarmTool(alarmScheduler),
+            SetAlarmTool(
+                alarmScheduler,
+                // F6: locale-aware defaults — the values-en translations
+                // existed but were never wired (dead resources).
+                defaultLabel = { appContext.getString(com.jarvis.assistant.R.string.default_alarm_label) },
+            ),
             CancelAlarmTool(appContext, alarmScheduler),
             ListAlarmsTool(appContext),
-            SetTimerTool(alarmScheduler),
+            SetTimerTool(
+                alarmScheduler,
+                defaultLabel = { appContext.getString(com.jarvis.assistant.R.string.default_timer_label) },
+            ),
             CancelTimerTool(appContext, alarmScheduler),
-            WeatherTool(OpenMeteoWeatherClient(httpClient)),
+            WeatherTool(
+                OpenMeteoWeatherClient(
+                    httpClient,
+                    // F6: condition names follow the device locale.
+                    conditionFor = { code ->
+                        com.jarvis.assistant.tools.weatherConditionName(appContext, code)
+                    },
+                ),
+            ),
         ) + DeviceTools(appContext).all() +
             MusicTools(
                 MusicPlaybackOrchestrator(

@@ -473,7 +473,10 @@ class SettingsActivity : AppCompatActivity() {
             // graph's playback-capture lane (SOFTWARE mode only).
             val graph = GraphHolder.graph
             if (graph == null) {
-                Toast.makeText(this, R.string.settings_saved, Toast.LENGTH_SHORT).show()
+                // F8: the playback-capture consent returned after the
+                // service was stopped — the old toast claimed "credentials
+                // saved", which is wrong on two counts.
+                Toast.makeText(this, R.string.aec_service_not_running, Toast.LENGTH_SHORT).show()
             } else if (graph.aecMode != com.jarvis.assistant.audio.aec.AecMode.SOFTWARE) {
                 Toast.makeText(this, R.string.aec_hw_probe_unavailable, Toast.LENGTH_SHORT).show()
             } else {

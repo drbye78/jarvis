@@ -228,6 +228,10 @@ internal class AndroidControllerHandle(
             artist = md?.getText(MediaMetadataCompat.METADATA_KEY_ARTIST)?.toString()
                 ?: md?.getText(MediaMetadataCompat.METADATA_KEY_ALBUM_ARTIST)?.toString(),
             album = md?.getText(MediaMetadataCompat.METADATA_KEY_ALBUM)?.toString(),
+            // Genre was never read here, so NowPlaying.genre was ALWAYS null
+            // while VoiceQueryMatcher scores genre requests against it —
+            // "включи рок" could never verify even on compliant players.
+            genre = md?.getText(MediaMetadataCompat.METADATA_KEY_GENRE)?.toString(),
             state = pb?.state ?: NowPlaying.STATE_NONE,
             positionMs = pb?.position ?: 0L,
             durationMs = md?.getLong(MediaMetadataCompat.METADATA_KEY_DURATION) ?: 0L,

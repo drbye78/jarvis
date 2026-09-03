@@ -114,4 +114,35 @@ class AssistantAudioFocusTest {
         assertTrue(focus.state == AssistantFocusState.IDLE)
         assertFalse(focus.state == AssistantFocusState.DUCKING)
     }
+
+    @Test
+    fun `concurrent sentence lifecycle never wedges the machine`() {
+        // B2: the mutators run on the multi-threaded AppGraph scope (up to 3
+        // concurrent sentence coroutines). With an unsynchronized counter,
+        // lost updates could leave activeSentences stuck >= 1 with no
+        // sentence playing — DUCKING forever, external music permanently
+        // ducked. Serialize the paired start/finish lifecycle from many
+        // threads and assert the machine drains back to IDLE.
+        val adapter = RecordingAdapter()
+        val focus = AssistantAudioFocus(adapter)
+        val threads = (1..8).map {
+            Thread {
+                repeat(100) {
+                    focus.onTtsSentenceStarted()
+                    focus.onTtsSentenceFinished()
+                }
+            }
+        }
+        threads.forEach { it.start() }
+        threads.forEach { it.join() }
+        // After the storm the machine must be drained: back to IDLE (not
+        // wedged in DUCKING with a phantom active sentence — the exact
+        // failure mode an unsynchronized counter had) and every granted
+        // request abandoned exactly once (no double-abandon, no leak).
+        // Paired start/finish cycles legitimately re-request focus, so the
+        // invariant is SYMMETRY, not a fixed count.
+        assertEquals(AssistantFocusState.IDLE, focus.state)
+        assertEquals(adapter.requests, adapter.abandons)
+        assertTrue(adapter.requests >= 1)
+    }
 }

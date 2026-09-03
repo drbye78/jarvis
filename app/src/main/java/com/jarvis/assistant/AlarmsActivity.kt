@@ -125,6 +125,15 @@ class AlarmListAdapter(
         holder.repeat.text = holder.repeat.context.getString(
             if (alarm.repeatDaily) R.string.alarm_repeat_daily else R.string.alarm_repeat_once
         )
+        // F2 (stale-listener rebind): submit() rebinds holders in place
+        // (notifyDataSetChanged), so the listener from the PREVIOUS bind is
+        // still attached when `isChecked` is written — CompoundButton
+        // setChecked() notifies it, and with rows re-sorted on every
+        // insert/delete/re-arm the old listener fires for the NEW row's
+        // value against the OLD row's alarm (e.g. deleting an alarm above
+        // could silently re-enable a disabled one). Detach first, set the
+        // checked state, THEN attach the listener.
+        holder.enabled.setOnCheckedChangeListener(null)
         holder.enabled.isChecked = alarm.enabled
         holder.enabled.setOnCheckedChangeListener { _, checked ->
             if (checked != alarm.enabled) onToggle(alarm, checked)

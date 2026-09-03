@@ -96,11 +96,16 @@ data class BargeInPolicy(
  * Pure function of its inputs apart from time: [nowMs] is injectable so JVM
  * tests drive the clock deterministically. Wired into the session in
  * SessionManager.startListening via detections().gatedBy(BargeInPolicy.from(config), stateMachine.state).
+ *
+ * D5: the DEFAULT clock is monotonic (nanoTime/1e6), not wall time — a
+ * backwards wall-clock jump (NTP correction, manual time set) made
+ * `now - lastAccepted` negative and suppressed every detection until the
+ * wall clock caught back up. Monotonic differences are immune to that.
  */
 fun Flow<Detection>.gatedBy(
     policy: BargeInPolicy,
     assistantState: StateFlow<AssistantState>,
-    nowMs: () -> Long = System::currentTimeMillis,
+    nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ): Flow<Detection> = flow {
     // Null = "never". Numeric sentinels (e.g. Long.MIN_VALUE) would overflow
     // on subtraction and permanently suppress detections.

@@ -1,5 +1,6 @@
 package com.jarvis.assistant.util
 
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -14,7 +15,9 @@ object JsonOut {
     fun obj(vararg pairs: Pair<String, Any?>): String {
         val map = pairs.associate { (k, v) ->
             k to when (v) {
-                null -> JsonPrimitive("null")
+                // D1: a null value serializes as JSON null, not the STRING
+                // "null" — {"x":"null"} mis-types the field for the LLM.
+                null -> JsonNull
                 is String -> JsonPrimitive(v)
                 is Number -> JsonPrimitive(v)
                 is Boolean -> JsonPrimitive(v)

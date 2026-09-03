@@ -31,15 +31,24 @@ interface AudioFocusAdapter {
  * Denial is non-fatal by design: TTS plays anyway (the old behavior), we
  * just lose the duck. Count underflow and double-abandon are clamped into
  * no-ops so racing sentence completions can never wedge the machine.
+ *
+ * B2 (thread safety): the callers run on the multi-threaded AppGraph scope
+ * (Dispatchers.IO) with up to 3 concurrent sentence coroutines (TurnRunner
+ * prefetches 2, SpeechFeedback adds a third). A plain Int counter lost
+ * updates on interleaved read-modify-write, which could wedge the machine
+ * in DUCKING forever (external music permanently ducked) or abandon focus
+ * early. All three mutators are now serialized on one monitor.
  */
 class AssistantAudioFocus(private val adapter: AudioFocusAdapter) {
 
     var state: AssistantFocusState = AssistantFocusState.IDLE
         private set
 
+    private val lock = Any()
+
     private var activeSentences = 0
 
-    fun onTtsSentenceStarted() {
+    fun onTtsSentenceStarted() = synchronized(lock) {
         activeSentences++
         if (state == AssistantFocusState.IDLE) {
             if (adapter.requestDuckFocus()) {
@@ -49,7 +58,7 @@ class AssistantAudioFocus(private val adapter: AudioFocusAdapter) {
         }
     }
 
-    fun onTtsSentenceFinished() {
+    fun onTtsSentenceFinished() = synchronized(lock) {
         activeSentences = (activeSentences - 1).coerceAtLeast(0)
         if (activeSentences == 0 && state == AssistantFocusState.DUCKING) {
             adapter.abandonFocus()
@@ -58,7 +67,7 @@ class AssistantAudioFocus(private val adapter: AudioFocusAdapter) {
     }
 
     /** Barge-in / regeneration: kill the duck NOW; later finishes are no-ops. */
-    fun onTtsFlushed() {
+    fun onTtsFlushed() = synchronized(lock) {
         activeSentences = 0
         if (state == AssistantFocusState.DUCKING) {
             adapter.abandonFocus()

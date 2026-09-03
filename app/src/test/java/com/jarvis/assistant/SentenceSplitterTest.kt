@@ -84,4 +84,17 @@ class SentenceBufferTest {
         val out = buf.append("Раз. Два. Три.")
         assertEquals(listOf("Раз.", " Два.", " Три."), out)
     }
+    @Test
+    fun `streamed abbreviation tail does not flush the sentence`() {
+        // B3: a delta ending right after "т.д." used to force-flush an
+        // incomplete sentence (the trailing '.' was mistaken for a
+        // boundary), and the continuation became a separate TTS chunk —
+        // the choppy-speech defect this splitter exists to prevent.
+        val buf = SentenceBuffer()
+        assertEquals(emptyList<String>(), buf.append("Он купил чай, кофе и т.д."))
+        assertEquals(
+            listOf("Он купил чай, кофе и т.д. и ушёл."),
+            buf.append(" и ушёл."),
+        )
+    }
 }

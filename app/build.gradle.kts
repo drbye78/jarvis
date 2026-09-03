@@ -69,6 +69,13 @@ android {
         getByName("release") {
             java.srcDir("build/generated/java/generateReleaseProto/java")
         }
+        // B4: MigrationTestHelper reads the exported Room schemas from the
+        // instrumentation assets — without this the three androidTest
+        // migration tests failed at setup ("schema file not found"), so the
+        // v2→v3 chain had no real coverage.
+        getByName("androidTest") {
+            assets.srcDir("$projectDir/schemas")
+        }
     }
 }
 

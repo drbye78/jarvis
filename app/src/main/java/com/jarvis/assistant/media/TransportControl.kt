@@ -43,6 +43,17 @@ class TransportControl(
     ): MusicPlaybackOrchestrator.Outcome {
         val action = spec.action
         val target = if (appHint != null) resolver.resolve(appHint) else null
+
+        // M4 (extended): a NAMED app that cannot even be RESOLVED (not
+        // installed / unknown label) is a miss too — silently commanding
+        // whichever player happens to be playing would act on the wrong app.
+        if (appHint != null && target == null) {
+            return MusicPlaybackOrchestrator.Outcome(
+                MusicPlaybackOrchestrator.Status.ERROR, null, strategy = "named_app_unresolved",
+                detail = "Не нашёл плеер «$appHint» на планшете — установи его или назови другой.",
+                isError = true,
+            )
+        }
         val controllers = gateway.activeControllers()
         val controller = selectController(controllers, target)
 
@@ -104,6 +115,18 @@ class TransportControl(
                 MusicPlaybackOrchestrator.Action.PREVIOUS -> controller.skipToPrevious()
                 MusicPlaybackOrchestrator.Action.STOP -> controller.stop()
                 MusicPlaybackOrchestrator.Action.SEEK -> {
+                    // Honest refusal for a no-op seek: without positionMs or
+                    // deltaMs the computed target equals the current position,
+                    // and a no-op reported as "Команда отправлена" is a fake
+                    // success (the M4 honesty rule).
+                    if (spec.positionMs == null && spec.deltaMs == null) {
+                        return MusicPlaybackOrchestrator.Outcome(
+                            MusicPlaybackOrchestrator.Status.ERROR, namedApp, strategy = "missing_seek_target",
+                            detail = "Не понял, куда перематывать — скажи «промотай на минуту» " +
+                                "или «на вторую минуту».",
+                            isError = true,
+                        )
+                    }
                     val current = controller.snapshot().positionMs
                     val target2 = spec.positionMs ?: (current + (spec.deltaMs ?: 0L))
                     controller.seekTo(target2.coerceAtLeast(0))
@@ -183,11 +206,22 @@ class TransportControl(
 
     suspend fun nowPlaying(appHint: String?): MusicPlaybackOrchestrator.Outcome {
         val target = if (appHint != null) resolver.resolve(appHint) else null
+
+        // M4: asking about a NAMED player must not report some other app's
+        // track as if it were the answer — including the case where the
+        // named app cannot be resolved at all (not installed). Previously
+        // an unresolvable hint fell through to "any playing session" and
+        // fabricated an answer about a different player.
+        if (appHint != null && target == null) {
+            return MusicPlaybackOrchestrator.Outcome(
+                MusicPlaybackOrchestrator.Status.ERROR, null, strategy = "named_app_unresolved",
+                detail = "Не нашёл плеер «$appHint» на планшете — не могу сказать, что в нём играет.",
+                isError = true,
+            )
+        }
         val controllers = gateway.activeControllers()
         val controller = selectController(controllers, target)
 
-        // M4: asking about a NAMED player must not report some other app's
-        // track as if it were the answer.
         if (controller == null) {
             return if (target != null) {
                 MusicPlaybackOrchestrator.Outcome(

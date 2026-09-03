@@ -176,6 +176,9 @@
     <string name="device_time_format">HH:mm, d MMMM</string>
     <string name="device_battery_na">н/д</string>
 
+    <!-- AEC playback-capture grant with the service stopped (F8) -->
+    <string name="aec_service_not_running">Ассистент не запущен — запусти его, затем повторно включи захват звука.</string>
+
     <!-- AEC (echo cancellation): Phase A + Phase B, user-controllable, default off -->
     <string name="aec_section">Эхоподавление</string>
     <string name="aec_off">Выключено (по умолчанию)</string>

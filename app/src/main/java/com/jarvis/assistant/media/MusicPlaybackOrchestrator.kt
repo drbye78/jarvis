@@ -161,7 +161,7 @@ class MusicPlaybackOrchestrator(
                 Timber.d("Music: active session for %s, playFromSearch(%s)", app.packageName, command.focus ?: "flat")
                 val before = live.snapshot()
                 live.playFromSearchStructured(command)
-                val verified = awaitVerifiedStart(live, vq, before)
+                val verified = awaitStartVerified(live, vq, before)
                 if (verified != null) {
                     return playing(app, "active_session", verified)
                 }
@@ -215,7 +215,7 @@ class MusicPlaybackOrchestrator(
                 if (caps.supports(TransportAction.PLAY_FROM_SEARCH)) {
                     val before = fresh.snapshot()
                     fresh.playFromSearchStructured(command)
-                    val verified = awaitVerifiedStart(fresh, vq, before)
+                    val verified = awaitStartVerified(fresh, vq, before)
                     if (verified != null) {
                         return playing(app, "cold_start", verified)
                     }
@@ -319,7 +319,7 @@ class MusicPlaybackOrchestrator(
                 if (handle.capabilities().supports(TransportAction.PLAY_FROM_SEARCH)) {
                     val before = runCatching { handle.snapshot() }.getOrDefault(NowPlaying())
                     handle.playFromSearchStructured(command)
-                    val verified = awaitVerifiedStart(handle, vq, before)
+                    val verified = awaitStartVerified(handle, vq, before)
                     if (verified != null) {
                         return playing(app, "browser_cold_start", verified)
                     }
@@ -537,6 +537,26 @@ class MusicPlaybackOrchestrator(
     }
 
     /**
+     * Verification router: scoreable requests (title/artist/album/genre)
+     * use the strong score rule; a playlist-only request never appears in
+     * track metadata (score is 0 by construction) and verifies by STATE
+     * evidence instead — otherwise every playlist command "failed" while
+     * the playlist was audibly playing, re-dispatching the cascade and
+     * opening search screens (the playLibraryItem no-title-hint path is the
+     * precedent for state-evidence verification).
+     */
+    private suspend fun awaitStartVerified(
+        handle: MediaControllerHandle,
+        vq: VoiceQuery,
+        before: NowPlaying,
+    ): NowPlaying? =
+        if (VoiceQueryMatcher.hasScoreableExpectation(vq)) {
+            awaitVerifiedStart(handle, vq, before)
+        } else {
+            awaitCommandEffect(handle, before)
+        }
+
+    /**
      * Weakest honest verification: ANY playing state within the budget.
      * Used only when the play target was exact by construction (a named
      * mediaId) and no title hint exists to score against.
@@ -580,6 +600,32 @@ class MusicPlaybackOrchestrator(
     }
 
     /**
+     * State-evidence verification for requests that cannot score (playlist
+     * names never appear in track metadata): the player was silent before
+     * and now plays, the position reset, or the track switched — any of
+     * these means the dispatch DID something to the player. Same weak-evidence
+     * trade-off the position-reset rule of [VoiceQueryMatcher.isVerified]
+     * already accepts.
+     */
+    private suspend fun awaitCommandEffect(
+        handle: MediaControllerHandle,
+        before: NowPlaying,
+    ): NowPlaying? {
+        val polls = (budgets.verifyTotalMs / budgets.verifyPollMs).coerceAtLeast(1).toInt()
+        repeat(polls) {
+            delay(budgets.verifyPollMs)
+            val now = runCatching { handle.snapshot() }.getOrNull() ?: return null
+            if (now.isPlaying) {
+                val started = !before.isPlaying
+                val positionReset = now.positionMs < before.positionMs
+                val trackSwitched = before.title != now.title || before.artist != now.artist
+                if (started || positionReset || trackSwitched) return now
+            }
+        }
+        return null
+    }
+
+    /**
      * S4 verification: no `before` baseline exists (the legacy intent may
      * have created the session), so the ONLY acceptable evidence is a
      * strong score against the request.
@@ -590,6 +636,11 @@ class MusicPlaybackOrchestrator(
     ): NowPlaying? {
         val handle = awaitControllerFor(pkg, budgets.legacyWaitTotalMs, budgets.coldStartPollMs)
             ?: return null
+        if (!VoiceQueryMatcher.hasScoreableExpectation(vq)) {
+            // Playlist-only: score is impossible — a playing session that
+            // appeared after the legacy intent is the honest evidence.
+            return awaitPlaying(handle)
+        }
         val polls = (budgets.verifyTotalMs / budgets.verifyPollMs).coerceAtLeast(1).toInt()
         repeat(polls) {
             val now = runCatching { handle.snapshot() }.getOrNull() ?: return null

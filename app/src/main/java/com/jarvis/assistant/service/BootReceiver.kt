@@ -20,7 +20,12 @@ import kotlinx.coroutines.launch
  * store timers vanished on reboot entirely (M9/S3).
  *
  * A fresh boot clears the userStopped flag: the appliance profile expects the
- * assistant to come back after a reboot.
+ * assistant to come back after a reboot. An app UPDATE (MY_PACKAGE_REPLACED)
+ * does NOT clear it — the service documents that an explicit stop keeps the
+ * assistant stopped, and resurrecting it on every APK update violates that
+ * contract. The assistant also never auto-starts before the user finished
+ * onboarding (the old code started the service on every reboot of a
+ * half-configured install, spamming the "microphone needed" notification).
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -46,7 +51,15 @@ class BootReceiver : BroadcastReceiver() {
             }
         }
 
-        prefs.userStopped = false // fresh boot = assistant may auto-start
-        JarvisForegroundService.explicitStart(context)
+        val freshBoot = action == Intent.ACTION_BOOT_COMPLETED
+        if (freshBoot) {
+            prefs.userStopped = false // fresh boot = assistant may auto-start
+        }
+        // Start the pipeline only when the assistant is supposed to run:
+        // onboarding finished AND (fresh boot OR the user never stopped it).
+        val shouldStart = prefs.onboarded && (freshBoot || !prefs.userStopped)
+        if (shouldStart) {
+            JarvisForegroundService.explicitStart(context)
+        }
     }
 }

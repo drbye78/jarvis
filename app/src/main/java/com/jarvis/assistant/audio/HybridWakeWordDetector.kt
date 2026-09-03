@@ -348,6 +348,13 @@ class HybridWakeWordDetector(
             val engineReleased = withTimeoutOrNull(RELEASE_ENGINE_LOCK_MS) {
                 processMutex.lock()
                 try {
+                    // C2: publish Released INSIDE the critical section. A
+                    // buildAndSwap publication also runs under this mutex and
+                    // bails out when it sees Released — publishing AFTER the
+                    // unlock left a window where an in-flight NonCancellable
+                    // build published a fresh engine into the already-cancelled
+                    // scope, leaving a native engine nobody would ever release.
+                    _state.value = DetectorState.Released
                     runCatching { engine?.release() }
                         .onFailure { Timber.w(it, "Wake-word engine release() threw (ignored)") }
                     engine = null
@@ -363,6 +370,7 @@ class HybridWakeWordDetector(
                     RELEASE_ENGINE_LOCK_MS,
                 )
             }
+            // Idempotent re-publish (covers the mutex-timeout path above).
             _state.value = DetectorState.Released
         }
     }

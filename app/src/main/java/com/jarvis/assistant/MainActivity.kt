@@ -109,6 +109,10 @@ class MainActivity : AppCompatActivity() {
                 graph.sessionManager.setMuted(false)
                 micButton.setIconResource(R.drawable.ic_mic)
                 micButton.setText(R.string.mic_mute)
+                // F7: setMuted(false) restarts listening without a state
+                // transition (StateFlow does not re-emit IDLE), so the label
+                // would stay "Микрофон выключен" until the next wake word.
+                statusText.text = currentState?.let { labelFor(it) } ?: getString(R.string.state_idle_full)
             }
             voiceOrb.setState(currentState, micMuted)
         }

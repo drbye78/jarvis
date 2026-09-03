@@ -54,8 +54,15 @@ class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
             required = emptyList(),
         )
 
-        /** Cascade budget: cold start 8 s + verify 4.5 s + legacy 6 s + margin. */
-        override val timeoutMs: Long = 30_000
+        /**
+         * Cascade budget (worst case, all defaults): live-session verify 4.5 s
+         * + browser lane (connect 3 s + search 3 s + two verify passes 9 s)
+         * + cold start (await 8 s + verify 4.5 s) + legacy intent (await 6 s +
+         * verify 4.5 s) + deep link ≈ 42.5 s. The old 30 s cut the cascade
+         * short and surfaced a raw "Tool timed out" error instead of the
+         * designed honest fallbacks (SEARCH_OPENED / APP_OPENED).
+         */
+        override val timeoutMs: Long = 50_000
 
         override suspend fun execute(arguments: String): String {
             val obj = ToolArgs.parse(arguments)
@@ -131,15 +138,24 @@ class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
                     MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.RESTART)
                 "like", "лайк", "лайкни", "нравится" ->
                     MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.LIKE)
-                "repeat", "повтор", "повтори" ->
+                "repeat", "повтор", "повтори" -> {
+                    val modeStr = obj.string("mode")?.lowercase()
+                    val repeatMode = when (modeStr) {
+                        // Omitted mode keeps the player-default path (ALL).
+                        null -> null
+                        "off", "none", "выкл", "без повтора" -> MusicPlaybackOrchestrator.RepeatMode.OFF
+                        "one", "track", "трек" -> MusicPlaybackOrchestrator.RepeatMode.ONE
+                        "all", "все", "всё" -> MusicPlaybackOrchestrator.RepeatMode.ALL
+                        // An unrecognized mode used to silently map to ALL —
+                        // the OPPOSITE of the likely "repeat this track"
+                        // intent. Reject it honestly instead of rewriting it.
+                        else -> return JsonOut.error("mode must be one of off|one|all (got '$modeStr')")
+                    }
                     MusicPlaybackOrchestrator.ControlSpec(
                         action = MusicPlaybackOrchestrator.Action.REPEAT,
-                        repeatMode = when (obj.string("mode")?.lowercase()) {
-                            "off", "none", "выкл" -> MusicPlaybackOrchestrator.RepeatMode.OFF
-                            "one", "track", "трек" -> MusicPlaybackOrchestrator.RepeatMode.ONE
-                            else -> MusicPlaybackOrchestrator.RepeatMode.ALL
-                        },
+                        repeatMode = repeatMode,
                     )
+                }
                 "shuffle", "перемешай", "перемешать", "шуфл" ->
                     MusicPlaybackOrchestrator.ControlSpec(
                         action = MusicPlaybackOrchestrator.Action.SHUFFLE,

@@ -72,9 +72,6 @@ private fun isAbbreviationAt(text: String, dotIndex: Int): Boolean {
     return token in ABBREVIATIONS
 }
 
-/** Characters that terminate a sentence fragment. */
-private val BOUNDARY_CHARS = charArrayOf('.', '!', '?', '…')
-
 /**
  * Incremental sentence accumulator for streaming TTS. Chunks of LLM text are
  * appended; complete sentences are extracted as soon as they arrive so the
@@ -107,8 +104,18 @@ class SentenceBuffer(
         }
 
         val remainder = sentences.last()
-        // A remainder that already ends on a boundary is a complete sentence.
-        val endsOnBoundary = remainder.last() in BOUNDARY_CHARS
+        // A remainder that already ends on a REAL boundary is a complete
+        // sentence. B3: testing only the CHARACTER used to re-introduce the
+        // abbreviation-dot flush this splitter exists to prevent — when a
+        // delta ends right after "т.д." the buffer force-flushed an
+        // incomplete sentence and the continuation became a separate TTS
+        // chunk (choppy speech). A trailing '.' only ends the sentence when
+        // it is NOT an abbreviation dot; '!', '?' and '…' always do.
+        val endsOnBoundary = when (remainder.last()) {
+            '.' -> !isAbbreviationAt(remainder, remainder.lastIndex)
+            '!', '?', '…' -> true
+            else -> false
+        }
         if (remainder.length >= maxChars || endsOnBoundary) {
             // Force-flush oversized remainder / emit completed sentence.
             out.add(remainder)

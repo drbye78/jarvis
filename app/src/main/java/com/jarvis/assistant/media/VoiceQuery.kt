@@ -257,6 +257,19 @@ object VoiceQueryMatcher {
 
     const val STRONG_THRESHOLD = 0.5
 
+    /**
+     * True when the request carries at least one expectation [score] can
+     * test (title/artist/album/genre tokens). A playlist-only request never
+     * appears in track metadata: score is always 0 for it, so the caller
+     * must verify by other means (state evidence), never by silently
+     * passing — and never by silently failing a compliant player either.
+     */
+    fun hasScoreableExpectation(vq: VoiceQuery): Boolean =
+        vq.query.isNotBlank() ||
+            !vq.artist.isNullOrBlank() ||
+            !vq.album.isNullOrBlank() ||
+            !vq.genre.isNullOrBlank()
+
     private const val W_TITLE = 0.65
     private const val W_ARTIST = 0.35
     private const val W_ALBUM = 0.35

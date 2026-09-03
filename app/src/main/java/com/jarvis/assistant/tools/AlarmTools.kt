@@ -35,7 +35,14 @@ object AlertListRenderer {
  * LLM tools for alarms and timers, all backed by the unified scheduled-alert
  * store through [AndroidAlarmScheduler] (PLAN.md §3.3).
  */
-class SetAlarmTool(private val scheduler: AndroidAlarmScheduler) : ToolContract {
+class SetAlarmTool(
+    private val scheduler: AndroidAlarmScheduler,
+    /** F6: locale-aware default label; FunctionRouter passes the
+     *  `default_alarm_label` string resource (the values-en translation
+     *  existed but was never referenced). Default keeps the RU literal for
+     *  JVM tests. */
+    private val defaultLabel: () -> String = { "Будильник" },
+) : ToolContract {
     override val name = "setAlarm"
     override val description =
         "Set an alarm for a specific time of day (HH:mm, 24-hour). Use for wake-up alarms and reminders tied to a clock time."
@@ -55,7 +62,7 @@ class SetAlarmTool(private val scheduler: AndroidAlarmScheduler) : ToolContract 
             ?: return JsonOut.error("Missing required parameter: time")
         val (hour, minute) = AlarmTimes.parseTime(timeStr)
             ?: return JsonOut.error("Invalid time format. Use HH:mm (00:00–23:59)")
-        val label = obj.string("label")?.takeIf { it.isNotBlank() } ?: "Будильник"
+        val label = obj.string("label")?.takeIf { it.isNotBlank() } ?: defaultLabel()
         val repeatDaily = obj.bool("repeat_daily") ?: true
         val entity = scheduler.schedule(label, hour, minute, repeatDaily)
         return JsonOut.obj(
@@ -146,7 +153,11 @@ private suspend fun allAlerts(context: Context): List<ScheduledAlertEntity> =
 private suspend fun alerts(context: Context, kind: String): List<ScheduledAlertEntity> =
     allAlerts(context).filter { it.kind == kind }
 
-class SetTimerTool(private val scheduler: AndroidAlarmScheduler) : ToolContract {
+class SetTimerTool(
+    private val scheduler: AndroidAlarmScheduler,
+    /** F6: locale-aware default label (see SetAlarmTool). */
+    private val defaultLabel: () -> String = { "Таймер" },
+) : ToolContract {
     override val name = "setTimer"
     override val description =
         "Start a countdown timer. Use for 'напомни через 10 минут', 'таймер на 5 минут' and similar. NOT for clock-time alarms."
@@ -166,7 +177,7 @@ class SetTimerTool(private val scheduler: AndroidAlarmScheduler) : ToolContract 
             ?: return JsonOut.error("Missing required parameter: minutes")
         if (minutes !in 1..24 * 60) return JsonOut.error("minutes must be between 1 and 1440")
         val seconds = obj.int("seconds")?.coerceIn(0, 59) ?: 0
-        val label = obj.string("label")?.takeIf { it.isNotBlank() } ?: "Таймер"
+        val label = obj.string("label")?.takeIf { it.isNotBlank() } ?: defaultLabel()
         val delayMs = (minutes * 60L + seconds) * 1000L
         // Persisted as a scheduled_alerts row + armed via the scheduler, so it
         // survives reboot and has a collision-free request code (M9/S3).
