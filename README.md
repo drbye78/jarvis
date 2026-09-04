@@ -4,7 +4,8 @@
 
 > **Status: in active development (pre-1.0).** Version `0.2.0`. APIs, behavior, and on-device storage may change between releases.
 
-Always-listening voice assistant for Android 11 (API 30) / HarmonyOS 2.0+ devices.
+Always-listening voice assistant for Android 11 (API 30) / HarmonyOS 2.0+ devices
+(minSdk 30 — the build matches the documented support window).
 The default build targets Russian (wake word «Джарвис», ASR/TTS language, UI); the
 SaluteSpeech and GigaChat providers are multi-lingual. Streaming-first: live ASR,
 streamed LLM with tool calling,
@@ -46,8 +47,10 @@ OpenAI-compatible endpoint).
 4. **Wake word — two engines (hybrid).** In Settings → Wake word you choose
     the engine:
     - **Sherpa-ONNX (recommended, no account):** a fully on-device wake word
-      using the bundled `gigaspeech` model that detects «Jarvis». No Picovoice
-      key, no network — offline by design.
+      using the bundled `gigaspeech` model that detects «Jarvis» — or any
+      English word you type in Settings (the app BPE-tokenizes it with the
+      bundled model and refuses words it cannot encode). No Picovoice key,
+      no network — offline by design.
     - **Picovoice Porcupine:** built-in "Jarvis", or **load your own `.ppn`**
       trained in [Picovoice Console](https://console.picovoice.ai/) (a Console
       `.ppn` is bound to your Picovoice key). Requires a free Picovoice account.
@@ -93,7 +96,9 @@ Colleagues who want to build their own signed APK generate their own
 keystore with `keytool` and update `local.properties` accordingly.
 
 ## What Jarvis can do
-- **Voice**: wake word «Джарвис», barge-in mid-answer, streaming recognition,
+- **Voice**: wake word «Джарвис» (or a custom English keyword), voice stop
+  (say «стоп» while the assistant thinks or speaks — it stops without the
+  wake word), barge-in mid-answer, streaming recognition,
   **follow-up window** (opt-in: after each reply the mic stays open for
   2–12 s — keep talking without the wake word; the orb shows a countdown).
   The status pill shows **what the assistant is doing** while thinking

@@ -48,6 +48,14 @@ private class PorcupineWakeWordEngine(
         .setSensitivity(sensitivity)
         .build(requireNotNull(context) { "Context required for native Porcupine init" })
 
+    // Porcupine builds ONE keyword per engine instance (index 0).
+    override val phrases: List<WakeWordEngine.Phrase> = listOf(
+        WakeWordEngine.Phrase(
+            id = if (keywordPath != null) "porcupine_custom" else "jarvis",
+            isStop = false,
+        ),
+    )
+
     override fun process(chunk: ShortArray): Int = porcupine.process(chunk)
     override fun release() {
         porcupine.delete()
@@ -93,6 +101,12 @@ private class PorcupineWakeWordEngine(
  *   native engine build AND the detector's coroutine scope. Tests inject
  *   [Dispatchers.Unconfined] to keep the synchronous init contract asserted by
  *   the unit tests.
+ * @param sherpaEngineBuilder FIXPLAN C seam: builds the Sherpa engine for a
+ *   request (custom keywords, extracted/user models). Null = the default
+ *   bundled-asset engine with the request's wake+stop phrase set.
+ * @param stopLaneFactory FIXPLAN B seam: builds the dedicated stop-phrase
+ *   engine used when the PRIMARY engine has no stop phrase (Porcupine
+ *   primary). Null + no context = stop lane unsupported (silently off).
  */
 class HybridWakeWordDetector(
     private val frames: Flow<ShortArray>,
@@ -100,6 +114,8 @@ class HybridWakeWordDetector(
     initialReq: WakeWordRequest,
     engineFactory: ((WakeWordRequest) -> WakeWordEngine)? = null,
     private val engineBuildDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val sherpaEngineBuilder: ((WakeWordRequest) -> SherpaKwsEngine)? = null,
+    private val stopLaneFactory: (() -> WakeWordEngine)? = null,
 ) : WakeWordDetector {
 
     private val realContext = context
@@ -140,6 +156,18 @@ class HybridWakeWordDetector(
     }
     private var engine: WakeWordEngine? = null
     private var actorJob: Job? = null
+
+    // ------------------------------------------------------------------
+    // FIXPLAN B: dedicated stop-phrase lane (Porcupine primary).
+    // Built ONCE on the first enable, kept alive afterwards, and only the
+    // FRAME FEED is gated by [stopLaneEnabled] — a model load per turn
+    // would cost seconds, while a loaded int8 KWS idles at zero CPU when
+    // not fed. When the primary engine itself carries a stop phrase
+    // (Sherpa primary) the lane is neither built nor fed.
+    // ------------------------------------------------------------------
+    @Volatile private var stopLaneEnabled = false
+    @Volatile private var stopLaneBuildInFlight = false
+    private var stopEngine: WakeWordEngine? = null
 
     // Live, reconfigurable request (updated by [reconfigure]).
     private var currentReq: WakeWordRequest = initialReq
@@ -213,6 +241,17 @@ class HybridWakeWordDetector(
                         // DEFECT 1: release the displaced engine so a reconfigure /
                         // sensitivity change never orphans a native engine.
                         runCatching { old?.release() }
+                        // FIXPLAN B stop-lane housekeeping for the NEW request:
+                        // - the new primary covers stop (Sherpa with stop phrase)
+                        //   or stop is disabled → the dedicated lane is dead weight;
+                        // - otherwise allow a fresh lazy build for the new request.
+                        val primaryCoversStop = built.phrases.any { it.isStop }
+                        val lane = stopEngine
+                        if (lane != null && (primaryCoversStop || !req.stopPhraseEnabled)) {
+                            stopEngine = null
+                            runCatching { lane.release() }
+                        }
+                        stopLaneBuildInFlight = false
                         true
                     }
                 }
@@ -247,23 +286,34 @@ class HybridWakeWordDetector(
     }
 
     /**
-     * Build the concrete engine for a request. A missing [WakeWordRequest.sherpaModelDir]
-     * throws for the Sherpa path; the default [engineFactory] surfaces that as
-     * a [DetectorState.Failed] (see [buildAndSwap]), so callers never see a
-     * half-built detector.
+     * Build the concrete engine for a request.
+     *
+     * Sherpa branch: [sherpaEngineBuilder] (custom keywords / extracted or
+     * user models) wins; the default builds the bundled-asset engine with
+     * the request's wake (+stop) phrase set. A missing
+     * [WakeWordRequest.sherpaModelDir] used to throw for the Sherpa path;
+     * the bundled default no longer needs any directory.
      */
     private fun buildEngine(req: WakeWordRequest): WakeWordEngine {
         return if (req.engine == "sherpa") {
-            // Sherpa loads the bundled model from assets via RELATIVE paths
-            // (Mode A); no model directory is supplied.
-            SherpaKwsEngine(
-                context = realContext,
-                keyword = req.sherpaKeyword,
-                sensitivity = req.sensitivity,
-            )
+            sherpaEngineBuilder?.invoke(req) ?: defaultBundledSherpa(req)
         } else {
             PorcupineWakeWordEngine(req.keywordPath, req.sensitivity, realContext)
         }
+    }
+
+    /** Zero-config Sherpa engine from the bundled assets (jarvis + stop). */
+    private fun defaultBundledSherpa(req: WakeWordRequest): SherpaKwsEngine {
+        val entries = buildList {
+            add(SherpaKeywords.wake())
+            if (req.stopPhraseEnabled) add(SherpaKeywords.stop())
+        }
+        return SherpaKwsEngine(
+            context = realContext,
+            sensitivity = req.sensitivity,
+            entries = entries,
+            modelSource = SherpaModelSource.Bundled,
+        )
     }
 
     /** Public compatibility method — rebuilds the engine with a new sensitivity. */
@@ -271,11 +321,60 @@ class HybridWakeWordDetector(
         reconfigure(currentReq.copy(sensitivity = value))
 
     /**
+     * FIXPLAN B: arm/disarm the stop-phrase lane live. Safe from any thread.
+     * The first arm while the primary engine lacks a stop phrase kicks the
+     * one-time async build; subsequent arms only flip the feed gate.
+     */
+    override fun setStopLaneEnabled(enabled: Boolean) {
+        stopLaneEnabled = enabled
+        if (!enabled) return
+        if (stopEngine != null || stopLaneBuildInFlight) return
+        if (engine?.phrases?.any { it.isStop } == true) return // primary covers it
+        if (!currentReq.stopPhraseEnabled) return
+        if (stopLaneFactory == null && realContext == null) return // unsupported (JVM tests)
+        stopLaneBuildInFlight = true
+        scope.launch {
+            val built = reconfigureMutex.withLock {
+                withContext(NonCancellable + engineBuildDispatcher) {
+                    try {
+                        stopLaneFactory?.invoke() ?: SherpaKwsEngine(
+                            context = realContext,
+                            sensitivity = currentReq.sensitivity,
+                            entries = listOf(SherpaKeywords.stop()),
+                            modelSource = SherpaModelSource.Bundled,
+                            bundledKeywordsAsset = SherpaKeywords.ASSET_KEYWORDS_STOP_FILE,
+                        )
+                    } catch (e: Exception) {
+                        Timber.w(e, "Stop lane build failed — voice stop unavailable this session")
+                        null
+                    }
+                }
+            }
+            withContext(NonCancellable) {
+                processMutex.withLock {
+                    if (_state.value != DetectorState.Released && built != null) {
+                        stopEngine = built
+                    }
+                }
+                // Released while building → drop the orphan (M2 discipline).
+                if (_state.value == DetectorState.Released) {
+                    runCatching { built?.release() }
+                }
+                stopLaneBuildInFlight = false
+            }
+        }
+    }
+
+    /**
      * Frame-processing actor. Re-chunks 320-sample mic frames into 512-sample
      * chunks and forwards them to the current engine. Runs for the detector's
      * whole lifetime once an engine is published; tolerates a runtime engine
      * crash by surfacing [DetectorState.Failed] + [Detection.DetectorError]
      * instead of dying or going stale-Ready.
+     *
+     * FIXPLAN B: phrase-aware emission — the matched phrase's `isStop` flag
+     * routes the detection to [Detection.StopPhrase] or [Detection.WakeWord]
+     * — and the stop lane (Porcupine primary) is fed ONLY while enabled.
      */
     private suspend fun CoroutineScope.runActorLoop() {
         try {
@@ -285,11 +384,38 @@ class HybridWakeWordDetector(
                 accumulator.append(frame)
                 var chunk = accumulator.take()
                 while (chunk != null) {
+                    val current = engine
                     val result = processMutex.withLock {
-                        engine?.process(chunk) ?: -1
+                        current?.process(chunk) ?: -1
                     }
-                    if (result >= 0) {
-                        detectionsFlow.emit(Detection.WakeWord)
+                    if (result >= 0 && current != null) {
+                        val phrase = current.phrases.getOrNull(result)
+                        when {
+                            phrase == null -> {
+                                // Index outside the phrase list: a keywords-file
+                                // line the engine was not told about. Ignore —
+                                // never invent a wake word from it.
+                                Timber.w("Engine reported unknown phrase index %d", result)
+                            }
+
+                            phrase.isStop -> detectionsFlow.emit(Detection.StopPhrase(phrase.id))
+                            else -> detectionsFlow.emit(Detection.WakeWord)
+                        }
+                    }
+                    // Dedicated stop lane (Porcupine primary): fed only while
+                    // the session layer arms it, under the same mutex that
+                    // protects native teardown.
+                    if (stopLaneEnabled) {
+                        val lane = stopEngine
+                        if (lane != null) {
+                            val laneResult = processMutex.withLock { lane.process(chunk) }
+                            if (laneResult >= 0) {
+                                val phrase = lane.phrases.getOrNull(laneResult)
+                                if (phrase != null) {
+                                    detectionsFlow.emit(Detection.StopPhrase(phrase.id))
+                                }
+                            }
+                        }
                     }
                     chunk = accumulator.take()
                 }
@@ -358,6 +484,10 @@ class HybridWakeWordDetector(
                     runCatching { engine?.release() }
                         .onFailure { Timber.w(it, "Wake-word engine release() threw (ignored)") }
                     engine = null
+                    // FIXPLAN B: the stop lane is native too — same UAF rules.
+                    runCatching { stopEngine?.release() }
+                        .onFailure { Timber.w(it, "Stop lane release() threw (ignored)") }
+                    stopEngine = null
                     true
                 } finally {
                     processMutex.unlock()

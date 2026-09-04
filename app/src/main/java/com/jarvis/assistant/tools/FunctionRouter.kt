@@ -20,8 +20,16 @@ class FunctionRouter(
     httpClient: OkHttpClient,
     /** Phase 5 (M5): spoken cascade progress; null = silent cascade. */
     speechFeedback: com.jarvis.assistant.audio.SpeechFeedback? = null,
+    /** A4: tool-layer error strings (locale-aware in production). */
+    toolStrings: ToolStrings = ToolStrings.Default,
+    /** A6: geocoding language — follows the device locale in production. */
+    weatherLanguageTag: String = "ru",
 ) : ToolExecutor {
     private val appContext = context.applicationContext
+
+    // A10: ONE prefs instance — the per-resolve lambda used to construct a
+    // fresh AppPrefs on every music target resolution.
+    private val appPrefs = com.jarvis.assistant.util.AppPrefs(appContext)
 
     private val alarmScheduler = AndroidAlarmScheduler(
         appContext,
@@ -35,8 +43,7 @@ class FunctionRouter(
     private val mediaGateway = AndroidMediaGateway(
         appContext,
         preferredPlayerPackage = {
-            com.jarvis.assistant.util.AppPrefs(appContext)
-                .preferredMusicPlayer.takeUnless { it == "auto" }
+            appPrefs.preferredMusicPlayer.takeUnless { it == "auto" }
         },
     )
 
@@ -62,9 +69,13 @@ class FunctionRouter(
                     conditionFor = { code ->
                         com.jarvis.assistant.tools.weatherConditionName(appContext, code)
                     },
+                    // A6: geocoding answers in the device language; missing
+                    // readings render locale-aware instead of a hardcoded «н/д».
+                    languageTag = weatherLanguageTag,
+                    notAvailable = toolStrings.weatherNotAvailable,
                 ),
             ),
-        ) + DeviceTools(appContext).all() +
+        ) + DeviceTools(appContext, toolStrings).all() +
             MusicTools(
                 MusicPlaybackOrchestrator(
                     mediaGateway,

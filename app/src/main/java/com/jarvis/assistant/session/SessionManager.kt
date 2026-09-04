@@ -86,6 +86,11 @@ class SessionManager(
     private val systemPrompt: SystemPromptProvider = TimeAwareSystemPrompt(),
     /** Y6: TTS voice resolved per sentence (Settings-appliable live). */
     private val voiceSource: () -> String = { config.ttsVoice },
+    /**
+     * FIXPLAN B: live voice-stop toggle (read on every state change, so a
+     * Settings switch applies from the next turn without a restart).
+     */
+    private val voiceStopEnabled: () -> Boolean = { config.voiceStopEnabled },
 ) {
 
     private var sessionJob: Job? = null
@@ -165,6 +170,21 @@ class SessionManager(
     // coroutines on other dispatchers.
     @Volatile private var onErrorHandler: suspend (String) -> Unit = {}
 
+    init {
+        // FIXPLAN B: arm the stop-phrase lane exactly while the assistant
+        // THINKS or SPEAKS. For a Sherpa primary this is a no-op (the stop
+        // phrase rides in the same keywords file); for a Porcupine primary
+        // it gates the dedicated lane's frame feed — zero idle CPU. The
+        // [voiceStopEnabled] source is re-read per state change so the
+        // Settings toggle applies without a restart.
+        scope.launch {
+            stateMachine.state.collect { state ->
+                val active = state == AssistantState.THINKING || state == AssistantState.SPEAKING
+                wakeWordDetector.setStopLaneEnabled(active && voiceStopEnabled())
+            }
+        }
+    }
+
     fun setOnError(handler: suspend (String) -> Unit) {
         onErrorHandler = handler
     }
@@ -219,6 +239,8 @@ class SessionManager(
                             is Detection.DetectorError -> {
                                 reportFailure(null, phrases.wakeWordEngineError(detection.message))
                             }
+
+                            is Detection.StopPhrase -> handleStopPhrase(detection)
 
                             Detection.WakeWord -> {
                                 // The wake word supersedes any open follow-up window.
@@ -303,6 +325,56 @@ class SessionManager(
         // session started concurrently (seq moved on), do not stomp its fresh
         // LISTENING state back to IDLE.
         if (sessionSeq.get() == seqAfterInvalidate) {
+            scope.launch { stateMachine.onEvent(SessionEvent.Cancelled) }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Voice stop (FIXPLAN B): «стоп» / "stop" without the wake word
+    // ------------------------------------------------------------------
+
+    /**
+     * Route a stop-phrase detection. The gate passes stop detections in EVERY
+     * state — state-conditional semantics live HERE: only an active turn
+     * (THINKING/SPEAKING) is cancelled. A «стоп» inside a normal command
+     * (LISTENING) or during the wake-word-free follow-up window must NOT nuke
+     * anything — it is part of the user's utterance.
+     */
+    private fun handleStopPhrase(detection: Detection.StopPhrase) {
+        val state = stateMachine.currentState()
+        if (state != AssistantState.THINKING && state != AssistantState.SPEAKING) {
+            Timber.d("Stop phrase '%s' ignored in state=%s", detection.keyword, state)
+            return
+        }
+        Timber.i("Voice stop ('%s') in state=%s — cancelling the turn", detection.keyword, state)
+        stopActiveTurn()
+    }
+
+    /**
+     * Cancel the ACTIVE TURN (session job + queued/current TTS) and return to
+     * IDLE, while the wake-word collector STAYS alive — the defining
+     * difference from [cancelAll]. The seq bump before the cancel drops every
+     * guarded write of the interrupted turn (the same supersede-first
+     * discipline as [startSession]), so a dying sentence can never open a
+     * follow-up window after the user said stop.
+     */
+    fun stopActiveTurn() {
+        val hadActive: Boolean
+        synchronized(controlLock) {
+            hadActive = sessionJob != null
+            if (hadActive) {
+                sessionSeq.incrementAndGet()
+                sessionJob?.cancel()
+                sessionJob = null
+                player.flush() // generation bump: current + queued sentences die
+                focus?.onTtsFlushed()
+                _partialTranscript.value = ""
+                _turnActivity.value = null
+            }
+        }
+        if (hadActive) {
+            // Cancelled is a global reset — THINKING/SPEAKING → IDLE. Kept
+            // outside the lock (suspension-free monitor discipline).
             scope.launch { stateMachine.onEvent(SessionEvent.Cancelled) }
         }
     }

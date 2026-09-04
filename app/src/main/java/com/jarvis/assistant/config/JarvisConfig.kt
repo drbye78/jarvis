@@ -67,9 +67,11 @@ data class JarvisConfig(
     val bargeInRepeatWindowMs: Long = 1_200,
     val bargeInSingleShot: Boolean = false,
 
-    // Speech gRPC endpoint (saluteChannel target). Extracted from the hard-coded
-    // value previously in AppGraph so it is configurable in one place (P7/m15).
-    val llmEndpoint: String = "smartspeech.sber.ru:443",
+    // Speech gRPC endpoint (saluteChannel target for SaluteSpeech ASR + TTS).
+    // Renamed from the misleading `llmEndpoint` (audit A1): the LLM URL is
+    // [gigaChatEndpoint] / the provider base URL — this field NEVER touched
+    // the LLM lane.
+    val saluteGrpcEndpoint: String = "smartspeech.sber.ru:443",
 
     // Phase 5 (M7 mitigation): pause external music at session start for a
     // clean listening window. Default OFF: music stops and does NOT auto-resume —
@@ -78,6 +80,14 @@ data class JarvisConfig(
     // explicit pause remains the most reliable path — the canceller is
     // experimental NLMS, not AEC3.)
     val pauseMusicOnWake: Boolean = false,
+
+    /**
+     * Voice stop (FIXPLAN B): saying «стоп» / "stop" while the assistant
+     * THINKS or SPEAKS cancels the active turn without the wake word.
+     * Default ON; toggleable in Settings. The stop phrase is spotted by the
+     * same on-device KWS engine — no network, no second model.
+     */
+    val voiceStopEnabled: Boolean = true,
 ) {
     companion object {
         /** Single source of truth for the pre-roll default ([AudioPipeline] references it). */
@@ -87,13 +97,16 @@ data class JarvisConfig(
 
 /**
  * User-facing provider configuration (Settings screen). Persisted in plain
- * prefs except the API key, which lives in SecurePrefs.
+ * prefs; secrets (the OpenAI-compatible API key) live in the SecretVault.
+ *
+ * Audit A2: the dead `wakeSensitivity` duplicate was removed — the wake
+ * sensitivity slider reads/writes [com.jarvis.assistant.util.AppPrefs]
+ * directly (the live source the engine reconfigure path consumes).
  */
 data class ProviderSettings(
     val type: Type,
     val openAiBaseUrl: String,
     val openAiModel: String,
-    val wakeSensitivity: Float,
 ) {
     enum class Type { GIGACHAT, OPENAI_COMPAT }
 
@@ -102,7 +115,6 @@ data class ProviderSettings(
             type = Type.GIGACHAT,
             openAiBaseUrl = "https://api.openai.com/v1",
             openAiModel = "gpt-4o-mini",
-            wakeSensitivity = 0.6f,
         )
     }
 }

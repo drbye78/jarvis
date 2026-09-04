@@ -319,6 +319,21 @@ Streaming ASR means these numbers no longer grow with utterance length.
    Clear Data (wipes history and alarms; destructive by design).
 
 ## Known limitations
+- **Voice stop on-device validation (FIXPLAN B).** The stop phrase (`▁ST O P`)
+  is BPE-canonical for the bundled model, but its false-accept/false-reject
+  behavior at speaker volume is a hardware question. Ladder: (1) wake word,
+  start any answer; (2) say «стоп» mid-answer at 1 m — the answer must stop
+  within ~0.5 s and the orb return to idle; (3) say «стоп» while IDLE —
+  nothing may happen; (4) play music loudly and confirm the wake word still
+  works and «стоп» is not triggered BY the music; (5) with voice stop OFF in
+  Settings, step 2 must NOT stop the answer.
+- **Custom Sherpa wake words (FIXPLAN C).** Only words the bundled BPE model
+  can fully encode are accepted (Settings validates with the real tokenizer
+  and shows ✗ for digits/punctuation/Cyrillic). After applying, run the same
+  false-accept ladder as above. If the engine build fails (bad custom model
+  dir), the detector surfaces `DetectorState.Failed` with the reason — check
+  `adb logcat -s JarvisWake`.
+
 
 - **Sherpa-ONNX startup is async (no ANR).** The engine build now runs off the
   main thread (`Dispatchers.Default`) — the detector starts in `Bootstrapping`
@@ -326,12 +341,12 @@ Streaming ASR means these numbers no longer grow with utterance length.
   longer blocks the UI thread on Kirin 710A-class devices (fixes H1). There is
   a brief window where the assistant is "listening" but the wake word is not yet
   active until the model finishes loading (typically well under a second).
-- **Custom Sherpa wake words are not supported.** The bundled sherpa-onnx AAR
-  (v1.13.6) only exposes a non-null `AssetManager` constructor, which loads the
-  model from APK assets — a user-supplied `.onnx` directory cannot be loaded and
-  would crash natively. Custom wake words are available via **Picovoice
-  Porcupine** (your own `.ppn` from Picovoice Console, bound to your free key). A
-  self-trained Sherpa model would require a different AAR build.
+- ~~Custom Sherpa wake words are not supported~~ **LIFTED (FIXPLAN C).** The
+  AAR's nullable-asset constructor routes to native `newFromFile`, so the
+  extracted bundled model (or a user-supplied model dir) loads from the
+  filesystem with a GENERATED keywords file. Settings accepts any English
+  keyword the bundled BPE model can encode. Porcupine `.ppn` remains an
+  alternative engine.
 - **On-device wake-word validation required.** The bundled "Jarvis" keyword was
   BPE-tokenized for the `gigaspeech` model and its tokens were verified against
   `tokens.txt`, but detection accuracy and the sensitivity→`keywordsThreshold`

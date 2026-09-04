@@ -83,14 +83,20 @@ class TurnRunner(
     private val ttsSynthPermits = Semaphore(TTS_SYNTH_PREFETCH)
 
     /**
-     * Follow-up window: true once any sentence of THIS turn reached the
-     * player. Atomic because sentence coroutines run as session-scope
+     * Per-turn mutable state (audit A7). One instance per [runTurn] — the
+     * previous class-level `spokeThisTurn` was shared across superseding
+     * sessions, so a straggler sentence child of a barged-in turn could flip
+     * the flag for the NEXT turn's follow-up-window eligibility. A fresh
+     * object per turn makes the race structurally impossible.
+     * The flag stays atomic: sentence coroutines run as session-scope
      * children while [finish] reads it from the turn body.
      */
-    private val spokeThisTurn = java.util.concurrent.atomic.AtomicBoolean(false)
+    private class TurnState {
+        val spoke = java.util.concurrent.atomic.AtomicBoolean(false)
+    }
 
     suspend fun CoroutineScope.runTurn(sessionId: Int) {
-        spokeThisTurn.set(false)
+        val turn = TurnState()
         try {
             onStateEvent(SessionEvent.WakeWordOrBargeIn) // -> LISTENING
 
@@ -123,7 +129,7 @@ class TurnRunner(
                     onStateEvent(SessionEvent.SpeechCaptured) // -> THINKING
                     Timber.i("ASR final: %s", outcome.text)
                     conversationManager.addMessage("user", outcome.text)
-                    processLlm(sessionId)
+                    processLlm(sessionId, turn)
                 }
 
                 AsrOutcome.NoSpeech -> {
@@ -148,7 +154,7 @@ class TurnRunner(
             // The seq guard makes this a no-op whenever the cancellation came
             // through startSession/cancelAll (both bump the seq first), so it
             // can never open a window the user does not expect.
-            finish(sessionId, spokeThisTurn.get())
+            finish(sessionId, turn.spoke.get())
             throw CancellationException()
         } catch (e: Exception) {
             Timber.e(e, "Session failed")
@@ -250,7 +256,7 @@ class TurnRunner(
      * longer vanish from the conversation; tools that never finished are
      * simply absent (no phantom results, never a dangling pair).
      */
-    private suspend fun CoroutineScope.processLlm(id: Int) {
+    private suspend fun CoroutineScope.processLlm(id: Int, turn: TurnState) {
         onStateEvent(SessionEvent.LlmStarted)
         var pass = 0
 
@@ -308,7 +314,7 @@ class TurnRunner(
                                     // children) — the drain below would never run and
                                     // the LLM timeout would kill mid-playback audio.
                                     sentenceBuffer.append(chunk.text).forEach { sentence ->
-                                        this@processLlm.launch { speakSentence(sentence) }
+                                        this@processLlm.launch { speakSentence(sentence, turn) }
                                     }
                                 }
 
@@ -326,7 +332,7 @@ class TurnRunner(
 
                                 LlmChunk.Done -> {
                                     sentenceBuffer.flushRemaining()?.let { rest ->
-                                        this@processLlm.launch { speakSentence(rest) }
+                                        this@processLlm.launch { speakSentence(rest, turn) }
                                     }
                                     // Fallback for providers without Complete events.
                                     if (toolCallsPending.isEmpty() && toolAccum.isNotEmpty()) {
@@ -425,7 +431,7 @@ class TurnRunner(
                 Timber.w("TTS drain budget expired; cancelling %d stragglers", children.count { it.isActive })
                 children.forEach { it.cancel() }
             }
-            finish(id, spokeThisTurn.get()) // -> IDLE (or follow-up window)
+            finish(id, turn.spoke.get()) // -> IDLE (or follow-up window)
             return // the plain-answer turn ends here — no further LLM pass
         }
     }
@@ -487,9 +493,9 @@ class TurnRunner(
      * synthesis stream for EVERY completed sentence up front. Playback itself
      * stays serialized by the player actor; this only caps the prefetch.
      */
-    private suspend fun CoroutineScope.speakSentence(text: String) {
+    private suspend fun CoroutineScope.speakSentence(text: String, turn: TurnState) {
         onStateEvent(SessionEvent.PlaybackStarted) // -> SPEAKING
-        spokeThisTurn.set(true) // follow-up window eligibility
+        turn.spoke.set(true) // follow-up window eligibility
         ttsSynthPermits.withPermit {
             // Y6: resolve the voice per sentence — a Settings change applies
             // to the very next synthesis, no service restart.

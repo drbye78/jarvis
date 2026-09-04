@@ -19,14 +19,22 @@ import kotlinx.serialization.json.jsonObject
  * On-tablet device control tools — the REAL implementation replacing the old
  * permanently-stubbed DeviceControlTool. Each capability is its own tool so
  * the LLM can pick precisely; every tool degrades gracefully with a
- * Russian-language instruction when its (optional) access is not granted.
+ * locale-aware instruction when its (optional) access is not granted.
  *
- * Permission model on the target device (Android 10/11, targetSdk 30):
+ * Permission model on the target device (Android 11, targetSdk 30):
  * - volume: no permission needed
  * - brightness / Wi-Fi panel / DND / screen-off: special access, granted via
  *   the Onboarding screen; tools report HOW to grant if missing
+ *
+ * Audit A4: every user-visible string flows through [ToolStrings] (was:
+ * hardcoded Russian literals with one English string in the same file).
+ * Audit A5: openApp reports `attempted` (not `ok`) when no Jarvis window is
+ * visible, because Android 10+ may silently swallow the background launch.
  */
-class DeviceTools(private val context: Context) {
+class DeviceTools(
+    private val context: Context,
+    private val strings: ToolStrings = ToolStrings.Default,
+) {
 
     /** Null-safe audio service lookup (audit #12: `as` threw on odd OEM ROMs). */
     private val audioManager: AudioManager?
@@ -61,7 +69,7 @@ class DeviceTools(private val context: Context) {
                 else -> AudioManager.STREAM_MUSIC
             }
             val am = audioManager
-                ?: return JsonOut.error("Аудиосервис недоступен на этом устройстве")
+                ?: return JsonOut.error(strings.audioServiceUnavailable)
             val max = am.getStreamMaxVolume(stream)
             val target = (level * max + 50) / 100
             am.setStreamVolume(stream, target, 0)
@@ -90,9 +98,7 @@ class DeviceTools(private val context: Context) {
                 ?: return JsonOut.error("Missing required parameter: level")
             if (level !in 0..100) return JsonOut.error("level must be 0–100")
             if (!Settings.System.canWrite(context)) {
-                return JsonOut.error(
-                    "Нет права менять настройки системы. Открой приложение Джарвис → Экран приветствия → «Настройки записи» и выдай доступ."
-                )
+                return JsonOut.error(strings.writeSettingsMissing)
             }
             val target = (level * 255 + 50) / 100
             Settings.System.putInt(
@@ -149,19 +155,17 @@ class DeviceTools(private val context: Context) {
                 }
                 val resolved = context.packageManager.resolveActivity(panel, 0) != null
                 if (!resolved) {
-                    return JsonOut.error(
-                        "Системная панель Wi-Fi недоступна на этом устройстве."
-                    )
+                    return JsonOut.error(strings.wifiPanelUnavailable)
                 }
                 val result = runCatching { context.startActivity(panel) }
                 if (result.isFailure) {
                     JsonOut.error(
-                        "Не удалось открыть панель Wi-Fi: ${result.exceptionOrNull()?.message}"
+                        strings.wifiPanelOpenFailed(result.exceptionOrNull()?.message),
                     )
                 } else {
                     JsonOut.obj(
                         "status" to "panel_opened",
-                        "detail" to "Система не позволяет менять Wi-Fi напрямую — открыл панель настроек.",
+                        "detail" to strings.wifiPanelDetail,
                     )
                 }
             }
@@ -196,11 +200,11 @@ class DeviceTools(private val context: Context) {
                 context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) !=
                 android.content.pm.PackageManager.PERMISSION_GRANTED
             ) {
-                return JsonOut.error("Нет права Bluetooth Nearby devices — выдай его в настройках приложения.")
+                return JsonOut.error(strings.btNearbyPermissionMissing)
             }
             val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
             val adapter: BluetoothAdapter = bm?.adapter
-                ?: return JsonOut.error("Bluetooth adapter unavailable")
+                ?: return JsonOut.error(strings.btAdapterUnavailable)
             if (Build.VERSION.SDK_INT >= 33) {
                 // API 33+: adapter.enable()/disable() are deprecated;
                 // open the Bluetooth settings screen instead.
@@ -209,26 +213,24 @@ class DeviceTools(private val context: Context) {
                 }
                 val resolved = context.packageManager.resolveActivity(panel, 0) != null
                 if (!resolved) {
-                    return JsonOut.error(
-                        "Настройки Bluetooth недоступны на этом устройстве."
-                    )
+                    return JsonOut.error(strings.btSettingsUnavailable)
                 }
                 val result = runCatching { context.startActivity(panel) }
                 if (result.isFailure) {
                     return JsonOut.error(
-                        "Не удалось открыть настройки Bluetooth: ${result.exceptionOrNull()?.message}"
+                        strings.btSettingsOpenFailed(result.exceptionOrNull()?.message),
                     )
                 }
                 return JsonOut.obj(
                     "status" to "panel_opened",
-                    "detail" to "Bluetooth переключается через настройки системы.",
+                    "detail" to strings.wifiPanelDetail, // same "system controls it" shape
                 )
             }
             val ok = if (enable) adapter.enable() else adapter.disable()
             return if (ok || adapter.isEnabled == enable) {
                 JsonOut.obj("status" to "ok", "bluetooth" to state)
             } else {
-                JsonOut.error("Не удалось переключить Bluetooth")
+                JsonOut.error(strings.btToggleFailed)
             }
         }
     }
@@ -254,11 +256,9 @@ class DeviceTools(private val context: Context) {
             val state = obj.string("state")
                 ?: return JsonOut.error("Missing required parameter: state")
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
-                ?: return JsonOut.error("Не удалось получить доступ к сервису уведомлений")
+                ?: return JsonOut.error(strings.dndServiceUnavailable)
             if (!nm.isNotificationPolicyAccessGranted) {
-                return JsonOut.error(
-                    "Нет доступа к режиму «Не беспокоить». Открой настройки → Звук → Не беспокоить → доступ для приложений → Джарвис."
-                )
+                return JsonOut.error(strings.dndAccessMissing)
             }
             val filter = if (state.equals("on", true)) {
                 android.app.NotificationManager.INTERRUPTION_FILTER_PRIORITY
@@ -269,7 +269,7 @@ class DeviceTools(private val context: Context) {
             return if (nm.currentInterruptionFilter == filter) {
                 JsonOut.obj("status" to "ok", "dnd" to state)
             } else {
-                JsonOut.error("Не удалось переключить режим «Не беспокоить»")
+                JsonOut.error(strings.dndToggleFailed)
             }
         }
     }
@@ -286,15 +286,13 @@ class DeviceTools(private val context: Context) {
 
         override suspend fun execute(arguments: String): String {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
-                ?: return JsonOut.error("Сервис администрирования устройства недоступен")
+                ?: return JsonOut.error(strings.adminServiceUnavailable)
             val admin = ComponentName(context, JarvisDeviceAdmin::class.java)
             return if (dpm.isAdminActive(admin)) {
                 dpm.lockNow()
                 JsonOut.obj("status" to "ok", "screen" to "off")
             } else {
-                JsonOut.error(
-                    "Экран нельзя выключить без прав администратора устройства. Открой экран приветствия Джарвиса и включи «Блокировка экрана»."
-                )
+                JsonOut.error(strings.adminLockMissing)
             }
         }
     }
@@ -324,13 +322,25 @@ class DeviceTools(private val context: Context) {
                 .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
             val match = launchables.firstOrNull {
                 pm.getApplicationLabel(it).toString().lowercase().contains(query)
-            } ?: return JsonOut.error("Приложение '$app' не найдено")
+            } ?: return JsonOut.error(strings.appNotFound(app))
 
             val intent = pm.getLaunchIntentForPackage(match.packageName)
-                ?: return JsonOut.error("Приложение '$app' недоступно для запуска")
+                ?: return JsonOut.error(strings.appNotLaunchable(app))
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
-            return JsonOut.obj("status" to "ok", "app" to pm.getApplicationLabel(match).toString())
+            val label = pm.getApplicationLabel(match).toString()
+            // A5: honesty — from a foreground service with no visible window,
+            // Android 10+ may silently drop the launch. Report what we know.
+            return when (OpenAppOutcome.of(com.jarvis.assistant.media.AppForegroundTracker.isVisible)) {
+                OpenAppOutcome.OK ->
+                    JsonOut.obj("status" to "ok", "app" to label)
+                OpenAppOutcome.ATTEMPTED ->
+                    JsonOut.obj(
+                        "status" to "attempted",
+                        "app" to label,
+                        "detail" to strings.openAppAttemptedDetail,
+                    )
+            }
         }
     }
 

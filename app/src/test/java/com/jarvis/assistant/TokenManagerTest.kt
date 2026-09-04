@@ -1,8 +1,9 @@
 package com.jarvis.assistant
 
-import android.content.SharedPreferences
 import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.llm.TokenManager
+import com.jarvis.assistant.util.InMemoryVault
+import com.jarvis.assistant.util.SecretVault
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -20,43 +21,6 @@ import org.junit.Test
 import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
 
-/** In-memory SharedPreferences so TokenManager runs on the JVM. */
-class FakePrefs : SharedPreferences {
-    val map = mutableMapOf<String, Any?>()
-
-    private inner class EditorImpl : SharedPreferences.Editor {
-        private val pending = mutableMapOf<String, Any?>()
-        private val removals = mutableSetOf<String>()
-        override fun putString(k: String, v: String?): SharedPreferences.Editor { pending[k] = v; return this }
-        override fun putStringSet(k: String, v: MutableSet<String>?): SharedPreferences.Editor { pending[k] = v; return this }
-        override fun putInt(k: String, v: Int): SharedPreferences.Editor { pending[k] = v; return this }
-        override fun putLong(k: String, v: Long): SharedPreferences.Editor { pending[k] = v; return this }
-        override fun putFloat(k: String, v: Float): SharedPreferences.Editor { pending[k] = v; return this }
-        override fun putBoolean(k: String, v: Boolean): SharedPreferences.Editor { pending[k] = v; return this }
-        override fun remove(k: String): SharedPreferences.Editor { removals.add(k); pending.remove(k); return this }
-        override fun clear(): SharedPreferences.Editor { pending.clear(); removals.addAll(map.keys); return this }
-        override fun commit(): Boolean { apply(); return true }
-        override fun apply() {
-            removals.forEach { map.remove(it) }
-            map.putAll(pending)
-        }
-    }
-
-    override fun getAll(): MutableMap<String, *> = map
-    override fun getString(k: String?, def: String?): String? = map[k] as? String ?: def
-    @Suppress("UNCHECKED_CAST")
-    override fun getStringSet(k: String?, def: MutableSet<String>?): MutableSet<String>? =
-        map[k] as? MutableSet<String> ?: def
-    override fun getInt(k: String?, def: Int): Int = map[k] as? Int ?: def
-    override fun getLong(k: String?, def: Long): Long = map[k] as? Long ?: def
-    override fun getFloat(k: String?, def: Float): Float = map[k] as? Float ?: def
-    override fun getBoolean(k: String?, def: Boolean): Boolean = map[k] as? Boolean ?: def
-    override fun contains(k: String?): Boolean = map.containsKey(k)
-    override fun edit(): SharedPreferences.Editor = EditorImpl()
-    override fun registerOnSharedPreferenceChangeListener(l: SharedPreferences.OnSharedPreferenceChangeListener?) {}
-    override fun unregisterOnSharedPreferenceChangeListener(l: SharedPreferences.OnSharedPreferenceChangeListener?) {}
-}
-
 class TokenManagerTest {
 
     private lateinit var server: MockWebServer
@@ -72,11 +36,11 @@ class TokenManagerTest {
         server.shutdown()
     }
 
-    private fun manager(): TokenManager = TokenManager(
+    private fun manager(vault: SecretVault = InMemoryVault()): TokenManager = TokenManager(
         null,
         OkHttpClient(),
         JarvisConfig(oauthEndpoint = server.url("/oauth").toString()),
-        FakePrefs(),
+        vault,
     ) { _ -> "test-client" to "test-secret" }
 
     @Test
@@ -165,21 +129,43 @@ class TokenManagerTest {
             MockResponse().setResponseCode(200)
                 .setBody("""{"access_token":"t-no-expiry"}""")
         )
-        val prefs = FakePrefs()
+        val vault = InMemoryVault()
         val tm = TokenManager(
             null,
             OkHttpClient(),
             JarvisConfig(oauthEndpoint = server.url("/oauth").toString()),
-            prefs,
+            vault,
         ) { _ -> "test-client" to "test-secret" }
 
         assertEquals("t-no-expiry", tm.getGigaChatToken())
 
-        val expiry = prefs.map["gigachat_token_expiry"] as Long
+        val expiry = vault.getString(SecretVault.KEY_GIGACHAT_EXPIRY)!!.toLong()
         val now = System.currentTimeMillis()
         assertTrue(
             "fallback expiry must stay under 6 min from now, was +${expiry - now} ms",
             expiry in (now + 4 * 60 * 1000L)..(now + 6 * 60 * 1000L),
+        )
+    }
+
+    @Test
+    fun `invalidate clears cached tokens so the next call re-authenticates`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"access_token":"tok-1","expires_in":3600}""")
+        )
+        val vault = InMemoryVault()
+        val tm = manager(vault)
+        assertEquals("tok-1", tm.getGigaChatToken())
+
+        tm.invalidate()
+
+        assertTrue(
+            "invalidate must drop the cached gigachat token",
+            vault.getString(SecretVault.KEY_GIGACHAT_TOKEN).isNullOrBlank(),
+        )
+        assertTrue(
+            "invalidate must drop the cached gigachat expiry",
+            vault.getString(SecretVault.KEY_GIGACHAT_EXPIRY).isNullOrBlank(),
         )
     }
 }

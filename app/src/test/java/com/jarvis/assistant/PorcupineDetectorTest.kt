@@ -39,7 +39,7 @@ class PorcupineDetectorTest {
                 engine = "porcupine",
                 keywordPath = "missing.ppn",
                 sherpaModelDir = null,
-                sherpaKeyword = "",
+                sherpaCustomKeyword = "",
                 sensitivity = 0.6f,
             ),
             engineFactory = { _ -> throw IllegalStateException("native boom") },
@@ -57,6 +57,9 @@ class PorcupineDetectorTest {
         val processStarted = CountDownLatch(1)
 
         val engine = object : WakeWordEngine {
+            override val phrases: List<WakeWordEngine.Phrase> =
+                listOf(WakeWordEngine.Phrase(id = "jarvis", isStop = false))
+
             override fun process(chunk: ShortArray): Int {
                 events.add("process")
                 processStarted.countDown()
@@ -83,7 +86,7 @@ class PorcupineDetectorTest {
                 engine = "porcupine",
                 keywordPath = "kw.ppn",
                 sherpaModelDir = null,
-                sherpaKeyword = "",
+                sherpaCustomKeyword = "",
                 sensitivity = 0.6f,
             ),
             engineFactory = { _ -> engine },
@@ -109,6 +112,9 @@ class PorcupineDetectorTest {
     fun `double release is idempotent and prompt`() {
         val deletes = AtomicInteger()
         val engine = object : WakeWordEngine {
+            override val phrases: List<WakeWordEngine.Phrase> =
+                listOf(WakeWordEngine.Phrase(id = "jarvis", isStop = false))
+
             override fun process(chunk: ShortArray): Int = -1
             override fun release() {
                 deletes.incrementAndGet()
@@ -121,7 +127,7 @@ class PorcupineDetectorTest {
                 engine = "porcupine",
                 keywordPath = "kw.ppn",
                 sherpaModelDir = null,
-                sherpaKeyword = "",
+                sherpaCustomKeyword = "",
                 sensitivity = 0.6f,
             ),
             engineFactory = { _ -> engine },
@@ -142,6 +148,9 @@ class PorcupineDetectorTest {
     fun `runtime process failure surfaces as Failed and DetectorError`() = runBlocking {
         var calls = 0
         val engine = object : WakeWordEngine {
+            override val phrases: List<WakeWordEngine.Phrase> =
+                listOf(WakeWordEngine.Phrase(id = "jarvis", isStop = false))
+
             override fun process(chunk: ShortArray): Int {
                 calls++
                 if (calls >= 2) throw IllegalStateException("native exploded")
@@ -158,7 +167,7 @@ class PorcupineDetectorTest {
                 engine = "porcupine",
                 keywordPath = "kw.ppn",
                 sherpaModelDir = null,
-                sherpaKeyword = "",
+                sherpaCustomKeyword = "",
                 sensitivity = 0.6f,
             ),
             engineFactory = { _ -> engine },
@@ -197,6 +206,9 @@ class PorcupineDetectorTest {
         val builtWith = CopyOnWriteArrayList<Float>()
         val released = AtomicInteger()
         val engine = object : WakeWordEngine {
+            override val phrases: List<WakeWordEngine.Phrase> =
+                listOf(WakeWordEngine.Phrase(id = "jarvis", isStop = false))
+
             override fun process(chunk: ShortArray): Int = -1
             override fun release() { released.incrementAndGet() }
         }
@@ -207,7 +219,7 @@ class PorcupineDetectorTest {
                 engine = "porcupine",
                 keywordPath = null,
                 sherpaModelDir = null,
-                sherpaKeyword = "",
+                sherpaCustomKeyword = "",
                 sensitivity = 0.6f,
             ),
             engineFactory = { req -> built.incrementAndGet(); builtWith.add(req.sensitivity); engine },
@@ -232,6 +244,9 @@ class PorcupineDetectorTest {
         val entered = CountDownLatch(1)
         val never = CountDownLatch(1)
         val engine = object : WakeWordEngine {
+            override val phrases: List<WakeWordEngine.Phrase> =
+                listOf(WakeWordEngine.Phrase(id = "jarvis", isStop = false))
+
             override fun process(chunk: ShortArray): Int {
                 entered.countDown()
                 never.await() // wedged "native" call — never returns
@@ -251,7 +266,7 @@ class PorcupineDetectorTest {
                 engine = "porcupine",
                 keywordPath = "kw.ppn",
                 sherpaModelDir = null,
-                sherpaKeyword = "",
+                sherpaCustomKeyword = "",
                 sensitivity = 0.6f,
             ),
             engineFactory = { _ -> engine },

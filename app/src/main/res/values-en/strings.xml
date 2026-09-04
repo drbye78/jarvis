@@ -110,7 +110,6 @@
     <string name="engine_sherpa">Sherpa-ONNX (local, no account)</string>
     <string name="porcupine_hint">Requires a Picovoice key (see above)</string>
     <string name="sherpa_hint">Fully on-device, no account. Uses the built-in Sherpa model (offline, no network).</string>
-    <string name="sherpa_bundled_note">Jarvis — bundled Sherpa model, offline, no account</string>
 
     <!-- Settings: misc -->
     <string name="close">Close</string>
@@ -245,4 +244,36 @@
     <string name="voice_hint">Mila is the verified default voice. Other Salute voice pool IDs can be entered manually and previewed with the button. Changes apply to the next spoken sentence — no service restart.</string>
     <string name="voice_service_not_running">Start the assistant to test the voice</string>
     <string name="phrase_voice_sample">Hi! I\'m Jarvis. This is how my voice sounds.</string>
+
+    <!-- Tool-layer user-visible errors (A4): routed through ToolStrings,
+         spoken via the LLM — values-en parity is test-enforced -->
+    <string name="tool_audio_service_unavailable">The audio service is unavailable on this device</string>
+    <string name="tool_write_settings_missing">No permission to modify system settings. Open Jarvis → Welcome screen → "Recording settings" and grant it.</string>
+    <string name="tool_wifi_panel_unavailable">The system Wi-Fi panel is unavailable on this device.</string>
+    <string name="tool_wifi_panel_detail">The system does not allow toggling Wi-Fi directly — I opened the settings panel.</string>
+    <string name="tool_wifi_panel">the Wi-Fi panel</string>
+    <string name="tool_bt_settings">Bluetooth settings</string>
+    <string name="tool_open_failed_with_detail">Could not open %1$s: %2$s</string>
+    <string name="tool_bt_nearby_missing">Missing the Bluetooth Nearby devices permission — grant it in the app settings.</string>
+    <string name="tool_bt_settings_unavailable">Bluetooth settings are unavailable on this device.</string>
+    <string name="tool_bt_toggle_failed">Could not toggle Bluetooth</string>
+    <string name="tool_bt_adapter_unavailable">The Bluetooth adapter is unavailable on this device</string>
+    <string name="tool_dnd_service_unavailable">Could not access the notification service</string>
+    <string name="tool_dnd_access_missing">No Do-Not-Disturb access. Open Settings → Sound → Do Not Disturb → app access → Jarvis.</string>
+    <string name="tool_dnd_toggle_failed">Could not toggle Do-Not-Disturb</string>
+    <string name="tool_admin_service_unavailable">The device administration service is unavailable</string>
+    <string name="tool_admin_lock_missing">The screen cannot be locked without device-admin rights. Open Jarvis\'s welcome screen and enable "Screen lock".</string>
+    <string name="tool_app_not_found">App \'%1$s\' not found</string>
+    <string name="tool_app_not_launchable">App \'%1$s\' cannot be launched</string>
+    <string name="tool_open_app_attempted_detail">I don\'t see an open window, so the system may have blocked the launch — open the app manually if it did not appear.</string>
+    <string name="tool_weather_not_available">no data</string>
+
+    <!-- FIXPLAN B/C: voice stop + custom Sherpa wake keyword -->
+    <string name="voice_stop_toggle">Say «stop» to interrupt an answer</string>
+    <string name="voice_stop_hint">Say «stop» while the assistant thinks or speaks — it stops without the wake word. Works offline with the same engine as the wake word.</string>
+    <string name="sherpa_keyword_hint">Custom wake word (English)</string>
+    <string name="sherpa_keyword_invalid">This word cannot be encoded by the model — try another English word (digits, punctuation and Cyrillic are not spotable).</string>
+    <string name="sherpa_keyword_applied">Wake word applied: %1$s</string>
+    <string name="sherpa_keyword_applied_default">Wake word applied: Jarvis (default)</string>
+    <string name="sherpa_bundled_note">Model: bundled, offline, no account. A custom wake word can be set above.</string>
 </resources>

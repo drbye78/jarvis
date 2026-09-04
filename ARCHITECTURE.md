@@ -2,6 +2,7 @@
 
 > **Status: in active development (pre-1.0), version 0.2.0.**
 > Target: Android 11 (API 30) / HarmonyOS 2.0+ (AOSP-based) — validated on Huawei MatePad SE 11
+> minSdk 30: the build now matches the documented support window (A11); no backward compat below it
 > Always WiFi · Always charging
 > Default build targets Russian (wake word, ASR/TTS language, UI); providers are multi-lingual
 > targetSdk 30 (appliance profile) with Android 14+ guards · compileSdk 34
@@ -272,6 +273,51 @@ the session layer only applies its effects. The UI observes
 spoken reply re-opens the window (chained conversation); mute/cancelAll
 closes it.
 
+## Voice stop without the wake word (FIXPLAN B)
+
+Saying **«стоп» / "stop"** while the assistant THINKS or SPEAKS cancels the
+active turn — no wake word, no repeat gesture. The stop phrase is spotted by
+the SAME on-device KWS engine: the bundled gigaspeech model is English-BPE,
+but Russian «стоп» and English "stop" are the same spoken word, so the
+keyword `▁ST O P` (BPE produced with the repo's own `bpe.model`) serves both
+product languages with zero extra models and no network.
+
+- Engines are keyword-aware: `WakeWordEngine.phrases` + a matched-phrase
+  index from `process()`; the detector routes stop phrases to
+  `Detection.StopPhrase`, which passes the barge-in gate UNGATED.
+- Routing is state-conditional in `SessionManager.handleStopPhrase`: only
+  THINKING/SPEAKING cancel (a «стоп» inside a normal command is left alone).
+  `stopActiveTurn()` bumps the session seq BEFORE cancelling (supersede-first),
+  flushes the player, and returns to IDLE while the wake-word collector
+  STAYS alive — the defining difference from `cancelAll()`.
+- Porcupine-primary mode arms a dedicated stop lane (Sherpa,
+  `keywords_stop.txt` asset) fed ONLY while THINKING/SPEAKING
+  (`setStopLaneEnabled`) — zero idle CPU. Sherpa-primary needs no second
+  engine: the stop phrase rides in the same keywords file.
+- Toggle: Settings switch (`AppPrefs.voiceStopEnabled`), applied from the
+  next turn; `JarvisConfig.voiceStopEnabled` is the master default.
+
+## Custom Sherpa wake words (FIXPLAN C)
+
+The old "asset-only AAR" limitation is lifted: the AAR's Kotlin constructor
+is `KeywordSpotter(assetManager: AssetManager? = null, config)` — the
+nullable asset path resolves to the native `newFromFile`, and the JNI export
+was verified in `libsherpa-onnx-jni.so`. Filesystem models work.
+
+- `SherpaModelStore` extracts the bundled model into `filesDir` once
+  (version-marked; heals partial extractions).
+- `BpeTokenizer` parses the sentencepiece `bpe.model` protobuf and encodes a
+  word with max-score lattice Viterbi — verified byte-identical to
+  sentencepiece BPE against this repo's model, and REJECTS inputs that
+  would hit `<unk>` (digits, punctuation, Cyrillic), so a dead keyword can
+  never be configured.
+- A validated keyword is turned into a generated keywords file
+  (`SherpaKeywords.toKeywordsFileContent`) and applied live via
+  `reconfigureWakeWord()`. Blank = the bundled «Jarvis».
+- User-supplied model directories (`sherpaOnnxPath` pref) are honored the
+  same way (default CPU provider, generated keywords never written into the
+  user's directory).
+
 ## UI design system
 
 Theme: Material 3 (`Theme.Material3.DayNight.NoActionBar`, material
@@ -348,13 +394,16 @@ Gradle 8.14.2 · AGP 8.11.1 · Kotlin 2.2.21 · KSP 2.2.21-2.0.5 · Room 2.8.4
 gRPC 1.83.1 · protobuf-gradle-plugin 0.10.0 · OkHttp 4.12.0
 Porcupine 3.0.0 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Material Components · compileSdk 34 · minSdk 24 · targetSdk 30
 
-LLM endpoint is config-driven (`JarvisConfig.llmEndpoint`) rather than hardcoded.
+The SaluteSpeech gRPC endpoint is config-driven (`JarvisConfig.saluteGrpcEndpoint`;
+renamed from the misleading `llmEndpoint` — it NEVER drove the LLM lane, which is
+configured by `gigaChatEndpoint` / the OpenAI-compatible base URL).
 
 ## Security
 
 - **Per-user credentials, no shared secrets.** Provider keys (Picovoice, Sber
   Salute, GigaChat) are entered in-app via **Settings** and stored in
-  `EncryptedSharedPreferences` (Android Keystore). **Nothing secret is baked
+  `KeystoreVault` (AndroidKeyStore AES-256-GCM; the deprecated
+  security-crypto library is gone). **Nothing secret is baked
   into `BuildConfig` or `local.properties`** — every install uses its owner's
   own credentials, so the APK is safe to distribute to colleagues.
 - OAuth uses `Authorization: Basic base64(client_id:client_secret)` per

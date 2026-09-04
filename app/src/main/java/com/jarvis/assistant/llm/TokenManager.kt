@@ -1,10 +1,10 @@
 package com.jarvis.assistant.llm
 
 import android.content.Context
-import android.content.SharedPreferences
 import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.util.CredentialsStore
-import com.jarvis.assistant.util.SecurePrefs
+import com.jarvis.assistant.util.KeystoreVault
+import com.jarvis.assistant.util.SecretVault
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -22,12 +22,13 @@ import java.util.UUID
 /**
  * Dual Sber OAuth token provider (GigaChat + SaluteSpeech).
  *
- * Tokens are cached in [SecurePrefs] with absolute expiry; a cached token is
- * reused until [JarvisConfig.oauthRefreshThresholdMs] of validity remains.
- * Refresh is serialized behind a [Mutex] so concurrent ASR/TTS/LLM callers
- * never trigger duplicate token requests; the freshness timestamp is captured
- * INSIDE the lock so a caller that waited on the mutex judges the winner's
- * token, not its own stale pre-lock clock.
+ * Tokens are cached in the [SecretVault] (Keystore-encrypted in production)
+ * with absolute expiry; a cached token is reused until
+ * [JarvisConfig.oauthRefreshThresholdMs] of validity remains. Refresh is
+ * serialized behind a [Mutex] so concurrent ASR/TTS/LLM callers never trigger
+ * duplicate token requests; the freshness timestamp is captured INSIDE the
+ * lock so a caller that waited on the mutex judges the winner's token, not
+ * its own stale pre-lock clock.
  *
  * Token fetches run through the cancellable HTTP primitive ([await]) — barge-in
  * during a refresh aborts the in-flight request.
@@ -36,8 +37,8 @@ import java.util.UUID
  * bodies are never baked into exceptions: malformed responses can echo token
  * material, and these exceptions reach the rotating file log via Timber.
  *
- * @param context required only when [prefsOverride] is not supplied.
- * @param prefsOverride test seam: in-memory SharedPreferences for JVM tests.
+ * @param context required only when [vaultOverride] is not supplied.
+ * @param vaultOverride test seam: in-memory vault for JVM tests.
  * @param credentials test seam: scope → client credentials; defaults to the
  *   values stored in [CredentialsStore] (entered by the user in Settings).
  */
@@ -45,7 +46,7 @@ class TokenManager(
     context: Context?,
     private val httpClient: OkHttpClient,
     private val config: JarvisConfig = JarvisConfig(),
-    prefsOverride: SharedPreferences? = null,
+    vaultOverride: SecretVault? = null,
     private val credentials: (scope: String) -> Pair<String, String> = { scope ->
         // Audit #30: peek() — outside the app lifecycle (JVM tests without a
         // constructed store) this yields empty credentials, which fail the
@@ -57,9 +58,9 @@ class TokenManager(
         }
     },
 ) {
-    private val prefs: SharedPreferences =
-        prefsOverride ?: SecurePrefs.get(
-            requireNotNull(context) { "context required when prefsOverride not supplied" }
+    private val vault: SecretVault =
+        vaultOverride ?: KeystoreVault.get(
+            requireNotNull(context) { "context required when vaultOverride not supplied" }
                 .applicationContext
         )
 
@@ -67,14 +68,14 @@ class TokenManager(
     private val refreshMutex = Mutex()
 
     suspend fun getGigaChatToken(): String = getToken(
-        cacheKey = KEY_GIGACHAT_TOKEN,
-        expiryKey = KEY_GIGACHAT_EXPIRY,
+        cacheKey = SecretVault.KEY_GIGACHAT_TOKEN,
+        expiryKey = SecretVault.KEY_GIGACHAT_EXPIRY,
         scope = SCOPE_GIGACHAT,
     )
 
     suspend fun getSaluteToken(): String = getToken(
-        cacheKey = KEY_SALUTE_TOKEN,
-        expiryKey = KEY_SALUTE_EXPIRY,
+        cacheKey = SecretVault.KEY_SALUTE_TOKEN,
+        expiryKey = SecretVault.KEY_SALUTE_EXPIRY,
         scope = SCOPE_SALUTE,
     )
 
@@ -83,10 +84,10 @@ class TokenManager(
      * Clears both cached Sber tokens so the next request re-authenticates.
      */
     fun invalidate() {
-        prefs.edit()
-            .remove(KEY_GIGACHAT_TOKEN).remove(KEY_GIGACHAT_EXPIRY)
-            .remove(KEY_SALUTE_TOKEN).remove(KEY_SALUTE_EXPIRY)
-            .apply()
+        vault.remove(SecretVault.KEY_GIGACHAT_TOKEN)
+        vault.remove(SecretVault.KEY_GIGACHAT_EXPIRY)
+        vault.remove(SecretVault.KEY_SALUTE_TOKEN)
+        vault.remove(SecretVault.KEY_SALUTE_EXPIRY)
     }
 
     private suspend fun getToken(
@@ -94,8 +95,8 @@ class TokenManager(
         expiryKey: String,
         scope: String,
     ): String {
-        val cached = prefs.getString(cacheKey, null)
-        val expiry = prefs.getLong(expiryKey, 0L)
+        val cached = vault.getString(cacheKey)
+        val expiry = vault.getString(expiryKey)?.toLongOrNull() ?: 0L
         if (!cached.isNullOrBlank() &&
             (expiry - System.currentTimeMillis()) > config.oauthRefreshThresholdMs
         ) {
@@ -107,8 +108,8 @@ class TokenManager(
             // Timestamp captured HERE — after any lock wait — so the
             // double-check judges validity against the current clock.
             val now = System.currentTimeMillis()
-            val fresh = prefs.getString(cacheKey, null)
-            val freshExpiry = prefs.getLong(expiryKey, 0L)
+            val fresh = vault.getString(cacheKey)
+            val freshExpiry = vault.getString(expiryKey)?.toLongOrNull() ?: 0L
             if (!fresh.isNullOrBlank() && (freshExpiry - now) > config.oauthRefreshThresholdMs) {
                 return@withLock fresh
             }
@@ -132,7 +133,7 @@ class TokenManager(
 
         // Sber OAuth requires HTTP Basic auth: base64(client_id:client_secret).
         // OkHttp's Credentials.basic is platform-independent (works on the
-        // JVM unit-test runtime and on Android minSdk 24 alike).
+        // JVM unit-test runtime and on Android minSdk 30 alike).
         val authHeader = Credentials.basic(clientId, clientSecret)
         val body = FormBody.Builder()
             .add("scope", scope)
@@ -191,20 +192,14 @@ class TokenManager(
                 }
             }
 
-            prefs.edit()
-                .putString(cacheKey, token)
-                .putLong(expiryKey, expiryMillis)
-                .apply()
+            vault.putString(cacheKey, token)
+            vault.putString(expiryKey, expiryMillis.toString())
 
             token
         }
     }
 
     private companion object {
-        const val KEY_GIGACHAT_TOKEN = "gigachat_token"
-        const val KEY_GIGACHAT_EXPIRY = "gigachat_token_expiry"
-        const val KEY_SALUTE_TOKEN = "salute_token"
-        const val KEY_SALUTE_EXPIRY = "salute_token_expiry"
         const val SCOPE_GIGACHAT = "GIGACHAT_API_PERS"
         const val SCOPE_SALUTE = "SALUTE_SPEECH_PERS"
 

@@ -24,8 +24,25 @@ interface AudioSource {
     fun stop()
 }
 
+/**
+ * What a wake-word-class engine heard.
+ *
+ * FIXPLAN B: engines now carry keyword IDENTITY — the same on-device KWS
+ * spotter recognizes the wake phrase AND the stop phrase ("стоп"/"stop",
+ * the same spoken word in Russian and English), so the user can interrupt a
+ * playing answer without the wake word.
+ */
 sealed interface Detection {
+    /** A wake phrase — starts (or barges into) a session. */
     data object WakeWord : Detection
+
+    /**
+     * The stop phrase was heard while the assistant THINKS or SPEAKS —
+     * cancel the active turn. Ignored in every other state (a "стоп" inside
+     * a normal command must not nuke the turn).
+     */
+    data class StopPhrase(val keyword: String) : Detection
+
     /** Wake-word engine failed to initialize; assistant cannot listen. */
     data class DetectorError(val message: String) : Detection
 }
@@ -58,6 +75,14 @@ interface WakeWordDetector {
 
     /** Rebuild the active engine with a new sensitivity (keeps the model). */
     suspend fun setSensitivity(value: Float)
+
+    /**
+     * FIXPLAN B: feed the dedicated stop-phrase lane while the assistant
+     * THINKS or SPEAKS. No-op for engines whose keyword set already carries
+     * the stop phrase (Sherpa primary); for Porcupine-primary it gates the
+     * extra KWS engine's feed — zero idle CPU either way.
+     */
+    fun setStopLaneEnabled(enabled: Boolean) {}
 }
 
 /**
@@ -101,6 +126,12 @@ data class BargeInPolicy(
  * backwards wall-clock jump (NTP correction, manual time set) made
  * `now - lastAccepted` negative and suppressed every detection until the
  * wall clock caught back up. Monotonic differences are immune to that.
+ *
+ * FIXPLAN B: [Detection.StopPhrase] passes UNGATED in every state — the
+ * whole point of the stop phrase is that ONE utterance cancels playback,
+ * with no repeat-to-interrupt barrier and no cooldown. State-conditional
+ * ROUTING (which states honor a stop) lives in SessionManager, which knows
+ * the machine; this gate only filters the wake-word gesture.
  */
 fun Flow<Detection>.gatedBy(
     policy: BargeInPolicy,
@@ -114,6 +145,7 @@ fun Flow<Detection>.gatedBy(
     collect { detection ->
         when (detection) {
             is Detection.DetectorError -> emit(detection)
+            is Detection.StopPhrase -> emit(detection) // always passes; routed by state downstream
             Detection.WakeWord -> {
                 val now = nowMs()
                 val lastAccepted = lastAcceptedAt

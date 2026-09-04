@@ -22,7 +22,10 @@ android {
         applicationId = "com.jarvis.assistant"
         // targetSdk 30 on purpose: appliance profile for Android 11 / HarmonyOS 2.0+.
         // Android 14+ guards are handled in code (typed FGS, runtime checks).
-        minSdk = 24
+        // A11: minSdk 30 aligns the build with the documented support window
+        // (Android 11 / HarmonyOS 2.0 is API-30-based) — no backward compat
+        // below it is claimed or needed.
+        minSdk = 30
         targetSdk = 30
         versionCode = 4
         versionName = "0.2.0"
@@ -140,7 +143,9 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    implementation(libs.security.crypto)
+    // A3: secrets are encrypted by util/KeystoreVault (AndroidKeyStore
+    // AES-256-GCM, zero dependencies) — the deprecated security-crypto
+    // (EncryptedSharedPreferences) library is gone.
 
     implementation(libs.porcupine.android)
 

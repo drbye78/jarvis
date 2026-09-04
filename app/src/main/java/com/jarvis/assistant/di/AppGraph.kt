@@ -83,7 +83,7 @@ class AppGraph(
         .build()
 
     val saluteChannel: ManagedChannel = OkHttpChannelBuilder
-        .forTarget(config.llmEndpoint)
+        .forTarget(config.saluteGrpcEndpoint)
         .useTransportSecurity()
         .build()
 
@@ -95,6 +95,8 @@ class AppGraph(
     )
 
     val networkMonitor = NetworkMonitor(appContext)
+
+    val appPrefs = com.jarvis.assistant.util.AppPrefs(appContext)
 
     val tokenManager = TokenManager(appContext, httpClient, config)
 
@@ -115,8 +117,9 @@ class AppGraph(
     }
 
     private fun apiKeyFor(): String =
-        com.jarvis.assistant.util.SecurePrefs.get(appContext)
-            .getString("openai_api_key", "") ?: ""
+        // A3: the OpenAI-compatible key lives in the Keystore vault, same as
+        // the Sber credentials (AppPrefs.openAiApiKey routes to the same slot).
+        appPrefs.openAiApiKey
 
     val asrClient = SberStreamingAsr(
         tokenManager = tokenManager,
@@ -128,8 +131,6 @@ class AppGraph(
     )
 
     val ttsClient: TtsClient = SaluteSpeechTts(tokenManager, saluteChannel)
-
-    val appPrefs = com.jarvis.assistant.util.AppPrefs(appContext)
 
     // ------------------------------------------------------------------
     // AEC (Phase A + Phase B), all opt-in via Settings (default OFF).
@@ -194,6 +195,9 @@ class AppGraph(
         frames = audioPipeline.frames,
         context = appContext,
         initialReq = initialWakeRequest(),
+        // FIXPLAN C: custom keywords / extracted & user models resolve here,
+        // off the main thread, inside the detector's build path.
+        sherpaEngineBuilder = { req -> buildSherpaEngine(req) },
     )
     val player: TtsPlayer = StreamingAudioTrackPlayer(
         scope,
@@ -218,7 +222,15 @@ class AppGraph(
         scope, ttsClient, player, voiceSource, audioFocus, appContext,
     )
 
-    val functionRouter = FunctionRouter(appContext, httpClient, speechFeedback)
+    val functionRouter = FunctionRouter(
+        appContext,
+        httpClient,
+        speechFeedback,
+        // A4: tool errors are spoken — resolve them from the device locale.
+        toolStrings = com.jarvis.assistant.tools.AndroidToolStrings(appContext),
+        // A6: weather geocoding answers in the device language.
+        weatherLanguageTag = java.util.Locale.getDefault().language.ifBlank { "ru" },
+    )
 
     val stateMachine = SessionStateMachine()
 
@@ -246,6 +258,9 @@ class AppGraph(
         // card updates it live through the service binder.
         followUpEnabled = appPrefs.followUpEnabled,
         followUpWindowMs = appPrefs.followUpWindowMs,
+        // FIXPLAN B: live voice-stop toggle (Settings card, applies from the
+        // next turn).
+        voiceStopEnabled = { appPrefs.voiceStopEnabled },
         // Phase 5 (M7): pause-on-wake reuses the real tool lane — the same
         // capability-gated control path the LLM uses, incl. the media-key
         // fallback for the app that owns audio focus.
@@ -272,22 +287,97 @@ class AppGraph(
         else -> "jarvis_ru.ppn" // custom_bundled (default)
     }
 
-    // CRITICAL 1: Sherpa loads the bundled model from assets via RELATIVE
-    // paths (the v1.13.6 AAR cannot load an absolute filesDir path without
-    // crashing), so there is no model directory to manage. Always null.
-    private fun sherpaModelDirFor(): String? = null
+    /** FIXPLAN C: extracts the bundled model once for generated keyword files. */
+    private val sherpaModelStore by lazy { com.jarvis.assistant.audio.SherpaModelStore(appContext) }
 
-    /** Build the request the detector should currently run with. */
-    private fun initialWakeRequest(): WakeWordRequest {
-        val engine = appPrefs.wakeWordEngine
-        return WakeWordRequest(
-            engine = engine,
-            keywordPath = wakeKeywordPathFor(appPrefs.wakeWordModel),
-            sherpaModelDir = sherpaModelDirFor(),
-            sherpaKeyword = "Jarvis",
-            sensitivity = appPrefs.wakeSensitivity,
+    /**
+     * FIXPLAN C: build the Sherpa engine for a request, resolving custom
+     * keywords and model directories. Runs OFF the main thread inside the
+     * detector's build path; any failure throws → the detector surfaces
+     * [com.jarvis.assistant.contracts.DetectorState.Failed] with the reason.
+     *
+     * Resolution order:
+     * 1. No custom keyword, no user model dir → bundled assets (zero-config,
+     *    `newFromAsset`) with wake + stop phrases.
+     * 2. Custom keyword and/or user model dir → [SherpaModelStore] extraction
+     *    (or the user dir), BPE-tokenize the keyword with THAT model's vocab,
+     *    generate the keywords file, build via `newFromFile`.
+     */
+    private fun buildSherpaEngine(req: WakeWordRequest): com.jarvis.assistant.audio.SherpaKwsEngine {
+        val customKeyword = req.sherpaCustomKeyword?.trim().orEmpty()
+        val userModelDir = appPrefs.sherpaOnnxPath.trim()
+        if (customKeyword.isEmpty() && userModelDir.isEmpty()) {
+            val entries = buildList {
+                add(com.jarvis.assistant.audio.SherpaKeywords.wake())
+                if (req.stopPhraseEnabled) add(com.jarvis.assistant.audio.SherpaKeywords.stop())
+            }
+            return com.jarvis.assistant.audio.SherpaKwsEngine(
+                context = appContext,
+                sensitivity = req.sensitivity,
+                entries = entries,
+                modelSource = com.jarvis.assistant.audio.SherpaModelSource.Bundled,
+            )
+        }
+
+        val usingUserModel = userModelDir.isNotEmpty()
+        val modelDir = if (usingUserModel) {
+            java.io.File(userModelDir)
+        } else {
+            sherpaModelStore.ensureExtracted()
+        }
+        val tokenizer = com.jarvis.assistant.audio.BpeTokenizer.fromModelFile(
+            java.io.File(modelDir, "bpe.model"),
+        ) ?: throw IllegalStateException(
+            "bpe.model is missing or unreadable in ${modelDir.path} — cannot tokenize wake words",
+        )
+        val wakeText = customKeyword.ifBlank { "Jarvis" }
+        val wakeLine = tokenizer.tokenizeKeywordPhrase(wakeText)
+            ?: throw IllegalStateException(
+                "Wake word '$wakeText' cannot be encoded with this model's BPE vocab " +
+                    "(digits, punctuation and non-Latin scripts are not spotable) — " +
+                    "pick an English word",
+            )
+        val entries = buildList {
+            add(
+                com.jarvis.assistant.audio.SherpaKeywords.Entry(
+                    tokenLine = wakeLine,
+                    id = wakeText.lowercase().take(24).ifBlank { "wake" },
+                    isStop = false,
+                ),
+            )
+            if (req.stopPhraseEnabled) add(com.jarvis.assistant.audio.SherpaKeywords.stop())
+        }
+        val provider = if (usingUserModel) "" else "xnnpack" // unknown models → default CPU
+        return com.jarvis.assistant.audio.SherpaKwsEngine(
+            context = appContext,
+            sensitivity = req.sensitivity,
+            entries = entries,
+            modelSource = com.jarvis.assistant.audio.SherpaModelSource.Directory(
+                dir = modelDir.absolutePath,
+                provider = provider,
+            ),
+            generatedKeywordsContent =
+                com.jarvis.assistant.audio.SherpaKeywords.toKeywordsFileContent(entries),
+            workDir = if (usingUserModel) {
+                // Never write into a user-supplied directory.
+                java.io.File(appContext.filesDir, "sherpa_generated")
+            } else {
+                modelDir // our own extraction — writable by construction
+            },
         )
     }
+
+    /** Build the request the detector should currently run with. */
+    private fun initialWakeRequest(): WakeWordRequest = buildWakeRequest()
+
+    private fun buildWakeRequest(): WakeWordRequest = WakeWordRequest(
+        engine = appPrefs.wakeWordEngine,
+        keywordPath = wakeKeywordPathFor(appPrefs.wakeWordModel),
+        sherpaModelDir = null, // resolution happens in [buildSherpaEngine]
+        sherpaCustomKeyword = appPrefs.sherpaCustomKeyword,
+        sensitivity = appPrefs.wakeSensitivity,
+        stopPhraseEnabled = appPrefs.voiceStopEnabled,
+    )
 
     /**
      * Rebuild the live wake-word engine from the current prefs. Safe to call
@@ -300,15 +390,7 @@ class AppGraph(
      * the stale value; audit finding "slider no-op").
      */
     suspend fun reconfigureWakeWord() {
-        val engine = appPrefs.wakeWordEngine
-        val req = WakeWordRequest(
-            engine = engine,
-            keywordPath = wakeKeywordPathFor(appPrefs.wakeWordModel),
-            sherpaModelDir = sherpaModelDirFor(),
-            sherpaKeyword = "Jarvis",
-            sensitivity = appPrefs.wakeSensitivity,
-        )
-        wakeWordDetector.reconfigure(req)
+        wakeWordDetector.reconfigure(buildWakeRequest())
     }
 
     /**
@@ -333,7 +415,11 @@ class AppGraph(
                     audioFocus.onTtsSentenceFinished()
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
+                // A8: cleanup, then RETHROW — swallowing cancellation here
+                // broke structured concurrency (the probe coroutine would
+                // keep running as if nothing happened after scope.cancel()).
                 audioFocus.onTtsFlushed()
+                throw e
             } catch (t: Throwable) {
                 // A dead synthesis must never crash the app scope from a
                 // Settings button; the toast-free failure lands in the log.

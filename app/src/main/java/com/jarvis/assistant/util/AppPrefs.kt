@@ -6,15 +6,20 @@ import com.jarvis.assistant.config.ProviderSettings
 
 /**
  * Plain (non-secret) app preferences: onboarding state, user-stop flag,
- * provider selection, wake-word sensitivity. Changing provider settings
+ * provider selection, wake-word configuration. Changing provider settings
  * requires a service restart to rebuild the graph (documented in Settings UI).
+ *
+ * Secrets (the OpenAI-compatible API key) are NOT plain prefs: they route
+ * through the [SecretVault] (Keystore-encrypted in production).
  */
-class AppPrefs(context: Context) {
+class AppPrefs(context: Context, vaultOverride: SecretVault? = null) {
 
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
 
-    private val secure by lazy { SecurePrefs.get(context.applicationContext) }
+    private val vault: SecretVault by lazy {
+        vaultOverride ?: KeystoreVault.get(context.applicationContext)
+    }
 
     var onboarded: Boolean
         get() = prefs.getBoolean(KEY_ONBOARDED, false)
@@ -44,8 +49,8 @@ class AppPrefs(context: Context) {
         set(value) = prefs.edit().putString(KEY_OPENAI_MODEL, value).apply()
 
     var openAiApiKey: String
-        get() = secure.getString(KEY_OPENAI_APIKEY, "") ?: ""
-        set(value) = secure.edit().putString(KEY_OPENAI_APIKEY, value).apply()
+        get() = vault.getString(SecretVault.KEY_OPENAI_API_KEY) ?: ""
+        set(value) = vault.putString(SecretVault.KEY_OPENAI_API_KEY, value.trim())
 
     var wakeSensitivity: Float
         get() = prefs.getFloat(KEY_WAKE_SENSITIVITY, 0.6f)
@@ -134,8 +139,27 @@ class AppPrefs(context: Context) {
         type = providerType,
         openAiBaseUrl = openAiBaseUrl,
         openAiModel = openAiModel,
-        wakeSensitivity = wakeSensitivity,
     )
+
+    /**
+     * Custom Sherpa wake-word text (FIXPLAN C). Blank = the bundled
+     * "Jarvis" keyword from assets. A non-blank value is an ENGLISH word or
+     * short phrase (the bundled gigaspeech KWS model is English-BPE — the
+     * tokenizer rejects anything it cannot encode, and Settings validates
+     * with the same tokenizer before saving).
+     */
+    var sherpaCustomKeyword: String
+        get() = prefs.getString(KEY_SHERPA_KEYWORD, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_SHERPA_KEYWORD, value.trim()).apply()
+
+    /**
+     * Voice stop toggle (FIXPLAN B). Default mirrors
+     * [com.jarvis.assistant.config.JarvisConfig.voiceStopEnabled]. Read by
+     * the session state collector every state change — applies live.
+     */
+    var voiceStopEnabled: Boolean
+        get() = prefs.getBoolean(KEY_VOICE_STOP, true)
+        set(value) = prefs.edit().putBoolean(KEY_VOICE_STOP, value).apply()
 
     private companion object {
         const val KEY_ONBOARDED = "onboarded"
@@ -143,12 +167,13 @@ class AppPrefs(context: Context) {
         const val KEY_PROVIDER = "provider_type"
         const val KEY_OPENAI_URL = "openai_base_url"
         const val KEY_OPENAI_MODEL = "openai_model"
-        const val KEY_OPENAI_APIKEY = "openai_api_key"
         const val KEY_WAKE_SENSITIVITY = "wake_sensitivity"
         const val KEY_WAKE_MODEL = "wake_word_model"
         const val KEY_CUSTOM_WAKE_PATH = "custom_wake_word_path"
         const val KEY_WAKE_ENGINE = "wake_word_engine"
         const val KEY_SHERPA_ONNX = "sherpa_onnx_path"
+        const val KEY_SHERPA_KEYWORD = "sherpa_custom_keyword"
+        const val KEY_VOICE_STOP = "voice_stop_enabled"
         const val KEY_MUSIC_PLAYER = "preferred_music_player"
         const val KEY_AEC_MODE = "aec_mode"
         const val KEY_FOLLOW_UP_ENABLED = "follow_up_enabled"

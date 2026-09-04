@@ -111,7 +111,6 @@
     <string name="engine_sherpa">Sherpa-ONNX (локально, без аккаунта)</string>
     <string name="porcupine_hint">Нужен ключ Picovoice (см. выше)</string>
     <string name="sherpa_hint">Полностью на устройстве, без аккаунта. Используется встроенная модель Sherpa (офлайн, без сети).</string>
-    <string name="sherpa_bundled_note">Jarvis — встроенная модель Sherpa, офлайн, без аккаунта</string>
 
     <!-- Settings: misc -->
     <string name="close">Закрыть</string>
@@ -244,4 +243,36 @@
     <string name="voice_hint">Мила — проверенный голос по умолчанию. Дополнительные идентификаторы голосов из пула Salute можно ввести вручную и проверить кнопкой. Смена применяется к следующей фразе — без перезапуска сервиса.</string>
     <string name="voice_service_not_running">Запустите ассистента, чтобы проверить голос</string>
     <string name="phrase_voice_sample">Привет! Я Джарвис. Так будет звучать мой голос.</string>
+
+    <!-- Tool-layer user-visible errors (A4): routed through ToolStrings,
+         spoken via the LLM — values-en parity is test-enforced -->
+    <string name="tool_audio_service_unavailable">Аудиосервис недоступен на этом устройстве</string>
+    <string name="tool_write_settings_missing">Нет права менять настройки системы. Открой приложение Джарвис → Экран приветствия → «Настройки записи» и выдай доступ.</string>
+    <string name="tool_wifi_panel_unavailable">Системная панель Wi-Fi недоступна на этом устройстве.</string>
+    <string name="tool_wifi_panel_detail">Система не позволяет менять Wi-Fi напрямую — открыл панель настроек.</string>
+    <string name="tool_wifi_panel">панель Wi-Fi</string>
+    <string name="tool_bt_settings">настройки Bluetooth</string>
+    <string name="tool_open_failed_with_detail">Не удалось открыть %1$s: %2$s</string>
+    <string name="tool_bt_nearby_missing">Нет права Bluetooth Nearby devices — выдай его в настройках приложения.</string>
+    <string name="tool_bt_settings_unavailable">Настройки Bluetooth недоступны на этом устройстве.</string>
+    <string name="tool_bt_toggle_failed">Не удалось переключить Bluetooth</string>
+    <string name="tool_bt_adapter_unavailable">Bluetooth-адаптер недоступен на этом устройстве</string>
+    <string name="tool_dnd_service_unavailable">Не удалось получить доступ к сервису уведомлений</string>
+    <string name="tool_dnd_access_missing">Нет доступа к режиму «Не беспокоить». Открой настройки → Звук → Не беспокоить → доступ для приложений → Джарвис.</string>
+    <string name="tool_dnd_toggle_failed">Не удалось переключить режим «Не беспокоить»</string>
+    <string name="tool_admin_service_unavailable">Сервис администрирования устройства недоступен</string>
+    <string name="tool_admin_lock_missing">Экран нельзя выключить без прав администратора устройства. Открой экран приветствия Джарвиса и включи «Блокировка экрана».</string>
+    <string name="tool_app_not_found">Приложение \'%1$s\' не найдено</string>
+    <string name="tool_app_not_launchable">Приложение \'%1$s\' недоступно для запуска</string>
+    <string name="tool_open_app_attempted_detail">Я не вижу открытый экран, поэтому система могла заблокировать запуск — открой приложение вручную, если оно не появилось.</string>
+    <string name="tool_weather_not_available">нет данных</string>
+
+    <!-- FIXPLAN B/C: voice stop + custom Sherpa wake keyword -->
+    <string name="voice_stop_toggle">Голосовая команда «стоп» во время ответа</string>
+    <string name="voice_stop_hint">Скажите «стоп», пока ассистент думает или говорит, — он остановится без слова-активатора. Работает офлайн, тем же движком, что и wake word.</string>
+    <string name="sherpa_keyword_hint">Своё слово-активатор (английское)</string>
+    <string name="sherpa_keyword_invalid">Это слово нельзя закодировать моделью — попробуйте другое английское слово (цифры, знаки и кириллица не распознаются).</string>
+    <string name="sherpa_keyword_applied">Слово-активатор применено: %1$s</string>
+    <string name="sherpa_keyword_applied_default">Слово-активатор применено: Jarvis (по умолчанию)</string>
+    <string name="sherpa_bundled_note">Модель: встроенная, офлайн, без аккаунта. Можно задать своё слово-активатор выше.</string>
 </resources>

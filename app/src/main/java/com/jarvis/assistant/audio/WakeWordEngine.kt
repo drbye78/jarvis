@@ -6,9 +6,25 @@ package com.jarvis.assistant.audio
  *
  * Replaces the old Porcupine-only [com.jarvis.assistant.audio.PorcupineEngine]
  * so both Picovoice Porcupine and Sherpa-ONNX KWS share one contract.
+ *
+ * FIXPLAN B: engines are keyword-aware. [phrases] lists the keyword phrases
+ * the engine was built with, in index order — [process] returns the matched
+ * phrase's INDEX (the detector maps it to [com.jarvis.assistant.contracts.Detection.WakeWord]
+ * or [com.jarvis.assistant.contracts.Detection.StopPhrase]) or -1 for "nothing".
  */
 interface WakeWordEngine {
-    /** Returns the detected keyword index (>= 0) or -1 for no detection. */
+    /** A keyword phrase the engine can report. */
+    data class Phrase(
+        /** Stable id routed in the Detection (e.g. "jarvis", "stop", or the custom text). */
+        val id: String,
+        /** True when hearing this phrase means "cancel the current turn". */
+        val isStop: Boolean,
+    )
+
+    /** Phrases this engine recognizes, in the index order [process] reports. */
+    val phrases: List<Phrase>
+
+    /** Returns the matched phrase index (>= 0) or -1 for no detection. */
     fun process(chunk: ShortArray): Int
 
     /** Free native resources. Must be safe to call multiple times. */

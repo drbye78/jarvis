@@ -31,18 +31,31 @@ interface WeatherClient {
  * the locale-aware `weather_*` string resources (values/ AND values-en/ ship
  * all 15 — the translations existed but were dead resources). The default
  * keeps the original RU literals for non-Android callers and tests.
+ *
+ * Audit A6: the geocoding language now follows [languageTag] (device locale
+ * in production — it was hardcoded to "ru"), the geocoder is asked for the
+ * top-5 candidates, and an EXACT name match is preferred over the raw first
+ * hit (disambiguation: "Санкт-Петербург" must not resolve to a same-named
+ * village). The response carries `location` + `country` so the LLM can state
+ * WHICH city answered. Missing readings render through
+ * [notAvailable] instead of a hardcoded Russian "н/д".
  */
 class OpenMeteoWeatherClient(
     private val httpClient: OkHttpClient,
     private val conditionFor: (Int?) -> String = ::weatherCodeToRussianDefault,
+    /** BCP-47-ish geocoding language ("ru", "en", ...) — open-meteo supports it natively. */
+    private val languageTag: String = "ru",
+    /** Placeholder for missing readings (locale-aware in production). */
+    private val notAvailable: String = "н/д",
 ) : WeatherClient {
 
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun getWeather(location: String): String = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(location.trim(), "UTF-8")
+        val lang = languageTag.ifBlank { "ru" }
         val geoUrl = ("https://geocoding-api.open-meteo.com/v1/search" +
-            "?name=$encoded&count=1&language=ru").toHttpUrl()
+            "?name=$encoded&count=5&language=$lang").toHttpUrl()
 
         val geoBody = httpGet(geoUrl.toString())
             ?: return@withContext JsonOut.error("Weather service unreachable")
@@ -53,12 +66,20 @@ class OpenMeteoWeatherClient(
         if (results.isNullOrEmpty()) {
             return@withContext JsonOut.error("Location not found: $location")
         }
-        val first = results[0].jsonObject
+        // Prefer an exact-name match among the candidates; else the first hit.
+        val first = results
+            .map { it.jsonObject }
+            .firstOrNull { candidate ->
+                candidate["name"]?.jsonPrimitive?.contentOrNull
+                    ?.equals(location.trim(), ignoreCase = true) == true
+            }
+            ?: results[0].jsonObject
         val lat = first["latitude"]?.jsonPrimitive?.contentOrNull
             ?: return@withContext JsonOut.error("Could not resolve coordinates")
         val lon = first["longitude"]?.jsonPrimitive?.contentOrNull
             ?: return@withContext JsonOut.error("Could not resolve coordinates")
         val displayName = first["name"]?.jsonPrimitive?.contentOrNull ?: location
+        val country = first["country"]?.jsonPrimitive?.contentOrNull
 
         val weatherUrl = ("https://api.open-meteo.com/v1/forecast" +
             "?latitude=$lat&longitude=$lon" +
@@ -79,9 +100,10 @@ class OpenMeteoWeatherClient(
 
         buildJsonObject {
             put("location", JsonPrimitive(displayName))
-            put("temp", JsonPrimitive(temp ?: "н/д"))
-            put("feels_like", JsonPrimitive(feels ?: "н/д"))
-            put("wind_kmh", JsonPrimitive(wind ?: "н/д"))
+            if (!country.isNullOrBlank()) put("country", JsonPrimitive(country))
+            put("temp", JsonPrimitive(temp ?: notAvailable))
+            put("feels_like", JsonPrimitive(feels ?: notAvailable))
+            put("wind_kmh", JsonPrimitive(wind ?: notAvailable))
             put("condition", JsonPrimitive(conditionFor(code)))
         }.toString()
     }

@@ -1,14 +1,14 @@
 package com.jarvis.assistant.util
+
 import android.content.Context
-import android.content.SharedPreferences
 
 /**
- * Per-user credential store backed by [SecurePrefs].
+ * Per-user credential store backed by a [SecretVault].
  *
  * Audit #30: this used to be an `object` with a `lateinit var ctx` filled by
  * a separate `init(context)` call — any property access before that call
- * crashed with a bare `UninitializedPropertyAccessException`. It is now a
- * proper class with an Application-owned singleton:
+ * crashed with a bare `UninitializedPropertyAccessException`. It is a proper
+ * class with an Application-owned singleton:
  *
  * - [init] runs once in `JarvisApplication.onCreate` (always before any
  *   activity/service/receiver in the process) and returns the singleton;
@@ -17,24 +17,27 @@ import android.content.SharedPreferences
  * - [peek] is the null-safe read for paths that may execute outside the app
  *   lifecycle (JVM tests with injected fakes, wake-word engine failure
  *   reasons) — they degrade instead of crashing.
+ *
+ * A3: the backing store is now [KeystoreVault] (AndroidKeyStore AES-GCM).
+ * The deprecated EncryptedSharedPreferences dependency is gone.
  */
-class CredentialsStore(private val prefs: SharedPreferences) {
+class CredentialsStore(private val vault: SecretVault) {
 
     var picovoiceKey: String
-        get() = prefs.getString(KEY_PICOVOICE, "") ?: ""
-        set(v) { prefs.edit().putString(KEY_PICOVOICE, v.trim()).apply() }
+        get() = vault.getString(SecretVault.KEY_PICOVOICE) ?: ""
+        set(v) { vault.putString(SecretVault.KEY_PICOVOICE, v.trim()) }
     var saluteClientId: String
-        get() = prefs.getString(KEY_SALUTE_ID, "") ?: ""
-        set(v) { prefs.edit().putString(KEY_SALUTE_ID, v.trim()).apply() }
+        get() = vault.getString(SecretVault.KEY_SALUTE_ID) ?: ""
+        set(v) { vault.putString(SecretVault.KEY_SALUTE_ID, v.trim()) }
     var saluteClientSecret: String
-        get() = prefs.getString(KEY_SALUTE_SECRET, "") ?: ""
-        set(v) { prefs.edit().putString(KEY_SALUTE_SECRET, v.trim()).apply() }
+        get() = vault.getString(SecretVault.KEY_SALUTE_SECRET) ?: ""
+        set(v) { vault.putString(SecretVault.KEY_SALUTE_SECRET, v.trim()) }
     var gigaChatClientId: String
-        get() = prefs.getString(KEY_GIGA_ID, "") ?: ""
-        set(v) { prefs.edit().putString(KEY_GIGA_ID, v.trim()).apply() }
+        get() = vault.getString(SecretVault.KEY_GIGA_ID) ?: ""
+        set(v) { vault.putString(SecretVault.KEY_GIGA_ID, v.trim()) }
     var gigaChatClientSecret: String
-        get() = prefs.getString(KEY_GIGA_SECRET, "") ?: ""
-        set(v) { prefs.edit().putString(KEY_GIGA_SECRET, v.trim()).apply() }
+        get() = vault.getString(SecretVault.KEY_GIGA_SECRET) ?: ""
+        set(v) { vault.putString(SecretVault.KEY_GIGA_SECRET, v.trim()) }
 
     /**
      * The MANDATORY keys: SaluteSpeech (ASR+TTS) and GigaChat (LLM).
@@ -52,6 +55,11 @@ class CredentialsStore(private val prefs: SharedPreferences) {
     /** Engine-optional key: only the Porcupine engine needs it. */
     fun hasPicovoiceKey(): Boolean = picovoiceKey.isNotBlank()
 
+    /** Wipes every stored credential (Settings "clear" path). */
+    fun clearAll() {
+        vault.clear()
+    }
+
     companion object {
         @Volatile
         private var instance: CredentialsStore? = null
@@ -60,8 +68,17 @@ class CredentialsStore(private val prefs: SharedPreferences) {
         fun init(context: Context): CredentialsStore =
             instance ?: synchronized(this) {
                 instance ?: CredentialsStore(
-                    SecurePrefs.get(context.applicationContext),
+                    KeystoreVault.get(context.applicationContext),
                 ).also { instance = it }
+            }
+
+        /**
+         * Test/JVM seam: construct the singleton with an injected vault
+         * (production uses [KeystoreVault]; tests pass an in-memory fake).
+         */
+        fun initForTests(vault: SecretVault): CredentialsStore =
+            instance ?: synchronized(this) {
+                instance ?: CredentialsStore(vault).also { instance = it }
             }
 
         /** The singleton; fails fast with the contract message if [init] never ran. */
@@ -72,11 +89,5 @@ class CredentialsStore(private val prefs: SharedPreferences) {
 
         /** Null-safe read for non-lifecycle paths (tests, failure reasons). */
         fun peek(): CredentialsStore? = instance
-
-        private const val KEY_PICOVOICE = "picovoice_key"
-        private const val KEY_SALUTE_ID = "salute_client_id"
-        private const val KEY_SALUTE_SECRET = "salute_client_secret"
-        private const val KEY_GIGA_ID = "gigachat_client_id"
-        private const val KEY_GIGA_SECRET = "gigachat_client_secret"
     }
 }

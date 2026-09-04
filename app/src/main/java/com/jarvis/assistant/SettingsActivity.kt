@@ -50,6 +50,10 @@ interface SettingsCallbacks {
 
     /** The chosen wake-word model changed (`builtin` | `custom_bundled`). */
     fun onWakeWordSelected(modelId: String)
+    /** FIXPLAN C: a validated custom Sherpa keyword was applied (blank = bundled Jarvis). */
+    suspend fun onSherpaKeywordApplied(keyword: String)
+    /** FIXPLAN B: the voice-stop toggle changed. */
+    fun onVoiceStopToggled(enabled: Boolean)
 
     /** User asked to load a custom .ppn file from the device. */
     fun onLoadCustomPpn()
@@ -80,6 +84,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var credentialChecks: CredentialCheckController
 
     private lateinit var wakeWordGroup: RadioGroup
+    private lateinit var sherpaKeywordInput: com.google.android.material.textfield.TextInputEditText
+    private lateinit var sherpaKeywordStatus: TextView
+    private lateinit var voiceStopSwitch: com.google.android.material.switchmaterial.SwitchMaterial
     private lateinit var sensitivityBar: SeekBar
     private lateinit var sensitivityValue: TextView
 
@@ -133,6 +140,9 @@ class SettingsActivity : AppCompatActivity() {
         saluteCheckStatus = findViewById(R.id.saluteCheckStatus)
         gigaChatCheckStatus = findViewById(R.id.gigaChatCheckStatus)
         wakeWordGroup = findViewById(R.id.wakeWordGroup)
+        sherpaKeywordInput = findViewById(R.id.sherpaKeywordInput)
+        sherpaKeywordStatus = findViewById(R.id.sherpaKeywordStatus)
+        voiceStopSwitch = findViewById(R.id.voiceStopSwitch)
         sensitivityBar = findViewById(R.id.sensitivityBar)
         sensitivityValue = findViewById(R.id.sensitivityValue)
 
@@ -379,6 +389,36 @@ class SettingsActivity : AppCompatActivity() {
             callbacks.onLoadCustomPpn()
         }
 
+        // FIXPLAN C: custom Sherpa wake keyword. Live validation uses the REAL
+        // BPE tokenizer; a word that cannot be encoded is refused before it can
+        // save (the runtime build would otherwise surface a Failed detector).
+        // Persist + reconfigure on IME-done / focus loss — not per keystroke
+        // (each apply rebuilds the native engine).
+        sherpaKeywordInput.setText(appPrefs.sherpaCustomKeyword)
+        renderKeywordStatus(appPrefs.sherpaCustomKeyword)
+        sherpaKeywordInput.addTextChangedListener(textWatcher {
+            renderKeywordStatus(sherpaKeywordInput.text.toString())
+        })
+        sherpaKeywordInput.setOnEditorActionListener { _, action, _ ->
+            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                applySherpaKeyword()
+                true
+            } else {
+                false
+            }
+        }
+        sherpaKeywordInput.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) applySherpaKeyword()
+        }
+
+        // FIXPLAN B: voice stop (applies from the next turn — the session
+        // state collector re-reads the pref on every state change).
+        voiceStopSwitch.isChecked = appPrefs.voiceStopEnabled
+        voiceStopSwitch.setOnCheckedChangeListener { _, checked ->
+            appPrefs.voiceStopEnabled = checked
+            callbacks.onVoiceStopToggled(checked)
+        }
+
         // B2) Engine selection (Porcupine vs Sherpa-ONNX). Restore the saved
         // engine, reflect it in the radio + the shown control block.
         val savedEngine = appPrefs.wakeWordEngine
@@ -528,6 +568,57 @@ class SettingsActivity : AppCompatActivity() {
         sherpaBlock.visibility = if (isSherpa) View.VISIBLE else View.GONE
     }
 
+    // ------------------------------------------------------------------
+    // FIXPLAN C: custom Sherpa wake keyword
+    // ------------------------------------------------------------------
+
+    /** Lazy tokenizer over the bundled BPE vocab (null → validation is off). */
+    private val keywordTokenizer: com.jarvis.assistant.audio.BpeTokenizer? by lazy {
+        com.jarvis.assistant.audio.BpeTokenizer.fromAsset(this, "sherpa_kws/bpe.model")
+    }
+
+    private fun renderKeywordStatus(text: String) {
+        val keyword = text.trim()
+        if (keyword.isEmpty()) {
+            // Blank = bundled Jarvis — always valid.
+            sherpaKeywordStatus.visibility = View.GONE
+            return
+        }
+        val encodable = keywordTokenizer?.tokenizeKeywordPhrase(keyword) != null
+        sherpaKeywordStatus.visibility = View.VISIBLE
+        if (encodable) {
+            sherpaKeywordStatus.text = "✓ $keyword"
+            sherpaKeywordStatus.setTextColor(
+                ContextCompat.getColor(this, R.color.jarvis_status_listening),
+            )
+        } else {
+            sherpaKeywordStatus.text = getString(R.string.sherpa_keyword_invalid)
+            sherpaKeywordStatus.setTextColor(
+                ContextCompat.getColor(this, R.color.jarvis_error),
+            )
+        }
+    }
+
+    /** Validate, persist and reconfigure — only when the keyword is encodable. */
+    private fun applySherpaKeyword() {
+        val keyword = sherpaKeywordInput.text.toString().trim()
+        if (keyword.isNotEmpty() && keywordTokenizer?.tokenizeKeywordPhrase(keyword) == null) {
+            // Invalid: refuse loudly but keep the text so the user can edit.
+            Toast.makeText(this, R.string.sherpa_keyword_invalid, Toast.LENGTH_LONG).show()
+            return
+        }
+        if (keyword == appPrefs.sherpaCustomKeyword) return // no change
+        lifecycleScope.launch {
+            callbacks.onSherpaKeywordApplied(keyword)
+            Toast.makeText(
+                this@SettingsActivity,
+                if (keyword.isEmpty()) R.string.sherpa_keyword_applied_default
+                else R.string.sherpa_keyword_applied,
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -624,6 +715,17 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
+        override suspend fun onSherpaKeywordApplied(keyword: String) {
+            appPrefs.sherpaCustomKeyword = keyword
+            GraphHolder.graph?.reconfigureWakeWord()
+        }
+
+        override fun onVoiceStopToggled(enabled: Boolean) {
+            // The pref is already saved; the session state collector re-reads
+            // it on the next state change, so nothing else to do here. Kept as
+            // a callback for symmetry (and future service-side hooks).
+        }
+
         override fun onLoadCustomPpn() {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
@@ -666,6 +768,10 @@ class SettingsActivity : AppCompatActivity() {
         override suspend fun onSaveLlmProviderSettings(baseUrl: String, model: String, apiKey: String) {}
 
         override fun onWakeWordSelected(modelId: String) {}
+
+        override suspend fun onSherpaKeywordApplied(keyword: String) {}
+
+        override fun onVoiceStopToggled(enabled: Boolean) {}
 
         override fun onLoadCustomPpn() {}
 

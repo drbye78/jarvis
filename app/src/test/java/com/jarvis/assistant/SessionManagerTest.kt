@@ -230,6 +230,20 @@ class HangOnNthTools(private val hangFrom: Int) : FakeTools() {
 }
 
 /**
+ * Tools with a BOUNDED execution delay — gives turn-activity observers a
+ * deterministic window to see ToolRunning while the tool is actually running
+ * (a StateFlow collector can otherwise be starved and conflate Thinking →
+ * ToolRunning → null, a race slower CI machines exposed).
+ */
+class SlowTools(private val delayMs: Long) : FakeTools() {
+    override suspend fun executeResult(call: FunctionCall): ToolResult {
+        executed.add(call)
+        delay(delayMs)
+        return ToolResult(result, isError = false)
+    }
+}
+
+/**
  * Player with a manual completion gate per play() call and NO internal
  * collection — lets tests observe exactly how many sentences were enqueued
  * (i.e. how many hold a synthesis permit) before any of them finishes.
@@ -1019,21 +1033,31 @@ class SessionManagerTest {
 
     @Test
     fun `tool run publishes ToolRunning and clears at turn end`() = runBlocking {
-        val llm = ScriptedLlm(
-            mutableListOf(
-                listOf( // pass 1: tool call
-                    LlmChunk.FunctionCallComplete(
-                        ToolCall("call_1", function = FunctionCall("setAlarm", """{"time":"07:30"}"""))
-                    ),
-                    LlmChunk.Done,
-                ),
-                listOf( // pass 2: final answer
-                    LlmChunk.Text("Будильник поставлен."),
-                    LlmChunk.Done,
-                ),
-            )
-        )
-        val h = Harness(llm)
+        // Pass 1 emits the tool call, then PAUSES mid-stream: that gives the
+        // collector a guaranteed window to observe Thinking before ToolRunning
+        // (both are StateFlow writes < 1 ms apart without the pause, and a
+        // starved collector conflates them — a race slower machines exposed).
+        val llm = object : LlmClient {
+            var pass = 0
+            override fun chatStream(request: ChatRequest): Flow<LlmChunk> = flow {
+                pass++
+                if (pass == 1) {
+                    emit(
+                        LlmChunk.FunctionCallComplete(
+                            ToolCall("call_1", function = FunctionCall("setAlarm", """{"time":"07:30"}"""))
+                        )
+                    )
+                    delay(300) // Thinking-observation window
+                    emit(LlmChunk.Done)
+                } else {
+                    emit(LlmChunk.Text("Будильник поставлен."))
+                    emit(LlmChunk.Done)
+                }
+            }
+        }
+        // Bounded tool delay: ToolRunning must be OBSERVABLE while the tool
+        // runs (not conflated away between collector resumptions).
+        val h = Harness(ScriptedLlm(mutableListOf()), llmOverride = llm, toolsOverride = SlowTools(delayMs = 250))
         try {
             val seen = CopyOnWriteArrayList<com.jarvis.assistant.session.TurnActivity?>()
             val job = launch {
@@ -1044,6 +1068,12 @@ class SessionManagerTest {
             withTimeout(5_000) { while (seen.isEmpty()) delay(10) }
             h.runTurn("поставь будильник на семь тридцать")
 
+            // The tool label must arrive while the tool is still running.
+            withTimeout(5_000) {
+                while (
+                    seen.none { it is com.jarvis.assistant.session.TurnActivity.ToolRunning }
+                ) delay(10)
+            }
             withTimeout(5_000) {
                 while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
             }
@@ -1115,6 +1145,147 @@ class SessionManagerTest {
                 while ((h.tts as FakeTtsClient).spoken.isEmpty() && h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
             }
             assertEquals(listOf("Anton"), (h.tts as FakeTtsClient).voices)
+        } finally {
+            h.shutdown()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FIXPLAN B: voice stop without the wake word
+// ---------------------------------------------------------------------------
+
+/** LLM that never produces anything — parks the turn in THINKING. */
+private class HangingLlm : LlmClient {
+    override fun chatStream(request: ChatRequest): Flow<LlmChunk> =
+        flow { awaitCancellation() }
+}
+
+class VoiceStopSessionTest {
+
+    @Test
+    fun `stop phrase during THINKING cancels the turn and goes IDLE`() = runBlocking {
+        val h = Harness(llm = ScriptedLlm(mutableListOf()), llmOverride = HangingLlm())
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) {
+                while (h.asr.streams.isEmpty()) delay(20)
+            }
+            // Deliver the transcript: ASR final -> THINKING (LLM hangs there).
+            h.asr.streams.last().emitFinal("тест")
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.THINKING) delay(10)
+            }
+
+            h.wake.detections.emit(Detection.StopPhrase("stop"))
+
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(10)
+            }
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `stop phrase during SPEAKING stops playback and goes IDLE`() = runBlocking {
+        // Gated player parks the sentence in playback → durable SPEAKING.
+        val player = GatedPlayer()
+        val h = Harness(
+            llm = ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Длинный ответ."), LlmChunk.Done))),
+            playerOverride = player,
+        )
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) {
+                while (h.asr.streams.isEmpty()) delay(20)
+            }
+            h.asr.streams.last().emitFinal("тест")
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.SPEAKING) delay(10)
+            }
+            assertEquals(1, player.gates.size)
+
+            h.wake.detections.emit(Detection.StopPhrase("stop"))
+
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(10)
+            }
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `stop phrase in LISTENING is ignored - it is part of the user's utterance`() = runBlocking {
+        val h = Harness(
+            llm = ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Привет."), LlmChunk.Done))),
+        )
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.LISTENING) delay(10)
+            }
+
+            h.wake.detections.emit(Detection.StopPhrase("stop"))
+            delay(250) // would be enough for a cancel to land if one were coming
+
+            // The turn is untouched: still LISTENING, ASR stream still open.
+            assertEquals(AssistantState.LISTENING, h.stateMachine.currentState())
+            assertTrue(h.asr.streams.isNotEmpty())
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `wake collector survives a voice stop - unlike cancelAll`() = runBlocking {
+        // THE differentiator vs cancelAll: after a stop the wake-word
+        // collector must still be subscribed, so the next wake word starts
+        // a fresh session.
+        val h = Harness(llm = ScriptedLlm(mutableListOf()), llmOverride = HangingLlm())
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) {
+                while (h.asr.streams.isEmpty()) delay(20)
+            }
+            h.asr.streams.last().emitFinal("тест")
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.THINKING) delay(10)
+            }
+            h.wake.detections.emit(Detection.StopPhrase("stop"))
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(10)
+            }
+
+            // Beyond the post-accept wake cooldown (600 ms) that the first
+            // accepted wake word started — the cooldown is per-GESTURE and a
+            // stop phrase does not (and must not) consume it.
+            delay(700)
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.LISTENING) delay(10)
+            }
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `stopActiveTurn with nothing active is a safe no-op`() = runBlocking {
+        val h = Harness(llm = ScriptedLlm(mutableListOf()))
+        try {
+            h.manager.stopActiveTurn()
+            delay(100)
+            assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
         } finally {
             h.shutdown()
         }

@@ -502,6 +502,49 @@
                             android:text="@string/sherpa_hint"
                             style="@style/TextAppearance.Jarvis.Hint" />
 
+                        <!-- FIXPLAN C: custom wake keyword (English word/short
+                             phrase the bundled BPE model can encode). Validated
+                             live with the real tokenizer; applied on IME done
+                             or focus loss. -->
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:hint="@string/sherpa_keyword_hint">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/sherpaKeywordInput"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:imeOptions="actionDone"
+                                android:inputType="text"
+                                android:maxLines="1" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <TextView
+                            android:id="@+id/sherpaKeywordStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:visibility="gone"
+                            style="@style/TextAppearance.Jarvis.Hint" />
+
+                        <!-- FIXPLAN B: voice stop while the assistant speaks. -->
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/voiceStopSwitch"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="@string/voice_stop_toggle" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/voice_stop_hint"
+                            style="@style/TextAppearance.Jarvis.Hint" />
+
                         <!-- Read-only note: this AAR (v1.13.6) can only load the
                              bundled model from assets, so user-supplied models
                              are intentionally unsupported. -->

@@ -206,7 +206,6 @@ class JarvisForegroundService : Service() {
                         type = prefs.providerType,
                         openAiBaseUrl = prefs.openAiBaseUrl,
                         openAiModel = prefs.openAiModel,
-                        wakeSensitivity = prefs.wakeSensitivity,
                     ),
                     onSessionError = { msg -> speakError(msg) },
                 ).also { it.start() }
