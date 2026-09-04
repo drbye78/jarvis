@@ -20,13 +20,15 @@ android {
 
     defaultConfig {
         applicationId = "com.jarvis.assistant"
-        // targetSdk 30 on purpose: appliance profile for Android 11 / HarmonyOS 2.0+.
-        // Android 14+ guards are handled in code (typed FGS, runtime checks).
+        // targetSdk 34: Android 14+ guards are handled in code (typed FGS,
+        // SCHEDULE_EXACT_ALARM, RECEIVER_NOT_EXPORTED, POST_NOTIFICATIONS).
+        // HarmonyOS 2.0 (API-29-based) ignores unknown permissions and
+        // behavioral changes — compatibility is maintained.
         // A11: minSdk 30 aligns the build with the documented support window
         // (Android 11 / HarmonyOS 2.0 is API-30-based) — no backward compat
         // below it is claimed or needed.
         minSdk = 30
-        targetSdk = 30
+        targetSdk = 34
         versionCode = 4
         versionName = "0.2.0"
 
@@ -62,7 +64,7 @@ android {
     }
 
     lint {
-        disable += "ExpiredTargetSdkVersion"
+        // ExpiredTargetSdkVersion is no longer disabled — targetSdk is now 34 (current).
     }
 
     sourceSets {

@@ -16,7 +16,7 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - NOTE: several tests are real-time budgeted (bounded waits on latches/polling, e.g. the wedged-engine release test ~2.5 s). They are deterministic but not instant; don't "optimize" them into thread-yield assertions.
 
 ## SDK / toolchain pins (verified in build files)
-- `compileSdk 34`, `minSdk 30`, `targetSdk 30` — the low `targetSdk` is **intentional** (Android 11 / HarmonyOS 2.0 appliance profile). **Do not bump `targetSdk` to "fix" the lint warning** — `lint` is configured and would flag `ExpiredTargetSdkVersion`; it is deliberately disabled in `app/build.gradle.kts`. Android 14+ foreground-service/permission guards are handled in code but untested on 14+.
+- `compileSdk 34`, `minSdk 30`, `targetSdk 34` — Android 14+ guards are handled in code (typed FGS, SCHEDULE_EXACT_ALARM, RECEIVER_NOT_EXPORTED, POST_NOTIFICATIONS). HarmonyOS 2.0 (API-29-based) ignores unknown permissions and behavioral changes — compatibility is maintained.
 - Kotlin 2.2.21, AGP 8.11.1, JVM 17, minSdk 30 (A11: matches the Android 11 / HarmonyOS 2.0 support claim). KSP generates Room code; protobuf + gRPC generate Sber Salute Speech stubs into `build/generated/java/generate*Proto`.
 
 ## Architecture (non-obvious)

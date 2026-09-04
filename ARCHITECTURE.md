@@ -5,7 +5,7 @@
 > minSdk 30: the build now matches the documented support window (A11); no backward compat below it
 > Always WiFi · Always charging
 > Default build targets Russian (wake word, ASR/TTS language, UI); providers are multi-lingual
-> targetSdk 30 (appliance profile) with Android 14+ guards · compileSdk 34
+> targetSdk 34 with Android 14+ guards in code · compileSdk 34 · HarmonyOS 2.0+ compat
 
 ## Data flow
 
@@ -392,7 +392,7 @@ silent no-op or a crash:
 
 Gradle 8.14.2 · AGP 8.11.1 · Kotlin 2.2.21 · KSP 2.2.21-2.0.5 · Room 2.8.4
 gRPC 1.83.1 · protobuf-gradle-plugin 0.10.0 · OkHttp 4.12.0
-Porcupine 3.0.0 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Material Components · compileSdk 34 · minSdk 30 · targetSdk 30
+Porcupine 3.0.0 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Material Components · compileSdk 34 · minSdk 30 · targetSdk 34
 
 The SaluteSpeech gRPC endpoint is config-driven (`JarvisConfig.saluteGrpcEndpoint`;
 renamed from the misleading `llmEndpoint` — it NEVER drove the LLM lane, which is

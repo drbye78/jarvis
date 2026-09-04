@@ -11,6 +11,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Android 13+ notification runtime permission -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 12+ exact alarm permission for timers (setExactAndAllowWhileIdle).
+         Harmless on older API levels; setAlarmClock() for alarms is always exempt. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!-- Always-on appliance -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />

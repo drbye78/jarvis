@@ -44,6 +44,7 @@
     <string name="onboarding_action_settings">Open settings</string>
     <string name="onboarding_row_mic">Microphone</string>
     <string name="onboarding_row_notif">Notification access</string>
+    <string name="onboarding_row_post_notif">Notifications permission (Android 13+)</string>
     <string name="onboarding_row_battery">Battery optimization</string>
     <string name="onboarding_row_write">System settings (brightness)</string>
     <string name="onboarding_row_dnd">Do Not Disturb</string>

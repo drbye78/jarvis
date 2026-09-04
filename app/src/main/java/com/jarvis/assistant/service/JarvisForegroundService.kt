@@ -339,7 +339,14 @@ class JarvisForegroundService : Service() {
             addAction(Intent.ACTION_POWER_DISCONNECTED)
             addAction(Intent.ACTION_POWER_CONNECTED)
         }
-        registerReceiver(powerReceiver, filter)
+        // Android 14 (API 34): registerReceiver requires RECEIVER_NOT_EXPORTED flag
+        // for non-system broadcasts. System broadcasts (POWER_CONNECTED/DISCONNECTED)
+        // are exempt, but the flag is required on API 34+ regardless.
+        if (Build.VERSION.SDK_INT >= 34) {
+            registerReceiver(powerReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(powerReceiver, filter)
+        }
     }
 
     // ------------------------------------------------------------------
@@ -507,7 +514,10 @@ class JarvisForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val triggerAt = System.currentTimeMillis() + config.restartIntervalMs
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+            // Exact alarm permission revoked — watchdog fires as inexact (still functional, just not guaranteed exact).
+            alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
         } else {
             alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pending)

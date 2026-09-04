@@ -45,6 +45,7 @@
     <string name="onboarding_action_settings">В настройки</string>
     <string name="onboarding_row_mic">Микрофон</string>
     <string name="onboarding_row_notif">Доступ к уведомлениям</string>
+    <string name="onboarding_row_post_notif">Разрешение на уведомления (Android 13+)</string>
     <string name="onboarding_row_battery">Оптимизация батареи</string>
     <string name="onboarding_row_write">Системные настройки (яркость)</string>
     <string name="onboarding_row_dnd">Режим «Не беспокоить»</string>
