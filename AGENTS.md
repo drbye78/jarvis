@@ -5,7 +5,7 @@ Compact ramp-up for agents. Every line is something easy to miss.
 ## Build & verify
 - Single Gradle module `:app` (root `settings.gradle.kts` includes only `:app`). Use the wrapper: `./gradlew ...`.
 - Build APK: `./gradlew :app:assembleDebug`
-- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~389 tests)
+- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~413 tests)
 - Single test class: `./gradlew :app:testDebugUnitTest --tests "com.jarvis.assistant.PorcupineDetectorTest"`
 - **Gate before claiming done:** `./gradlew :app:assembleDebug :app:testDebugUnitTest`
 - Instrumentation tests (`androidTest`) need a device/emulator; the gate above does not.
@@ -16,7 +16,7 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - NOTE: several tests are real-time budgeted (bounded waits on latches/polling, e.g. the wedged-engine release test ~2.5 s). They are deterministic but not instant; don't "optimize" them into thread-yield assertions.
 
 ## SDK / toolchain pins (verified in build files)
-- `compileSdk 34`, `minSdk 24`, `targetSdk 30` — the low `targetSdk` is **intentional** (Android 11 / HarmonyOS 2.0 appliance profile). **Do not bump `targetSdk` to "fix" the lint warning** — `lint` is configured and would flag `ExpiredTargetSdkVersion`; it is deliberately disabled in `app/build.gradle.kts`. Android 14+ foreground-service/permission guards are handled in code but untested on 14+.
+- `compileSdk 34`, `minSdk 30`, `targetSdk 30` — the low `targetSdk` is **intentional** (Android 11 / HarmonyOS 2.0 appliance profile). **Do not bump `targetSdk` to "fix" the lint warning** — `lint` is configured and would flag `ExpiredTargetSdkVersion`; it is deliberately disabled in `app/build.gradle.kts`. Android 14+ foreground-service/permission guards are handled in code but untested on 14+.
 - Kotlin 2.2.21, AGP 8.11.1, JVM 17, minSdk 30 (A11: matches the Android 11 / HarmonyOS 2.0 support claim). KSP generates Room code; protobuf + gRPC generate Sber Salute Speech stubs into `build/generated/java/generate*Proto`.
 
 ## Architecture (non-obvious)
@@ -32,10 +32,10 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - **AudioPipeline give-up + watchdog revive**: after 50 consecutive read failures the producer exits with `hasGivenUp() = true`; the service's 15-min watchdog ping revives it (never while muted). Do not add other auto-revive paths — the flag exists precisely to distinguish "source failing" from "user stopped".
 
 ## Critical gotchas (would be missed)
-- **Sherpa-ONNX native crash trap.** The bundled AAR (`app/libs/sherpa-onnx.aar`, v1.13.6) exposes only a **non-null `AssetManager`** constructor, which loads the model from APK **assets via relative paths (Mode A)**. Passing an absolute `filesDir`/SAF path CRASHES natively (`AAssetManager_open` → `SHERPA_ONNX_EXIT`). Do NOT add custom-Sherpa model loading from user storage — it cannot work with this AAR. Custom wake words go through Porcupine `.ppn`.
+- **Sherpa-ONNX custom wake words.** The bundled AAR (`app/libs/sherpa-onnx.aar`, v1.13.6) now supports filesystem models via a nullable `AssetManager` constructor (FIXPLAN C). `SherpaModelStore` extracts the bundled model into `filesDir`; `BpeTokenizer` validates custom keywords against the gigaspeech BPE vocabulary. User-supplied model directories (`sherpaOnnxPath` pref) are also honored. Passing an absolute `filesDir`/SAF path to the OLD non-null constructor would CRASH natively — the new nullable path resolves to `newFromFile` instead.
 - **`assets/sherpa_kws/keywords.txt` must be BPE-tokenized** for the bundled `gigaspeech` model (tokens verified against `tokens.txt`). Hand-written `▁J A R V I S` fails silently (no detection). Regenerate with `sherpa-onnx-cli text2token`; never hand-edit.
 - **Never build the wake-word engine on the main thread.** The detector builds async on `Dispatchers.Default` (starts `Bootstrapping` → `Ready`/`Failed`). A synchronous build in the constructor reintroduces an ANR on Kirin 710A-class devices. Keep the `engineBuildDispatcher = Dispatchers.Unconfined` injection in the unit tests so the synchronous-contract assertions stay valid.
-- **No secrets in the APK.** Credentials (Picovoice key, Sber/GigaChat tokens) are entered in Settings and stored only in the Android Keystore via `EncryptedSharedPreferences` (`security-crypto`). Do not hardcode keys or move them to build config; API clients read them at runtime.
+- **No secrets in the APK.** Credentials (Picovoice key, Sber/GigaChat tokens) are entered in Settings and stored only in the Android Keystore via `KeystoreVault` (AndroidKeyStore AES-GCM, through `util/SecretVault`). `security-crypto`/`EncryptedSharedPreferences` is GONE — do not reintroduce it. Do not hardcode keys or move them to build config; API clients read them at runtime.
 
 ## Conventions
 - Russian is the default UI/config language (target users; "Джарвис"). Keep user-facing strings in `res/values/strings.xml`.
