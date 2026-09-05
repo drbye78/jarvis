@@ -919,6 +919,8 @@
                     android:orientation="vertical">
 
                     <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
                         android:text="@string/settings_behavior_section"
                         style="@style/TextAppearance.Jarvis.SectionHeader" />
 
