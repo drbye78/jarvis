@@ -1,9 +1,17 @@
 package com.jarvis.assistant.cognitive.extract
 
+import com.jarvis.assistant.cognitive.data.BehaviorLogDao
+import com.jarvis.assistant.cognitive.data.BehaviorLogEntity
+import com.jarvis.assistant.cognitive.data.CommandEventDao
+import com.jarvis.assistant.cognitive.data.CommandEventEntity
 import com.jarvis.assistant.cognitive.data.ExtractionQueueDao
 import com.jarvis.assistant.cognitive.data.ExtractionQueueEntity
+import com.jarvis.assistant.cognitive.data.HabitRuleDao
+import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 import com.jarvis.assistant.cognitive.data.MemoryMetaDao
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
+import com.jarvis.assistant.cognitive.data.SessionSummaryDao
+import com.jarvis.assistant.cognitive.data.SessionSummaryEntity
 import com.jarvis.assistant.cognitive.data.UserFactDao
 import com.jarvis.assistant.cognitive.data.UserFactEntity
 import com.jarvis.assistant.data.MessageDao
@@ -197,5 +205,145 @@ class FakeMessageDao(vararg seed: MessageEntity) : MessageDao {
         rows.entries.removeAll { it.key !in keep }
     }
 
+    override suspend fun inRange(fromInclusive: Long, toInclusive: Long): List<MessageEntity> =
+        rows.values.filter { it.id > fromInclusive && it.id <= toInclusive }.sortedBy { it.id }
+
+    override suspend fun firstDoomedId(keep: Int): Long? =
+        rows.keys.sortedDescending().getOrNull(keep)
+
+    override suspend fun lastMessageAt(): Long? = rows.values.maxOfOrNull { it.createdAt }
+
     override suspend fun clear() = rows.clear()
+}
+
+// ---------------------------------------------------------------------------
+// COGNITIVE_PLAN Phase 2 (§8): behaviour-layer fakes (in-memory, plain).
+// ---------------------------------------------------------------------------
+
+class FakeCommandEventDao : CommandEventDao {
+    val rows = mutableListOf<CommandEventEntity>()
+
+    override suspend fun insert(row: CommandEventEntity): Long {
+        println("DBG-Fake insert called")
+        rows += row
+        return rows.size.toLong()
+    }
+
+    override suspend fun countAll(): Int = rows.size
+
+    override suspend fun voiceOkSince(since: Long, tools: List<String>): List<CommandEventEntity> =
+        rows.filter {
+            it.at >= since && it.ok && it.origin == "VOICE" && it.tool in tools
+        }
+
+    override suspend fun deleteOlderThan(cutoff: Long): Int {
+        val doomed = rows.count { it.at < cutoff }
+        rows.removeAll { it.at < cutoff }
+        return doomed
+    }
+
+    override suspend fun wipeAll() {
+        println("DBG-FAKE eventDao.wipeAll called")
+        rows.clear()
+    }
+}
+
+class FakeHabitRuleDao : HabitRuleDao {
+    val rows = LinkedHashMap<Long, HabitRuleEntity>()
+    private var nextId = 1L
+
+    override suspend fun insert(rule: HabitRuleEntity): Long {
+        val id = nextId++
+        rows[id] = rule.copy(id = id)
+        return id
+    }
+
+    override suspend fun update(rule: HabitRuleEntity) {
+        rows[rule.id] = rule
+    }
+
+    override suspend fun byKey(
+        tool: String,
+        fingerprint: String,
+        hourBucket: Int?,
+        kind: String,
+    ): HabitRuleEntity? = rows.values.firstOrNull {
+        it.tool == tool && it.argsFingerprint == fingerprint &&
+            it.hourBucket == hourBucket && it.kind == kind
+    }
+
+    override suspend fun byFingerprint(tool: String, fingerprint: String): List<HabitRuleEntity> =
+        rows.values.filter { it.tool == tool && it.argsFingerprint == fingerprint }
+
+    override suspend fun all(): List<HabitRuleEntity> = rows.values.toList()
+
+    override suspend fun candidateRules(): List<HabitRuleEntity> =
+        rows.values.filter { it.state == "PROBATION" || it.state == "ACTIVE" }
+
+    override suspend fun byId(id: Long): HabitRuleEntity? = rows[id]
+
+    override suspend fun wipeAll() = rows.clear()
+}
+
+class FakeBehaviorLogDao : BehaviorLogDao {
+    val rows = mutableListOf<BehaviorLogEntity>()
+
+    override suspend fun insert(row: BehaviorLogEntity): Long {
+        rows += row
+        return rows.size.toLong()
+    }
+
+    override suspend fun firedSince(since: Long): Int =
+        rows.count { it.decision == "FIRED" && it.at >= since }
+
+    override suspend fun latestForRule(ruleId: Long): BehaviorLogEntity? =
+        rows.filter { it.ruleId == ruleId }.maxByOrNull { it.at }
+
+    override suspend fun latestFiredSince(since: Long): BehaviorLogEntity? =
+        rows.filter { it.decision == "FIRED" && it.at >= since }.maxByOrNull { it.at }
+
+    override suspend fun countForRuleSince(ruleId: Long, since: Long): Int =
+        rows.count { it.ruleId == ruleId && it.at >= since }
+
+    override suspend fun deleteOlderThan(cutoff: Long): Int {
+        val doomed = rows.count { it.at < cutoff }
+        rows.removeAll { it.at < cutoff }
+        return doomed
+    }
+
+    override suspend fun wipeAll() = rows.clear()
+}
+
+class FakeSessionSummaryDao : SessionSummaryDao {
+    val rows = mutableListOf<SessionSummaryEntity>()
+    private var nextId = 1L
+
+    override suspend fun insert(row: SessionSummaryEntity): Long {
+        val id = nextId++
+        rows += row.copy(id = id)
+        return id
+    }
+
+    override suspend fun latestDaily(): SessionSummaryEntity? =
+        rows.filter { it.kind == "DAILY" }.maxByOrNull { it.toAt }
+
+    override suspend fun sessionsAfter(fromAt: Long): List<SessionSummaryEntity> =
+        rows.filter { it.kind == "SESSION" && it.toAt > fromAt }.sortedBy { it.toAt }
+
+    override suspend fun sessionsSince(fromAt: Long): List<SessionSummaryEntity> =
+        rows.filter { it.kind == "SESSION" && it.toAt >= fromAt }.sortedBy { it.toAt }
+
+    override suspend fun latestSession(): SessionSummaryEntity? =
+        rows.filter { it.kind == "SESSION" }.maxByOrNull { it.toMessageId }
+
+    override suspend fun countDaily(): Int = rows.count { it.kind == "DAILY" }
+
+    override suspend fun oldestDaily(): SessionSummaryEntity? =
+        rows.filter { it.kind == "DAILY" }.minByOrNull { it.toAt }
+
+    override suspend fun deleteById(id: Long) {
+        rows.removeAll { it.id == id }
+    }
+
+    override suspend fun wipeAll() = rows.clear()
 }

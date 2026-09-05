@@ -79,6 +79,20 @@ class PrefsFlow(private val appPrefs: AppPrefs) : SharedPreferences.OnSharedPref
     private val _memorySensitiveVisible = MutableStateFlow(appPrefs.memorySensitiveVisible)
     val memorySensitiveVisible: StateFlow<Boolean> = _memorySensitiveVisible.asStateFlow()
 
+    // --- COGNITIVE_PLAN Phase 2: behaviour switches (§8/§12.4-1) ------------
+
+    private val _behaviorEnabled = MutableStateFlow(appPrefs.behaviorEnabled)
+    val behaviorEnabled: StateFlow<Boolean> = _behaviorEnabled.asStateFlow()
+
+    private val _behaviorQuietStart = MutableStateFlow(appPrefs.behaviorQuietStart)
+    val behaviorQuietStart: StateFlow<Int> = _behaviorQuietStart.asStateFlow()
+
+    private val _behaviorQuietEnd = MutableStateFlow(appPrefs.behaviorQuietEnd)
+    val behaviorQuietEnd: StateFlow<Int> = _behaviorQuietEnd.asStateFlow()
+
+    private val _behaviorDailyQuota = MutableStateFlow(appPrefs.behaviorDailyQuota)
+    val behaviorDailyQuota: StateFlow<Int> = _behaviorDailyQuota.asStateFlow()
+
     init {
         prefs.registerOnSharedPreferenceChangeListener(this)
     }
@@ -105,6 +119,10 @@ class PrefsFlow(private val appPrefs: AppPrefs) : SharedPreferences.OnSharedPref
             AppPrefs.KEY_MEMORY_AUTO_EXTRACT -> _memoryAutoExtract.value = appPrefs.memoryAutoExtract
             AppPrefs.KEY_MEMORY_CLOUD_ENABLED -> _memoryCloudEnabled.value = appPrefs.memoryCloudEnabled
             AppPrefs.KEY_MEMORY_SENSITIVE_VISIBLE -> _memorySensitiveVisible.value = appPrefs.memorySensitiveVisible
+            AppPrefs.KEY_BEHAVIOR_ENABLED -> _behaviorEnabled.value = appPrefs.behaviorEnabled
+            AppPrefs.KEY_BEHAVIOR_QUIET_START -> _behaviorQuietStart.value = appPrefs.behaviorQuietStart
+            AppPrefs.KEY_BEHAVIOR_QUIET_END -> _behaviorQuietEnd.value = appPrefs.behaviorQuietEnd
+            AppPrefs.KEY_BEHAVIOR_DAILY_QUOTA -> _behaviorDailyQuota.value = appPrefs.behaviorDailyQuota
         }
     }
 }

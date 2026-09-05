@@ -147,3 +147,36 @@ class PrefsFlowTest {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// COGNITIVE_PLAN 2.6/§12.4-1: the behaviour switches push live (the same
+// no-restart contract as every other pref — the AGENTS.md convention).
+// ---------------------------------------------------------------------------
+
+class PrefsFlowBehaviorTest {
+
+    @Test
+    fun `behavior switches push live`() {
+        val prefs = FakeSharedPreferences()
+        val flow = PrefsFlow(AppPrefs(context = null, prefsOverride = prefs))
+        try {
+            // Defaults (§12.4-1: OFF; quiet 23→8; quota 2).
+            assertFalse(flow.behaviorEnabled.value)
+            assertEquals(23, flow.behaviorQuietStart.value)
+            assertEquals(8, flow.behaviorQuietEnd.value)
+            assertEquals(2, flow.behaviorDailyQuota.value)
+
+            prefs.edit().putBoolean(AppPrefs.KEY_BEHAVIOR_ENABLED, true).commit()
+            prefs.edit().putInt(AppPrefs.KEY_BEHAVIOR_QUIET_START, 22).commit()
+            prefs.edit().putInt(AppPrefs.KEY_BEHAVIOR_QUIET_END, 9).commit()
+            prefs.edit().putInt(AppPrefs.KEY_BEHAVIOR_DAILY_QUOTA, 4).commit()
+
+            assertEquals(true, flow.behaviorEnabled.value)
+            assertEquals(22, flow.behaviorQuietStart.value)
+            assertEquals(9, flow.behaviorQuietEnd.value)
+            assertEquals(4, flow.behaviorDailyQuota.value)
+        } finally {
+            flow.close()
+        }
+    }
+}

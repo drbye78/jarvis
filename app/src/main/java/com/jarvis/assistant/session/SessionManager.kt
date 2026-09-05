@@ -14,7 +14,9 @@ import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
 import com.jarvis.assistant.tools.ToolExecutor
 import com.jarvis.assistant.data.ConversationManager
+import com.jarvis.assistant.model.Message
 import com.jarvis.assistant.model.AssistantState
+import java.io.IOException
 import com.jarvis.assistant.util.NetworkMonitor
 import com.jarvis.assistant.util.OnlineChecker
 import kotlinx.coroutines.CancellationException
@@ -422,6 +424,98 @@ class SessionManager(
     }
 
     // ------------------------------------------------------------------
+    // COGNITIVE_PLAN 2.4: proactive delivery (a guarded mini-session)
+    // ------------------------------------------------------------------
+
+    /**
+     * Speak a proactive suggestion — a GUARDED mini-session, never a free
+     * lane (plan §8.4):
+     *
+     * 1. re-check IDLE under [controlLock] (the arbiter checked earlier, but
+     *    the state may have moved — the machine has the final word);
+     * 2. `sessionSeq` bump (the same supersede-first discipline as
+     *    [startSession]) so a concurrent barge-in cannot interleave;
+     * 3. IDLE → SPEAKING via [SessionEvent.ProactiveSpeechStarted] — which
+     *    also ARMS THE STOP LANE (the state collector arms it while
+     *    SPEAKING), so «стоп» interrupts a proactive utterance exactly like
+     *    a normal answer;
+     * 4. persist the suggestion FIRST (role=assistant, `name=proactive`
+     *    marker) so a follow-up turn's LLM context already contains it;
+     * 5. synthesize + play with the exact `TtsSpeechFeedback` focus
+     *    bracketing (ttsClient → player.play(flow), focus on started/finish);
+     * 6. on drain: LlmDone → IDLE, then open the follow-up window (forced:
+     *    the window IS the accept/reject mechanism of the feature the user
+     *    opted into — the standalone follow-up pref is not consulted).
+     *
+     * @return false when the machine was not IDLE (caller logs the refusal).
+     */
+    fun speakProactively(text: String): Boolean {
+        if (text.isBlank()) return false
+        synchronized(controlLock) {
+            if (stateMachine.currentState() != AssistantState.IDLE) return false
+            val id = sessionSeq.incrementAndGet()
+            _partialTranscript.value = ""
+            _turnActivity.value = null
+            windowJob?.cancel()
+            windowJob = null
+            sessionJob = scope.launch { runProactive(id, text) }
+        }
+        return true
+    }
+
+    /** Body of the proactive mini-session — launched under [controlLock]. */
+    private suspend fun CoroutineScope.runProactive(id: Int, text: String) {
+        stateMachine.onEvent(SessionEvent.ProactiveSpeechStarted)
+        // Persist BEFORE synthesis: a barge-in during playback must still
+        // leave the suggestion in the LLM context (the follow-up "да" has to
+        // know what was proposed).
+        if (id == sessionSeq.get()) {
+            try {
+                conversationManager.addMessage(
+                    Message(role = "assistant", content = text, name = "proactive"),
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Proactive: suggestion persistence failed (speaking anyway)")
+            }
+        }
+        try {
+            val flow = ttsClient.synthesizeStream(text, voiceSource())
+            focus?.onTtsSentenceStarted()
+            val done = player.play(flow)
+            try {
+                done.await()
+            } finally {
+                focus?.onTtsSentenceFinished()
+            }
+        } catch (e: CancellationException) {
+            // «стоп» / barge-in / shutdown killed the utterance mid-flight.
+            focus?.onTtsFlushed()
+            throw e
+        } catch (e: IOException) {
+            Timber.w(e, "Proactive: synthesis/playback IO failure")
+            focus?.onTtsFlushed()
+            if (id == sessionSeq.get()) {
+                stateMachine.onEvent(SessionEvent.ErrorOccurred) // → IDLE
+            }
+            return
+        } catch (e: IllegalStateException) {
+            Timber.w(e, "Proactive: player/tts in a bad state")
+            focus?.onTtsFlushed()
+            if (id == sessionSeq.get()) {
+                stateMachine.onEvent(SessionEvent.ErrorOccurred) // → IDLE
+            }
+            return
+        }
+        if (id != sessionSeq.get()) return // superseded while speaking
+        stateMachine.onEvent(SessionEvent.LlmDone) // SPEAKING → IDLE
+        // The follow-up window is the accept/reject loop's entry — opened
+        // regardless of the standalone follow-up pref (see KDoc).
+        maybeOpenFollowUpWindow(spoke = true, forceOpen = true)
+    }
+
+    // ------------------------------------------------------------------
     // Follow-up window (wake-word-free continuation)
     // ------------------------------------------------------------------
 
@@ -435,8 +529,8 @@ class SessionManager(
         if (!enabled) closeFollowUpWindow(silent = false)
     }
 
-    private suspend fun maybeOpenFollowUpWindow(spoke: Boolean) {
-        if (!followUpEnabled) return
+    private suspend fun maybeOpenFollowUpWindow(spoke: Boolean, forceOpen: Boolean = false) {
+        if (!followUpEnabled && !forceOpen) return
         when (followUp.onTurnEnded(spoke, enabled = true)) {
             FollowUpWindowController.Effect.OpenWindow -> {
                 Timber.i("Follow-up window open")

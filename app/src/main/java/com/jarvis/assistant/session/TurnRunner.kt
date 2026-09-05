@@ -140,6 +140,13 @@ class TurnRunner(
                     // keyed by the row id (exactly-once per message).
                     val messageId = conversationManager.addMessage("user", outcome.text)
                     cognitive?.ingest(outcome.text, messageId, TurnOrigin.VOICE)
+                    // COGNITIVE_PLAN 2.4: the reject half of the accept/reject
+                    // loop — a follow-up utterance right after a proactive
+                    // suggestion may be an explicit «нет» (the coordinator
+                    // decides; this is a fire-and-forget signal).
+                    if (isFollowUpTurn()) {
+                        cognitive?.onFollowUpUtterance(outcome.text)
+                    }
 
                     // COGNITIVE_PLAN 1.6: one PromptContext per turn; the
                     // memory gather starts NOW so its (≤40 ms) cost hides
@@ -276,12 +283,22 @@ class TurnRunner(
             val gatherDeferred = async { hooks.gather(utterance) }
             suspend { gatherDeferred.await() }
         }
+        // COGNITIVE_PLAN 2.5: the summary block is a cheap presence-gated DB
+        // read (§7.1 "gated by presence of summaries; cheap") — no separate
+        // prefetch lane needed; still resolved once per turn via async.
+        val summary: suspend () -> String = if (hooks == null) {
+            suspend { "" }
+        } else {
+            val summaryDeferred = async { hooks.gatherSummary(utterance, isFollowUpTurn()) }
+            suspend { summaryDeferred.await() }
+        }
         return PromptContext(
             utterance = utterance,
             hour = now.get(java.util.Calendar.HOUR_OF_DAY),
             dayOfWeek = now.get(java.util.Calendar.DAY_OF_WEEK),
             isFollowUp = isFollowUpTurn(),
             memory = memory,
+            summary = summary,
         )
     }
 

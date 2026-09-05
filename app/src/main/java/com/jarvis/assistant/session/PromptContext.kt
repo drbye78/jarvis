@@ -36,6 +36,13 @@ data class PromptContext(
      * idempotent within the turn.
      */
     val memory: suspend () -> String = { "" },
+
+    /**
+     * COGNITIVE_PLAN 2.5/§7.1: rendered summary block (latest DAILY + the
+     * SESSION rows after it, budget-truncated by the coordinator). Same
+     * contract as [memory]: idempotent, "" = skip the section.
+     */
+    val summary: suspend () -> String = { "" },
 ) {
     companion object {
         /** Baseline context for tests and non-turn callers. */
@@ -73,4 +80,19 @@ interface CognitiveTurnHooks {
 
     /** Fire-and-forget ingest of a persisted user message (plan §6.1). */
     fun ingest(utterance: String, messageId: Long, origin: TurnOrigin)
+
+    /**
+     * COGNITIVE_PLAN 2.5/§7.1: rendered `<summary-context>` block (latest
+     * DAILY digest + newer SESSION rows). Same self-bounding contract as
+     * [gather]; default "" = section skipped (tests / baseline).
+     */
+    suspend fun gatherSummary(utterance: String?, isFollowUp: Boolean): String = ""
+
+    /**
+     * COGNITIVE_PLAN 2.4: the utterance a follow-up turn started with —
+     * the reject half of the accept/reject loop (an explicit «нет»/«не
+     * надо» right after a proactive suggestion mutes the rule). Default
+     * no-op for tests / pre-behaviour baseline.
+     */
+    fun onFollowUpUtterance(utterance: String) {}
 }

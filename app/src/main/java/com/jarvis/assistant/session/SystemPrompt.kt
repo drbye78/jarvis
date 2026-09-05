@@ -71,14 +71,17 @@ internal object PromptSections {
 
     /**
      * The one and only assembly order:
-     * IDENTITY \n TIME MEMORY POLICIES \n TOOL_ROUTING.
+     * IDENTITY \n TIME MEMORY SUMMARY POLICIES \n TOOL_ROUTING.
      * [memoryBlock] is the rendered `<memory-context>` block + trailing
-     * blank line, or "" when disabled/empty.
+     * blank line, or "" when disabled/empty. [summaryBlock] (COGNITIVE_PLAN
+     * 2.5) is the rendered `<summary-context>` block + trailing blank line,
+     * or "" when there are no summaries.
      */
-    fun assemble(time: String, memoryBlock: String): String = buildString {
+    fun assemble(time: String, memoryBlock: String, summaryBlock: String = ""): String = buildString {
         appendLine(IDENTITY)
         append(time)
         append(memoryBlock)
+        append(summaryBlock)
         appendLine(POLICIES)
         append(TOOL_ROUTING)
     }
@@ -159,7 +162,7 @@ class PromptComposer(
 
     override suspend fun build(context: PromptContext): String {
         val time = PromptSections.timeContext(nowMs())
-        return PromptSections.assemble(time, renderMemoryBlock(context))
+        return PromptSections.assemble(time, renderMemoryBlock(context), renderSummaryBlock(context))
     }
 
     private suspend fun renderMemoryBlock(context: PromptContext): String {
@@ -169,6 +172,23 @@ class PromptComposer(
             throw e // never swallow cancellation (A8 convention)
         } catch (e: Exception) {
             Timber.e(e, "PromptComposer: memory gather failed, rendering without it")
+            ""
+        }
+        return if (block.isBlank()) "" else block + "\n\n"
+    }
+
+    /**
+     * COGNITIVE_PLAN 2.5/§7.1: the SummarySection — ≤ 600 chars, rendered
+     * only when summaries exist (presence-gated; cheap). The block is
+     * produced (and budget-truncated) by the coordinator's Summarizer.
+     */
+    private suspend fun renderSummaryBlock(context: PromptContext): String {
+        val block = try {
+            context.summary()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.e(e, "PromptComposer: summary gather failed, rendering without it")
             ""
         }
         return if (block.isBlank()) "" else block + "\n\n"

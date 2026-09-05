@@ -378,6 +378,60 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // ------------------------------------------------------------------
+        // COGNITIVE_PLAN 2.6: behaviour card (§12.4-1 — the proactive layer
+        // ships DEFAULT OFF). The coordinator consumes these prefs through
+        // PrefsFlow StateFlows, so a change applies live — no restart (the
+        // AGENTS.md live-toggle convention; the push regression lives in
+        // PrefsFlowTest).
+        // ------------------------------------------------------------------
+        val behaviorEnabledSwitch = findViewById<MemorySwitch>(R.id.behaviorEnabledSwitch)
+        behaviorEnabledSwitch.isChecked = appPrefs.behaviorEnabled
+        behaviorEnabledSwitch.setOnCheckedChangeListener { _, checked ->
+            appPrefs.behaviorEnabled = checked
+        }
+
+        val quietStartMinus = findViewById<Button>(R.id.behaviorQuietStartMinus)
+        val quietStartPlus = findViewById<Button>(R.id.behaviorQuietStartPlus)
+        val quietStartValue = findViewById<TextView>(R.id.behaviorQuietStartValue)
+        val quietEndMinus = findViewById<Button>(R.id.behaviorQuietEndMinus)
+        val quietEndPlus = findViewById<Button>(R.id.behaviorQuietEndPlus)
+        val quietEndValue = findViewById<TextView>(R.id.behaviorQuietEndValue)
+        val quotaMinus = findViewById<Button>(R.id.behaviorQuotaMinus)
+        val quotaPlus = findViewById<Button>(R.id.behaviorQuotaPlus)
+        val quotaValue = findViewById<TextView>(R.id.behaviorQuotaValue)
+
+        fun renderBehaviorControls() {
+            quietStartValue.text = String.format(java.util.Locale.US, "%02d:00", appPrefs.behaviorQuietStart)
+            quietEndValue.text = String.format(java.util.Locale.US, "%02d:00", appPrefs.behaviorQuietEnd)
+            quotaValue.text = appPrefs.behaviorDailyQuota.toString()
+        }
+        renderBehaviorControls()
+        quietStartMinus.setOnClickListener {
+            appPrefs.behaviorQuietStart = (appPrefs.behaviorQuietStart + 23) % 24
+            renderBehaviorControls()
+        }
+        quietStartPlus.setOnClickListener {
+            appPrefs.behaviorQuietStart = (appPrefs.behaviorQuietStart + 1) % 24
+            renderBehaviorControls()
+        }
+        quietEndMinus.setOnClickListener {
+            appPrefs.behaviorQuietEnd = (appPrefs.behaviorQuietEnd + 23) % 24
+            renderBehaviorControls()
+        }
+        quietEndPlus.setOnClickListener {
+            appPrefs.behaviorQuietEnd = (appPrefs.behaviorQuietEnd + 1) % 24
+            renderBehaviorControls()
+        }
+        quotaMinus.setOnClickListener {
+            appPrefs.behaviorDailyQuota = (appPrefs.behaviorDailyQuota - 1).coerceIn(1, 5)
+            renderBehaviorControls()
+        }
+        quotaPlus.setOnClickListener {
+            appPrefs.behaviorDailyQuota = (appPrefs.behaviorDailyQuota + 1).coerceIn(1, 5)
+            renderBehaviorControls()
+        }
+
+        // ------------------------------------------------------------------
         // Voice card (Y6): preset (Mila, verified) or a custom Salute voice
         // ID. The voice is resolved PER SENTENCE from prefs by the running
         // graph, so a change applies to the next spoken sentence — NO

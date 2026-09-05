@@ -37,6 +37,11 @@ class FunctionRouter(
      * cognitive coordinator's first DB touch at graph construction.
      */
     private val cognitiveTools: () -> List<ToolContract> = { emptyList() },
+    /**
+     * COGNITIVE_PLAN 2.1: telemetry observer passed through to the
+     * ToolRegistry (command_events). Null = no telemetry (tests).
+     */
+    private val executionObserver: (suspend (com.jarvis.assistant.model.FunctionCall, ToolResult, Long) -> Unit)? = null,
 ) : ToolExecutor {
     private val appContext = context.applicationContext
 
@@ -102,7 +107,10 @@ class FunctionRouter(
      * or first tool call, not at graph construction (§9.4 startup budget).
      */
     private val toolRegistry by lazy {
-        ToolRegistry(baseToolRegistry.available() + cognitiveTools())
+        ToolRegistry(
+            tools = baseToolRegistry.available() + cognitiveTools(),
+            onExecuted = executionObserver,
+        )
     }
 
     override fun getToolDefinitions(): List<ToolDefinition> =

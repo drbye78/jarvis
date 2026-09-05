@@ -45,6 +45,14 @@ class ConversationManager(
      * Rows here are plain history, never auto-sent anywhere.
      */
     private val retentionMaxMessages: Int = maxMessages,
+    /**
+     * COGNITIVE_PLAN 2.5: summarize-before-prune. Called with the id cutoff
+     * BEFORE the retention delete lands, so the cognitive core can read and
+     * summarize the doomed range (its local read is fast; its cloud call is
+     * fire-and-forget on the cognitive scope). The hook itself must be
+     * non-throwing and cheap — it runs on the turn path.
+     */
+    private val beforePrune: (suspend (cutoffMessageId: Long) -> Unit)? = null,
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -71,6 +79,24 @@ class ConversationManager(
      *  cutoff preserves pairs. The LLM WINDOW stays [maxMessages] — this is
      *  storage retention, not context. */
     private suspend fun trim() {
+        // 2.5: hand the doomed range to the summarizer BEFORE the delete.
+        // The cutoff is the newest id that will NOT survive retention.
+        if (beforePrune != null) {
+            val cutoff = dao.firstDoomedId(retentionMaxMessages)
+            if (cutoff != null && cutoff > 0) {
+                try {
+                    beforePrune(cutoff)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Pruning must never be blocked by the cognitive core.
+                    timber.log.Timber.w(
+                        e,
+                        "ConversationManager: beforePrune hook failed — pruning anyway",
+                    )
+                }
+            }
+        }
         dao.deleteAllExceptRecent(retentionMaxMessages)
     }
 

@@ -202,6 +202,33 @@ class AppPrefs(
         get() = prefs.getString(KEY_TTS_VOICE, "Mila") ?: "Mila"
         set(value) = prefs.edit().putString(KEY_TTS_VOICE, value).apply()
 
+    // ------------------------------------------------------------------
+    // COGNITIVE_PLAN Phase 2 (§8/§12.4-1): the behaviour switches. The
+    // proactive layer ships DEFAULT OFF (trust first — §12.4-1); quiet
+    // hours and the daily quota are user-tunable. All are consumed
+    // reactively via [PrefsFlow] — live-toggle regression tests included.
+    // ------------------------------------------------------------------
+
+    /** Proactive speech master switch (§8.3 gate 1). Default OFF. */
+    var behaviorEnabled: Boolean
+        get() = prefs.getBoolean(KEY_BEHAVIOR_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_BEHAVIOR_ENABLED, value).apply()
+
+    /** Quiet-hours start (hour of day, inclusive). Default 23. */
+    var behaviorQuietStart: Int
+        get() = prefs.getInt(KEY_BEHAVIOR_QUIET_START, 23)
+        set(value) = prefs.edit().putInt(KEY_BEHAVIOR_QUIET_START, value.coerceIn(0, 23)).apply()
+
+    /** Quiet-hours end (hour of day, exclusive). Default 8. */
+    var behaviorQuietEnd: Int
+        get() = prefs.getInt(KEY_BEHAVIOR_QUIET_END, 8)
+        set(value) = prefs.edit().putInt(KEY_BEHAVIOR_QUIET_END, value.coerceIn(0, 23)).apply()
+
+    /** Global proactive utterances per day (§8.3 gate 6). Default 2. */
+    var behaviorDailyQuota: Int
+        get() = prefs.getInt(KEY_BEHAVIOR_DAILY_QUOTA, 2)
+        set(value) = prefs.edit().putInt(KEY_BEHAVIOR_DAILY_QUOTA, value.coerceIn(1, 5)).apply()
+
     fun loadProviderSettings(): ProviderSettings = ProviderSettings(
         type = providerType,
         openAiBaseUrl = openAiBaseUrl,
@@ -254,5 +281,9 @@ class AppPrefs(
         internal const val KEY_MEMORY_AUTO_EXTRACT = "memory_auto_extract"
         internal const val KEY_MEMORY_CLOUD_ENABLED = "memory_cloud_enabled"
         internal const val KEY_MEMORY_SENSITIVE_VISIBLE = "memory_sensitive_visible"
+        internal const val KEY_BEHAVIOR_ENABLED = "behavior_enabled"
+        internal const val KEY_BEHAVIOR_QUIET_START = "behavior_quiet_start"
+        internal const val KEY_BEHAVIOR_QUIET_END = "behavior_quiet_end"
+        internal const val KEY_BEHAVIOR_DAILY_QUOTA = "behavior_daily_quota"
     }
 }

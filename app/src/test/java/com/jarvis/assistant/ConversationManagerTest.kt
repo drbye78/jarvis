@@ -48,6 +48,14 @@ class FakeMessageDao : MessageDao {
         rows.removeAll { it.id !in toKeep }
     }
 
+    override suspend fun inRange(fromInclusive: Long, toInclusive: Long): List<MessageEntity> =
+        rows.filter { it.id > fromInclusive && it.id <= toInclusive }.sortedBy { it.id }
+
+    override suspend fun firstDoomedId(keep: Int): Long? =
+        rows.map { it.id }.sortedDescending().getOrNull(keep)
+
+    override suspend fun lastMessageAt(): Long? = rows.maxOfOrNull { it.createdAt }
+
     override suspend fun clear() {
         rows.clear()
     }

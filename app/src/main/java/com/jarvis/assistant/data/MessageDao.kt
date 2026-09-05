@@ -42,6 +42,19 @@ interface MessageDao {
     @Query("SELECT * FROM messages ORDER BY id DESC LIMIT :n")
     suspend fun recentDesc(n: Int): List<MessageEntity>
 
+    /**
+     * COGNITIVE_PLAN 2.5: the summarize-before-prune window — rows in
+     * `(fromInclusive, toInclusive]` by id, oldest first. The summarizer
+     * reads the doomed range BEFORE the prune delete lands (see
+     * ConversationManager.beforePrune).
+     */
+    @Query("SELECT * FROM messages WHERE id > :fromInclusive AND id <= :toInclusive ORDER BY id ASC")
+    suspend fun inRange(fromInclusive: Long, toInclusive: Long): List<MessageEntity>
+
+    /** COGNITIVE_PLAN 2.3 gate 5: presence proxy — the newest row's time. */
+    @Query("SELECT MAX(createdAt) FROM messages")
+    suspend fun lastMessageAt(): Long?
+
     /** Live transcript for the UI. */
     @Query("SELECT * FROM messages ORDER BY id DESC LIMIT :n")
     fun recentDescLive(n: Int): Flow<List<MessageEntity>>
@@ -52,6 +65,15 @@ interface MessageDao {
     /** Deletes all messages except the most recent [maxMessages] by id. */
     @Query("DELETE FROM messages WHERE id NOT IN (SELECT id FROM messages ORDER BY id DESC LIMIT :maxMessages)")
     suspend fun deleteAllExceptRecent(maxMessages: Int)
+
+    /**
+     * COGNITIVE_PLAN 2.5: the newest id that will NOT survive retention
+     * (the (keep+1)-th newest row's id) — the inclusive upper bound of the
+     * doomed range for the summarize-before-prune hook. NULL = nothing to
+     * prune (≤ keep rows).
+     */
+    @Query("SELECT id FROM messages ORDER BY id DESC LIMIT 1 OFFSET :keep")
+    suspend fun firstDoomedId(keep: Int): Long?
 
     @Query("DELETE FROM messages")
     suspend fun clear()

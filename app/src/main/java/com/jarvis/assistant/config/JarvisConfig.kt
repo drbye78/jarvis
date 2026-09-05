@@ -58,6 +58,19 @@ data class JarvisConfig(
     val historyRetentionMessages: Int = 200,
 
     /**
+     * COGNITIVE_PLAN §8.2: the habit-eligible tool allowlist. Read-mostly
+     * and music tools only — habits for `setVolume`/`lockScreen` would be
+     * noise. Everything outside this set is never mined into a rule.
+     */
+    val habitEligibleTools: Set<String> = setOf(
+        "playMusic",
+        "getWeather",
+        "getNowPlaying",
+        "listPlaylists",
+        "searchLibrary",
+    ),
+
+    /**
      * Y5 (dialogue audit): hard char budget for the history window. A crude
      * chars/4 ≈ tokens estimate — no tokenizer dependency — that keeps the
      * request inside the model context even with verbose tool results.

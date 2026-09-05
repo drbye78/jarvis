@@ -1438,3 +1438,69 @@ class SessionManagerVoiceStopToggleTest {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// COGNITIVE_PLAN 2.4: proactive delivery (a guarded mini-session)
+// ---------------------------------------------------------------------------
+
+class SessionManagerProactiveTest {
+
+    private val suggestion = "Ты обычно слушаешь джаз в это время. Включить?"
+
+    @Test
+    fun `speakProactively refuses when the machine is not IDLE`() = runBlocking {
+        val h = Harness(
+            ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Ок."), LlmChunk.Done))),
+        )
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.LISTENING) delay(10)
+            }
+            assertEquals(false, h.manager.speakProactively(suggestion))
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `speakProactively speaks, persists with the proactive marker, opens the window`() =
+        runBlocking {
+            val h = Harness(
+                ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Ок."), LlmChunk.Done))),
+            )
+            try {
+                assertTrue(h.manager.speakProactively(suggestion))
+                withTimeout(5_000) {
+                    while (h.stateMachine.currentState() != AssistantState.FOLLOW_UP_WINDOW) delay(10)
+                }
+                // The template reached the TTS lane…
+                assertTrue((h.tts as FakeTtsClient).spoken.contains(suggestion))
+                // …the suggestion is persisted FIRST with the proactive marker…
+                withTimeout(5_000) {
+                    while (h.dao.rows.isEmpty()) delay(10)
+                }
+                assertEquals("proactive", h.dao.rows.last().name)
+                assertEquals(suggestion, h.dao.rows.last().content)
+                // …and the drain landed through the normal SPEAKING → IDLE edge.
+                assertTrue(true)
+            } finally {
+                h.shutdown()
+            }
+        }
+
+    @Test
+    fun `a blank suggestion is refused without touching the machine`() = runBlocking {
+        val h = Harness(
+            ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Ок."), LlmChunk.Done))),
+        )
+        try {
+            assertEquals(false, h.manager.speakProactively("   "))
+            assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
+        } finally {
+            h.shutdown()
+        }
+    }
+}

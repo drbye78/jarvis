@@ -52,6 +52,40 @@ class MigrationTest {
     }
 
     @Test
+    fun `MIGRATION_4_5 is defined and has correct version range`() {
+        val migration = AppDatabase.MIGRATION_4_5
+        assertNotNull("MIGRATION_4_5 must not be null", migration)
+        assertEquals("start version must be 4", 4, migration.startVersion)
+        assertEquals("end version must be 5", 5, migration.endVersion)
+    }
+
+    @Test
+    fun `MIGRATION_4_5 creates only NEW behaviour tables - never touches existing ones`() {
+        val migration = AppDatabase.MIGRATION_4_5
+        val recorder = RecordingSqliteDatabase()
+        migration.migrate(recorder.asDb)
+
+        val sql = recorder.statements.joinToString("\n")
+        assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS `command_events`"))
+        assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS `habit_rules`"))
+        assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS `behavior_log`"))
+        assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS `session_summaries`"))
+
+        recorder.statements.forEach { statement ->
+            assertTrue(
+                "migration must not mutate pre-existing tables: $statement",
+                !statement.contains("DROP TABLE"),
+            )
+            val touchesExisting = listOf("messages", "scheduled_alerts", "user_facts", "memory_meta")
+                .any { table -> statement.contains("`$table`") || statement.contains(" $table ") }
+            assertTrue(
+                "migration must not reference pre-existing tables: $statement",
+                !touchesExisting,
+            )
+        }
+    }
+
+    @Test
     fun `MIGRATION_3_4 creates only NEW cognitive tables - never touches existing ones`() {
         // The v3→v4 SQL is audited statically: it must contain CREATE
         // statements for the cognitive tables and no DELETE/DROP/UPDATE of
@@ -91,14 +125,14 @@ class MigrationTest {
     }
 
     @Test
-    fun `AppDatabase migration chain ends at version 4`() {
+    fun `AppDatabase migration chain ends at version 5`() {
         // Ensure the migration chain end-point matches the declared database
         // version so callers cannot bump the annotation without updating
         // the migration.
-        val maxVersion = AppDatabase.MIGRATION_3_4.endVersion
+        val maxVersion = AppDatabase.MIGRATION_4_5.endVersion
         assertEquals(
-            "Migration chain must end at the declared database version (4)",
-            4,
+            "Migration chain must end at the declared database version (5)",
+            5,
             maxVersion,
         )
     }

@@ -293,10 +293,35 @@
     <string name="memory_tool_forget_candidates">Forget this: %1$s? Say "yes, forget" to confirm.</string>
     <string name="memory_tool_forgotten">Forgotten: %1$s</string>
     <string name="memory_tool_nothing_to_forget">I could not find that memory</string>
+
+    <!-- COGNITIVE_PLAN 2.4: proactive suggestion templates (deterministic) -->
+    <string name="behavior_proactive_music_query">You usually listen to “%1$s” around this time. Play it?</string>
+    <string name="behavior_proactive_music_blank">You usually listen to music around this time. Play it?</string>
+    <string name="behavior_proactive_weather_city">You usually check the weather in “%1$s” around this time. Show it?</string>
+    <string name="behavior_proactive_weather_blank">You usually check the weather around this time. Show it?</string>
+    <string name="behavior_proactive_generic">You often ask for %1$s around this time. Repeat it?</string>
+    <string name="behavior_label_play_music">music</string>
+    <string name="behavior_label_get_weather">the weather</string>
+    <string name="behavior_label_now_playing">what is playing</string>
+    <string name="behavior_label_playlists">the playlist list</string>
+    <string name="behavior_label_search_library">a library search</string>
+    <string name="behavior_label_playback">playback control</string>
+    <string name="behavior_label_volume">a volume change</string>
     <string name="activity_tool_remember_fact">Remembering…</string>
     <string name="activity_tool_recall_facts">Checking memory…</string>
     <string name="activity_tool_forget_fact">Forgetting…</string>
-    <string name="settings_memory_section">Memory</string>
+        <!-- COGNITIVE_PLAN 2.6: behaviour card -->
+    <string name="settings_behavior_section">Proactive</string>
+    <string name="settings_behavior_toggle">Assistant may suggest habitual actions</string>
+    <string name="settings_behavior_hint">Sometimes the assistant notices a habit (say, playing the same music every evening) and offers it — it never acts on its own and will not run anything without your “yes”. Off by default.</string>
+    <string name="settings_behavior_quiet">Quiet hours (no suggestions during this window)</string>
+    <string name="settings_behavior_quiet_start">Start</string>
+    <string name="settings_behavior_quiet_end">End</string>
+    <string name="settings_behavior_quota">Maximum suggestions per day</string>
+    <string name="settings_behavior_minus">−</string>
+    <string name="settings_behavior_plus">+</string>
+
+<string name="settings_memory_section">Memory</string>
     <string name="settings_memory_toggle">Long-term memory</string>
     <string name="settings_memory_hint">The assistant remembers facts about you (locally, on the device) and uses them in conversation. All memories can be viewed, deleted or wiped below.</string>
     <string name="settings_memory_auto_extract">Remember automatically</string>

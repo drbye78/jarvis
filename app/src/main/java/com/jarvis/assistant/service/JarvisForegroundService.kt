@@ -140,6 +140,27 @@ class JarvisForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_EXPLICIT_START -> prefs.userStopped = false
+            ACTION_RUN_COGNITIVE_MAINTENANCE -> {
+                // COGNITIVE_PLAN 2.2: the nightly ~03:30 tick. Reschedule
+                // first so the next night is always booked even if the run
+                // itself throws; the coordinator guards every step.
+                scheduleCognitiveMaintenanceAlarm()
+                val g = graph
+                if (g != null && initialized) {
+                    serviceScope.launch {
+                        try {
+                            g.cognitiveCoordinator.onMaintenance()
+                            Timber.i("Cognitive: nightly maintenance complete")
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Timber.w(e, "Cognitive: nightly maintenance failed")
+                        }
+                    }
+                } else {
+                    Timber.i("Cognitive: maintenance tick arrived before init — opportunistic path will run it")
+                }
+            }
             ACTION_WATCHDOG -> {
                 // The 15-minute keep-alive ping. Respect an explicit stop.
                 if (prefs.userStopped) {
@@ -164,8 +185,91 @@ class JarvisForegroundService : Service() {
         }
 
         scheduleRestartAlarm()
+        // COGNITIVE_PLAN 2.2: nightly cognitive maintenance — schedule the
+        // ~03:30 inexact alarm (idempotent; each firing reschedules), and
+        // opportunistically run maintenance now if the last one is > 20 h
+        // old (EMUI defers inexact alarms; the wall device is nearly always
+        // on, so the opportunistic path keeps the latency tolerable without
+        // a WorkManager dependency).
+        scheduleCognitiveMaintenanceAlarm()
+        maybeRunMaintenanceOpportunistically()
         ensureInitialized()
         return START_STICKY
+    }
+
+    // ------------------------------------------------------------------
+    // COGNITIVE_PLAN 2.2: cognitive maintenance scheduling (§9.1)
+    // ------------------------------------------------------------------
+
+    /**
+     * Inexact ~03:30 alarm (setAndAllowWhileIdle per plan §9.1). Delivered
+     * to THIS service as a start intent — the same PendingIntent.getService
+     * pattern as the watchdog, which already holds a foreground-service
+     * scheduling exemption while the assistant runs.
+     */
+    private fun scheduleCognitiveMaintenanceAlarm() {
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        if (alarmManager == null) {
+            Timber.e("AlarmManager unavailable — cognitive maintenance NOT scheduled")
+            return
+        }
+        val intent = Intent(this, JarvisForegroundService::class.java)
+            .setAction(ACTION_RUN_COGNITIVE_MAINTENANCE)
+        val pending = android.app.PendingIntent.getService(
+            this, MAINTENANCE_REQUEST_CODE, intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+        )
+        val triggerAt = nextMaintenanceAt(System.currentTimeMillis())
+        // Inexact BY DESIGN (plan §9.1): maintenance is patient background
+        // work; doze batching is acceptable, the opportunistic path covers
+        // the deferral.
+        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+        Timber.d("Cognitive maintenance scheduled for %d", triggerAt)
+    }
+
+    private fun maybeRunMaintenanceOpportunistically() {
+        val g = graph
+        if (g == null || !initialized) {
+            // Graph still building — the next watchdog tick or maintenance
+            // alarm will run the due maintenance; nothing to do here.
+            return
+        }
+        runCatching { runMaintenanceIfDue() }
+            .onFailure { Timber.w(it, "Opportunistic maintenance check failed") }
+    }
+
+    /** Runs [AppGraph]'s cognitive maintenance when it is older than 20 h. */
+    private fun runMaintenanceIfDue() {
+        val g = graph ?: return
+        serviceScope.launch {
+            try {
+                val meta = g.database.memoryMetaDao()
+                    .get(com.jarvis.assistant.cognitive.data.MemoryMetaEntity.KEY_LAST_MAINTENANCE_AT)
+                    ?.toLongOrNull() ?: 0L
+                val now = System.currentTimeMillis()
+                if (now - meta > MAINTENANCE_STALE_MS) {
+                    Timber.i("Cognitive: opportunistic maintenance (last %d ms ago)", now - meta)
+                    g.cognitiveCoordinator.onMaintenance()
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Cognitive: opportunistic maintenance failed")
+            }
+        }
+    }
+
+    /** Next local ~03:30 (today if still before it, tomorrow otherwise). */
+    private fun nextMaintenanceAt(now: Long): Long {
+        val cal = java.util.Calendar.getInstance().apply {
+            timeInMillis = now
+            set(java.util.Calendar.HOUR_OF_DAY, MAINTENANCE_HOUR)
+            set(java.util.Calendar.MINUTE, 30)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+            if (timeInMillis <= now) add(java.util.Calendar.DAY_OF_YEAR, 1)
+        }
+        return cal.timeInMillis
     }
 
     // ------------------------------------------------------------------
@@ -632,9 +736,17 @@ class JarvisForegroundService : Service() {
     companion object {
         const val ACTION_EXPLICIT_START = "com.jarvis.assistant.EXPLICIT_START"
         const val ACTION_WATCHDOG = "com.jarvis.assistant.WATCHDOG"
+        const val ACTION_RUN_COGNITIVE_MAINTENANCE = "com.jarvis.assistant.RUN_COGNITIVE_MAINTENANCE"
         const val NOTIFICATION_ID = 1
         private const val NOTIFICATION_PERMISSION = 2
         private const val RESTART_REQUEST_CODE = 1001
+        private const val MAINTENANCE_REQUEST_CODE = 1002
+
+        /** COGNITIVE_PLAN §9.1: nightly maintenance lands at ~03:30 local. */
+        private const val MAINTENANCE_HOUR = 3
+
+        /** §9.1: the opportunistic trigger — last maintenance older than 20 h. */
+        private const val MAINTENANCE_STALE_MS = 20L * 60 * 60_000L
         private const val CHANNEL_ID = "jarvis_foreground"
         private const val CHANNEL_BOOTSTRAP = "jarvis_bootstrap"
         private const val CHANNEL_ERROR = "jarvis_errors"

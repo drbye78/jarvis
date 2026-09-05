@@ -51,6 +51,14 @@ interface ToolExecutor {
 class ToolRegistry(
     private val tools: List<ToolContract>,
     private val perToolTimeoutMs: Long = 15_000,
+    /**
+     * COGNITIVE_PLAN 2.1: telemetry seam — observes every COMPLETED execution
+     * (success, tool failure or timeout; not barge-in cancellations, which
+     * rethrow). Receives (call, result, latencyMs). Fire-and-forget on the
+     * observer's side; a throwing observer is logged and ignored by the
+     * registry (telemetry must never break a turn).
+     */
+    private val onExecuted: (suspend (FunctionCall, ToolResult, Long) -> Unit)? = null,
 ) {
 
     fun available(): List<ToolContract> = tools
@@ -87,7 +95,8 @@ class ToolRegistry(
         val tool = tools.find { it.name == call.name }
             ?: return ToolResult("""{"error":"Unknown function: ${call.name}"}""", isError = true)
         val timeout = tool.timeoutMs ?: perToolTimeoutMs
-        return try {
+        val startedAt = System.nanoTime()
+        val result = try {
             ToolResult(withTimeout(timeout) { tool.execute(call.arguments) })
         } catch (e: TimeoutCancellationException) {
             Timber.w("Tool %s timed out after %d ms", call.name, timeout)
@@ -98,6 +107,20 @@ class ToolRegistry(
             Timber.e(e, "Tool %s failed", call.name)
             ToolResult("""{"error":"Tool execution failed: ${e.message}"}""", isError = true)
         }
+        // COGNITIVE_PLAN 2.1: record AFTER the outcome is known, for both
+        // success and failure; latency includes the tool's own timeout wait.
+        val latencyMs = (System.nanoTime() - startedAt) / 1_000_000
+        val observer = onExecuted
+        if (observer != null) {
+            try {
+                observer(call, result, latencyMs)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Tool telemetry observer failed (ignored)")
+            }
+        }
+        return result
     }
 
 }

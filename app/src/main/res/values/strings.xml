@@ -292,9 +292,34 @@
     <string name="memory_tool_forget_candidates">Забыть это: %1$s? Скажи «да, забыть» для подтверждения.</string>
     <string name="memory_tool_forgotten">Забыл: %1$s</string>
     <string name="memory_tool_nothing_to_forget">Не нашёл такого воспоминания</string>
+
+    <!-- COGNITIVE_PLAN 2.4: proactive suggestion templates (deterministic) -->
+    <string name="behavior_proactive_music_query">Ты обычно слушаешь «%1$s» в это время. Включить?</string>
+    <string name="behavior_proactive_music_blank">Ты обычно слушаешь музыку в это время. Включить?</string>
+    <string name="behavior_proactive_weather_city">Ты обычно смотришь погоду в «%1$s» в это время. Показать?</string>
+    <string name="behavior_proactive_weather_blank">Ты обычно смотришь погоду в это время. Показать?</string>
+    <string name="behavior_proactive_generic">Ты часто просишь %1$s в это время. Повторить?</string>
+    <string name="behavior_label_play_music">музыку</string>
+    <string name="behavior_label_get_weather">погоду</string>
+    <string name="behavior_label_now_playing">узнать, что играет</string>
+    <string name="behavior_label_playlists">список плейлистов</string>
+    <string name="behavior_label_search_library">поиск в библиотеке</string>
+    <string name="behavior_label_playback">управление плеером</string>
+    <string name="behavior_label_volume">поменять громкость</string>
     <string name="activity_tool_remember_fact">Запоминаю…</string>
     <string name="activity_tool_recall_facts">Проверяю память…</string>
     <string name="activity_tool_forget_fact">Забываю…</string>
+    <!-- COGNITIVE_PLAN 2.6: behaviour card -->
+    <string name="settings_behavior_section">Проактивность</string>
+    <string name="settings_behavior_toggle">Ассистент может сам предлагать привычные действия</string>
+    <string name="settings_behavior_hint">Иногда ассистент заметит твою привычку (например, включать одну и ту же музыку по вечерам) и предложит её — сам он ничего не делает и не включит без твоего «да». Выключено по умолчанию.</string>
+    <string name="settings_behavior_quiet">Тихие часы (в это время предложений не будет)</string>
+    <string name="settings_behavior_quiet_start">Начало</string>
+    <string name="settings_behavior_quiet_end">Конец</string>
+    <string name="settings_behavior_quota">Максимум предложений в день</string>
+    <string name="settings_behavior_minus">−</string>
+    <string name="settings_behavior_plus">+</string>
+
     <string name="settings_memory_section">Память</string>
     <string name="settings_memory_toggle">Долговременная память</string>
     <string name="settings_memory_hint">Ассистент запоминает факты о тебе (локально, на устройстве) и использует их в разговоре. Все воспоминания можно посмотреть, удалить или стереть ниже.</string>

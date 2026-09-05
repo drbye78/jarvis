@@ -6,6 +6,63 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — COGNITIVE_PLAN Phase 2 (temporal context + behaviour)
+- **Room v5 — behaviour tables** (2.1): `command_events` (slot-fingerprint
+  telemetry, no utterance content), `habit_rules`, `behavior_log` (30-day
+  retention) and `session_summaries`; explicit `MIGRATION_4_5` (new tables
+  only) + exported schema + JVM/androidTest migration coverage.
+- **Command telemetry** (2.1): `CommandEventRecorder` behind the
+  `ToolRegistry` execution observer — every tool execution writes one row
+  (tool, normalized `argsFingerprint`, ok, latency, origin); habit
+  recomputation fires on every 10th event.
+- **Habit mining** (2.2): `HabitDetector` clusters VOICE/ok events into
+  2-hour buckets (≥5 supports over a 14-day window, allowlist: playMusic,
+  getWeather, getNowPlaying, listPlaylists, searchLibrary); rules go
+  PROBATION → ACTIVE (first accept, or a fired suggestion aged out clean) →
+  MUTED (3 rejections, 30 days) → RETIRED (6 lifetime rejections). Recompute
+  never resurrects a muted/retired rule. Nightly maintenance via an inexact
+  ~03:30 `AlarmManager` alarm (`ACTION_RUN_COGNITIVE_MAINTENANCE`) plus an
+  opportunistic run on service start when the last one is > 20 h old (§9.1).
+- **Arbitration** (2.3): the `BehaviorArbiter` gate matrix — enabled +
+  quiet hours (23:00–08:00 default) → DND/battery → session IDLE → no media
+  → presence within 4 h → 72 h cooldown + daily quota → 24 h per-suggestion
+  freshness. Media/busy sessions DEFER (re-checked by the 15-min ticker);
+  every decision is logged (non-FIRED rows throttled to ≤1/rule/hour).
+- **Proactive delivery** (2.4): `SessionManager.speakProactively` — a
+  guarded mini-session (IDLE-only re-check, seq bump, IDLE → SPEAKING →
+  IDLE, suggestion persisted with the `proactive` marker BEFORE synthesis,
+  `TtsSpeechFeedback`-style focus bracketing, stop lane armed by the
+  SPEAKING state) followed by a forced follow-up window: «да, включи» runs
+  the normal tool path and reinforces the rule; a short explicit «нет»
+  counts as a rejection. Deterministic RU/EN templates — no LLM call.
+  **Ships DEFAULT OFF** (§12.4-1), Settings «Проактивность» card exposes
+  the switch, quiet hours and the daily quota.
+- **Summaries** (2.5): `Summarizer` — summarize-before-prune (the doomed
+  range is captured BEFORE the retention delete; the cloud call is
+  fire-and-forget on the cognitive scope; the `lastSummarizedMessageId`
+  cursor advances only after a successful commit), a nightly DAILY digest
+  (once per epoch day, ≥2 sessions), and a ≤ 600-char `<summary-context>`
+  prompt section (presence-gated; cloud-gated per §9.2 as the one new
+  egress class).
+
+### Measured — Phase 2 performance/battery report (plan §10.6)
+- APK: 159 888 770 bytes (Phase 1: 159 631 038 — delta ≈ +0.25 MB, budget
+  ≤ 0.5 MB: met).
+- Test suite: 568 JVM tests / 0 failures (Phase 1 baseline: 511); detekt
+  clean, 0 baseline additions.
+- Device-side RSS / TTFT / overnight-drain numbers require the physical
+  MatePad; tracked in RUNBOOK Appendix F (procedure) — to be measured on
+  hardware and recorded here (honest gaps: not measurable in CI).
+
+### Fixed — Phase 2 drive-by
+- `CognitiveCoordinator`'s default `inTransaction` wrapper (`{ it }`) merely
+  RETURNED the block instead of invoking it — the transaction body never ran
+  under the default (production wiring was correct; caught by the new
+  `CognitiveBehaviorTest`).
+- Daily-quota accounting was stale within a single arbitration pass (two
+  rules could both fire at quota=1); now tracked per-pass.
+
+
 ### Added — COGNITIVE_PLAN Phase 1 (memory core)
 - **Room v4 — cognitive tables** (1.1): `user_facts` (+ `fact_fts` external
   FTS4 index written pre-tokenized via the Russian-aware `SearchTokenizer`),

@@ -95,6 +95,12 @@ class AppGraph(
         // COGNITIVE_PLAN 1.9: keep the recent dialogue on disk (LLM window
         // stays historyMaxMessages) so the opt-in backfill has material.
         config.historyRetentionMessages,
+        // COGNITIVE_PLAN 2.5: summarize-before-prune — the summarizer reads
+        // the doomed range BEFORE the retention delete lands (its cloud call
+        // is fire-and-forget on the cognitive scope). The lambda resolves
+        // the coordinator lazily, so the conversation lane stays
+        // pre-cognitive at graph construction.
+        beforePrune = { cutoff -> cognitiveCoordinator.onBeforePrune(cutoff) },
     )
 
     val networkMonitor = NetworkMonitor(appContext)
@@ -237,6 +243,16 @@ class AppGraph(
         appPrefs = appPrefs,
         // COGNITIVE_PLAN 1.5: remember_fact / recall_facts / forget_fact.
         cognitiveTools = { cognitiveCoordinator.tools() },
+        // COGNITIVE_PLAN 2.1: command telemetry — every tool execution writes
+        // one command_events row (slot fingerprint only, no utterances).
+        executionObserver = { call, result, latencyMs ->
+            cognitiveCoordinator.observeCommandExecution(
+                tool = call.name,
+                argsJson = call.arguments,
+                ok = !result.isError,
+                latencyMs = latencyMs,
+            )
+        },
     )
 
     /**
@@ -245,6 +261,14 @@ class AppGraph(
      * are consumed from here, never re-snapshotted at graph build time.
      */
     val prefsFlow by lazy { com.jarvis.assistant.util.PrefsFlow(appPrefs) }
+
+    /**
+     * COGNITIVE_PLAN 2.3 gate 3 bridge: the arbiter needs the session state
+     * machine's IDLE-ness without a coordinator→session dependency. The
+     * graph owns both ends and keeps this flow in sync (collector started
+     * below, right after [sessionManager] exists).
+     */
+    private val sessionIdleFlow = kotlinx.coroutines.flow.MutableStateFlow(true)
 
     /**
      * COGNITIVE_PLAN 1.2: the Cognitive Core. Lazy so graph construction
@@ -262,6 +286,25 @@ class AppGraph(
             autoExtractEnabled = prefsFlow.memoryAutoExtract,
             cloudEnabled = prefsFlow.memoryCloudEnabled,
             sensitiveVisible = prefsFlow.memorySensitiveVisible,
+            // ---- COGNITIVE_PLAN Phase 2 (§8): behaviour layer ----
+            eventDao = database.commandEventDao(),
+            ruleDao = database.habitRuleDao(),
+            behaviorLogDao = database.behaviorLogDao(),
+            summaryDao = database.sessionSummaryDao(),
+            // §12.4-1: default OFF; the Settings card flips the pref and the
+            // flow pushes it here live (no restart).
+            behaviorEnabled = prefsFlow.behaviorEnabled,
+            behaviorQuietStart = prefsFlow.behaviorQuietStart,
+            behaviorQuietEnd = prefsFlow.behaviorQuietEnd,
+            behaviorDailyQuota = prefsFlow.behaviorDailyQuota,
+            deviceSignals = com.jarvis.assistant.cognitive.behavior.AndroidDeviceSignals(appContext),
+            sessionIdle = sessionIdleFlow,
+            lastInteractionAt = { database.messageDao().lastMessageAt() },
+            speaker = com.jarvis.assistant.cognitive.behavior.ProactiveSpeaker { text ->
+                sessionManager.speakProactively(text)
+            },
+            habitEligibleTools = config.habitEligibleTools,
+            modelId = { provider.openAiModel },
             strings = com.jarvis.assistant.tools.AndroidToolStrings(appContext),
             parentScope = scope,
             inTransaction = { block -> database.withTransaction { block() } },
@@ -319,6 +362,19 @@ class AppGraph(
             )
         },
     ).also { it.setOnError(onSessionError) }
+
+    /**
+     * COGNITIVE_PLAN 2.3 gate 3: keep the arbiter's IDLE view in sync with
+     * the real state machine. Started once at graph construction; the
+     * collector lives on the graph scope and dies with it.
+     */
+    init {
+        scope.launch {
+            stateMachine.state.collect { state ->
+                sessionIdleFlow.value = state == com.jarvis.assistant.model.AssistantState.IDLE
+            }
+        }
+    }
 
     /**
      * m12: user mute intent. Owned by the SessionManager (so the semantics —
@@ -482,6 +538,9 @@ class AppGraph(
             // COGNITIVE_PLAN 1.2: queue loop starts with the service; the
             // first lazy touch of the coordinator runs the v3→v4 migration.
             cognitiveCoordinator.startQueueLoop()
+            // COGNITIVE_PLAN 2.3: the behaviour ticker (no-op while the
+            // §12.4-1 switch is OFF).
+            cognitiveCoordinator.startBehaviorLoop()
         } catch (e: Exception) {
             shutdown() // N11: tear down anything we built before the throw
             throw e

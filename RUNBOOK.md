@@ -353,6 +353,46 @@ switch OFF mid-session and repeat (4) → the assistant must not inject
 memory content (kill-switch degrades to the pre-cognitive prompt,
 snapshot-tested).
 
+### E2E scenario: proactive suggestion, accept and reject paths (COGNITIVE_PLAN §10.5, Phase 2)
+
+Precondition: Settings → «Проактивность» switch ON (default OFF — flipping
+it is the point of the scenario), quiet hours as shipped (23:00–08:00),
+quota 2/day, battery charging or > 15%, no headphones/media playing.
+
+Seed the habit (day 1–6): for six consecutive evenings between 19:00 and
+21:00 say «Джарвис, включи джаз» and let it play. Each successful
+`playMusic` writes one `command_events` row (check `adb shell` dump or the
+behavior tables; utterances are NOT stored — only the `q:джаз`
+fingerprint).
+
+Day 7, ~20:00, assistant IDLE for ≥ 2 minutes, someone interacted with the
+device within the last 4 hours:
+
+1. Within 15 minutes the behaviour ticker evaluates the rule → all gates
+   green → FIRED. The assistant asks: «Ты обычно слушаешь „джаз" в это
+   время. Включить?» WITHOUT playing anything (`behavior_log` row
+   `FIRED`, `habit_rules.lastFiredAt` stamped).
+2. **Accept path:** stay silent for the turn to drain, then say (no wake
+   word — the follow-up window opened) «да, включи». The normal tool path
+   runs `playMusic`; `habit_rules.acceptCount` becomes 1 and the rule is
+   ACTIVE.
+3. **Reject path (fresh seed or a second rule):** when the assistant
+   proposes again, answer «нет» in the follow-up window. After the THIRD
+   rejection across sessions the rule goes MUTED for 30 days — no more
+   jazz proposals (verified in the tables; unmute happens automatically
+   after 30 days, or via «Забыть всё»).
+4. **Busy guard:** start music manually in Яндекс Музыка, force a rule
+   evaluation (wait for the next tick) — the decision must be DEFERRED
+   (`media`), and the suggestion must NOT fire while playback is active.
+5. **Quiet hours:** temporarily set quiet 20:00–21:00 in Settings, wait for
+   a tick at 20:30 — `BLOCKED(quiet_hours)`, nothing spoken.
+6. **Live toggle:** flip «Проактивность» OFF — the next tick is a no-op
+   (one flow read), regardless of table contents.
+
+Pass: all six observations; the assistant NEVER auto-executes a tool from a
+suggestion; every decision (including refusals) appears in `behavior_log`
+(non-FIRED rows throttled to ≤ 1 per rule per hour by design).
+
 ### Extraction gate (autoExtract default decision)
 
 `memory.autoExtract` ships DEFAULT OFF. It flips to default-ON only after

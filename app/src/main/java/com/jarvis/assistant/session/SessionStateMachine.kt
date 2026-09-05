@@ -29,6 +29,12 @@ sealed interface SessionEvent {
 
     /** Follow-up window elapsed with no speech. */
     data object FollowUpWindowExpired : SessionEvent
+
+    /**
+     * COGNITIVE_PLAN 2.4: a proactive mini-session starts speaking (from
+     * IDLE only — the arbiter guarantees it; the machine enforces it).
+     */
+    data object ProactiveSpeechStarted : SessionEvent
 }
 
 /**
@@ -60,6 +66,11 @@ object SessionTransitions {
         put(AssistantState.FOLLOW_UP_WINDOW to SessionEvent.FollowUpWindowExpired, AssistantState.IDLE)
         // Safety: a straggler LlmDone while the window is open must not wedge.
         put(AssistantState.FOLLOW_UP_WINDOW to SessionEvent.LlmDone, AssistantState.FOLLOW_UP_WINDOW)
+        // COGNITIVE_PLAN 2.4: proactive mini-session — IDLE → SPEAKING
+        // directly (no LISTENING/THINKING legs: there is no utterance to
+        // capture and no LLM pass); the drain then lands via LlmDone → IDLE,
+        // the same terminal a normal spoken turn uses.
+        put(AssistantState.IDLE to SessionEvent.ProactiveSpeechStarted, AssistantState.SPEAKING)
     }
 
     fun next(current: AssistantState, event: SessionEvent): AssistantState? = when (event) {

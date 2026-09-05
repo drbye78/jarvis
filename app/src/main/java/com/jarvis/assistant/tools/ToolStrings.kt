@@ -63,6 +63,13 @@ interface ToolStrings {
     fun memoryForgotten(value: String): String
     val memoryNothingToForget: String
 
+    // COGNITIVE_PLAN 2.4: proactive suggestion templates (§8.4 —
+    // deterministic, no LLM call; proposal-not-action).
+    fun proactiveMusicSuggestion(query: String): String
+    fun proactiveWeatherSuggestion(city: String): String
+    fun proactiveGenericSuggestion(commandLabel: String): String
+    fun proactiveToolLabel(tool: String): String
+
     companion object {
         /** Russian fallback (the product language) — also the JVM-test default. */
         val Default: ToolStrings = object : ToolStrings {
@@ -124,6 +131,31 @@ interface ToolStrings {
                 "Забыть это: " + candidates.joinToString("; ") + "? Скажи «да, забыть» для подтверждения."
             override fun memoryForgotten(value: String) = "Забыл: $value"
             override val memoryNothingToForget = "Не нашёл такого воспоминания"
+
+            override fun proactiveMusicSuggestion(query: String) =
+                if (query.isBlank()) {
+                    "Ты обычно слушаешь музыку в это время. Включить?"
+                } else {
+                    "Ты обычно слушаешь «$query» в это время. Включить?"
+                }
+            override fun proactiveWeatherSuggestion(city: String) =
+                if (city.isBlank()) {
+                    "Ты обычно смотришь погоду в это время. Показать?"
+                } else {
+                    "Ты обычно смотришь погоду в «$city» в это время. Показать?"
+                }
+            override fun proactiveGenericSuggestion(commandLabel: String) =
+                "Ты часто просишь $commandLabel в это время. Повторить?"
+            override fun proactiveToolLabel(tool: String) = when (tool) {
+                "playMusic" -> "музыку"
+                "getWeather" -> "погоду"
+                "getNowPlaying" -> "узнать, что играет"
+                "listPlaylists" -> "список плейлистов"
+                "searchLibrary" -> "поиск в библиотеке"
+                "controlPlayback" -> "управление плеером"
+                "setVolume" -> "поменять громкость"
+                else -> tool
+            }
         }
     }
 }
@@ -208,4 +240,32 @@ class AndroidToolStrings(private val context: Context) : ToolStrings {
         context.getString(R.string.memory_tool_forgotten, value)
     override val memoryNothingToForget: String
         get() = context.getString(R.string.memory_tool_nothing_to_forget)
+
+    override fun proactiveMusicSuggestion(query: String): String =
+        if (query.isBlank()) {
+            context.getString(R.string.behavior_proactive_music_blank)
+        } else {
+            context.getString(R.string.behavior_proactive_music_query, query)
+        }
+
+    override fun proactiveWeatherSuggestion(city: String): String =
+        if (city.isBlank()) {
+            context.getString(R.string.behavior_proactive_weather_blank)
+        } else {
+            context.getString(R.string.behavior_proactive_weather_city, city)
+        }
+
+    override fun proactiveGenericSuggestion(commandLabel: String): String =
+        context.getString(R.string.behavior_proactive_generic, commandLabel)
+
+    override fun proactiveToolLabel(tool: String): String = when (tool) {
+        "playMusic" -> context.getString(R.string.behavior_label_play_music)
+        "getWeather" -> context.getString(R.string.behavior_label_get_weather)
+        "getNowPlaying" -> context.getString(R.string.behavior_label_now_playing)
+        "listPlaylists" -> context.getString(R.string.behavior_label_playlists)
+        "searchLibrary" -> context.getString(R.string.behavior_label_search_library)
+        "controlPlayback" -> context.getString(R.string.behavior_label_playback)
+        "setVolume" -> context.getString(R.string.behavior_label_volume)
+        else -> tool
+    }
 }

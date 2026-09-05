@@ -5,11 +5,20 @@ import com.jarvis.assistant.cognitive.data.ExtractionQueueEntity
 import com.jarvis.assistant.cognitive.data.MemoryMetaDao
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
 import com.jarvis.assistant.cognitive.data.UserFactDao
+import com.jarvis.assistant.cognitive.behavior.ArgFingerprints
+import com.jarvis.assistant.cognitive.behavior.BehaviorArbiter
+import com.jarvis.assistant.cognitive.behavior.DeviceSignals
+import com.jarvis.assistant.cognitive.behavior.HabitDetector
+import com.jarvis.assistant.cognitive.behavior.ProactivePresenter
+import com.jarvis.assistant.cognitive.behavior.ProactiveSpeaker
+import com.jarvis.assistant.cognitive.data.CommandEventEntity
+import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 import com.jarvis.assistant.cognitive.extract.ExtractionContract
 import com.jarvis.assistant.cognitive.extract.ExtractionGate
 import com.jarvis.assistant.cognitive.extract.ExtractionQueueWorker
 import com.jarvis.assistant.cognitive.extract.FactNormalizer
 import com.jarvis.assistant.cognitive.extract.MemoryWriter
+import com.jarvis.assistant.cognitive.extract.Summarizer
 import com.jarvis.assistant.cognitive.maint.Maintenance
 import com.jarvis.assistant.cognitive.model.FactSnapshot
 import com.jarvis.assistant.cognitive.model.FactStatus
@@ -67,6 +76,11 @@ import timber.log.Timber
  * ([MemoryOutcome.Disabled]) — byte-identical prompts to the pre-cognitive
  * baseline, snapshot-tested.
  */
+// COGNITIVE_PLAN §4 names this class deliberately: "the ONE class the rest
+// of the app sees". All pure logic lives in separate, unit-tested classes
+// (FactRanker, HabitDetector, BehaviorArbiter, Summarizer, …); what remains
+// here is composition + fire-and-forget orchestration over the child scope.
+@Suppress("LargeClass")
 class CognitiveCoordinator(
     private val factDao: UserFactDao,
     private val queueDao: ExtractionQueueDao,
@@ -78,14 +92,40 @@ class CognitiveCoordinator(
     private val autoExtractEnabled: StateFlow<Boolean>,
     private val cloudEnabled: StateFlow<Boolean>,
     private val sensitiveVisible: StateFlow<Boolean>,
+    // ---- COGNITIVE_PLAN Phase 2: behaviour layer (§8) -----------------------
+    private val eventDao: com.jarvis.assistant.cognitive.data.CommandEventDao = com.jarvis.assistant.cognitive.data.NoopBehaviorDaos,
+    private val ruleDao: com.jarvis.assistant.cognitive.data.HabitRuleDao = com.jarvis.assistant.cognitive.data.NoopBehaviorDaos,
+    private val behaviorLogDao: com.jarvis.assistant.cognitive.data.BehaviorLogDao = com.jarvis.assistant.cognitive.data.NoopBehaviorDaos,
+    private val summaryDao: com.jarvis.assistant.cognitive.data.SessionSummaryDao = com.jarvis.assistant.cognitive.data.NoopBehaviorDaos,
+    /** §12.4-1: proactive speech ships DEFAULT OFF. */
+    private val behaviorEnabled: StateFlow<Boolean> = kotlinx.coroutines.flow.MutableStateFlow(false),
+    private val behaviorQuietStart: StateFlow<Int> = kotlinx.coroutines.flow.MutableStateFlow(23),
+    private val behaviorQuietEnd: StateFlow<Int> = kotlinx.coroutines.flow.MutableStateFlow(8),
+    private val behaviorDailyQuota: StateFlow<Int> = kotlinx.coroutines.flow.MutableStateFlow(BehaviorArbiter.DEFAULT_DAILY_QUOTA),
+    /** Gates 2/4: DND/battery/media — Android-backed in production, static in tests. */
+    private val deviceSignals: DeviceSignals = DeviceSignals.Static,
+    /** Gate 3: session-state bridge (AppGraph maps the state machine into it). */
+    private val sessionIdle: StateFlow<Boolean> = kotlinx.coroutines.flow.MutableStateFlow(true),
+    /** Gate 5: presence proxy — the newest conversation row's timestamp. */
+    private val lastInteractionAt: suspend () -> Long? = { null },
+    /** §8.4 delivery seam (SessionManager::speakProactively in production). */
+    private val speaker: ProactiveSpeaker = ProactiveSpeaker { false },
+    /** §8.2: which tools may ever become habits (read-mostly + music only). */
+    private val habitEligibleTools: Set<String> = emptySet(),
+    /** Stamped on every summary (plan §10.1: re-run on model change). */
+    private val modelId: () -> String = { "unknown" },
+    /** Device-local hour for the quiet-hours gate; injectable for tests. */
+    private val hourOfDay: () -> Int = { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) },
     private val strings: ToolStrings = ToolStrings.Default,
     parentScope: CoroutineScope,
     private val nowMs: () -> Long = System::currentTimeMillis,
     /**
      * Transaction wrapper (AppGraph passes Room `withTransaction`); tests
-     * pass the identity. Keeps the coordinator free of the RoomDatabase type.
+     * pass the identity. Keeps the coordinator free of the RoomDatabase
+     * type. NB: the default must INVOKE the block — `{ it }` would merely
+     * return it (the value is the block, not a thunk to call later).
      */
-    private val inTransaction: suspend (suspend () -> Unit) -> Unit = { it },
+    private val inTransaction: suspend (suspend () -> Unit) -> Unit = { block -> block() },
 ) : CognitiveTurnHooks {
 
     /** Child scope: supervisor + own handler, per plan §4. */
@@ -110,6 +150,26 @@ class CognitiveCoordinator(
         llm = llm,
         normalizer = normalizer,
     )
+
+    // ---- Phase 2 behaviour layer (§8) ---------------------------------------
+
+    private val habitDetector = HabitDetector(
+        eventDao = eventDao,
+        ruleDao = ruleDao,
+        habitEligibleTools = habitEligibleTools,
+        nowMs = nowMs,
+    )
+
+    private val summarizer = Summarizer(
+        summaryDao = summaryDao,
+        messageDao = messageDao,
+        metaDao = metaDao,
+        llm = llm,
+        memoryEnabled = memoryEnabled,
+        cloudEnabled = cloudEnabled,
+        modelId = modelId,
+        nowMs = nowMs,
+    ).also { it.background = scope }
 
     /** Wake signal for the drain loop (coalescing, never blocks the caller). */
     private val wakeChannel = Channel<Unit>(
@@ -472,6 +532,283 @@ class CognitiveCoordinator(
     }
 
     // ------------------------------------------------------------------
+    // BEHAVIOUR (§8): telemetry → habits → arbitration → proactive speech.
+    // Every entry point is fire-and-forget on the cognitive scope — none
+    // of this may ever block a turn or crash a session (§4).
+    // ------------------------------------------------------------------
+
+    /**
+     * §8.1: one executed tool call lands here (via the ToolRegistry
+     * observer wired by AppGraph). Writes the `command_events` row (slot
+     * fingerprint ONLY — never raw utterances), reinforces a suggestion the
+     * user just accepted (§8.2: a matching command within 10 minutes), and
+     * triggers habit recomputation on every 10th event.
+     */
+    suspend fun recordCommandEvent(tool: String, argsJson: String?, ok: Boolean, latencyMs: Long) {
+        try {
+            val fingerprint = ArgFingerprints.of(tool, argsJson)
+            eventDao.insert(
+                CommandEventEntity(
+                    at = nowMs(),
+                    tool = tool,
+                    argsFingerprint = fingerprint,
+                    ok = ok,
+                    latencyMs = latencyMs,
+                    origin = CommandEventEntity.ORIGIN_VOICE,
+                ),
+            )
+            reinforceAccept(tool, fingerprint)
+            if (eventDao.countAll() % HABIT_RECOMPUTE_EVERY == 0L) {
+                habitDetector.recompute()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "Cognitive: command telemetry failed (ignored)")
+        }
+    }
+
+    /** Non-suspending wrapper for the ToolRegistry observer. */
+    fun observeCommandExecution(
+        tool: String,
+        argsJson: String?,
+        ok: Boolean,
+        latencyMs: Long,
+    ) {
+        scope.launch(CoroutineName("cognitive-telemetry")) {
+            recordCommandEvent(tool, argsJson, ok, latencyMs)
+        }
+    }
+
+    /** §8.2: the user executed the suggested command within the window. */
+    private suspend fun reinforceAccept(tool: String, fingerprint: String) {
+        val now = nowMs()
+        for (rule in ruleDao.byFingerprint(tool, fingerprint)) {
+            val firedAt = rule.lastFiredAt
+            if (firedAt == null || now - firedAt > ACCEPT_WINDOW_MS) continue
+            ruleDao.update(
+                rule.copy(
+                    acceptCount = rule.acceptCount + 1,
+                    // First accept completes the first successful suggestion
+                    // cycle — PROBATION graduates (§8.2).
+                    state = HabitRuleEntity.STATE_ACTIVE,
+                ),
+            )
+            Timber.i("Cognitive: habit accept for %s %s", tool, fingerprint)
+        }
+    }
+
+    /**
+     * §8.3: evaluate every candidate rule against the gate matrix. Called
+     * by the behaviour ticker ([startBehaviorLoop]) and after maintenance.
+     * Gate 1 short-circuits on the flow value — with the switch OFF (the
+     * default) this method is one cheap flow read, nothing else.
+     */
+    suspend fun evaluateDueRules() {
+        if (!behaviorEnabled.value) return
+        val now = nowMs()
+        val rules = try {
+            ruleDao.candidateRules()
+        } catch (e: Exception) {
+            Timber.w(e, "Cognitive: rule query failed"); return
+        }
+        if (rules.isEmpty()) return
+
+        val quiet = BehaviorArbiter.isQuietHour(
+            hourOfDay(),
+            behaviorQuietStart.value,
+            behaviorQuietEnd.value,
+        )
+        val quotaUsedStart = behaviorLogDao.firedSince(BehaviorArbiter.startOfDayMs(now))
+        var firedThisPass = 0
+        val presence = lastInteractionAt()?.let {
+            now - it <= BehaviorArbiter.PRESENCE_WINDOW_MS
+        } ?: false
+        val signals = deviceSignals
+        val idle = sessionIdle.value
+
+        for (rule in rules) {
+            val decision = BehaviorArbiter.evaluate(
+                rule,
+                BehaviorArbiter.ArbiterContext(
+                    behaviorEnabled = behaviorEnabled.value,
+                    quietHoursActive = quiet,
+                    dndActive = signals.dndActive(),
+                    batteryOk = signals.batteryOk(),
+                    sessionIdle = idle,
+                    mediaActive = signals.mediaActive(),
+                    recentInteraction = presence,
+                    quotaLeft = quotaUsedStart + firedThisPass < behaviorDailyQuota.value,
+                    cooldownOk = rule.lastSuggestedAt == null ||
+                        now - rule.lastSuggestedAt >= BehaviorArbiter.COOLDOWN_MS,
+                    notRecentlyDelivered = rule.lastFiredAt == null ||
+                        now - rule.lastFiredAt >= BehaviorArbiter.DELIVERY_FRESHNESS_MS,
+                ),
+            )
+            when (decision) {
+                BehaviorArbiter.Decision.Fired -> {
+                    fireRule(rule, now)
+                    firedThisPass++
+                }
+                is BehaviorArbiter.Decision.Deferred -> logThrottled(decision, rule, now)
+                is BehaviorArbiter.Decision.Blocked -> logThrottled(decision, rule, now)
+            }
+        }
+    }
+
+    /** §8.4: present → speak → bookkeeping. A blank rendering is dropped. */
+    private suspend fun fireRule(rule: HabitRuleEntity, now: Long) {
+        val text = ProactivePresenter.render(rule, strings)
+        if (text.isBlank()) return
+        val spoken = speaker.speak(text)
+        // The delivery seam returns false only when the machine was no
+        // longer IDLE — the arbiter raced a user interaction and lost. The
+        // attempt is still logged (the cooldown applies either way: the
+        // user must not be nagged twice because a race ate one attempt).
+        ruleDao.update(rule.copy(lastSuggestedAt = now, lastFiredAt = now))
+        behaviorLogDao.insert(
+            BehaviorArbiter.toLogRow(BehaviorArbiter.Decision.Fired, rule.id, now, utterance = text),
+        )
+        Timber.i(
+            "Cognitive: proactive %s (rule %d, tool %s)",
+            if (spoken) "delivered" else "refused by session",
+            rule.id,
+            rule.tool,
+        )
+    }
+
+    /**
+     * Non-FIRED rows are throttled to ≤1 per rule per hour: §8.3 wants every
+     * refusal audited, but an IDLE device in front of a TV would otherwise
+     * write the same BLOCKED row every tick and drown the log. FIRED rows
+     * are never throttled.
+     */
+    private suspend fun logThrottled(
+        decision: BehaviorArbiter.Decision,
+        rule: HabitRuleEntity,
+        now: Long,
+    ) {
+        val recent = behaviorLogDao.countForRuleSince(rule.id, now - DECISION_LOG_THROTTLE_MS)
+        if (recent > 0) return
+        behaviorLogDao.insert(BehaviorArbiter.toLogRow(decision, rule.id, now))
+    }
+
+    /**
+     * §8.3/§8.2: the behaviour ticker — evaluates due rules periodically
+     * (this is also the DEFERRED same-day re-check). Start once from the
+     * graph; a no-op while the switch is OFF.
+     */
+    fun startBehaviorLoop() {
+        scope.launch(CoroutineName("cognitive-behavior")) {
+            while (isActive) {
+                try {
+                    evaluateDueRules()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.w(e, "Cognitive: behaviour tick failed")
+                }
+                kotlinx.coroutines.delay(BEHAVIOR_TICK_MS)
+            }
+        }
+    }
+
+    /**
+     * §8.2: the reject half of the accept/reject loop. A SHORT explicit
+     * refusal («нет», «не надо») right after a delivered suggestion counts
+     * against the rule; 3 rejections mute it for 30 days, 6 retire it.
+     * Long or affirmative replies are ignored — only unambiguous refusals
+     * punish a rule.
+     */
+    override fun onFollowUpUtterance(utterance: String) {
+        scope.launch(CoroutineName("cognitive-reject")) {
+            try {
+                if (!isExplicitReject(utterance)) return@launch
+                val fired = behaviorLogDao.latestFiredSince(nowMs() - REJECT_WINDOW_MS)
+                    ?: return@launch
+                val ruleId = fired.ruleId ?: return@launch
+                val rule = ruleDao.byId(ruleId) ?: return@launch
+                val rejects = rule.rejectCount + 1
+                val now = nowMs()
+                when {
+                    rejects >= RETIRE_REJECTS -> ruleDao.update(
+                        rule.copy(rejectCount = rejects, state = HabitRuleEntity.STATE_RETIRED),
+                    )
+                    rejects >= MUTE_REJECTS -> ruleDao.update(
+                        rule.copy(
+                            rejectCount = rejects,
+                            state = HabitRuleEntity.STATE_MUTED,
+                            mutedUntil = now + MUTE_DURATION_MS,
+                        ),
+                    )
+                    else -> ruleDao.update(rule.copy(rejectCount = rejects))
+                }
+                Timber.i("Cognitive: habit reject #%d for rule %d", rejects, ruleId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Cognitive: reject handling failed")
+            }
+        }
+    }
+
+    /**
+     * Conservative refusal heuristic: the utterance is short AND starts
+     * with (or equals) an unambiguous refusal token. «Нет» alone rejects;
+     * «нет, а что за трек?» does not — a question mark tail is allowed to
+     * continue as dialogue (it is NOT a refusal, it is engagement).
+     */
+    private fun isExplicitReject(utterance: String): Boolean {
+        val normalized = ArgFingerprints.normalize(utterance)
+        if (normalized.isEmpty()) return false
+        if (normalized.length > REJECT_MAX_CHARS) return false
+        val tokens = normalized.split(" ")
+        val head = tokens.firstOrNull() ?: return false
+        if (head in REJECT_HEAD_TOKENS) {
+            // «Нет, ...» followed by a real command tail is engagement, not
+            // refusal — require the utterance to stay short (it already is)
+            // and not contain a follow-up ask.
+            return tokens.size <= REJECT_MAX_TOKENS &&
+                tokens.none { it in CONTINUATION_TOKENS }
+        }
+        // Multi-word refusals are unambiguous anywhere in a short utterance.
+        return REJECT_PHRASES.any { normalized.contains(it) }
+    }
+
+    /**
+     * §2.5/§7.1: rendered summary block for the composer (presence-gated,
+     * budget-truncated by the Summarizer; same fail-quiet contract as
+     * [gather]).
+     */
+    override suspend fun gatherSummary(utterance: String?, isFollowUp: Boolean): String = try {
+        withTimeout(GATHER_BUDGET_MS) { summarizer.renderForPrompt() }
+    } catch (e: TimeoutCancellationException) {
+        degradedCounter++
+        ""
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        degradedCounter++
+        Timber.e(e, "Cognitive: summary gather failed")
+        ""
+    }
+
+    /**
+     * §2.5: the ConversationManager prune hook — capture the doomed range
+     * BEFORE the delete lands. The local read is synchronous (fast); the
+     * cloud call runs on the cognitive scope.
+     */
+    suspend fun onBeforePrune(cutoffMessageId: Long) {
+        try {
+            summarizer.captureDoomed(cutoffMessageId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "Cognitive: prune capture failed — pruning continues")
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Maintenance (§9.1) — Phase 1 logic; the nightly alarm lands in 2.2.
     // ------------------------------------------------------------------
 
@@ -485,8 +822,37 @@ class CognitiveCoordinator(
             .onFailure { Timber.e(it, "Cognitive: compaction step failed") }
         runCatching { deleteExpiredSuperseded(now) }
             .onFailure { Timber.e(it, "Cognitive: superseded-retention step failed") }
+        // ---- Phase 2 steps (§8.2/§2.5/§5 compaction) ----
+        runCatching { habitDetector.recompute() }
+            .onFailure { Timber.e(it, "Cognitive: habit recompute failed") }
+        runCatching { habitDetector.promoteProbationRules(now) }
+            .onFailure { Timber.e(it, "Cognitive: habit promotion failed") }
+        runCatching { habitDetector.unmuteExpired(now) }
+            .onFailure { Timber.e(it, "Cognitive: habit unmute failed") }
+        runCatching { eventDao.deleteOlderThan(now - COMMAND_EVENT_RETENTION_MS) }
+            .onFailure { Timber.e(it, "Cognitive: command-event retention failed") }
+        runCatching { behaviorLogDao.deleteOlderThan(now - BEHAVIOR_LOG_RETENTION_MS) }
+            .onFailure { Timber.e(it, "Cognitive: behavior-log retention failed") }
+        runCatching { compactSummaries() }
+            .onFailure { Timber.e(it, "Cognitive: summary compaction failed") }
+        runCatching {
+            val made = summarizer.runBacklogAndDigest()
+            if (made > 0) Timber.i("Cognitive: %d summary batch(es) produced", made)
+        }.onFailure { Timber.e(it, "Cognitive: summarization step failed") }
         runCatching {
             metaDao.putValue(MemoryMetaEntity.KEY_LAST_MAINTENANCE_AT, now.toString())
+        }
+    }
+
+    /**
+     * §5 cap: DAILY summaries beyond [SUMMARY_ROW_CAP] → oldest dropped.
+     */
+    private suspend fun compactSummaries() {
+        var excess = summaryDao.countDaily() - SUMMARY_ROW_CAP
+        while (excess > 0) {
+            val oldest = summaryDao.oldestDaily() ?: break
+            summaryDao.deleteById(oldest.id)
+            excess--
         }
     }
 
@@ -543,11 +909,16 @@ class CognitiveCoordinator(
         factDao.updateStatus(factId, FactStatus.FORGOTTEN.name, nowMs())
     }
 
-    /** «Забыть всё» (plan §9.2): cognitive tables only, never `messages`. */
+    /** «Забыть всё» (plan §9.2): ALL cognitive tables, never `messages`. */
     suspend fun wipeAll() = inTransaction {
+        println("DBG9 wipeAll actually entered")
         factDao.wipeAll()
         queueDao.wipeAll()
         metaDao.wipeAll()
+        eventDao.wipeAll()
+        ruleDao.wipeAll()
+        behaviorLogDao.wipeAll()
+        summaryDao.wipeAll()
     }
 
     /** Export (plan §7 principle 7): every fact + meta, JSON. */
@@ -602,6 +973,60 @@ class CognitiveCoordinator(
         /** Plan §7.2: hard gather budget (hidden inside LLM TTFT). */
         const val GATHER_BUDGET_MS = 40L
 
+        // ---- Phase 2 (§8/§5/§9.1) ----
+
+        /** Recompute habits after every Nth recorded event (§8.2). */
+        const val HABIT_RECOMPUTE_EVERY = 10L
+
+        /** §8.2: a matching user command within 10 min = accept. */
+        const val ACCEPT_WINDOW_MS = 10 * 60_000L
+
+        /** §8.2: 3 rejections → MUTED… */
+        const val MUTE_REJECTS = 3
+
+        /** …for 30 days; */
+        const val MUTE_DURATION_MS = 30L * 24 * 60 * 60_000L
+
+        /** 6 lifetime rejections → RETIRED. */
+        const val RETIRE_REJECTS = 6
+
+        /** A refusal counts only this soon after a delivered suggestion. */
+        const val REJECT_WINDOW_MS = 10 * 60_000L
+
+        /** Refusal heuristic bounds (see [isExplicitReject]). */
+        const val REJECT_MAX_CHARS = 40
+        const val REJECT_MAX_TOKENS = 5
+
+        /** Unambiguous refusal heads (utterance starts with one of these). */
+        private val REJECT_HEAD_TOKENS = setOf(
+            "нет", "не", "no", "неа", "стоп", "отстань", "не",
+        )
+
+        /** Unambiguous refusal phrases (matched anywhere in a short reply). */
+        private val REJECT_PHRASES = setOf(
+            "не надо", "не нужно", "не стоит", "не сейчас", "не включай",
+            "не беспокой", "не спрашивай", "отстань", "не смей",
+        )
+
+        /** A refusal followed by one of these is engagement, not refusal. */
+        private val CONTINUATION_TOKENS = setOf(
+            "а", "но", "включи", "поставь", "запусти", "да", "давай", "лучше",
+            "and", "but", "play", "yes", "instead",
+        )
+
+        /** Behaviour ticker cadence (also the DEFERRED same-day re-check). */
+        const val BEHAVIOR_TICK_MS = 15 * 60_000L
+
+        /** Non-FIRED decision rows: ≤1 per rule per hour (see [logThrottled]). */
+        const val DECISION_LOG_THROTTLE_MS = 60 * 60_000L
+
+        /** §5 retention: command_events 90 days, behavior_log 30 days. */
+        const val COMMAND_EVENT_RETENTION_MS = 90L * 24 * 60 * 60_000L
+        const val BEHAVIOR_LOG_RETENTION_MS = 30L * 24 * 60 * 60_000L
+
+        /** §5 cap: DAILY summary rows. */
+        const val SUMMARY_ROW_CAP = 365
+
         /** Plan §6.2: idle flush window for a partial batch. */
         const val IDLE_FLUSH_MS = 90_000L
 
@@ -618,7 +1043,7 @@ class CognitiveCoordinator(
         /** Compaction over-fetch buffer. */
         const val BUFFER = 10
 
-        const val SCHEMA_REV = "4"
+        const val SCHEMA_REV = "5"
 
         private val json = Json { prettyPrint = false }
 
