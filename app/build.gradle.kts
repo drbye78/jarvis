@@ -21,13 +21,11 @@ android {
 
     defaultConfig {
         applicationId = "com.jarvis.assistant"
-        // targetSdk 30 on purpose: appliance profile for Android 11 / HarmonyOS 2.0+.
-        // Android 14+ guards are handled in code (typed FGS, runtime checks).
-        // A11: minSdk 30 aligns the build with the documented support window
-        // (Android 11 / HarmonyOS 2.0 is API-30-based) — no backward compat
-        // below it is claimed or needed.
-        minSdk = 30
-        targetSdk = 30
+        // targetSdk 34: Android 14+ guards handled in code.
+        // minSdk 29: HarmonyOS 2.0 devices (e.g. Huawei AGS6-W09) report API 29.
+        // No backward compat below it is claimed or needed.
+        minSdk = 29
+        targetSdk = 34
         versionCode = 4
         versionName = "0.2.0"
 

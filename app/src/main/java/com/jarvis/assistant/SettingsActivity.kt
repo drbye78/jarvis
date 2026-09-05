@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.textfield.TextInputEditText
 import com.jarvis.assistant.di.GraphHolder
+import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
 import com.jarvis.assistant.llm.CredentialCheck
 import com.jarvis.assistant.llm.CredentialCheckController
 import com.jarvis.assistant.llm.OAuthCredentialValidator
@@ -26,6 +27,7 @@ import com.jarvis.assistant.util.CredentialsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Short alias for the material switch used across the Settings cards. */
 private typealias MemorySwitch = com.google.android.material.materialswitch.MaterialSwitch
@@ -74,6 +76,10 @@ interface SettingsCallbacks {
  * wake-word configuration. All persistence and detector control is delegated
  * to [SettingsCallbacks]; this Activity only owns the UI and its wiring.
  */
+// The Settings surface is deliberately one screen with per-card blocks;
+// splitting it into fragments would add navigation ceremony without
+// reducing risk for a single-device, single-user app.
+@Suppress("LargeClass")
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var picovoiceKey: TextInputEditText
@@ -429,6 +435,138 @@ class SettingsActivity : AppCompatActivity() {
         quotaPlus.setOnClickListener {
             appPrefs.behaviorDailyQuota = (appPrefs.behaviorDailyQuota + 1).coerceIn(1, 5)
             renderBehaviorControls()
+        }
+
+        // ----------------------------------------------------------------
+        // COGNITIVE_PLAN Phase 3 (§11/§12.4-3/§12.4-4): semantic recall.
+        // Selector AUTO/CLOUD/LOCAL/OFF (default AUTO, §12.4-3), the
+        // on-device benchmark action (static probes only — no user data
+        // egress), and the opt-in vector build with the §9.2 privacy
+        // disclosure for the cloud branch.
+        // ----------------------------------------------------------------
+        val embedderOrder = listOf("AUTO", "CLOUD", "LOCAL", "OFF")
+        val embedderLabels = mapOf(
+            "AUTO" to getString(R.string.settings_semantic_embedder_auto),
+            "CLOUD" to getString(R.string.settings_semantic_embedder_cloud),
+            "LOCAL" to getString(R.string.settings_semantic_embedder_local),
+            "OFF" to getString(R.string.settings_semantic_embedder_off),
+        )
+        val engineLabels = mapOf(
+            "local-lexical-v1" to getString(R.string.settings_semantic_embedder_local),
+            "gigachat-embeddings" to getString(R.string.settings_semantic_embedder_cloud),
+        )
+        val selectorButton = findViewById<Button>(R.id.embedderSelectorButton)
+        val embedderStatus = findViewById<TextView>(R.id.embedderStatusText)
+        val benchmarkResult = findViewById<TextView>(R.id.semanticBenchmarkResult)
+        val vectorsStatus = findViewById<TextView>(R.id.semanticVectorsStatus)
+
+        fun renderEmbedderSelector() {
+            selectorButton.text = embedderLabels[appPrefs.memoryEmbedder]
+        }
+        renderEmbedderSelector()
+        selectorButton.setOnClickListener {
+            val next = embedderOrder[
+                (embedderOrder.indexOf(appPrefs.memoryEmbedder) + 1).mod(embedderOrder.size),
+            ]
+            appPrefs.memoryEmbedder = next
+            renderEmbedderSelector()
+        }
+
+        lifecycleScope.launch {
+            val graph = GraphHolder.graph
+            if (graph == null) {
+                embedderStatus.setText(R.string.voice_service_not_running)
+                return@launch
+            }
+            // Provenance line: benchmark verdict + stored vector count.
+            val metaDao = graph.database.memoryMetaDao()
+            val winner = runCatching { metaDao.get(MemoryMetaEntity.KEY_EMBEDDER_WINNER) }.getOrNull()
+            val vectorEngine = runCatching { metaDao.get(MemoryMetaEntity.KEY_VECTORS_ENGINE) }.getOrNull()
+            val vectorCount = runCatching {
+                vectorEngine?.let { graph.database.factVectorDao().countForEngine(it) } ?: 0
+            }.getOrElse { 0 }
+            embedderStatus.text = if (winner == null) {
+                getString(R.string.settings_semantic_status_no_winner, vectorCount)
+            } else {
+                getString(
+                    R.string.settings_semantic_status,
+                    engineLabels[winner] ?: winner,
+                    vectorCount,
+                )
+            }
+            // Backfill progress lives on the cognitive scope — mirror it here.
+            graph.cognitiveCoordinator.vectorBackfill.progress.collect { p ->
+                vectorsStatus.text = when {
+                    p == null -> ""
+                    p.running -> getString(R.string.settings_semantic_vectors_progress, p.done, p.total)
+                    p.error != null -> getString(
+                        R.string.settings_semantic_vectors_failed,
+                        p.error.take(60),
+                    )
+                    else -> getString(R.string.settings_semantic_vectors_done, p.done)
+                }
+            }
+        }
+
+        findViewById<Button>(R.id.semanticBenchmarkButton).setOnClickListener {
+            benchmarkResult.setText(R.string.settings_semantic_benchmark_running)
+            lifecycleScope.launch {
+                val graph = GraphHolder.graph
+                if (graph == null) {
+                    benchmarkResult.setText(R.string.voice_service_not_running)
+                    return@launch
+                }
+                val outcome = withContext(Dispatchers.IO) {
+                    runCatching { graph.cognitiveCoordinator.runRetrievalBenchmark() }
+                        .getOrNull()
+                }
+                benchmarkResult.text = if (outcome == null) {
+                    getString(R.string.settings_semantic_benchmark_failed)
+                } else {
+                    getString(
+                        R.string.settings_semantic_benchmark_result,
+                        outcome.winner?.let { engineLabels[it] ?: it }
+                            ?: getString(R.string.settings_semantic_no_winner_short),
+                        outcome.localReport.take(160),
+                    )
+                }
+            }
+        }
+
+        findViewById<Button>(R.id.semanticVectorsButton).setOnClickListener {
+            lifecycleScope.launch {
+                val graph = GraphHolder.graph
+                if (graph == null) {
+                    vectorsStatus.setText(R.string.voice_service_not_running)
+                    return@launch
+                }
+                val engineId = runCatching {
+                    graph.cognitiveCoordinator.resolvedEngineId()
+                }.getOrNull()
+                if (engineId == null) {
+                    vectorsStatus.setText(R.string.settings_semantic_vectors_no_engine)
+                    return@launch
+                }
+                // §12.4-4/§9.2: explicit opt-in; the cloud branch discloses
+                // the fact-value egress, the local branch confirms the
+                // on-device-only guarantee.
+                val message = if (engineId == "gigachat-embeddings") {
+                    R.string.settings_semantic_vectors_confirm_cloud
+                } else {
+                    R.string.settings_semantic_vectors_confirm_local
+                }
+                AlertDialog.Builder(this@SettingsActivity)
+                    .setTitle(R.string.settings_semantic_vectors_confirm_title)
+                    .setMessage(message)
+                    .setPositiveButton(R.string.settings_memory_backfill) { _, _ ->
+                        val started = graph.cognitiveCoordinator.startVectorBuild(engineId)
+                        if (!started) {
+                            vectorsStatus.setText(R.string.settings_semantic_vectors_running)
+                        }
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
         }
 
         // ------------------------------------------------------------------

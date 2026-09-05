@@ -291,6 +291,16 @@ class AppGraph(
             ruleDao = database.habitRuleDao(),
             behaviorLogDao = database.behaviorLogDao(),
             summaryDao = database.sessionSummaryDao(),
+            // ---- COGNITIVE_PLAN Phase 3 (§11): semantic recall ----
+            vectorDao = database.factVectorDao(),
+            entityDao = database.entityDao(),
+            embedderChoice = prefsFlow.memoryEmbedder,
+            cloudEmbedder = com.jarvis.assistant.cognitive.embed.GigaChatEmbedder(
+                embeddingsEndpoint = com.jarvis.assistant.cognitive.embed.GigaChatEmbedder
+                    .endpointFor(config.gigaChatEndpoint),
+                postJson = com.jarvis.assistant.cognitive.embed.GigaChatEmbedder
+                    .gigaChatHttpTransport(httpClient) { tokenManager.getGigaChatToken() },
+            ),
             // §12.4-1: default OFF; the Settings card flips the pref and the
             // flow pushes it here live (no restart).
             behaviorEnabled = prefsFlow.behaviorEnabled,

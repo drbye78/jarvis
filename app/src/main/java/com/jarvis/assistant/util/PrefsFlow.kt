@@ -93,6 +93,11 @@ class PrefsFlow(private val appPrefs: AppPrefs) : SharedPreferences.OnSharedPref
     private val _behaviorDailyQuota = MutableStateFlow(appPrefs.behaviorDailyQuota)
     val behaviorDailyQuota: StateFlow<Int> = _behaviorDailyQuota.asStateFlow()
 
+    // --- COGNITIVE_PLAN Phase 3: semantic-recall selector (§12.4-3) --------
+
+    private val _memoryEmbedder = MutableStateFlow(appPrefs.memoryEmbedder)
+    val memoryEmbedder: StateFlow<String> = _memoryEmbedder.asStateFlow()
+
     init {
         prefs.registerOnSharedPreferenceChangeListener(this)
     }
@@ -123,6 +128,7 @@ class PrefsFlow(private val appPrefs: AppPrefs) : SharedPreferences.OnSharedPref
             AppPrefs.KEY_BEHAVIOR_QUIET_START -> _behaviorQuietStart.value = appPrefs.behaviorQuietStart
             AppPrefs.KEY_BEHAVIOR_QUIET_END -> _behaviorQuietEnd.value = appPrefs.behaviorQuietEnd
             AppPrefs.KEY_BEHAVIOR_DAILY_QUOTA -> _behaviorDailyQuota.value = appPrefs.behaviorDailyQuota
+            AppPrefs.KEY_MEMORY_EMBEDDER -> _memoryEmbedder.value = appPrefs.memoryEmbedder
         }
     }
 }

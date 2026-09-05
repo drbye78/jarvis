@@ -12,13 +12,28 @@ import com.jarvis.assistant.cognitive.behavior.HabitDetector
 import com.jarvis.assistant.cognitive.behavior.ProactivePresenter
 import com.jarvis.assistant.cognitive.behavior.ProactiveSpeaker
 import com.jarvis.assistant.cognitive.data.CommandEventEntity
+import com.jarvis.assistant.cognitive.data.EntityDao
+import com.jarvis.assistant.cognitive.data.FactEntityLinkEntity
+import com.jarvis.assistant.cognitive.data.FactVectorDao
 import com.jarvis.assistant.cognitive.data.HabitRuleEntity
+import com.jarvis.assistant.cognitive.data.NoopVectorDaos
 import com.jarvis.assistant.cognitive.extract.ExtractionContract
 import com.jarvis.assistant.cognitive.extract.ExtractionGate
 import com.jarvis.assistant.cognitive.extract.ExtractionQueueWorker
 import com.jarvis.assistant.cognitive.extract.FactNormalizer
 import com.jarvis.assistant.cognitive.extract.MemoryWriter
 import com.jarvis.assistant.cognitive.extract.Summarizer
+import com.jarvis.assistant.cognitive.embed.EmbedderBenchmark
+import com.jarvis.assistant.cognitive.embed.EmbedderChoice
+import com.jarvis.assistant.cognitive.embed.EmbedderSelection
+import com.jarvis.assistant.cognitive.embed.EmbeddingEngine
+import com.jarvis.assistant.cognitive.embed.HybridRecall
+import com.jarvis.assistant.cognitive.embed.LexicalEmbedder
+import com.jarvis.assistant.cognitive.embed.RetrievalGate
+import com.jarvis.assistant.cognitive.embed.RetrievalProbes
+import com.jarvis.assistant.cognitive.embed.VectorBackfill
+import com.jarvis.assistant.cognitive.embed.VectorMath
+import com.jarvis.assistant.cognitive.entity.EntityIndex
 import com.jarvis.assistant.cognitive.maint.Maintenance
 import com.jarvis.assistant.cognitive.model.FactSnapshot
 import com.jarvis.assistant.cognitive.model.FactStatus
@@ -53,6 +68,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -97,6 +113,16 @@ class CognitiveCoordinator(
     private val ruleDao: com.jarvis.assistant.cognitive.data.HabitRuleDao = com.jarvis.assistant.cognitive.data.NoopBehaviorDaos,
     private val behaviorLogDao: com.jarvis.assistant.cognitive.data.BehaviorLogDao = com.jarvis.assistant.cognitive.data.NoopBehaviorDaos,
     private val summaryDao: com.jarvis.assistant.cognitive.data.SessionSummaryDao = com.jarvis.assistant.cognitive.data.NoopBehaviorDaos,
+    // ---- COGNITIVE_PLAN Phase 3: semantic recall (§11/§12.4-3/§12.4-4) -----
+    private val vectorDao: FactVectorDao = NoopVectorDaos,
+    private val entityDao: EntityDao = NoopVectorDaos,
+    /** §12.4-3 selector pref value (AUTO | CLOUD | LOCAL | OFF). Reactive. */
+    private val embedderChoice: StateFlow<String> = kotlinx.coroutines.flow.MutableStateFlow("AUTO"),
+    private val localEmbedder: EmbeddingEngine = LexicalEmbedder(),
+    /** Null = the cloud embeddings branch is not constructed. */
+    private val cloudEmbedder: EmbeddingEngine? = null,
+    /** §10.2 CI ship-or-reject fallback for AUTO ([RetrievalGate]). */
+    private val localShipsByCiGate: Boolean = RetrievalGate.LOCAL_BRANCH_SHIPS,
     /** §12.4-1: proactive speech ships DEFAULT OFF. */
     private val behaviorEnabled: StateFlow<Boolean> = kotlinx.coroutines.flow.MutableStateFlow(false),
     private val behaviorQuietStart: StateFlow<Int> = kotlinx.coroutines.flow.MutableStateFlow(23),
@@ -171,6 +197,16 @@ class CognitiveCoordinator(
         nowMs = nowMs,
     ).also { it.background = scope }
 
+    /** §12.4-4: opt-in vector builder (Settings «Построить векторы»). */
+    val vectorBackfill = VectorBackfill(
+        factDao = factDao,
+        vectorDao = vectorDao,
+        metaDao = metaDao,
+        cloudEnabled = { cloudEnabled.value },
+        inTransaction = inTransaction,
+        nowMs = nowMs,
+    )
+
     /** Wake signal for the drain loop (coalescing, never blocks the caller). */
     private val wakeChannel = Channel<Unit>(
         capacity = 1,
@@ -216,22 +252,25 @@ class CognitiveCoordinator(
 
         // Lexical union: FTS hits get the plan's +0.3 boost (§7.2).
         val ftsHits = lexicalHits(utterance)
-        val ranked = ranker
-            .topFacts(visible, utterance, limit = GATHER_POOL, maxPerCategory = SPREAD_POOL)
-            .map { scored ->
-                if (scored.fact.factId in ftsHits) {
-                    scored.copy(score = scored.score + FactRanker.LEXICAL_HIT_BOOST, lexicalHit = true)
-                } else {
-                    scored
-                }
-            }
-            .sortedWith(compareByDescending<ScoredFact> { it.score }.thenBy { it.fact.factId })
-            .take(RECALL_LIMIT)
+        var ranked = boostedList(
+            ranker.topFacts(visible, utterance, limit = GATHER_POOL, maxPerCategory = SPREAD_POOL),
+            ftsHits,
+            markLexical = true,
+        )
+        // §11 recall integration: a «кто мой начальник?» question maps onto
+        // the relation-predicate vocabulary and boosts the answering facts
+        // (same flat boost as an FTS hit — deterministic, no entity-table
+        // read on the hot path).
+        ranked = boostedList(ranked, EntityIndex.relationBoostFactIds(visible, utterance))
+        // §11 vector channel — LOCAL engine ONLY inside the gather budget
+        // (see [applyVectorChannel]).
+        ranked = applyVectorChannel(ranked, utterance, visible)
 
-        if (ranked.isEmpty()) return ""
-        writeBehindRecallStats(ranked)
+        val finalRanked = ranked.take(RECALL_LIMIT)
+        if (finalRanked.isEmpty()) return ""
+        writeBehindRecallStats(finalRanked)
 
-        val data: MemorySectionData = renderMemorySection(ranked, degraded = false, strings)
+        val data: MemorySectionData = renderMemorySection(finalRanked, degraded = false, strings)
         return MemorySectionRenderer.render(data, strings)
     }
 
@@ -246,6 +285,124 @@ class CognitiveCoordinator(
             Timber.w(e, "Cognitive: FTS search failed — continuing without lexical boost")
             emptySet()
         }
+    }
+
+    /**
+     * Flat +0.3 boost (the plan's lexical-hit weight, §7.2) for the given
+     * fact ids, then the deterministic re-sort. Shared by the FTS lane and
+     * the §11 relation-question lane.
+     */
+    private fun boostedList(
+        list: List<ScoredFact>,
+        ids: Set<String>,
+        markLexical: Boolean = false,
+    ): List<ScoredFact> {
+        if (ids.isEmpty()) return list
+        return list
+            .map { scored ->
+                if (scored.fact.factId in ids) {
+                    scored.copy(
+                        score = scored.score + FactRanker.LEXICAL_HIT_BOOST,
+                        lexicalHit = scored.lexicalHit || markLexical,
+                    )
+                } else {
+                    scored
+                }
+            }
+            .sortedWith(compareByDescending<ScoredFact> { it.score }.thenBy { it.fact.factId })
+    }
+
+    /**
+     * §11 vector channel — LOCAL engine ONLY inside the gather budget: a
+     * cloud round-trip can never fit 40 ms (the CLOUD engine serves
+     * recall_facts and the benchmark instead; documented deviation, honest
+     * TTFT cost). Null engine (selector OFF / unproven AUTO) → the list
+     * passes through untouched, byte-path identical to Phase 2.
+     */
+    private suspend fun applyVectorChannel(
+        ranked: List<ScoredFact>,
+        utterance: String?,
+        visible: List<FactSnapshot>,
+    ): List<ScoredFact> {
+        if (utterance == null) return ranked
+        val engine = resolveActiveEngine() ?: return ranked
+        if (engine.kind != EmbeddingEngine.Kind.LOCAL) return ranked
+        val vectorHits = vectorTopFacts(utterance, engine, visible.mapTo(HashSet()) { it.factId })
+            ?: return ranked
+        val byId = ranked.associateBy { it.fact.factId }
+        val fused = HybridRecall.rrfFuse(scoredFactIds(ranked), vectorHits).mapNotNull { byId[it] }
+        return fused.ifEmpty { ranked }
+    }
+
+    // ------------------------------------------------------------------
+    // SEMANTIC RECALL (§11): engine resolution + the cosine channel.
+    // ------------------------------------------------------------------
+
+    /**
+     * §12.4-3: which engine is ACTIVE right now. Reads the selector flow
+     * AND the benchmark verdict (memory_meta) — both change live, so a
+     * Settings toggle or a fresh benchmark result applies from the very
+     * next turn (plan principle 5; the live-toggle regression test pins
+     * this).
+     */
+    private suspend fun resolveActiveEngine(): EmbeddingEngine? {
+        val choice = EmbedderChoice.fromPref(embedderChoice.value)
+        val winner = try {
+            metaDao.get(MemoryMetaEntity.KEY_EMBEDDER_WINNER)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null // no verdict recorded — AUTO falls back to the CI gate
+        }
+        val engineId = EmbedderSelection.resolve(
+            choice = choice,
+            benchmarkWinner = winner,
+            cloudUsable = cloudEmbedder != null,
+            localShipsByCiGate = localShipsByCiGate,
+        )
+        return engineById(engineId)
+    }
+
+    private fun engineById(engineId: String?): EmbeddingEngine? = when (engineId) {
+        EmbeddingEngine.LOCAL_ID -> localEmbedder
+        EmbeddingEngine.CLOUD_ID -> cloudEmbedder
+        else -> null
+    }
+
+    /**
+     * Cosine channel over stored vectors, filtered to the visible fact
+     * set. Returns null on any failure or absence — the lexical lane NEVER
+     * degrades because the vector lane hiccupped (§7.2 fail-quiet). CLOUD
+     * calls are additionally gated by the §9.2 egress switch.
+     */
+    private suspend fun vectorTopFacts(
+        utterance: String,
+        engine: EmbeddingEngine,
+        allowedFactIds: Set<String>,
+    ): List<String>? = try {
+        if (engine.kind == EmbeddingEngine.Kind.CLOUD && !cloudEnabled.value) {
+            null
+        } else {
+            val rows = vectorDao.forEngine(engine.engineId)
+            val candidates = rows.filter { it.factId in allowedFactIds && it.dim == engine.dim }
+            if (candidates.isEmpty()) {
+                null
+            } else {
+                val queryVec = engine.embed(listOf(utterance)).first()
+                VectorMath
+                    .topK(
+                        queryVec,
+                        candidates.map { it.factId to VectorMath.bytesToFloats(it.vec) },
+                        k = EmbedderBenchmark.VECTOR_CHANNEL_K,
+                    )
+                    .ifEmpty { null }
+            }
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Timber.w(e, "Cognitive: vector channel failed — continuing lexical-only")
+        null
     }
 
     /** Write-behind recall statistics (plan §7.2) — never on the hot path. */
@@ -305,7 +462,8 @@ class CognitiveCoordinator(
                 autoExtractEnabled,
                 cloudEnabled,
                 sensitiveVisible,
-            ) { _, _, _, _ -> Unit }.collect { wake() }
+                embedderChoice,
+            ) { _, _, _, _, _ -> Unit }.collect { wake() }
         }
         drainJob = scope.launch(CoroutineName("cognitive-drain")) {
             // Crash recovery: RUNNING rows from a dead process → PENDING
@@ -431,16 +589,7 @@ class CognitiveCoordinator(
             val selected = if (query.isNullOrBlank()) {
                 ranker.topFacts(active, null)
             } else {
-                val hits = lexicalHits(query)
-                ranker.topFacts(active, query)
-                    .map { scored ->
-                        if (scored.fact.factId in hits) {
-                            scored.copy(score = scored.score + FactRanker.LEXICAL_HIT_BOOST, lexicalHit = true)
-                        } else {
-                            scored
-                        }
-                    }
-                    .sortedWith(compareByDescending<ScoredFact> { it.score }.thenBy { it.fact.factId })
+                rankedForQuery(active, query)
             }
             if (selected.isEmpty()) {
                 MemoryOutcome.RecallEmpty
@@ -578,6 +727,148 @@ class CognitiveCoordinator(
         scope.launch(CoroutineName("cognitive-telemetry")) {
             recordCommandEvent(tool, argsJson, ok, latencyMs)
         }
+    }
+
+    private fun scoredFactIds(scoredList: List<ScoredFact>): List<String> =
+        scoredList.map { it.fact.factId }
+
+    /**
+     * The `recall_facts(query)` ranking: lexical lane → §11 relation
+     * boost → §11 vector channel. BOTH engines are allowed here: the tool
+     * path already tolerates tool latency (weather/music do I/O); CLOUD
+     * embeds the query via GigaChat, gated by the §9.2 egress switch.
+     */
+    private suspend fun rankedForQuery(
+        active: List<FactSnapshot>,
+        query: String,
+    ): List<ScoredFact> {
+        var scoredList = boostedList(
+            ranker.topFacts(active, query),
+            lexicalHits(query),
+            markLexical = true,
+        )
+        scoredList = boostedList(scoredList, EntityIndex.relationBoostFactIds(active, query))
+        val engine = resolveActiveEngine()
+        if (engine != null) {
+            val vectorHits = vectorTopFacts(query, engine, active.mapTo(HashSet()) { it.factId })
+            if (!vectorHits.isNullOrEmpty()) {
+                val byId = scoredList.associateBy { it.fact.factId }
+                val fused = HybridRecall
+                    .rrfFuse(scoredFactIds(scoredList), vectorHits)
+                    .mapNotNull { byId[it] }
+                if (fused.isNotEmpty()) scoredList = fused
+            }
+        }
+        return scoredList
+    }
+
+    // ------------------------------------------------------------------
+    // SEMANTIC RECALL — user-facing entries (§12.4-3/§12.4-4): the Settings
+    // card calls these. All are opt-in; nothing here runs on a timer.
+    // ------------------------------------------------------------------
+
+    /**
+     * §11/§12.4-3: run the retrieval benchmark over the STATIC synthetic
+     * probe set ([RetrievalProbes] — never user facts, so the cloud branch
+     * needs no privacy dialog), write the winner to memory_meta, and return
+     * a structured result for the UI. The LOCAL branch always runs; the
+     * CLOUD branch first probes entitlement (a 4xx is an honest "not
+     * entitled", NOT a network failure to retry forever).
+     */
+    suspend fun runRetrievalBenchmark(): BenchmarkOutcome {
+        val fixtures = RetrievalProbes.fixtures
+        val localReport = EmbedderBenchmark.evaluate(
+            fixtures,
+            EmbedderBenchmark.EngineAdapter { texts -> localEmbedder.embed(texts) },
+        )
+
+        var cloudReport: EmbedderBenchmark.EngineReport? = null
+        var entitlement: String? = null
+        val cloud = cloudEmbedder
+        if (cloud != null) {
+            when (val probe = cloud.checkEntitlement()) {
+                is EmbeddingEngine.Entitlement.Ok -> {
+                    entitlement = "ok"
+                    metaDao.putValue(MemoryMetaEntity.KEY_CLOUD_EMBED_ENTITLED, nowMs().toString())
+                    cloudReport = try {
+                        EmbedderBenchmark.evaluate(
+                            fixtures,
+                            EmbedderBenchmark.EngineAdapter { texts -> cloud.embed(texts) },
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Timber.w(e, "Cognitive: cloud benchmark failed after entitlement")
+                        null
+                    }
+                }
+                is EmbeddingEngine.Entitlement.Denied -> {
+                    entitlement = "denied:${probe.code}"
+                    metaDao.putValue(MemoryMetaEntity.KEY_CLOUD_EMBED_UNAVAILABLE, probe.code.toString())
+                }
+                is EmbeddingEngine.Entitlement.Transient -> entitlement = "transient"
+            }
+        }
+
+        // §10.2: winner = the best SHIPPING branch (≥ 15 % over baseline).
+        val winner = listOfNotNull(
+            EmbeddingEngine.LOCAL_ID.takeIf { localReport.ships() } to localReport,
+            cloudReport?.let { EmbeddingEngine.CLOUD_ID.takeIf { _ -> it.ships() } to it },
+        ).maxByOrNull { (_, report) -> report.hybridRecallAt5 }?.first
+        val stored = winner != null
+        if (winner != null) {
+            metaDao.putValue(MemoryMetaEntity.KEY_EMBEDDER_WINNER, winner)
+        }
+        Timber.i(
+            "Cognitive: benchmark done — local=[%s] cloud=[%s] winner=%s",
+            localReport,
+            cloudReport?.toString() ?: "n/a",
+            winner ?: "none",
+        )
+        return BenchmarkOutcome(
+            localReport = localReport.toString(),
+            cloudReport = cloudReport?.toString(),
+            winner = winner,
+            entitlement = entitlement,
+            winnerStored = stored,
+        )
+    }
+
+    data class BenchmarkOutcome(
+        val localReport: String,
+        val cloudReport: String?,
+        val winner: String?,
+        val entitlement: String?,
+        val winnerStored: Boolean,
+    )
+
+    /**
+     * Settings seam: the engine the §12.4-3 selector resolves to RIGHT
+     * NOW (null = vectors off). The vectors action builds for THIS engine.
+     */
+    suspend fun resolvedEngineId(): String? = resolveActiveEngine()?.engineId
+
+    /**
+     * §12.4-4: start the opt-in vector build for [engineId] on the
+     * cognitive scope. Returns false when the engine is unknown or a run
+     * is already in progress; progress is observable via
+     * [vectorBackfill.progress]. The CALLER owns the privacy dialog for
+     * the CLOUD branch (fact values egress — §9.2).
+     */
+    fun startVectorBuild(engineId: String): Boolean {
+        val engine = engineById(engineId) ?: return false
+        if (vectorBackfill.progress.value?.running == true) return false
+        scope.launch(CoroutineName("cognitive-vector-backfill")) {
+            try {
+                val written = vectorBackfill.runFor(engine)
+                Timber.i("Cognitive: vector backfill wrote %d vectors (%s)", written, engineId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e, "Cognitive: vector backfill failed")
+            }
+        }
+        return true
     }
 
     /** §8.2: the user executed the suggested command within the window. */
@@ -839,8 +1130,67 @@ class CognitiveCoordinator(
             val made = summarizer.runBacklogAndDigest()
             if (made > 0) Timber.i("Cognitive: %d summary batch(es) produced", made)
         }.onFailure { Timber.e(it, "Cognitive: summarization step failed") }
+        // ---- Phase 3 steps (§11) ----
+        runCatching { vectorMaintenance() }
+            .onFailure { Timber.e(it, "Cognitive: vector maintenance failed") }
+        runCatching { deriveEntities() }
+            .onFailure { Timber.e(it, "Cognitive: entity derivation failed") }
         runCatching {
             metaDao.putValue(MemoryMetaEntity.KEY_LAST_MAINTENANCE_AT, now.toString())
+        }
+    }
+
+    /**
+     * §11/§5: keep the vector store consistent — GC vectors of facts that
+     * left ACTIVE (superseded/forgotten/deleted), then top-up the facts
+     * that appeared since the last build. Only the engine the user actually
+     * built with is maintained; no engine recorded → no-op.
+     */
+    private suspend fun vectorMaintenance() {
+        val engineId = metaDao.get(MemoryMetaEntity.KEY_VECTORS_ENGINE) ?: return
+        val engine = when (engineId) {
+            EmbeddingEngine.LOCAL_ID -> localEmbedder
+            EmbeddingEngine.CLOUD_ID -> cloudEmbedder?.takeIf { cloudEnabled.value } ?: return
+            else -> return
+        }
+        val activeIds = factDao.activeFacts().mapTo(HashSet()) { it.factId }
+        val rows = vectorDao.forEngine(engineId)
+        val stale = rows.filter { it.factId !in activeIds }.map { it.factId }
+        if (stale.isNotEmpty()) vectorDao.deleteByFactIds(stale)
+        val known = rows.mapTo(HashSet()) { it.factId }
+        if (activeIds.any { it !in known }) {
+            runCatching { vectorBackfill.runFor(engine) }
+                .onFailure { Timber.w(it, "Cognitive: vector top-up failed (resumes next night)") }
+        }
+    }
+
+    /**
+     * §11: rebuild the two-table entity index from ACTIVE RELATION facts
+     * (idempotent full rebuild, atomic in one transaction — the recall
+     * boost itself never reads these tables, so derivation lag cannot
+     * corrupt recall).
+     */
+    private suspend fun deriveEntities() {
+        val now = nowMs()
+        val derived = EntityIndex.deriveEntities(factDao.activeFacts().map { it.toSnapshot() })
+        if (derived.isEmpty() && entityDao.all().isEmpty()) return
+        inTransaction {
+            entityDao.wipeLinks()
+            entityDao.wipeAll()
+            derived.forEach { entity ->
+                val id = entityDao.upsertByName(
+                    entity.name,
+                    entity.nameNormalized,
+                    entity.kind.name,
+                    now,
+                )
+                entity.factIds.forEach { factId ->
+                    entityDao.insertLink(
+                        FactEntityLinkEntity(factId, id, FactEntityLinkEntity.ROLE_OBJECT),
+                    )
+                }
+            }
+            entityDao.deleteOrphans()
         }
     }
 
@@ -911,7 +1261,6 @@ class CognitiveCoordinator(
 
     /** «Забыть всё» (plan §9.2): ALL cognitive tables, never `messages`. */
     suspend fun wipeAll() = inTransaction {
-        println("DBG9 wipeAll actually entered")
         factDao.wipeAll()
         queueDao.wipeAll()
         metaDao.wipeAll()
@@ -919,6 +1268,9 @@ class CognitiveCoordinator(
         ruleDao.wipeAll()
         behaviorLogDao.wipeAll()
         summaryDao.wipeAll()
+        // Phase 3: the semantic stores are cognitive data too.
+        vectorDao.wipeAll()
+        entityDao.wipeAll()
     }
 
     /** Export (plan §7 principle 7): every fact + meta, JSON. */
@@ -949,6 +1301,26 @@ class CognitiveCoordinator(
                     )
                 }
             }
+            // Phase 3 (§11): the derived entity index + vector-store
+            // provenance are part of the memory the user can inspect/export.
+            // Reads happen BEFORE the JSON builder (its lambdas are not
+            // suspend).
+            val entityLinks = entityDao.allLinks().groupBy { it.entityId }
+            val entities = entityDao.all()
+            putJsonArray("entities") {
+                entities.forEach { entity ->
+                    add(
+                        buildJsonObject {
+                            put("name", entity.name)
+                            put("kind", entity.kind)
+                            putJsonArray("factIds") {
+                                entityLinks[entity.id].orEmpty().forEach { add(JsonPrimitive(it.factId)) }
+                            }
+                        },
+                    )
+                }
+            }
+            put("vectorEngine", metaDao.get(MemoryMetaEntity.KEY_VECTORS_ENGINE) ?: "")
             putJsonObject("meta") {
                 meta.forEach { put(it.key, it.value) }
             }
@@ -1043,7 +1415,7 @@ class CognitiveCoordinator(
         /** Compaction over-fetch buffer. */
         const val BUFFER = 10
 
-        const val SCHEMA_REV = "5"
+        const val SCHEMA_REV = "6"
 
         private val json = Json { prettyPrint = false }
 

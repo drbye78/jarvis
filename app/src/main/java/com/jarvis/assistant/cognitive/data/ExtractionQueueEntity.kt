@@ -50,5 +50,19 @@ data class MemoryMetaEntity(
         const val KEY_LAST_MAINTENANCE_AT = "lastMaintenanceAt"
         const val KEY_DAILY_COUNTERS_JSON = "dailyCountersJson"
         const val KEY_EXTRACTION_BACKFILL_DONE = "extractionBackfillDone"
+
+        // ---- COGNITIVE_PLAN Phase 3 (semantic recall) --------------------
+
+        /** Engine id the on-device benchmark picked (§12.4-3 AUTO default). */
+        const val KEY_EMBEDDER_WINNER = "embedderWinner"
+
+        /** Engine whose vector backfill completed (vectors exist for it). */
+        const val KEY_VECTORS_ENGINE = "vectorsEngine"
+
+        /** Epoch ms of the last successful cloud-embeddings entitlement probe. */
+        const val KEY_CLOUD_EMBED_ENTITLED = "cloudEmbedEntitled"
+
+        /** HTTP code of the last failed entitlement probe (4xx = not entitled). */
+        const val KEY_CLOUD_EMBED_UNAVAILABLE = "cloudEmbedUnavailable"
     }
 }

@@ -1,0 +1,8 @@
+{
+    "fixtures": 50,
+    "baselineRecallAt5": 0.98,
+    "hybridRecallAt5": 0.8,
+    "improvement": -0.18367346938775503,
+    "ships": false,
+    "recordedAt": "2026-09-05 phase-3 initial 50-fixture set (local-lexical-v1 hybrid)"
+}

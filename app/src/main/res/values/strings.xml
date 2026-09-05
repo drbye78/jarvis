@@ -355,5 +355,29 @@
     <string name="memory_item_deleted">Воспоминание удалено</string>
     <string name="settings_memory_queue">В очереди на разбор: %1$d</string>
     <string name="settings_memory_export_done">Экспортировано</string>
+
+    <!-- COGNITIVE_PLAN Phase 3 (§11/§12.4-3/§12.4-4): semantic recall -->
+    <string name="settings_semantic_section">Семантический поиск по памяти</string>
+    <string name="settings_semantic_hint">Дополнительный способ находить воспоминания по смыслу. Движок «на устройстве» работает полностью офлайн; «облако» отправляет тексты воспоминаний и запросы в GigaChat. По умолчанию — «авто»: поиск включается, только если проверка качества покажет реальную пользу.</string>
+    <string name="settings_semantic_embedder_auto">Как искать: авто</string>
+    <string name="settings_semantic_embedder_cloud">Как искать: облако (GigaChat)</string>
+    <string name="settings_semantic_embedder_local">Как искать: на устройстве</string>
+    <string name="settings_semantic_embedder_off">Как искать: выключено</string>
+    <string name="settings_semantic_status">Победитель проверки: %1$s · векторов: %2$d</string>
+    <string name="settings_semantic_status_no_winner">Победитель проверки: нет · векторов: %1$d</string>
+    <string name="settings_semantic_no_winner_short">нет</string>
+    <string name="settings_semantic_benchmark">Проверить качество поиска</string>
+    <string name="settings_semantic_benchmark_running">Идёт проверка…</string>
+    <string name="settings_semantic_benchmark_failed">Проверка не удалась — попробуйте позже</string>
+    <string name="settings_semantic_benchmark_result">Победитель: %1$s\n%2$s</string>
+    <string name="settings_semantic_vectors">Построить векторы памяти</string>
+    <string name="settings_semantic_vectors_running">Построение уже идёт</string>
+    <string name="settings_semantic_vectors_confirm_title">Построить векторы памяти?</string>
+    <string name="settings_semantic_vectors_confirm_local">Ассистент вычислит векторы для всех воспоминаний прямо на устройстве — ни один факт не покинет планшет.</string>
+    <string name="settings_semantic_vectors_confirm_cloud">Тексты воспоминаний будут отправлены в GigaChat для вычисления векторов. Результаты хранятся только на устройстве. Продолжить?</string>
+    <string name="settings_semantic_vectors_progress">Векторы: %1$d из %2$d</string>
+    <string name="settings_semantic_vectors_done">Готово: %1$d векторов</string>
+    <string name="settings_semantic_vectors_failed">Не удалось построить векторы: %1$s</string>
+    <string name="settings_semantic_vectors_no_engine">Сначала выберите движок поиска выше (или включите память)</string>
     <string name="settings_memory_export_failed">Не удалось экспортировать память</string>
 </resources>

@@ -356,5 +356,29 @@
     <string name="memory_item_deleted">Memory deleted</string>
     <string name="settings_memory_queue">Queued for processing: %1$d</string>
     <string name="settings_memory_export_done">Exported</string>
+
+    <!-- COGNITIVE_PLAN Phase 3 (§11/§12.4-3/§12.4-4): semantic recall -->
+    <string name="settings_semantic_section">Semantic memory search</string>
+    <string name="settings_semantic_hint">An extra way to find memories by meaning, not just words. The on-device engine works fully offline; the cloud engine sends memory texts and queries to GigaChat. Default is Auto: search turns on only if the quality check proves a real benefit.</string>
+    <string name="settings_semantic_embedder_auto">Search mode: auto</string>
+    <string name="settings_semantic_embedder_cloud">Search mode: cloud (GigaChat)</string>
+    <string name="settings_semantic_embedder_local">Search mode: on-device</string>
+    <string name="settings_semantic_embedder_off">Search mode: off</string>
+    <string name="settings_semantic_status">Benchmark winner: %1$s · vectors: %2$d</string>
+    <string name="settings_semantic_status_no_winner">Benchmark winner: none · vectors: %1$d</string>
+    <string name="settings_semantic_no_winner_short">none</string>
+    <string name="settings_semantic_benchmark">Check search quality</string>
+    <string name="settings_semantic_benchmark_running">Running the check…</string>
+    <string name="settings_semantic_benchmark_failed">The check failed — try again later</string>
+    <string name="settings_semantic_benchmark_result">Winner: %1$s\n%2$s</string>
+    <string name="settings_semantic_vectors">Build memory vectors</string>
+    <string name="settings_semantic_vectors_running">A build is already running</string>
+    <string name="settings_semantic_vectors_confirm_title">Build memory vectors?</string>
+    <string name="settings_semantic_vectors_confirm_local">The assistant will compute vectors for all memories right on the device — no fact ever leaves the tablet.</string>
+    <string name="settings_semantic_vectors_confirm_cloud">Memory texts will be sent to GigaChat to compute vectors. Results are stored on the device only. Continue?</string>
+    <string name="settings_semantic_vectors_progress">Vectors: %1$d of %2$d</string>
+    <string name="settings_semantic_vectors_done">Done: %1$d vectors</string>
+    <string name="settings_semantic_vectors_failed">Failed to build vectors: %1$s</string>
+    <string name="settings_semantic_vectors_no_engine">Pick a search mode above first (or enable memory)</string>
     <string name="settings_memory_export_failed">Could not export memory</string>
 </resources>

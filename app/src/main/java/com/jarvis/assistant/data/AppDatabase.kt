@@ -8,14 +8,18 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.jarvis.assistant.cognitive.data.BehaviorLogEntity
 import com.jarvis.assistant.cognitive.data.CommandEventEntity
+import com.jarvis.assistant.cognitive.data.EntityRefEntity
 import com.jarvis.assistant.cognitive.data.ExtractionQueueEntity
+import com.jarvis.assistant.cognitive.data.FactEntityLinkEntity
+import com.jarvis.assistant.cognitive.data.FactVectorEntity
 import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
 import com.jarvis.assistant.cognitive.data.SessionSummaryEntity
 import com.jarvis.assistant.cognitive.data.UserFactEntity
 
 /**
- * Version 5 (COGNITIVE_PLAN Phase 2): adds the behaviour-layer tables.
+ * Version 6 (COGNITIVE_PLAN Phase 3): adds the semantic-recall tables on
+ * top of the Phase 2 behaviour tables.
  *
  * - v1→v2: DESTRUCTIVE by explicit decision (audit #21): the v1 `alarms`
  *   table was replaced by the unified `scheduled_alerts` schema and the v1
@@ -38,6 +42,10 @@ import com.jarvis.assistant.cognitive.data.UserFactEntity
  * - v4→v5 (COGNITIVE_PLAN 2.1–2.5): creates the four behaviour tables —
  *   `command_events`, `habit_rules`, `behavior_log`, `session_summaries` —
  *   all NEW, again no existing table is touched.
+ * - v5→v6 (COGNITIVE_PLAN Phase 3): creates the semantic-recall tables —
+ *   `fact_vectors` (one L2-normalized embedding per fact per engine),
+ *   `entities` and `fact_entities` (the two-table entity model derived
+ *   from RELATION facts). All NEW — existing tables untouched.
  * - DOWNGRADE: pre-release schema policy — an APK rollback (sideload, QA
  *   build) previously hit Room's IllegalStateException("Can't downgrade…")
  *   on first DB open; it now wipes destructively like the v1 stance instead
@@ -59,8 +67,11 @@ import com.jarvis.assistant.cognitive.data.UserFactEntity
         HabitRuleEntity::class,
         BehaviorLogEntity::class,
         SessionSummaryEntity::class,
+        FactVectorEntity::class,
+        EntityRefEntity::class,
+        FactEntityLinkEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -84,6 +95,11 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun behaviorLogDao(): com.jarvis.assistant.cognitive.data.BehaviorLogDao
 
     abstract fun sessionSummaryDao(): com.jarvis.assistant.cognitive.data.SessionSummaryDao
+
+    /** COGNITIVE_PLAN Phase 3: semantic-recall accessors. */
+    abstract fun factVectorDao(): com.jarvis.assistant.cognitive.data.FactVectorDao
+
+    abstract fun entityDao(): com.jarvis.assistant.cognitive.data.EntityDao
 
     companion object {
         @Volatile
@@ -282,7 +298,54 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        private val ALL_MIGRATIONS = arrayOf(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        /**
+         * COGNITIVE_PLAN Phase 3: migration from schema v5 → v6 (semantic
+         * recall). Creates the three NEW semantic tables with their indices;
+         * existing tables are untouched.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `fact_vectors` (" +
+                        "`factId` TEXT NOT NULL, " +
+                        "`engineId` TEXT NOT NULL, " +
+                        "`dim` INTEGER NOT NULL, " +
+                        "`vec` BLOB NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`factId`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_fact_vectors_engineId` " +
+                        "ON `fact_vectors` (`engineId`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `entities` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, " +
+                        "`nameNormalized` TEXT NOT NULL, " +
+                        "`kind` TEXT NOT NULL, " +
+                        "`firstSeenAt` INTEGER NOT NULL, " +
+                        "`lastSeenAt` INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_entities_nameNormalized` " +
+                        "ON `entities` (`nameNormalized`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `fact_entities` (" +
+                        "`factId` TEXT NOT NULL, " +
+                        "`entityId` INTEGER NOT NULL, " +
+                        "`role` TEXT NOT NULL, " +
+                        "PRIMARY KEY(`factId`, `entityId`, `role`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_fact_entities_entityId` " +
+                        "ON `fact_entities` (`entityId`)",
+                )
+            }
+        }
+
+        private val ALL_MIGRATIONS = arrayOf(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 
         /** Pre-release schema with no exportable history: wipe, don't crash (audit #21). */
         private val DESTRUCTIVE_FROM_VERSIONS = intArrayOf(1)

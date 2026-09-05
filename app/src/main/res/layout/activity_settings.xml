@@ -875,6 +875,66 @@
                         android:text="@string/settings_memory_sensitive_hint"
                         style="@style/TextAppearance.Jarvis.Hint" />
 
+                    <!-- COGNITIVE_PLAN Phase 3: semantic recall (§12.4-3/§12.4-4) -->
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:text="@string/settings_semantic_section"
+                        style="@style/TextAppearance.Jarvis.SectionHeader" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/settings_semantic_hint"
+                        style="@style/TextAppearance.Jarvis.Hint" />
+
+                    <Button
+                        android:id="@+id/embedderSelectorButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/settings_semantic_embedder_auto" />
+
+                    <TextView
+                        android:id="@+id/embedderStatusText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        style="@style/TextAppearance.Jarvis.Hint" />
+
+                    <Button
+                        android:id="@+id/semanticBenchmarkButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/settings_semantic_benchmark" />
+
+                    <TextView
+                        android:id="@+id/semanticBenchmarkResult"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        style="@style/TextAppearance.Jarvis.Hint" />
+
+                    <Button
+                        android:id="@+id/semanticVectorsButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/settings_semantic_vectors" />
+
+                    <TextView
+                        android:id="@+id/semanticVectorsStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        style="@style/TextAppearance.Jarvis.Hint" />
+
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/memoryInspectorButton"
                         style="@style/Widget.Material3.Button.OutlinedButton"

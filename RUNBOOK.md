@@ -405,6 +405,38 @@ add `app/src/test/resources/cognitive/eval/fixtures/fixture_NNN.json`
 (dialogue + recorded response + expected/forbidden facts) and re-run
 `./gradlew :app:testDebugUnitTest --tests "*ExtractionEvalTest"`.
 
+### E2E scenario: semantic recall + relation questions (COGNITIVE_PLAN §10.5, Phase 3)
+
+Precondition: fresh `jarvis.db` or an existing store; Sherpa engine;
+Settings → Память → memory enabled. The eval gate already decided the
+DEFAULT (vectors OFF — see CHANGELOG, the §10.2 negative result); this
+scenario exercises the shipped features that do NOT depend on that
+verdict, plus the opt-in vector path.
+
+1. «Джарвис, запомни: мой начальник Иванов» → acknowledge; inspector shows
+   the RELATION fact (subject user, predicate boss).
+2. «Джарвис, кто мой начальник?» → the answer names Иванов (the
+   relation-question boost promotes the fact even with zero lexical
+   overlap between «начальник» and the stored value).
+3. Settings → Память → Семантический поиск → «Проверить качество поиска»:
+   the result line shows the local engine numbers and, when the account
+   has embeddings entitlement, the cloud branch. STATIC probe strings are
+   sent for the cloud branch — never user facts (§9.2 note on screen).
+4. Selector «На устройстве» → «Построить векторы памяти» → the dialog
+   states on-device-only → accept → progress line counts up to the ACTIVE
+   fact count; re-press resumes if interrupted.
+5. Toggle selector to «Выключено», repeat step 2 → the answer still names
+   Иванов (relation recall is vector-independent) and prompts stay
+   byte-identical to the Phase 2 path (no vector channel).
+6. «Забыть всё» → inspector empty; vector rows and the entity index are
+   gone with everything else (wipe covers the v6 tables).
+
+Pass: all six observations, no crashes, quiet-hours/proactive behaviour of
+Phase 2 unchanged throughout. ON-DEVICE TODO (honest gap): cloud
+vector-build wall time per 100 facts and the gather-latency delta with a
+populated `fact_vectors` table — measure on the MatePad and record in the
+CHANGELOG Phase 3 performance block.
+
 ## Known limitations
 
 - **Voice stop on-device validation (FIXPLAN B).** The stop phrase (`▁ST O P`)

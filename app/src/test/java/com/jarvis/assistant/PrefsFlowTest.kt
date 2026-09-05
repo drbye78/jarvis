@@ -180,3 +180,27 @@ class PrefsFlowBehaviorTest {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// COGNITIVE_PLAN Phase 3/§12.4-3: the memory.embedder selector pushes live
+// (the same no-restart contract — a selector flip applies from the next
+// turn; SemanticRecallTest pins the coordinator-side effect).
+// ---------------------------------------------------------------------------
+
+class PrefsFlowSemanticTest {
+
+    @Test
+    fun `embedder selector defaults to AUTO and pushes live`() {
+        val prefs = FakeSharedPreferences()
+        val flow = PrefsFlow(AppPrefs(context = null, prefsOverride = prefs))
+        try {
+            assertEquals("AUTO", flow.memoryEmbedder.value)
+            prefs.edit().putString(AppPrefs.KEY_MEMORY_EMBEDDER, "LOCAL").commit()
+            assertEquals("LOCAL", flow.memoryEmbedder.value)
+            prefs.edit().putString(AppPrefs.KEY_MEMORY_EMBEDDER, "OFF").commit()
+            assertEquals("OFF", flow.memoryEmbedder.value)
+        } finally {
+            flow.close()
+        }
+    }
+}

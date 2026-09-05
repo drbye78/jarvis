@@ -1,0 +1,4052 @@
+[
+ {
+  "id": "r01",
+  "facts": [
+   {
+    "factId": "f00t",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю фильмы Тарковского"
+   },
+   {
+    "factId": "f00d0",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f00d1",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f00d2",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f00d3",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f00d4",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f00d5",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f00d6",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f00d7",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f00d8",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f00d9",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f00d10",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   }
+  ],
+  "query": "что я люблю из фильмов Тарковского?",
+  "expectedFactIds": [
+   "f00t"
+  ]
+ },
+ {
+  "id": "r02",
+  "facts": [
+   {
+    "factId": "f01t",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "записался на курсы испанского"
+   },
+   {
+    "factId": "f01d0",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f01d1",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f01d2",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f01d3",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f01d4",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f01d5",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f01d6",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f01d7",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f01d8",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f01d9",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f01d10",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   }
+  ],
+  "query": "куда я записался учить язык?",
+  "expectedFactIds": [
+   "f01t"
+  ]
+ },
+ {
+  "id": "r03",
+  "facts": [
+   {
+    "factId": "f02t",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "отпуск планирую в сентябре в Грузии"
+   },
+   {
+    "factId": "f02d0",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f02d1",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f02d2",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f02d3",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f02d4",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f02d5",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f02d6",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f02d7",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f02d8",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f02d9",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f02d10",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   }
+  ],
+  "query": "когда у меня отпуск?",
+  "expectedFactIds": [
+   "f02t"
+  ]
+ },
+ {
+  "id": "r04",
+  "facts": [
+   {
+    "factId": "f03t",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "купил новую машину кроссовер"
+   },
+   {
+    "factId": "f03d0",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f03d1",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f03d2",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f03d3",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f03d4",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f03d5",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f03d6",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f03d7",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f03d8",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f03d9",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f03d10",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   }
+  ],
+  "query": "что за машина у меня?",
+  "expectedFactIds": [
+   "f03t"
+  ]
+ },
+ {
+  "id": "r05",
+  "facts": [
+   {
+    "factId": "f04t",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f04d0",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f04d1",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f04d2",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f04d3",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f04d4",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f04d5",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f04d6",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f04d7",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f04d8",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f04d9",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f04d10",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   }
+  ],
+  "query": "кто мой начальник?",
+  "expectedFactIds": [
+   "f04t"
+  ]
+ },
+ {
+  "id": "r06",
+  "facts": [
+   {
+    "factId": "f05t",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f05d0",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f05d1",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f05d2",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f05d3",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f05d4",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f05d5",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f05d6",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f05d7",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f05d8",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f05d9",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f05d10",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   }
+  ],
+  "query": "как зовут мою супругу?",
+  "expectedFactIds": [
+   "f05t"
+  ]
+ },
+ {
+  "id": "r07",
+  "facts": [
+   {
+    "factId": "f06t",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю гулять по набережной вечером"
+   },
+   {
+    "factId": "f06d0",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f06d1",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f06d2",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f06d3",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f06d4",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f06d5",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f06d6",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f06d7",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f06d8",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f06d9",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f06d10",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   }
+  ],
+  "query": "чем я люблю заниматься вечером?",
+  "expectedFactIds": [
+   "f06t"
+  ]
+ },
+ {
+  "id": "r08",
+  "facts": [
+   {
+    "factId": "f07t",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "слушаю аудиокниги по дороге на работу"
+   },
+   {
+    "factId": "f07d0",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f07d1",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f07d2",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f07d3",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f07d4",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f07d5",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f07d6",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f07d7",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f07d8",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f07d9",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f07d10",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   }
+  ],
+  "query": "что я слушаю в дороге?",
+  "expectedFactIds": [
+   "f07t"
+  ]
+ },
+ {
+  "id": "r09",
+  "facts": [
+   {
+    "factId": "f08t",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "завтракаю овсянкой каждый день"
+   },
+   {
+    "factId": "f08d0",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f08d1",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f08d2",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f08d3",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f08d4",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f08d5",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f08d6",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f08d7",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f08d8",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f08d9",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f08d10",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   }
+  ],
+  "query": "что у меня обычно на завтрак?",
+  "expectedFactIds": [
+   "f08t"
+  ]
+ },
+ {
+  "id": "r10",
+  "facts": [
+   {
+    "factId": "f09t",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "тренировка по вторникам и четвергам"
+   },
+   {
+    "factId": "f09d0",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f09d1",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f09d2",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f09d3",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f09d4",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f09d5",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f09d6",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f09d7",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f09d8",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f09d9",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f09d10",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   }
+  ],
+  "query": "в какие дни у меня тренировки?",
+  "expectedFactIds": [
+   "f09t"
+  ]
+ },
+ {
+  "id": "r11",
+  "facts": [
+   {
+    "factId": "f10t",
+    "category": "RELATION",
+    "predicate": "child",
+    "value": "дочь Соня ходит в садик"
+   },
+   {
+    "factId": "f10d0",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f10d1",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f10d2",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f10d3",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f10d4",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f10d5",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f10d6",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f10d7",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f10d8",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f10d9",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f10d10",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   }
+  ],
+  "query": "как зовут мою дочку?",
+  "expectedFactIds": [
+   "f10t"
+  ]
+ },
+ {
+  "id": "r12",
+  "facts": [
+   {
+    "factId": "f11t",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимый фильм — Сталкер"
+   },
+   {
+    "factId": "f11d0",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f11d1",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f11d2",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f11d3",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f11d4",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f11d5",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f11d6",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f11d7",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f11d8",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f11d9",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f11d10",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   }
+  ],
+  "query": "какой фильм у меня любимый?",
+  "expectedFactIds": [
+   "f11t"
+  ]
+ },
+ {
+  "id": "r13",
+  "facts": [
+   {
+    "factId": "f12t",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу на Петроградской стороне"
+   },
+   {
+    "factId": "f12d0",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f12d1",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f12d2",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f12d3",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f12d4",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f12d5",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f12d6",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f12d7",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f12d8",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f12d9",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f12d10",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   }
+  ],
+  "query": "где именно я живу?",
+  "expectedFactIds": [
+   "f12t"
+  ]
+ },
+ {
+  "id": "r14",
+  "facts": [
+   {
+    "factId": "f13t",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "ноутбук для работы макбук"
+   },
+   {
+    "factId": "f13d0",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f13d1",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f13d2",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f13d3",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f13d4",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f13d5",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f13d6",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f13d7",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f13d8",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f13d9",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f13d10",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   }
+  ],
+  "query": "какой у меня рабочий ноутбук?",
+  "expectedFactIds": [
+   "f13t"
+  ]
+ },
+ {
+  "id": "r15",
+  "facts": [
+   {
+    "factId": "f14t",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "аллергия на домашнюю пыль"
+   },
+   {
+    "factId": "f14d0",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f14d1",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f14d2",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f14d3",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f14d4",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f14d5",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f14d6",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f14d7",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f14d8",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f14d9",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f14d10",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   }
+  ],
+  "query": "на что у меня аллергия?",
+  "expectedFactIds": [
+   "f14t"
+  ]
+ },
+ {
+  "id": "r16",
+  "facts": [
+   {
+    "factId": "f15t",
+    "category": "RELATION",
+    "predicate": "parent",
+    "value": "папа Виктор работает инженером"
+   },
+   {
+    "factId": "f15d0",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f15d1",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f15d2",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f15d3",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f15d4",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f15d5",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f15d6",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f15d7",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f15d8",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f15d9",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f15d10",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   }
+  ],
+  "query": "как зовут моего отца?",
+  "expectedFactIds": [
+   "f15t"
+  ]
+ },
+ {
+  "id": "r17",
+  "facts": [
+   {
+    "factId": "f16t",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "печь хлеб по субботам"
+   },
+   {
+    "factId": "f16d0",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f16d1",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f16d2",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f16d3",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f16d4",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f16d5",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f16d6",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f16d7",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f16d8",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f16d9",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f16d10",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   }
+  ],
+  "query": "что я пеку в субботу?",
+  "expectedFactIds": [
+   "f16t"
+  ]
+ },
+ {
+  "id": "r18",
+  "facts": [
+   {
+    "factId": "f17t",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "созвон с командой в десять утра"
+   },
+   {
+    "factId": "f17d0",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f17d1",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f17d2",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f17d3",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f17d4",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f17d5",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f17d6",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f17d7",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f17d8",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f17d9",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f17d10",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   }
+  ],
+  "query": "во сколько созвон с командой?",
+  "expectedFactIds": [
+   "f17t"
+  ]
+ },
+ {
+  "id": "r19",
+  "facts": [
+   {
+    "factId": "f18t",
+    "category": "RELATION",
+    "predicate": "studies_at",
+    "value": "курсы испанского в Language Hero"
+   },
+   {
+    "factId": "f18d0",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f18d1",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f18d2",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f18d3",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f18d4",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f18d5",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f18d6",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f18d7",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f18d8",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f18d9",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f18d10",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   }
+  ],
+  "query": "где я учу испанский?",
+  "expectedFactIds": [
+   "f18t"
+  ]
+ },
+ {
+  "id": "r20",
+  "facts": [
+   {
+    "factId": "f19t",
+    "category": "RELATION",
+    "predicate": "friend",
+    "value": "друг детства Костя живёт в Москве"
+   },
+   {
+    "factId": "f19d0",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f19d1",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f19d2",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f19d3",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f19d4",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f19d5",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f19d6",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f19d7",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f19d8",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f19d9",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f19d10",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   }
+  ],
+  "query": "кто мой друг детства?",
+  "expectedFactIds": [
+   "f19t"
+  ]
+ },
+ {
+  "id": "r21",
+  "facts": [
+   {
+    "factId": "f20t",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не выношу громкие компании"
+   },
+   {
+    "factId": "f20d0",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f20d1",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f20d2",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f20d3",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f20d4",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f20d5",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f20d6",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f20d7",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f20d8",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f20d9",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f20d10",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   }
+  ],
+  "query": "чего я не люблю в отдыхе?",
+  "expectedFactIds": [
+   "f20t"
+  ]
+ },
+ {
+  "id": "r22",
+  "facts": [
+   {
+    "factId": "f21t",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу построить дом за городом"
+   },
+   {
+    "factId": "f21d0",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f21d1",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f21d2",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f21d3",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f21d4",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f21d5",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f21d6",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f21d7",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f21d8",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f21d9",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f21d10",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   }
+  ],
+  "query": "о чём я мечтаю построить?",
+  "expectedFactIds": [
+   "f21t"
+  ]
+ },
+ {
+  "id": "r23",
+  "facts": [
+   {
+    "factId": "f22t",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "аквариум на пятьдесят литров"
+   },
+   {
+    "factId": "f22d0",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f22d1",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f22d2",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f22d3",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f22d4",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f22d5",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f22d6",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f22d7",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f22d8",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f22d9",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f22d10",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   }
+  ],
+  "query": "какой у меня аквариум?",
+  "expectedFactIds": [
+   "f22t"
+  ]
+ },
+ {
+  "id": "r24",
+  "facts": [
+   {
+    "factId": "f23t",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "кормлю кота в семь утра"
+   },
+   {
+    "factId": "f23d0",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f23d1",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f23d2",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f23d3",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f23d4",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f23d5",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f23d6",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f23d7",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f23d8",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f23d9",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f23d10",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   }
+  ],
+  "query": "когда я кормлю кота?",
+  "expectedFactIds": [
+   "f23t"
+  ]
+ },
+ {
+  "id": "r25",
+  "facts": [
+   {
+    "factId": "f24t",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "кофе вместо чая по утрам"
+   },
+   {
+    "factId": "f24d0",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f24d1",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f24d2",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f24d3",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f24d4",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f24d5",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f24d6",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f24d7",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f24d8",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f24d9",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f24d10",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   }
+  ],
+  "query": "что я пью по утрам?",
+  "expectedFactIds": [
+   "f24t"
+  ]
+ },
+ {
+  "id": "r26",
+  "facts": [
+   {
+    "factId": "f25t",
+    "category": "RELATION",
+    "predicate": "works_at",
+    "value": "работаю в Яндексе"
+   },
+   {
+    "factId": "f25d0",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f25d1",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f25d2",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f25d3",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f25d4",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f25d5",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f25d6",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f25d7",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f25d8",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f25d9",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f25d10",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   }
+  ],
+  "query": "где я работаю?",
+  "expectedFactIds": [
+   "f25t"
+  ]
+ },
+ {
+  "id": "r27",
+  "facts": [
+   {
+    "factId": "f26t",
+    "category": "RELATION",
+    "predicate": "works_as",
+    "value": "работаю разработчиком"
+   },
+   {
+    "factId": "f26d0",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f26d1",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f26d2",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f26d3",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f26d4",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f26d5",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f26d6",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f26d7",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f26d8",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f26d9",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f26d10",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   }
+  ],
+  "query": "кем я работаю?",
+  "expectedFactIds": [
+   "f26t"
+  ]
+ },
+ {
+  "id": "r28",
+  "facts": [
+   {
+    "factId": "f27t",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимое время года — осень"
+   },
+   {
+    "factId": "f27d0",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f27d1",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f27d2",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f27d3",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f27d4",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f27d5",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f27d6",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f27d7",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f27d8",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f27d9",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f27d10",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   }
+  ],
+  "query": "какое время года я люблю больше всего?",
+  "expectedFactIds": [
+   "f27t"
+  ]
+ },
+ {
+  "id": "r29",
+  "facts": [
+   {
+    "factId": "f28t",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "прогулка перед сном каждый вечер"
+   },
+   {
+    "factId": "f28d0",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f28d1",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f28d2",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f28d3",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f28d4",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f28d5",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f28d6",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f28d7",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f28d8",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f28d9",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f28d10",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   }
+  ],
+  "query": "что я делаю перед сном?",
+  "expectedFactIds": [
+   "f28t"
+  ]
+ },
+ {
+  "id": "r30",
+  "facts": [
+   {
+    "factId": "f29t",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "настольные игры по пятницам"
+   },
+   {
+    "factId": "f29d0",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f29d1",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f29d2",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f29d3",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f29d4",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f29d5",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f29d6",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f29d7",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f29d8",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f29d9",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f29d10",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   }
+  ],
+  "query": "во что я играю по пятницам?",
+  "expectedFactIds": [
+   "f29t"
+  ]
+ },
+ {
+  "id": "r31",
+  "facts": [
+   {
+    "factId": "f30t",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "собираю домашний кинотеатр"
+   },
+   {
+    "factId": "f30d0",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f30d1",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f30d2",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f30d3",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f30d4",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f30d5",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f30d6",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f30d7",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f30d8",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f30d9",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f30d10",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   }
+  ],
+  "query": "что я собираю для дома?",
+  "expectedFactIds": [
+   "f30t"
+  ]
+ },
+ {
+  "id": "r32",
+  "facts": [
+   {
+    "factId": "f31t",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "давление скачет по утрам"
+   },
+   {
+    "factId": "f31d0",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f31d1",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f31d2",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f31d3",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f31d4",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f31d5",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f31d6",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f31d7",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f31d8",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f31d9",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f31d10",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   }
+  ],
+  "query": "что я говорил про давление?",
+  "expectedFactIds": [
+   "f31t"
+  ]
+ },
+ {
+  "id": "r33",
+  "facts": [
+   {
+    "factId": "f32t",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "чёрная куртка отдали в химчистку"
+   },
+   {
+    "factId": "f32d0",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f32d1",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f32d2",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f32d3",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f32d4",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f32d5",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f32d6",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f32d7",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f32d8",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f32d9",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f32d10",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   }
+  ],
+  "query": "какая куртка в химчистке?",
+  "expectedFactIds": [
+   "f32t"
+  ]
+ },
+ {
+  "id": "r34",
+  "facts": [
+   {
+    "factId": "f33t",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик спит на подоконнике"
+   },
+   {
+    "factId": "f33d0",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f33d1",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f33d2",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f33d3",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f33d4",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f33d5",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f33d6",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f33d7",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f33d8",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f33d9",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f33d10",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   }
+  ],
+  "query": "кто спит на подоконнике?",
+  "expectedFactIds": [
+   "f33t"
+  ]
+ },
+ {
+  "id": "r35",
+  "facts": [
+   {
+    "factId": "f34t",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "гулять под дождём без зонта"
+   },
+   {
+    "factId": "f34d0",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f34d1",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f34d2",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f34d3",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f34d4",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f34d5",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f34d6",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f34d7",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f34d8",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f34d9",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f34d10",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   }
+  ],
+  "query": "как я гуляю в дождь?",
+  "expectedFactIds": [
+   "f34t"
+  ]
+ },
+ {
+  "id": "r36",
+  "facts": [
+   {
+    "factId": "f35t",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "заряжаю самокат по пятницам"
+   },
+   {
+    "factId": "f35d0",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f35d1",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f35d2",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f35d3",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f35d4",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f35d5",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f35d6",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f35d7",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f35d8",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f35d9",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f35d10",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   }
+  ],
+  "query": "когда я заряжаю самокат?",
+  "expectedFactIds": [
+   "f35t"
+  ]
+ },
+ {
+  "id": "r37",
+  "facts": [
+   {
+    "factId": "f36t",
+    "category": "IDENTITY",
+    "predicate": "age",
+    "value": "мне тридцать четыре года"
+   },
+   {
+    "factId": "f36d0",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f36d1",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f36d2",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f36d3",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f36d4",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f36d5",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f36d6",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f36d7",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f36d8",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f36d9",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f36d10",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   }
+  ],
+  "query": "сколько мне лет?",
+  "expectedFactIds": [
+   "f36t"
+  ]
+ },
+ {
+  "id": "r38",
+  "facts": [
+   {
+    "factId": "f37t",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не смотрю новости по телевизору"
+   },
+   {
+    "factId": "f37d0",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f37d1",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f37d2",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f37d3",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f37d4",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f37d5",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f37d6",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f37d7",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f37d8",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f37d9",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f37d10",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   }
+  ],
+  "query": "что я не смотрю по телевизору?",
+  "expectedFactIds": [
+   "f37t"
+  ]
+ },
+ {
+  "id": "r39",
+  "facts": [
+   {
+    "factId": "f38t",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "выучить сто английских слов за месяц"
+   },
+   {
+    "factId": "f38d0",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f38d1",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f38d2",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f38d3",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f38d4",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f38d5",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f38d6",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f38d7",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f38d8",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f38d9",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f38d10",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   }
+  ],
+  "query": "сколько слов я хочу выучить?",
+  "expectedFactIds": [
+   "f38t"
+  ]
+ },
+ {
+  "id": "r40",
+  "facts": [
+   {
+    "factId": "f39t",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю перед сном полчаса"
+   },
+   {
+    "factId": "f39d0",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f39d1",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f39d2",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f39d3",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f39d4",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f39d5",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f39d6",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f39d7",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f39d8",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f39d9",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f39d10",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   }
+  ],
+  "query": "сколько я читаю перед сном?",
+  "expectedFactIds": [
+   "f39t"
+  ]
+ },
+ {
+  "id": "r41",
+  "facts": [
+   {
+    "factId": "f40t",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Андрей помогает с тестами"
+   },
+   {
+    "factId": "f40d0",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f40d1",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f40d2",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f40d3",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f40d4",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f40d5",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f40d6",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f40d7",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f40d8",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f40d9",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f40d10",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   }
+  ],
+  "query": "кто помогает мне с тестами?",
+  "expectedFactIds": [
+   "f40t"
+  ]
+ },
+ {
+  "id": "r42",
+  "facts": [
+   {
+    "factId": "f41t",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "рыбалка на рассвете моё хобби"
+   },
+   {
+    "factId": "f41d0",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f41d1",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f41d2",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f41d3",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f41d4",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f41d5",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f41d6",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f41d7",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f41d8",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f41d9",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f41d10",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   }
+  ],
+  "query": "какое у меня хобби на рассвете?",
+  "expectedFactIds": [
+   "f41t"
+  ]
+ },
+ {
+  "id": "r43",
+  "facts": [
+   {
+    "factId": "f42t",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "дача в пригороде с баней"
+   },
+   {
+    "factId": "f42d0",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f42d1",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f42d2",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f42d3",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f42d4",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f42d5",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f42d6",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f42d7",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f42d8",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f42d9",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f42d10",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   }
+  ],
+  "query": "что за дача у меня?",
+  "expectedFactIds": [
+   "f42t"
+  ]
+ },
+ {
+  "id": "r44",
+  "facts": [
+   {
+    "factId": "f43t",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимый завтрак — сырники"
+   },
+   {
+    "factId": "f43d0",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f43d1",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f43d2",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f43d3",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f43d4",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f43d5",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f43d6",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f43d7",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f43d8",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f43d9",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f43d10",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   }
+  ],
+  "query": "какие сырники я люблю?",
+  "expectedFactIds": [
+   "f43t"
+  ]
+ },
+ {
+  "id": "r45",
+  "facts": [
+   {
+    "factId": "f44t",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "медитирую десять минут после пробуждения"
+   },
+   {
+    "factId": "f44d0",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f44d1",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f44d2",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f44d3",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f44d4",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f44d5",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f44d6",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f44d7",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f44d8",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f44d9",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f44d10",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   }
+  ],
+  "query": "что я делаю после пробуждения?",
+  "expectedFactIds": [
+   "f44t"
+  ]
+ },
+ {
+  "id": "r46",
+  "facts": [
+   {
+    "factId": "f45t",
+    "category": "RELATION",
+    "predicate": "friend",
+    "value": "Света из университета моя подруга"
+   },
+   {
+    "factId": "f45d0",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f45d1",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f45d2",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f45d3",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f45d4",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f45d5",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f45d6",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f45d7",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f45d8",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f45d9",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f45d10",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   }
+  ],
+  "query": "кто моя подруга?",
+  "expectedFactIds": [
+   "f45t"
+  ]
+ },
+ {
+  "id": "r47",
+  "facts": [
+   {
+    "factId": "f46t",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "переезд в Испанию через два года"
+   },
+   {
+    "factId": "f46d0",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f46d1",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f46d2",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f46d3",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f46d4",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f46d5",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f46d6",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f46d7",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f46d8",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f46d9",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f46d10",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   }
+  ],
+  "query": "когда переезд в Испанию?",
+  "expectedFactIds": [
+   "f46t"
+  ]
+ },
+ {
+  "id": "r48",
+  "facts": [
+   {
+    "factId": "f47t",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "слушать джаз за ужином"
+   },
+   {
+    "factId": "f47d0",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f47d1",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f47d2",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f47d3",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f47d4",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f47d5",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f47d6",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f47d7",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f47d8",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   },
+   {
+    "factId": "f47d9",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f47d10",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   }
+  ],
+  "query": "что я слушаю за ужином?",
+  "expectedFactIds": [
+   "f47t"
+  ]
+ },
+ {
+  "id": "r49",
+  "facts": [
+   {
+    "factId": "f48t",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "таблетки от головы в ящике стола"
+   },
+   {
+    "factId": "f48d0",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "электросамокат в коридоре"
+   },
+   {
+    "factId": "f48d1",
+    "category": "IDENTITY",
+    "predicate": "birthday",
+    "value": "день рождения двенадцатого апреля"
+   },
+   {
+    "factId": "f48d2",
+    "category": "IDENTITY",
+    "predicate": "lives_in",
+    "value": "живу в Казани"
+   },
+   {
+    "factId": "f48d3",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "хочу выучить английский"
+   },
+   {
+    "factId": "f48d4",
+    "category": "RELATION",
+    "predicate": "boss",
+    "value": "работаю у Иванова"
+   },
+   {
+    "factId": "f48d5",
+    "category": "PREFERENCE",
+    "predicate": "favorite",
+    "value": "любимая книга — Мастер и Маргарита"
+   },
+   {
+    "factId": "f48d6",
+    "category": "PREFERENCE",
+    "predicate": "dislikes",
+    "value": "не переношу пробки"
+   },
+   {
+    "factId": "f48d7",
+    "category": "GOAL",
+    "predicate": "goal",
+    "value": "пробежать марафон осенью"
+   },
+   {
+    "factId": "f48d8",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "люблю джаз"
+   },
+   {
+    "factId": "f48d9",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f48d10",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   }
+  ],
+  "query": "где лежат таблетки от головы?",
+  "expectedFactIds": [
+   "f48t"
+  ]
+ },
+ {
+  "id": "r50",
+  "facts": [
+   {
+    "factId": "f49t",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "уборка квартиры в воскресенье утром"
+   },
+   {
+    "factId": "f49d0",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "бегаю по утрам в парке"
+   },
+   {
+    "factId": "f49d1",
+    "category": "HEALTH",
+    "predicate": "health",
+    "value": "болит спина по вечерам"
+   },
+   {
+    "factId": "f49d2",
+    "category": "RELATION",
+    "predicate": "spouse",
+    "value": "жена Маша"
+   },
+   {
+    "factId": "f49d3",
+    "category": "RELATION",
+    "predicate": "colleague",
+    "value": "коллега Оля из отдела дизайна"
+   },
+   {
+    "factId": "f49d4",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "читаю новости за завтраком"
+   },
+   {
+    "factId": "f49d5",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "готовить пасту по выходным"
+   },
+   {
+    "factId": "f49d6",
+    "category": "IDENTITY",
+    "predicate": "name",
+    "value": "меня зовут Алексей"
+   },
+   {
+    "factId": "f49d7",
+    "category": "POSSESSION",
+    "predicate": "owns",
+    "value": "у меня велосипед"
+   },
+   {
+    "factId": "f49d8",
+    "category": "PREFERENCE",
+    "predicate": "likes",
+    "value": "смотрю фильмы о космосе"
+   },
+   {
+    "factId": "f49d9",
+    "category": "ROUTINE",
+    "predicate": "routine",
+    "value": "пью кофе в семь утра"
+   },
+   {
+    "factId": "f49d10",
+    "category": "RELATION",
+    "predicate": "pet",
+    "value": "кот Барсик"
+   }
+  ],
+  "query": "когда уборка квартиры?",
+  "expectedFactIds": [
+   "f49t"
+  ]
+ }
+]

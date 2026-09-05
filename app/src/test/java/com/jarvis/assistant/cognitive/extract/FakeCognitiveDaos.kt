@@ -4,8 +4,13 @@ import com.jarvis.assistant.cognitive.data.BehaviorLogDao
 import com.jarvis.assistant.cognitive.data.BehaviorLogEntity
 import com.jarvis.assistant.cognitive.data.CommandEventDao
 import com.jarvis.assistant.cognitive.data.CommandEventEntity
+import com.jarvis.assistant.cognitive.data.EntityDao
+import com.jarvis.assistant.cognitive.data.EntityRefEntity
 import com.jarvis.assistant.cognitive.data.ExtractionQueueDao
 import com.jarvis.assistant.cognitive.data.ExtractionQueueEntity
+import com.jarvis.assistant.cognitive.data.FactEntityLinkEntity
+import com.jarvis.assistant.cognitive.data.FactVectorDao
+import com.jarvis.assistant.cognitive.data.FactVectorEntity
 import com.jarvis.assistant.cognitive.data.HabitRuleDao
 import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 import com.jarvis.assistant.cognitive.data.MemoryMetaDao
@@ -224,7 +229,6 @@ class FakeCommandEventDao : CommandEventDao {
     val rows = mutableListOf<CommandEventEntity>()
 
     override suspend fun insert(row: CommandEventEntity): Long {
-        println("DBG-Fake insert called")
         rows += row
         return rows.size.toLong()
     }
@@ -243,7 +247,6 @@ class FakeCommandEventDao : CommandEventDao {
     }
 
     override suspend fun wipeAll() {
-        println("DBG-FAKE eventDao.wipeAll called")
         rows.clear()
     }
 }
@@ -344,6 +347,108 @@ class FakeSessionSummaryDao : SessionSummaryDao {
     override suspend fun deleteById(id: Long) {
         rows.removeAll { it.id == id }
     }
+
+    override suspend fun wipeAll() = rows.clear()
+}
+
+// ---------------------------------------------------------------------------
+// COGNITIVE_PLAN Phase 3 (§11): semantic-recall fakes (in-memory, plain).
+// ---------------------------------------------------------------------------
+
+class FakeFactVectorDao : FactVectorDao {
+    val rows = linkedMapOf<String, FactVectorEntity>()
+
+    override suspend fun upsert(row: FactVectorEntity) {
+        rows[row.factId] = row
+    }
+
+    override suspend fun forEngine(engineId: String): List<FactVectorEntity> =
+        rows.values.filter { it.engineId == engineId }
+
+    override suspend fun countForEngine(engineId: String): Int =
+        rows.values.count { it.engineId == engineId }
+
+    override suspend fun factIdsForEngine(engineId: String): List<String> =
+        rows.values.filter { it.engineId == engineId }.map { it.factId }
+
+    override suspend fun deleteForEngine(engineId: String) {
+        rows.entries.removeAll { it.value.engineId == engineId }
+    }
+
+    override suspend fun deleteByFactIds(factIds: List<String>) {
+        rows.keys.removeAll(factIds.toSet())
+    }
+
+    override suspend fun wipeAll() = rows.clear()
+}
+
+class FakeEntityDao : EntityDao {
+    val rows = linkedMapOf<Long, EntityRefEntity>()
+    val links = mutableListOf<FactEntityLinkEntity>()
+    private var nextId = 1L
+
+    override suspend fun insert(entity: EntityRefEntity): Long {
+        val id = nextId++
+        rows[id] = entity.copy(id = id)
+        return id
+    }
+
+    override suspend fun update(entity: EntityRefEntity) {
+        rows[entity.id] = entity
+    }
+
+    override suspend fun byNameNormalized(nameNormalized: String): EntityRefEntity? =
+        rows.values.firstOrNull { it.nameNormalized == nameNormalized }
+
+    override suspend fun all(): List<EntityRefEntity> = rows.values.toList()
+
+    override suspend fun upsertByName(
+        name: String,
+        nameNormalized: String,
+        kind: String,
+        now: Long,
+    ): Long {
+        val existing = byNameNormalized(nameNormalized)
+        return if (existing == null) {
+            insert(
+                EntityRefEntity(
+                    name = name,
+                    nameNormalized = nameNormalized,
+                    kind = kind,
+                    firstSeenAt = now,
+                    lastSeenAt = now,
+                ),
+            )
+        } else {
+            update(existing.copy(kind = kind, lastSeenAt = now))
+            existing.id
+        }
+    }
+
+    override suspend fun insertLink(link: FactEntityLinkEntity) {
+        links.removeAll {
+            it.factId == link.factId && it.entityId == link.entityId && it.role == link.role
+        }
+        links += link
+    }
+
+    override suspend fun linksForFact(factId: String): List<FactEntityLinkEntity> =
+        links.filter { it.factId == factId }
+
+    override suspend fun allLinks(): List<FactEntityLinkEntity> = links.toList()
+
+    override suspend fun deleteLinksByFactIds(factIds: List<String>) {
+        links.removeAll { it.factId in factIds }
+    }
+
+    override suspend fun deleteOrphans(): Int {
+        val linked = links.map { it.entityId }.toSet()
+        val doomed = rows.values.count { it.id !in linked }
+        rows.entries.removeAll { it.key !in linked }
+        return doomed
+    }
+
+    override suspend fun wipeLinks() = links.clear()
 
     override suspend fun wipeAll() = rows.clear()
 }

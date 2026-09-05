@@ -229,6 +229,20 @@ class AppPrefs(
         get() = prefs.getInt(KEY_BEHAVIOR_DAILY_QUOTA, 2)
         set(value) = prefs.edit().putInt(KEY_BEHAVIOR_DAILY_QUOTA, value.coerceIn(1, 5)).apply()
 
+    // ------------------------------------------------------------------
+    // COGNITIVE_PLAN Phase 3 (§11/§12.4-3): the semantic-recall selector.
+    // AUTO (the default) resolves through the benchmark winner — either the
+    // on-device «Проверить качество поиска» run or the CI ship-or-reject
+    // verdict — and every unavailable branch fails closed to OFF. Consumed
+    // reactively via [PrefsFlow]; a live-toggle regression test asserts the
+    // push (AGENTS.md convention).
+    // ------------------------------------------------------------------
+
+    /** AUTO | CLOUD | LOCAL | OFF ([EmbedderChoice]). Default AUTO. */
+    var memoryEmbedder: String
+        get() = prefs.getString(KEY_MEMORY_EMBEDDER, "AUTO") ?: "AUTO"
+        set(value) = prefs.edit().putString(KEY_MEMORY_EMBEDDER, value).apply()
+
     fun loadProviderSettings(): ProviderSettings = ProviderSettings(
         type = providerType,
         openAiBaseUrl = openAiBaseUrl,
@@ -285,5 +299,6 @@ class AppPrefs(
         internal const val KEY_BEHAVIOR_QUIET_START = "behavior_quiet_start"
         internal const val KEY_BEHAVIOR_QUIET_END = "behavior_quiet_end"
         internal const val KEY_BEHAVIOR_DAILY_QUOTA = "behavior_daily_quota"
+        internal const val KEY_MEMORY_EMBEDDER = "memory_embedder"
     }
 }

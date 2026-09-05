@@ -6,6 +6,68 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — COGNITIVE_PLAN Phase 3 (semantic recall, strictly gated)
+- **Room v6 — semantic tables** (§11): `fact_vectors` (one L2-normalized
+  float32 embedding per fact, stamped with the engine id + dim),
+  `entities` + `fact_entities` (the two-table entity model derived from
+  ACTIVE RELATION facts, rebuilt idempotently in nightly maintenance);
+  explicit `MIGRATION_5_6` (new tables only) + exported schema 6.json +
+  JVM migration contract tests.
+- **Embedding engine seam** (§11): `EmbeddingEngine` with two production
+  engines — `LexicalEmbedder` (on-device signed-hashing bag-of-stems over
+  the same RU token stream the FTS index uses; deterministic, zero egress,
+  256 dims) and `GigaChatEmbedder` (OpenAI-style `/api/v1/embeddings` with
+  the shared OAuth transport, 1024 dims, entitlement probe with an honest
+  Ok/Denied/Transient verdict). A neural on-device model was evaluated and
+  REJECTED at design time: +15–25 MB APK and 100 ms-scale inference on the
+  Kirin 710A vs the §7.2 40 ms gather budget.
+- **§10.2 retrieval gate — RECORDED NEGATIVE RESULT for the local branch**:
+  50 hand-authored RU query→fact fixtures; the hybrid (RRF fusion of the
+  lexical lane with the local cosine channel) scored recall@5 = 0.800 vs
+  the lexical baseline 0.980 — a −18.4 % regression, far below the ≥ +15 %
+  ship threshold. Verdict recorded in
+  `app/src/test/resources/cognitive/eval/retrieval/results-baseline.json`
+  and enforced by `RetrievalEvalTest` + the `RetrievalGate.LOCAL_BRANCH_SHIPS`
+  constant: **vectors ship OFF by default**. Consequences per plan §11:
+  the cheap, useful part ships (relation-question recall + entity tables),
+  and the AUTO selector stays fail-closed until an on-device benchmark
+  proves a winner.
+- **User-visible `memory.embedder` selector** (§12.4-3, Settings
+  «Память» → «Семантический поиск»): Авто / Облако / На устройстве /
+  Выключено, default AUTO — resolved live per turn via `EmbedderSelection`
+  (benchmark winner from `memory_meta`, else the CI gate verdict, else
+  OFF; every unavailable branch fails closed). A live-toggle regression
+  test pins the no-restart semantics; `PrefsFlow` pushes the change.
+- **On-device benchmark** («Проверить качество поиска»): runs the §10.2
+  eval over STATIC SYNTHETIC probes compiled into the app — never user
+  facts, so the cloud branch needs no privacy dialog — writes the winner
+  to `memory_meta` and shows per-engine numbers in Settings. This is the
+  path that can flip AUTO to the CLOUD GigaChat branch on entitled
+  accounts (CI cannot measure it).
+- **Relation-question recall** («кто мой начальник?»): a conservative RU/EN
+  synonym table maps question heads onto the extraction predicate
+  vocabulary; matching ACTIVE RELATION facts get the same flat +0.3 boost
+  an FTS hit gets. Works directly on the gathered fact snapshots — no
+  entity-table read on the hot path, no derivation-lag corruption surface.
+- **Opt-in vector backfill** (§12.4-4): chunked (128 local / 16 cloud),
+  resumable, progress surfaced in Settings, cloud branch gated by the
+  §9.2 egress switch AND a privacy dialog (fact values egress — disclosed
+  in plain language); nightly maintenance GCs stale vectors and tops up
+  new facts only for the engine the user actually built with.
+- **Hygiene**: removed a stray debug `println` from `wipeAll` and debug
+  prints from the Phase 2 test fakes (they had slipped past the detekt
+  rule via… nothing: caught in the Phase 3 pass).
+
+### Measured — Phase 3 performance report (plan §10.6)
+- APK: 161 084 875 bytes (Phase 2: 159 888 770 — delta ≈ +1.14 MB; the
+  rejection of the onnxruntime-based local embedder is what kept this at
+  1 MB instead of 15–25 MB).
+- Test suite: 609 JVM tests / 0 failures (Phase 2 baseline: 568); detekt
+  clean, 0 baseline additions.
+- Device-side vector-build time (cloud, per 100 facts) and gather-latency
+  delta on hardware require the physical MatePad — tracked in RUNBOOK
+  (honest gaps: not measurable in CI).
+
 ### Added — COGNITIVE_PLAN Phase 2 (temporal context + behaviour)
 - **Room v5 — behaviour tables** (2.1): `command_events` (slot-fingerprint
   telemetry, no utterance content), `habit_rules`, `behavior_log` (30-day
