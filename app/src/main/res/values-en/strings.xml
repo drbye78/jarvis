@@ -6,7 +6,12 @@
     <string name="channel_name">Jarvis</string>
     <string name="channel_bootstrap_name">Jarvis (starting)</string>
     <string name="channel_errors">Errors</string>
+    <string name="channel_activation">Jarvis activation</string>
     <string name="channel_alarm">Alarms</string>
+
+    <!-- Android 10 activation prompt (post-boot / post-update) -->
+    <string name="activation_notif_title">Jarvis is not running</string>
+    <string name="activation_notif_text">Tap to start the assistant and the microphone</string>
 
     <!-- States -->
     <string name="state_idle">Idle</string>

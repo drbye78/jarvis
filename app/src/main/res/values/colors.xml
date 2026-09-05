@@ -35,4 +35,16 @@
     <!-- Alarm ringing screen: deep, calm, high-contrast -->
     <color name="jarvis_night_scrim">#EE0E1514</color>
     <color name="jarvis_ringing_surface">#0E1514</color>
+
+    <!-- Launcher icon background (adaptive icon solid fallback) -->
+    <color name="ic_launcher_background">#0F766E</color>
+
+    <!-- Brand palette used across the icon design -->
+    <color name="brand_cyan">#06B6D4</color>
+    <color name="brand_cyan_deep">#0E7490</color>
+    <color name="brand_cyan_light">#A5F3FC</color>
+    <color name="brand_orange">#F97316</color>
+    <color name="brand_orange_light">#FDBA74</color>
+    <color name="brand_dark_teal">#134E4A</color>
+    <color name="brand_teal_950">#042F2E</color>
 </resources>

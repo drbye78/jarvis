@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Notification icon (24dp, monochrome).
+  The system tints the white shapes with the notification color.
+  Shape: orb with a hollow rim + filled core + a small satellite.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Outer orb ring (rim with hollow center) -->
+    <path
+        android:pathData="M12,2 C6.477,2 2,6.477 2,12 C2,17.523 6.477,22 12,22 C17.523,22 22,17.523 22,12 C22,6.477 17.523,2 12,2 Z M12,5 C15.866,5 19,8.134 19,12 C19,15.866 15.866,19 12,19 C8.134,19 5,15.866 5,12 C5,8.134 8.134,5 12,5 Z"
+        android:fillType="evenOdd"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Orb core (filled) -->
+    <path
+        android:pathData="M12,8.5 C10.067,8.5 8.5,10.067 8.5,12 C8.5,13.933 10.067,15.5 12,15.5 C13.933,15.5 15.5,13.933 15.5,12 C15.5,10.067 13.933,8.5 12,8.5 Z"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Wake-word satellite -->
+    <path
+        android:pathData="M20,12 m -1.6,0 a 1.6,1.6 0 1,0 3.2,0 a 1.6,1.6 0 1,0 -3.2,0"
+        android:fillColor="#FFFFFF" />
+</vector>

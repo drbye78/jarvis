@@ -6,7 +6,12 @@
     <string name="channel_name">Джарвис</string>
     <string name="channel_bootstrap_name">Джарвис (запуск)</string>
     <string name="channel_errors">Ошибки</string>
+    <string name="channel_activation">Активация Джарвис</string>
     <string name="channel_alarm">Будильники</string>
+
+    <!-- Android 10 activation prompt (post-boot / post-update) -->
+    <string name="activation_notif_title">Джарвис не запущен</string>
+    <string name="activation_notif_text">Коснитесь, чтобы включить ассистента и микрофон</string>
 
     <!-- States -->
     <string name="state_idle">Ожидание</string>
