@@ -1,11 +1,11 @@
 # Jarvis Voice Assistant — Architecture
 
 > **Status: in active development (pre-1.0), version 0.2.0.**
-> Target: Android 11 (API 30) / HarmonyOS 2.0+ (AOSP-based) — validated on Huawei MatePad SE 11
-> minSdk 30: the build now matches the documented support window (A11); no backward compat below it
+> Target: Android 10+ (minSdk 29) / HarmonyOS 2.0+ (AOSP-based) — validated on Huawei MatePad SE 11
+> minSdk 29: HarmonyOS 2.0 devices report API 29
 > Always WiFi · Always charging
 > Default build targets Russian (wake word, ASR/TTS language, UI); providers are multi-lingual
-> targetSdk 30 (appliance profile) with Android 14+ guards · compileSdk 34
+> targetSdk 34 with Android 14+ guards in code · compileSdk 34
 
 ## Data flow
 
@@ -34,7 +34,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns (job hand-offs under a monitor, seq-guarded supersede/cancel); TurnRunner (bounded tool loop; error turns end via reportFailure only); `SpeechPhrases` — locale-aware runtime spoken phrases (RU default + resource-backed values/values-en). |
 | `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. |
 | `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure capability-gated strategy cascade (structured playFromSearch, MediaBrowser search/token lane, query-aware verification) with rich transport; `MediaBrowserGateway` + `AndroidMediaBrowserGateway` (bind/search/children); `MediaCapabilities`/`VoiceQuery`/`MediaDiagnostics` (pure models). Android adapters: `AndroidMediaGateway` (compat-wrapped controllers), `AndroidMediaBrowserGateway`. |
-| `data/` | Room: messages (id-ordered, orphan-safe windowing) + alarms. |
+| `data/` | Room v6: messages (id-ordered, orphan-safe windowing) + alarms + user_facts (cognitive memory) + extraction_queue + fact_fts (FTS4) + command_events + habit_rules + behavior_log + session_summaries + fact_vectors + entities + fact_entities. |
 | `service/` | Foreground service (permission gate, retryable init, watchdog semantics), boot receiver, ringing activity, notification listener. |
 | `ui/` | Adapters for transcript and alarm lists. |
 
@@ -97,7 +97,7 @@ budget cut that splits a pair is cleaned by the same position-independent
 sanitizer that handles the message-count window. The tool loop is iterative
 and bounded (`maxToolPasses = 5`);
 each tool execution has a 15 s default timeout — a tool may override it via
-`ToolContract.timeoutMs` (playMusic uses 30 s: cold-starting a player and
+`ToolContract.timeoutMs` (playMusic uses 50 s: cold-starting a player and
 verifying playback takes that long).
 
 ## System prompt & dialogue policy
@@ -353,7 +353,8 @@ Timer tool uses `setExactAndAllowWhileIdle` one-shots. Identity is the DB
 row id EVERYWHERE — AlarmManager request codes, the ringing notification
 id and the full-screen-intent request code — so two near-simultaneous
 alerts can never overwrite each other's notification extras. Schema v1
-(pre-release) upgrades destructively; v2→v3 is a real migration.
+(pre-release) upgrades destructively; v2→v3 is a no-op; v3→v6 are real
+schema migrations (cognitive memory, behaviour, semantic recall).
 
 ## Lifecycle semantics
 
@@ -393,7 +394,7 @@ silent no-op or a crash:
 
 Gradle 8.14.2 · AGP 8.11.1 · Kotlin 2.2.21 · KSP 2.2.21-2.0.5 · Room 2.8.4
 gRPC 1.83.1 · protobuf-gradle-plugin 0.10.0 · OkHttp 4.12.0
-Porcupine 3.0.0 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Material Components · compileSdk 34 · minSdk 30 · targetSdk 30
+Porcupine 3.0.0 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Material Components · compileSdk 34 · minSdk 29 · targetSdk 34
 
 The SaluteSpeech gRPC endpoint is config-driven (`JarvisConfig.saluteGrpcEndpoint`;
 renamed from the misleading `llmEndpoint` — it NEVER drove the LLM lane, which is
@@ -428,7 +429,7 @@ configured by `gigaChatEndpoint` / the OpenAI-compatible base URL).
 
 ## Tests
 
-JVM unit suite (389 tests, all green; runs in CI on every push/PR):
+JVM unit suite (620 tests, all green; runs in CI on every push/PR):
 wire DTOs (incl. non-null user content), SSE parser (incl. spec multi-line
 assembly), state machine, sentence splitter, conversation windowing (incl.
 char-budget trim), alarm

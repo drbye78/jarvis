@@ -471,7 +471,7 @@ CHANGELOG Phase 3 performance block.
   BPE-tokenized for the `gigaspeech` model and its tokens were verified against
   `tokens.txt`, but detection accuracy and the sensitivity→`keywordsThreshold`
   mapping should still be validated on the target hardware (Kirin 710A-class).
-- **Binary size.** The Sherpa-ONNX AAR (~47 MB) and the bundled model (~17 MB)
+- **Binary size.** The Sherpa-ONNX AAR (~47 MB) and the bundled model (~5.3 MB)
   are tracked via Git LFS (run `git lfs pull` after clone).
 - **Hands-free music start depends on the player app.** Jarvis drives external
   players through a capability-gated cascade (`playFromSearch`, MediaBrowser
@@ -512,8 +512,8 @@ CHANGELOG Phase 3 performance block.
   heart rating are actually exposed. Until that dump is read, every
   capability is an assumption the cascade degrades gracefully around.
 - **English locale: UI is fully localized, runtime speech is not.** Every
-  user-facing string resource now has an English twin (values-en, 135 keys
-  incl. the new credential-validation rows), so the whole UI — Settings,
+  user-facing string resource now has an English twin (values-en, 319 keys
+  incl. the credential-validation and behavior-setting rows), so the whole UI — Settings,
   onboarding, alarms, music card — renders in English under an English locale.
   Runtime spoken/system messages (turn failures, music outcome details,
   wake-word engine errors) remain hardcoded Russian, and the assistant always

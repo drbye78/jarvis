@@ -5,19 +5,19 @@ Compact ramp-up for agents. Every line is something easy to miss.
 ## Build & verify
 - Single Gradle module `:app` (root `settings.gradle.kts` includes only `:app`). Use the wrapper: `./gradlew ...`.
 - Build APK: `./gradlew :app:assembleDebug`
-- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~430 tests; refresh this count when you add a batch)
+- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~620 tests; refresh this count when you add a batch)
 - Single test class: `./gradlew :app:testDebugUnitTest --tests "com.jarvis.assistant.PorcupineDetectorTest"`
 - **Gate before claiming done:** `./gradlew :app:assembleDebug :app:testDebugUnitTest`
 - Instrumentation tests (`androidTest`) need a device/emulator; the gate above does not.
 - **Resource parity is test-enforced** (`ResourceParityTest`): a string key added to `values/strings.xml` but not `values-en/` (or vice versa) FAILS the suite. Same for `phrase_*` and `activity_tool_*` groups. Add new keys to BOTH locales in the same change.
 - The system prompt is built per LLM pass by `session/TimeAwareSystemPrompt` (identity + live time + dialogue policies). Tests pin it with a fixed clock + `TimeZone.setDefault` in `@Before`/`@After`; the formats are constructed PER CALL so a timezone set after class-load is honored — do not cache `SimpleDateFormat` singletons there.
 - The Gradle daemon is not guaranteed to persist between tool calls — the first build after a shell reset is cold (~1–2 min). Don't assume warm incremental builds.
-- **CI exists**: `.github/workflows/ci.yml` runs the full JVM suite + `assembleDebug` on every push to `main` and every PR (LFS checkout included). A red check means the suite is broken — fix before merging. Several test files define MULTIPLE top-level test classes (e.g. `AlarmAndRegistryTest.kt` → `AlarmTimesTest` + `ToolRegistryTest`) — run by class, not file.
+- **CI exists**: `.github/workflows/ci.yml` runs the full JVM suite + `assembleDebug` on every push to `main` and every PR (LFS checkout included), plus a separate `static-analysis` job running detekt with ktlint formatting rules. A red check means the suite is broken — fix before merging. Several test files define MULTIPLE top-level test classes (e.g. `AlarmAndRegistryTest.kt` → `AlarmTimesTest` + `ToolRegistryTest`) — run by class, not file.
 - NOTE: several tests are real-time budgeted (bounded waits on latches/polling, e.g. the wedged-engine release test ~2.5 s). They are deterministic but not instant; don't "optimize" them into thread-yield assertions.
 
 ## SDK / toolchain pins (verified in build files)
-- `compileSdk 34`, `minSdk 30`, `targetSdk 30` — the low `targetSdk` is **intentional** (Android 11 / HarmonyOS 2.0 appliance profile). **Do not bump `targetSdk` to "fix" the lint warning** — `lint` is configured and would flag `ExpiredTargetSdkVersion`; it is deliberately disabled in `app/build.gradle.kts`. Android 14+ foreground-service/permission guards are handled in code but untested on 14+.
-- Kotlin 2.2.21, AGP 8.11.1, JVM 17. minSdk 30 (A11: matches the Android 11 / HarmonyOS 2.0 support claim — the historical "minSdk 24" in older docs was wrong). KSP generates Room code; protobuf + gRPC generate Sber Salute Speech stubs into `build/generated/java/generate*Proto`.
+- `compileSdk 34`, `minSdk 29`, `targetSdk 34` — Android 14+ guards are handled in code (typed FGS, SCHEDULE_EXACT_ALARM, RECEIVER_NOT_EXPORTED, POST_NOTIFICATIONS). HarmonyOS 2.0 (API-29-based) ignores unknown permissions and behavioral changes — compatibility is maintained.
+- Kotlin 2.2.21, AGP 8.11.1, JVM 17. minSdk 29 (HarmonyOS 2.0 devices report API 29). KSP generates Room code; protobuf + gRPC generate Sber Salute Speech stubs into `build/generated/java/generate*Proto`.
 
 ## Architecture (non-obvious)
 - Manual DI, no Hilt/Dagger. `di/AppGraph` is the composition root; `service/JarvisForegroundService.onStartCommand` builds it **on a background dispatcher** and completes `graphReady` (`CompletableDeferred`) — await it instead of polling `GraphHolder`. `GraphHolder` holds the running instance. Construct detectors/engines only through AppGraph.
@@ -42,9 +42,9 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - **Runtime spoken phrases go through `session/SpeechPhrases`** (RU literals as the JVM fallback, `AndroidSpeechPhrases` resolving `phrase_*` resources in production) — never hardcode a spoken string in the session lane. The LLM system prompt stays Russian by product decision.
 - Alarm/timer identity is the DB row id everywhere: AlarmManager request codes AND the ringing notification id / full-screen-intent request code (`AlarmReceiver.ringingNotificationId`). Parity by construction — do not introduce a second scheme.
 - `getSystemService(...) as X` is FORBIDDEN — use `as?` with an honest degradation path (JSON error, skip + log, or fallback behavior). Odd OEM ROMs can return null.
-- Room: v1 (pre-release) upgrades destructively (`fallbackToDestructiveMigrationFrom(1)`); v2→v3 is a real migration. New schema bumps MUST add a real migration + exported schema json.
+- Room: v1 (pre-release) upgrades destructively (`fallbackToDestructiveMigrationFrom(1)`); v2→v3 is a no-op migration (identical schemas, exists to prevent destructive fallback); real schema migrations start at v3→v4 (cognitive memory core). The DB is currently at v6. New schema bumps MUST add a real migration + exported schema json.
 - Version: `0.2.0`, pre-1.0 (in-development).
-- Large binaries are tracked via Git LFS: `app/libs/sherpa-onnx.aar` (~47 MB) and `app/src/main/assets/sherpa_kws/*` (~6.5 MB after the fp32 encoder was dropped — CI fails on unreferenced assets > 1 MB, so never add a model file nothing loads). Don't `.gitignore` them. `git lfs pull` is required after clone (CI does this automatically).
+- Large binaries are tracked via Git LFS: `app/libs/sherpa-onnx.aar` (~47 MB) and `app/src/main/assets/sherpa_kws/*` (~5.3 MB — CI fails on unreferenced assets > 1 MB, so never add a model file nothing loads). Don't `.gitignore` them. `git lfs pull` is required after clone (CI does this automatically).
 
 ## Cognitive subsystem conventions (COGNITIVE_PLAN 0.1)
 

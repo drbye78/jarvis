@@ -4,8 +4,7 @@
 
 > **Status: in active development (pre-1.0).** Version `0.2.0`. APIs, behavior, and on-device storage may change between releases.
 
-Always-listening voice assistant for Android 11 (API 30) / HarmonyOS 2.0+ devices
-(minSdk 30 — the build matches the documented support window).
+Always-listening voice assistant for Android 10+ (minSdk 29) / HarmonyOS 2.0+ devices.
 The default build targets Russian (wake word «Джарвис», ASR/TTS language, UI); the
 SaluteSpeech and GigaChat providers are multi-lingual. Streaming-first: live ASR,
 streamed LLM with tool calling,
@@ -37,8 +36,8 @@ OpenAI-compatible endpoint).
    The mandatory Salute/GigaChat pairs are **validated upfront in the panel as
    you type** (a live status row: valid / invalid / unreachable) and on every
    «Проверить ключи» press — a typo is caught in seconds, not at the next
-   voice command. Credentials are stored encrypted in the Android Keystore
-   (`EncryptedSharedPreferences`) on the device — **nothing secret is ever in
+   voice command.    Credentials are stored encrypted in the Android Keystore
+   (`KeystoreVault`, AES-256-GCM) on the device — **nothing secret is ever in
    the APK or in `local.properties`**. GigaChat creds are optional if you use
    the OpenAI-compatible provider instead (also configured in Settings).
    The UI ships in Russian and English (full `values-en`), and the runtime
@@ -55,9 +54,8 @@ OpenAI-compatible endpoint).
       trained in [Picovoice Console](https://console.picovoice.ai/) (a Console
       `.ppn` is bound to your Picovoice key). Requires a free Picovoice account.
     Switching engines and the sensitivity slider apply live while the assistant
-    is running. NOTE: a custom Sherpa model cannot be loaded with the current
-    AAR (it only loads the bundled asset); custom Sherpa wake words need a
-    self-trained model + a different build — see RUNBOOK.
+    is running. Custom Sherpa wake words are supported — the app extracts
+    models, BPE-tokenizes keywords, and loads via `newFromFile`.
 5. Launch Jarvis and follow the onboarding screen.
 
 ## Running tests
@@ -72,7 +70,8 @@ above — includes the Git-LFS-tracked native assets).
 
 Installs on schema v1 (the old `alarms` table, never exported) upgrade
 destructively: alarms and chat history are wiped once, in exchange for a
-non-crashing upgrade. v2→v3 and later upgrades migrate for real.
+non-crashing upgrade. v2→v3 is a no-op migration (identical schemas); real
+schema migrations start at v3→v4 (cognitive memory). The DB is currently at v6.
 
 ## Building a signed release APK
 
