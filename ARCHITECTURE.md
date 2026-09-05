@@ -5,7 +5,7 @@
 > minSdk 30: the build now matches the documented support window (A11); no backward compat below it
 > Always WiFi · Always charging
 > Default build targets Russian (wake word, ASR/TTS language, UI); providers are multi-lingual
-> targetSdk 34 with Android 14+ guards in code · compileSdk 34 · HarmonyOS 2.0+ compat
+> targetSdk 30 (appliance profile) with Android 14+ guards · compileSdk 34
 
 ## Data flow
 
@@ -187,7 +187,8 @@ with an instructive error.
 `play|pause|toggle|next|previous|stop|seek|restart|like|repeat|shuffle|
 speed` — every action gated by the session's capability bits (plus the
 heart-rating type for `like`, plus the API-29 guard for `speed` —
-minSdk is 30); unsupported actions get an honest Russian refusal naming
+minSdk is 30, so the guard is always satisfied); unsupported actions get
+an honest Russian refusal naming
 the limitation, never a silent no-op. The media-key fallback (works
 without listener access) only covers the basic six — a media key cannot
 seek/like/repeat. Session selection: named app → any playing session →
@@ -257,7 +258,7 @@ device validation ladders):
   (`Stats.droppedFarEndFrames`) and logged under `AecDiag`.
 - The canceller is intentionally an interface (`EchoCanceller`) — the
   documented drop-in slot for a native WebRTC AEC3 (none is Java-exposed on
-  Maven as of 2026-09; see the EchoCanceller interface javadoc for status).
+  Maven as of 2026-09; see PLAN-AEC-FOLLOWUP §0).
 
 ## Follow-up window
 
@@ -392,7 +393,7 @@ silent no-op or a crash:
 
 Gradle 8.14.2 · AGP 8.11.1 · Kotlin 2.2.21 · KSP 2.2.21-2.0.5 · Room 2.8.4
 gRPC 1.83.1 · protobuf-gradle-plugin 0.10.0 · OkHttp 4.12.0
-Porcupine 3.0.0 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Material Components · compileSdk 34 · minSdk 30 · targetSdk 34
+Porcupine 3.0.0 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Material Components · compileSdk 34 · minSdk 30 · targetSdk 30
 
 The SaluteSpeech gRPC endpoint is config-driven (`JarvisConfig.saluteGrpcEndpoint`;
 renamed from the misleading `llmEndpoint` — it NEVER drove the LLM lane, which is
@@ -427,7 +428,7 @@ configured by `gigaChatEndpoint` / the OpenAI-compatible base URL).
 
 ## Tests
 
-JVM unit suite (413 tests, all green; runs in CI on every push/PR):
+JVM unit suite (389 tests, all green; runs in CI on every push/PR):
 wire DTOs (incl. non-null user content), SSE parser (incl. spec multi-line
 assembly), state machine, sentence splitter, conversation windowing (incl.
 char-budget trim), alarm

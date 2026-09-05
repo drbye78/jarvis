@@ -1,0 +1,21 @@
+{
+ "id": "008",
+ "kind": "negation",
+ "dialogue": [
+  {
+   "messageId": 18,
+   "text": "Я больше не люблю кофе, теперь пью только чай"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"dislikes\", \"value\": \"не любит кофе\", \"confidence\": 0.95, \"evidence\": \"больше не люблю кофе\", \"messageId\": 18}, {\"subject\": \"user\", \"predicate\": \"likes\", \"value\": \"пьёт только чай\", \"confidence\": 0.95, \"evidence\": \"теперь пью только чай\", \"messageId\": 18}]}",
+ "expectedFacts": [
+  {
+   "predicate": "dislikes",
+   "value": "кофе"
+  },
+  {
+   "predicate": "likes",
+   "value": "чай"
+  }
+ ]
+}

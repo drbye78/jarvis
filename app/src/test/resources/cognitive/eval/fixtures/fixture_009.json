@@ -1,0 +1,17 @@
+{
+ "id": "009",
+ "kind": "third-party",
+ "dialogue": [
+  {
+   "messageId": 19,
+   "text": "У меня есть кот Барсик"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"pet\", \"value\": \"кот Барсик\", \"confidence\": 0.95, \"evidence\": \"есть кот Барсик\", \"messageId\": 19}]}",
+ "expectedFacts": [
+  {
+   "predicate": "pet",
+   "value": "Барсик"
+  }
+ ]
+}

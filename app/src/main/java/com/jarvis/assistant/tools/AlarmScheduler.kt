@@ -116,14 +116,7 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
             }
         val operation = fireOperation(id, kind, label)
         if (kind == ScheduledAlertEntity.KIND_TIMER) {
-            // Android 12+ (API 31): SCHEDULE_EXACT_ALARM is required for setExactAndAllowWhileIdle.
-            // On targetSdk 34 it is revocable by the user; fall back to inexact if denied.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
-                Timber.w("Exact alarm permission denied — arming timer %d as inexact", id)
-                am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, operation)
-            } else {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, operation)
-            }
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, operation)
         } else {
             // setAlarmClock: the correct API for user-facing alarms — fires
             // reliably through Doze and shows the system alarm-clock indicator.

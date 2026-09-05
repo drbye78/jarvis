@@ -29,3 +29,38 @@ jobs:
       # type-check (activities, service, fragments of the media lane).
       - name: Assemble debug APK
         run: ./gradlew --no-daemon assembleDebug
+
+      # COGNITIVE_PLAN 0.5: no unreferenced binary may ride in the APK again
+      # (the deleted fp32 encoder cost 11 MB). Any asset larger than 1 MB
+      # must be mentioned by file name in the Kotlin sources, the manifest
+      # or the build script — otherwise the job fails.
+      - name: Asset audit (no unreferenced asset > 1 MB)
+        run: |
+          status=0
+          while IFS= read -r f; do
+            base=$(basename "$f")
+            if ! grep -rqF "$base" app/src/main/java app/src/main/AndroidManifest.xml app/build.gradle.kts 2>/dev/null; then
+              echo "::error::Unreferenced asset > 1 MB: $f"
+              status=1
+            fi
+          done < <(find app/src/main/assets -type f -size +1M)
+          exit $status
+
+  # COGNITIVE_PLAN 0.6: static analysis gate. The checked-in baseline
+  # (config/detekt/baseline.xml) absorbs legacy findings; any NEW violation
+  # of the active ruleset (incl. ForbiddenMethodCall: println / android.util
+  # .Log) fails the build.
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: detekt (incl. ktlint formatting rules)
+        run: ./gradlew --no-daemon :app:detekt

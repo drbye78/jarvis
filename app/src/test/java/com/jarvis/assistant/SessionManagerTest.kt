@@ -286,6 +286,8 @@ private class Harness(
     llmOverride: LlmClient? = null,
     /** Y6: pinned voice for asserting the per-sentence voiceSource read. */
     voiceSourceOverride: (() -> String)? = null,
+    /** COGNITIVE_PLAN 0.2: mutable live voice-stop pref source for toggle tests. */
+    voiceStopOverride: (() -> Boolean)? = null,
 ) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val dao = FakeMessageDao()
@@ -314,6 +316,7 @@ private class Harness(
         scope = scope,
         phrases = phrasesOverride ?: com.jarvis.assistant.session.SpeechPhrases.Default,
         voiceSource = voiceSourceOverride ?: { config.ttsVoice },
+        voiceStopEnabled = voiceStopOverride ?: { config.voiceStopEnabled },
     )
 
     fun shutdown() {
@@ -1286,6 +1289,150 @@ class VoiceStopSessionTest {
             h.manager.stopActiveTurn()
             delay(100)
             assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
+        } finally {
+            h.shutdown()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// COGNITIVE_PLAN 0.2: the voice-stop toggle must be honoured LIVE, in every
+// engine×toggle combination and at any moment of the turn. The lane's armed
+// state can lag a Settings flip; the handler re-checks the live pref so a
+// stale-armed lane can never cancel a turn the user no longer wants
+// interruptible.
+// ---------------------------------------------------------------------------
+
+class SessionManagerVoiceStopToggleTest {
+
+    @Test
+    fun `toggle OFF mid-THINKING - stale stop phrase does not cancel the turn`() = runBlocking {
+        var voiceStop = true
+        val h = Harness(
+            llm = ScriptedLlm(mutableListOf()),
+            llmOverride = HangingLlm(),
+            voiceStopOverride = { voiceStop },
+        )
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) { while (h.asr.streams.isEmpty()) delay(20) }
+            h.asr.streams.last().emitFinal("тест")
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.THINKING) delay(10)
+            }
+
+            // The user disables voice stop WHILE the assistant is thinking —
+            // no state change happens, so a lane armed under the old pref may
+            // still be live. The handler must re-check the pref.
+            voiceStop = false
+            h.wake.detections.emit(Detection.StopPhrase("stop"))
+            delay(250) // would be ample for a cancel to land
+
+            assertEquals(
+                "stop with the toggle OFF must be ignored",
+                AssistantState.THINKING,
+                h.stateMachine.currentState(),
+            )
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `toggle back ON mid-THINKING - the next stop phrase cancels again`() = runBlocking {
+        var voiceStop = true
+        val h = Harness(
+            llm = ScriptedLlm(mutableListOf()),
+            llmOverride = HangingLlm(),
+            voiceStopOverride = { voiceStop },
+        )
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) { while (h.asr.streams.isEmpty()) delay(20) }
+            h.asr.streams.last().emitFinal("тест")
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.THINKING) delay(10)
+            }
+
+            voiceStop = false
+            h.wake.detections.emit(Detection.StopPhrase("stop"))
+            delay(150)
+            assertEquals(AssistantState.THINKING, h.stateMachine.currentState())
+
+            voiceStop = true
+            h.wake.detections.emit(Detection.StopPhrase("stop"))
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(10)
+            }
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `stop OFF from the start is ignored - ON mid-turn is honoured (combo matrix)`() = runBlocking {
+        var voiceStop = false
+        val h = Harness(
+            llm = ScriptedLlm(mutableListOf()),
+            llmOverride = HangingLlm(),
+            voiceStopOverride = { voiceStop },
+        )
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) { while (h.asr.streams.isEmpty()) delay(20) }
+            h.asr.streams.last().emitFinal("тест")
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.THINKING) delay(10)
+            }
+
+            h.wake.detections.emit(Detection.StopPhrase("stop"))
+            delay(200)
+            assertEquals("disabled from the start — never cancels", AssistantState.THINKING, h.stateMachine.currentState())
+
+            voiceStop = true
+            h.wake.detections.emit(Detection.StopPhrase("stop"))
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(10)
+            }
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `toggle OFF mid-SPEAKING - queued speech is not interrupted by stop`() = runBlocking {
+        var voiceStop = true
+        // Gated player parks the sentence in playback → durable SPEAKING.
+        val player = GatedPlayer()
+        val h = Harness(
+            llm = ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Длинный ответ."), LlmChunk.Done))),
+            playerOverride = player,
+            voiceStopOverride = { voiceStop },
+        )
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) { while (h.asr.streams.isEmpty()) delay(20) }
+            h.asr.streams.last().emitFinal("тест")
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.SPEAKING) delay(10)
+            }
+
+            voiceStop = false
+            h.wake.detections.emit(Detection.StopPhrase("stop"))
+            delay(250)
+            assertEquals(
+                "the user disabled interruption — playback continues",
+                AssistantState.SPEAKING,
+                h.stateMachine.currentState(),
+            )
         } finally {
             h.shutdown()
         }

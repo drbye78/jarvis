@@ -50,6 +50,14 @@ data class JarvisConfig(
     val historyMaxMessages: Int = 20,
 
     /**
+     * COGNITIVE_PLAN 1.9: on-disk retention for the messages table. Larger
+     * than the LLM window — the memory core's opt-in backfill works on the
+     * retained recent dialogue. Storage cost is trivial; nothing here is
+     * ever auto-sent anywhere (extraction is gated + queued).
+     */
+    val historyRetentionMessages: Int = 200,
+
+    /**
      * Y5 (dialogue audit): hard char budget for the history window. A crude
      * chars/4 ≈ tokens estimate — no tokenizer dependency — that keeps the
      * request inside the model context even with verbose tool results.

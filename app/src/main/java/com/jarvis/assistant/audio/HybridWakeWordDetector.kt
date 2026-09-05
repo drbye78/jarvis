@@ -164,10 +164,17 @@ class HybridWakeWordDetector(
     // would cost seconds, while a loaded int8 KWS idles at zero CPU when
     // not fed. When the primary engine itself carries a stop phrase
     // (Sherpa primary) the lane is neither built nor fed.
+    // COGNITIVE_PLAN 0.3: the lane's lifecycle (arm → build → publish) is
+    // re-evaluated after every primary swap via [armStopLaneIfNeeded], so a
+    // toggle or a reconfigure that races a swap can no longer strand voice
+    // stop in a dead lane-less state.
     // ------------------------------------------------------------------
     @Volatile private var stopLaneEnabled = false
     @Volatile private var stopLaneBuildInFlight = false
     private var stopEngine: WakeWordEngine? = null
+
+    /** Test seam (COGNITIVE_PLAN 0.3): expose the lane for regression assertions. */
+    internal fun stopLaneForTest(): WakeWordEngine? = stopEngine
 
     // Live, reconfigurable request (updated by [reconfigure]).
     private var currentReq: WakeWordRequest = initialReq
@@ -251,7 +258,9 @@ class HybridWakeWordDetector(
                             stopEngine = null
                             runCatching { lane.release() }
                         }
-                        stopLaneBuildInFlight = false
+                        // COGNITIVE_PLAN 0.3: the flag is NO LONGER reset here —
+                        // a lane build genuinely in flight owns it, and the tail
+                        // re-arm below re-evaluates the need after publish.
                         true
                     }
                 }
@@ -271,6 +280,14 @@ class HybridWakeWordDetector(
         if (actorJob?.isActive != true) {
             actorJob = scope.launch { runActorLoop() }
         }
+
+        // COGNITIVE_PLAN 0.3: re-evaluate the stop lane after EVERY successful
+        // primary swap. setStopLaneEnabled(true) may have inspected the OLD
+        // primary — which covered stop, or already owned a lane for the old
+        // request — while this swap to a stop-less primary was in flight.
+        // Without this re-arm the lane is never built and voice stop dies
+        // silently until the next state change (the re-audit's rebuild race).
+        if (stopLaneEnabled) armStopLaneIfNeeded()
     }
 
     /**
@@ -328,37 +345,65 @@ class HybridWakeWordDetector(
     override fun setStopLaneEnabled(enabled: Boolean) {
         stopLaneEnabled = enabled
         if (!enabled) return
-        if (stopEngine != null || stopLaneBuildInFlight) return
+        armStopLaneIfNeeded()
+    }
+
+    /**
+     * COGNITIVE_PLAN 0.3: idempotent lazy-arm of the dedicated stop lane.
+     * Runs the cheap guard checks on the CALLING thread, then kicks the heavy
+     * build on the detector scope. Called from [setStopLaneEnabled] AND from
+     * the tail of every successful [buildAndSwap] — the single place that
+     * closes the arm-vs-swap race for both callers.
+     */
+    private fun armStopLaneIfNeeded() {
+        if (stopLaneBuildInFlight) return
+        if (stopEngine != null) return // lane already live (feed gate decides use)
+        if (_state.value == DetectorState.Released) return
         if (engine?.phrases?.any { it.isStop } == true) return // primary covers it
         if (!currentReq.stopPhraseEnabled) return
         if (stopLaneFactory == null && realContext == null) return // unsupported (JVM tests)
         stopLaneBuildInFlight = true
-        scope.launch {
-            val built = reconfigureMutex.withLock {
-                withContext(NonCancellable + engineBuildDispatcher) {
-                    try {
-                        stopLaneFactory?.invoke() ?: SherpaKwsEngine(
-                            context = realContext,
-                            sensitivity = currentReq.sensitivity,
-                            entries = listOf(SherpaKeywords.stop()),
-                            modelSource = SherpaModelSource.Bundled,
-                            bundledKeywordsAsset = SherpaKeywords.ASSET_KEYWORDS_STOP_FILE,
-                        )
-                    } catch (e: Exception) {
-                        Timber.w(e, "Stop lane build failed — voice stop unavailable this session")
-                        null
-                    }
+        scope.launch { buildStopLane() }
+    }
+
+    /**
+     * One attempt to build the dedicated stop lane. The publish step
+     * re-validates under [processMutex]: a concurrent [buildAndSwap] may have
+     * swapped the primary (possibly to one that covers stop) or the toggle
+     * may have flipped off while the build ran — a now-redundant lane is
+     * released instead of published (and any superseded lane is released
+     * before overwrite, closing the old double-build leak).
+     */
+    private suspend fun buildStopLane() {
+        val built = reconfigureMutex.withLock {
+            withContext(NonCancellable + engineBuildDispatcher) {
+                try {
+                    stopLaneFactory?.invoke() ?: SherpaKwsEngine(
+                        context = realContext,
+                        sensitivity = currentReq.sensitivity,
+                        entries = listOf(SherpaKeywords.stop()),
+                        modelSource = SherpaModelSource.Bundled,
+                        bundledKeywordsAsset = SherpaKeywords.ASSET_KEYWORDS_STOP_FILE,
+                    )
+                } catch (e: Exception) {
+                    Timber.w(e, "Stop lane build failed — voice stop unavailable this session")
+                    null
                 }
             }
-            withContext(NonCancellable) {
-                processMutex.withLock {
-                    if (_state.value != DetectorState.Released && built != null) {
+        }
+        withContext(NonCancellable) {
+            processMutex.withLock {
+                if (_state.value != DetectorState.Released && built != null) {
+                    val primaryCoversStop = engine?.phrases?.any { it.isStop } == true
+                    if (primaryCoversStop || !stopLaneEnabled || !currentReq.stopPhraseEnabled) {
+                        runCatching { built.release() } // redundant lane — drop it
+                    } else {
+                        val old = stopEngine
                         stopEngine = built
+                        if (old != null && old !== built) runCatching { old.release() }
                     }
-                }
-                // Released while building → drop the orphan (M2 discipline).
-                if (_state.value == DetectorState.Released) {
-                    runCatching { built?.release() }
+                } else {
+                    runCatching { built?.release() } // released mid-build → drop the orphan (M2)
                 }
                 stopLaneBuildInFlight = false
             }

@@ -1,0 +1,17 @@
+{
+ "id": "002",
+ "kind": "self",
+ "dialogue": [
+  {
+   "messageId": 11,
+   "text": "Меня зовут Алексей"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"name\", \"value\": \"Алексей\", \"confidence\": 0.95, \"evidence\": \"Меня зовут Алексей\", \"messageId\": 11}]}",
+ "expectedFacts": [
+  {
+   "predicate": "name",
+   "value": "Алексей"
+  }
+ ]
+}

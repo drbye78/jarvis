@@ -1,0 +1,14 @@
+{
+ "id": "011",
+ "kind": "noise",
+ "dialogue": [
+  {
+   "messageId": 21,
+   "text": "Включи джаз"
+  }
+ ],
+ "recordedResponse": "{\"facts\": []}",
+ "forbiddenFacts": [
+  "джаз"
+ ]
+}

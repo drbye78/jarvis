@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.protobuf) apply false
+    alias(libs.plugins.detekt) apply false // COGNITIVE_PLAN 0.6
     id("org.owasp.dependencycheck") version "13.0.0"
 }
 

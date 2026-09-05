@@ -1,0 +1,17 @@
+{
+ "id": "001",
+ "kind": "explicit",
+ "dialogue": [
+  {
+   "messageId": 10,
+   "text": "Джарвис, запомни, что моя жена Маша любит пионы"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"spouse\", \"value\": \"Маша любит пионы\", \"confidence\": 1.0, \"evidence\": \"жена Маша любит пионы\", \"messageId\": 10}]}",
+ "expectedFacts": [
+  {
+   "predicate": "spouse",
+   "value": "Маша любит пионы"
+  }
+ ]
+}

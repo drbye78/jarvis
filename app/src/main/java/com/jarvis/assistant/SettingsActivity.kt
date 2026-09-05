@@ -12,6 +12,7 @@ import android.widget.RadioGroup
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -25,6 +26,9 @@ import com.jarvis.assistant.util.CredentialsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+
+/** Short alias for the material switch used across the Settings cards. */
+private typealias MemorySwitch = com.google.android.material.materialswitch.MaterialSwitch
 
 /**
  * Callback contract the Settings screen uses to push user input out of the UI
@@ -292,6 +296,86 @@ class SettingsActivity : AppCompatActivity() {
                 GraphHolder.graph?.sessionManager?.setFollowUpWindow(followUpSwitch.isChecked, followUpSeconds())
             }
         })
+
+        // ------------------------------------------------------------------
+        // COGNITIVE_PLAN 1.8: «Память» card. §12.4: EVERY cognitive default
+        // is the initial value of a user-visible switch; all four switches
+        // are consumed reactively by the coordinator (PrefsFlow), so a
+        // toggle applies from the next turn — no restart (live-toggle
+        // regression tests: PrefsFlowTest / MemoryToolsTest).
+        // ------------------------------------------------------------------
+        val memoryEnabledSwitch = findViewById<MemorySwitch>(R.id.memoryEnabledSwitch)
+        val memoryAutoExtractSwitch = findViewById<MemorySwitch>(R.id.memoryAutoExtractSwitch)
+        val memoryCloudSwitch = findViewById<MemorySwitch>(R.id.memoryCloudSwitch)
+        val memorySensitiveSwitch = findViewById<MemorySwitch>(R.id.memorySensitiveSwitch)
+        val backfillStatus = findViewById<TextView>(R.id.memoryBackfillStatus)
+
+        memoryEnabledSwitch.isChecked = appPrefs.memoryEnabled
+        memoryAutoExtractSwitch.isChecked = appPrefs.memoryAutoExtract
+        memoryCloudSwitch.isChecked = appPrefs.memoryCloudEnabled
+        memorySensitiveSwitch.isChecked = appPrefs.memorySensitiveVisible
+
+        memoryEnabledSwitch.setOnCheckedChangeListener { _, checked ->
+            appPrefs.memoryEnabled = checked
+        }
+        memoryAutoExtractSwitch.setOnCheckedChangeListener { _, checked ->
+            appPrefs.memoryAutoExtract = checked
+        }
+        memoryCloudSwitch.setOnCheckedChangeListener { _, checked ->
+            appPrefs.memoryCloudEnabled = checked
+        }
+        memorySensitiveSwitch.setOnCheckedChangeListener { _, checked ->
+            appPrefs.memorySensitiveVisible = checked
+        }
+
+        findViewById<View>(R.id.memoryInspectorButton).setOnClickListener {
+            startActivity(Intent(this, MemoryInspectorActivity::class.java))
+        }
+
+        val backfillButton = findViewById<Button>(R.id.memoryBackfillButton)
+        lifecycleScope.launch {
+            val done = GraphHolder.graph?.let { graph ->
+                kotlin.runCatching {
+                    graph.database.memoryMetaDao()
+                        .get(com.jarvis.assistant.cognitive.data.MemoryMetaEntity.KEY_EXTRACTION_BACKFILL_DONE)
+                }.getOrNull()
+            } != null
+            if (done) {
+                backfillButton.isEnabled = false
+                backfillStatus.setText(R.string.settings_memory_backfill_done)
+            }
+        }
+        backfillButton.setOnClickListener {
+            val graph = GraphHolder.graph
+            if (graph == null) {
+                Toast.makeText(this, R.string.voice_service_not_running, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            AlertDialog.Builder(this)
+                .setTitle(R.string.settings_memory_backfill_confirm_title)
+                .setMessage(R.string.settings_memory_backfill_confirm_text)
+                .setPositiveButton(R.string.settings_memory_backfill) { _, _ ->
+                    lifecycleScope.launch {
+                        val enqueued = kotlin.runCatching {
+                            graph.cognitiveCoordinator.backfillRecent()
+                        }.getOrDefault(-1)
+                        when {
+                            enqueued == -1 -> {
+                                backfillButton.isEnabled = false
+                                backfillStatus.setText(R.string.settings_memory_backfill_done)
+                            }
+                            enqueued == 0 -> backfillStatus.setText(R.string.settings_memory_backfill_none)
+                            else -> {
+                                backfillButton.isEnabled = false
+                                backfillStatus.text =
+                                    getString(R.string.settings_memory_backfill_started, enqueued)
+                            }
+                        }
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
 
         // ------------------------------------------------------------------
         // Voice card (Y6): preset (Mila, verified) or a custom Salute voice
@@ -721,9 +805,17 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         override fun onVoiceStopToggled(enabled: Boolean) {
-            // The pref is already saved; the session state collector re-reads
-            // it on the next state change, so nothing else to do here. Kept as
-            // a callback for symmetry (and future service-side hooks).
+            // COGNITIVE_PLAN 0.2: the pref alone is NOT enough. The stop phrase
+            // is baked into the ENGINE keyword set at build time (Sherpa) and
+            // into the dedicated stop lane's build requirement (Porcupine), so
+            // the toggle must rebuild the live engine — the same path the
+            // engine/model/sensitivity callbacks use. The pref re-read by the
+            // session state collector only re-arms the LANE on the next state
+            // change; without this rebuild, 3 of the 4 engine×toggle
+            // combinations stayed stale until a restart.
+            lifecycleScope.launch(Dispatchers.Default) {
+                GraphHolder.graph?.reconfigureWakeWord()
+            }
         }
 
         override fun onLoadCustomPpn() {

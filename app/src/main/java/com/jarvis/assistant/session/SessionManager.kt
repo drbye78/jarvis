@@ -91,12 +91,27 @@ class SessionManager(
      * Settings switch applies from the next turn without a restart).
      */
     private val voiceStopEnabled: () -> Boolean = { config.voiceStopEnabled },
+    /**
+     * COGNITIVE_PLAN 1.2/1.6/1.7: the cognitive turn hooks (memory gather +
+     * ingest). Null = pre-cognitive behaviour (tests/baseline); the graph
+     * wires the real coordinator.
+     */
+    private val cognitive: CognitiveTurnHooks? = null,
 ) {
 
     private var sessionJob: Job? = null
     private var detectionJob: Job? = null
     private var windowJob: Job? = null
     private val sessionSeq = AtomicInteger(0)
+
+    /**
+     * COGNITIVE_PLAN 1.6: whether the CURRENT session was opened from the
+     * follow-up window (follow-up turns answer "continue the previous
+     * thought" — the composer may render summaries differently in Phase 2).
+     * Written under [controlLock] in [startSession], read by the turn lane.
+     */
+    @Volatile
+    private var currentTurnFromFollowUp: Boolean = false
 
     /**
      * Serializes every mutation of [sessionJob] / [detectionJob] /
@@ -164,6 +179,9 @@ class SessionManager(
             systemPrompt = systemPrompt,
             onActivity = { _turnActivity.value = it },
             voiceSource = voiceSource,
+            // COGNITIVE_PLAN 1.6/1.7: per-turn memory gather + ingest hook.
+            cognitive = cognitive,
+            isFollowUpTurn = { currentTurnFromFollowUp },
         )
 
     // @Volatile: registered once at construction, read from session
@@ -253,8 +271,14 @@ class SessionManager(
         }
     }
 
-    /** Begin (or restart) a listening session — also the barge-in entry point. */
-    fun startSession() {
+    /**
+     * Begin (or restart) a listening session — also the barge-in entry point.
+     *
+     * @param fromFollowUp COGNITIVE_PLAN 1.6: true when opened by the
+     *   follow-up window's speech onset (tagged in [PromptContext]).
+     */
+    fun startSession(fromFollowUp: Boolean = false) {
+        currentTurnFromFollowUp = fromFollowUp
         // M1 (hardened): SUPERSEDE FIRST. The old order (cancel → flush →
         // increment) left a micro-window where the interrupted session's
         // guarded writes (persistCompletedToolPass / finish / reportFailure)
@@ -341,6 +365,15 @@ class SessionManager(
      * anything — it is part of the user's utterance.
      */
     private fun handleStopPhrase(detection: Detection.StopPhrase) {
+        // COGNITIVE_PLAN 0.2: re-check the LIVE pref before acting. The stop
+        // lane's armed/disarmed state can lag a Settings toggle (the state
+        // collector re-arms on STATE changes only, and a Sherpa rebuild races
+        // the toggle) — an armed-but-just-disabled lane must not cancel a
+        // turn the user no longer wants interruptible.
+        if (!voiceStopEnabled()) {
+            Timber.d("Stop phrase '%s' ignored — voice stop is disabled", detection.keyword)
+            return
+        }
         val state = stateMachine.currentState()
         if (state != AssistantState.THINKING && state != AssistantState.SPEAKING) {
             Timber.d("Stop phrase '%s' ignored in state=%s", detection.keyword, state)
@@ -450,7 +483,8 @@ class SessionManager(
                                 Timber.i("Follow-up speech detected — starting turn")
                                 stateMachine.onEvent(SessionEvent.FollowUpSpeechDetected)
                                 followUp.onVadActive()
-                                startSession() // cancels this collector via windowJob
+                                // COGNITIVE_PLAN 1.6: tag the turn origin.
+                                startSession(fromFollowUp = true) // cancels this collector via windowJob
                                 throw CancellationException("follow-up turn started")
                             }
                         }

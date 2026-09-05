@@ -1,0 +1,25 @@
+{
+ "id": "007",
+ "kind": "correction",
+ "dialogue": [
+  {
+   "messageId": 16,
+   "text": "Я работаю в Яндексе"
+  },
+  {
+   "messageId": 17,
+   "text": "Теперь я работаю в Сбере"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"works_at\", \"value\": \"Яндексе\", \"confidence\": 0.9, \"evidence\": \"работаю в Яндексе\", \"messageId\": 16}, {\"subject\": \"user\", \"predicate\": \"works_at\", \"value\": \"Сбере\", \"confidence\": 0.95, \"evidence\": \"работаю в Сбере\", \"messageId\": 17}]}",
+ "expectedFacts": [
+  {
+   "predicate": "works_at",
+   "value": "Яндексе"
+  },
+  {
+   "predicate": "works_at",
+   "value": "Сбере"
+  }
+ ]
+}

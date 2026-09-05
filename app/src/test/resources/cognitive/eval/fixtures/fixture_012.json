@@ -1,0 +1,14 @@
+{
+ "id": "012",
+ "kind": "noise",
+ "dialogue": [
+  {
+   "messageId": 22,
+   "text": "Таймер на 10 минут"
+  }
+ ],
+ "recordedResponse": "{\"facts\": []}",
+ "forbiddenFacts": [
+  "таймер"
+ ]
+}

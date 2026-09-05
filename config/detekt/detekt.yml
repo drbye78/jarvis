@@ -1,0 +1,128 @@
+# COGNITIVE_PLAN 0.6: detekt static analysis.
+# Strategy: buildUponDefaultConfig + a focused activation set; the checked-in
+# baseline.xml absorbs legacy findings so every NEW violation fails CI.
+build:
+  maxIssues: 0
+
+config:
+  validation: true
+  warningsAsErrors: false
+
+complexity:
+  active: true
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 20
+  LongMethod:
+    active: true
+    threshold: 180
+  LongParameterList:
+    active: true
+    functionThreshold: 12
+    constructorThreshold: 14
+    ignoreDefaultParameters: true
+  TooManyFunctions:
+    active: true
+    thresholdInFiles: 40
+    thresholdInClasses: 25
+    thresholdInInterfaces: 20
+    thresholdInObjects: 20
+    thresholdInEnums: 12
+    ignoreDeprecated: true
+    ignorePrivate: true
+
+coroutines:
+  active: true
+  RedundantSuspendModifier:
+    active: true
+  SleepInsteadOfDelay:
+    active: true
+  SuspendFunWithFlowReturnType:
+    active: true
+
+exceptions:
+  active: true
+  SwallowedException:
+    active: true
+    ignoredExceptionTypes:
+      - InterruptedException
+      - MalformedURLException
+      - NumberFormatException
+      - ParseException
+      - CancellationException
+      - IllegalStateException
+  TooGenericExceptionCaught:
+    active: true
+    exceptionNames:
+      - ArrayIndexOutOfBoundsException
+      - Error
+      - IllegalMonitorStateException
+      - IndexOutOfBoundsException
+      - NullPointerException
+      - Throwable
+    # java.lang.Exception stays catchable: the audio/player lanes funnel
+    # generic engine failures into honest error paths on purpose.
+
+naming:
+  active: true
+  FunctionNaming:
+    active: true
+    ignoreAnnotated: ['Composable', 'Test']
+  MatchingDeclarationName:
+    active: false # several test files intentionally host multiple classes
+
+potential-bugs:
+  active: true
+  ImplicitDefaultLocale:
+    active: true
+  WrongEqualsTypeParameter:
+    active: true
+
+style:
+  active: true
+  ForbiddenMethodCall:
+    active: true
+    methods:
+      - reason: 'Use Timber instead of stdout logging (A7 class of bug).'
+        value: 'kotlin.io.println'
+      - reason: 'Use Timber instead of stdout logging (A7 class of bug).'
+        value: 'kotlin.io.print'
+      - reason: 'Use Timber instead of android.util.Log (A7).'
+        value: 'android.util.Log.v'
+      - reason: 'Use Timber instead of android.util.Log (A7).'
+        value: 'android.util.Log.d'
+      - reason: 'Use Timber instead of android.util.Log (A7).'
+        value: 'android.util.Log.i'
+      - reason: 'Use Timber instead of android.util.Log (A7).'
+        value: 'android.util.Log.w'
+      - reason: 'Use Timber instead of android.util.Log (A7).'
+        value: 'android.util.Log.e'
+      - reason: 'Use Timber instead of android.util.Log (A7).'
+        value: 'android.util.Log.wtf'
+  MagicNumber:
+    active: false # the audio/DSP lanes are numeric by nature; names suffice
+  MaxLineLength:
+    active: true
+    maxLineLength: 140
+  ReturnCount:
+    active: true
+    max: 5
+  UnusedPrivateMember:
+    active: true
+  WildcardImport:
+    active: false
+
+formatting:
+  active: true
+  ImportOrdering:
+    active: false # legacy layout variance; revisit with a dedicated pass
+  MaximumLineLength:
+    active: false # covered by style.MaxLineLength at 140
+  Indentation:
+    active: false # legacy variance; a dedicated formatting pass will enable it
+  ArgumentListWrapping:
+    active: false
+  ParameterListWrapping:
+    active: false
+  Wrapping:
+    active: false

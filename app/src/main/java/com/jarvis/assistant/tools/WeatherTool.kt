@@ -47,6 +47,15 @@ class OpenMeteoWeatherClient(
     private val languageTag: String = "ru",
     /** Placeholder for missing readings (locale-aware in production). */
     private val notAvailable: String = "н/д",
+    /**
+     * COGNITIVE_PLAN 0.6 (hermetic suite): base-URL seams so the JVM tests
+     * run against MockWebServer instead of the REAL open-meteo endpoints —
+     * a unit test that calls the live internet hangs sandboxes/CI without
+     * egress and is non-deterministic everywhere else. Defaults keep
+     * production behavior byte-identical.
+     */
+    private val geoBaseUrl: String = "https://geocoding-api.open-meteo.com",
+    private val forecastBaseUrl: String = "https://api.open-meteo.com",
 ) : WeatherClient {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -54,7 +63,7 @@ class OpenMeteoWeatherClient(
     override suspend fun getWeather(location: String): String = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(location.trim(), "UTF-8")
         val lang = languageTag.ifBlank { "ru" }
-        val geoUrl = ("https://geocoding-api.open-meteo.com/v1/search" +
+        val geoUrl = ("$geoBaseUrl/v1/search" +
             "?name=$encoded&count=5&language=$lang").toHttpUrl()
 
         val geoBody = httpGet(geoUrl.toString())
@@ -81,7 +90,7 @@ class OpenMeteoWeatherClient(
         val displayName = first["name"]?.jsonPrimitive?.contentOrNull ?: location
         val country = first["country"]?.jsonPrimitive?.contentOrNull
 
-        val weatherUrl = ("https://api.open-meteo.com/v1/forecast" +
+        val weatherUrl = ("$forecastBaseUrl/v1/forecast" +
             "?latitude=$lat&longitude=$lon" +
             "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m" +
             "&timezone=auto").toHttpUrl()

@@ -12,13 +12,34 @@ import com.jarvis.assistant.config.ProviderSettings
  * Secrets (the OpenAI-compatible API key) are NOT plain prefs: they route
  * through the [SecretVault] (Keystore-encrypted in production).
  */
-class AppPrefs(context: Context, vaultOverride: SecretVault? = null) {
+class AppPrefs(
+    /**
+     * Nullable ONLY for the 0.7 test seam: when [prefsOverride] is supplied
+     * no Android framework type is touched. Production callers pass a real
+     * context and the requireNotNull guard is invisible.
+     */
+    context: Context?,
+    vaultOverride: SecretVault? = null,
+    /** 0.7 test seam: JVM tests inject an in-memory [SharedPreferences]. */
+    prefsOverride: SharedPreferences? = null,
+) {
 
     private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
+        prefsOverride
+            ?: requireNotNull(context) { "AppPrefs needs a context when no prefsOverride is supplied" }
+                .applicationContext.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
+
+    /** 0.7: raw handle for reactive wrappers ([PrefsFlow]) — same-file singleton. */
+    internal fun rawPrefs(): SharedPreferences = prefs
 
     private val vault: SecretVault by lazy {
-        vaultOverride ?: KeystoreVault.get(context.applicationContext)
+        vaultOverride
+            ?: KeystoreVault.get(
+                // vault is lazy: only touched on the first secret access, which
+                // in production always happens with a real context attached.
+                requireNotNull(context) { "AppPrefs needs a context for the secret vault" }
+                    .applicationContext,
+            )
     }
 
     var onboarded: Boolean
@@ -124,6 +145,52 @@ class AppPrefs(context: Context, vaultOverride: SecretVault? = null) {
         get() = prefs.getLong(KEY_FOLLOW_UP_WINDOW_MS, 5_000L)
         set(value) = prefs.edit().putLong(KEY_FOLLOW_UP_WINDOW_MS, value).apply()
 
+    // ------------------------------------------------------------------
+    // COGNITIVE_PLAN Phase 1 (§9.2/§12.4): the memory switches. ALL of them
+    // are user-configurable by owner decision (§12.4: "a plan default is the
+    // initial value of a user-visible switch, never a hard-coded behaviour")
+    // and ALL are consumed reactively via [PrefsFlow] — a Settings toggle
+    // applies from the next turn, no restart (plan principle 5).
+    // ------------------------------------------------------------------
+
+    /**
+     * Master kill switch (plan principle 6): false → byte-identical prompts
+     * to the pre-cognitive composer, empty queue processing, zero extra
+     * cloud calls. Explicit memory tools report honestly that memory is off.
+     */
+    var memoryEnabled: Boolean
+        get() = prefs.getBoolean(KEY_MEMORY_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_MEMORY_ENABLED, value).apply()
+
+    /**
+     * Automatic fact extraction after turns (plan §6.2). Default OFF by
+     * design: it flips on only after the Phase 1 evaluation gate measures
+     * precision ≥ 0.85 / recall ≥ 0.7 on the fixture set. Explicit
+     * remember_fact writes work regardless of this switch.
+     */
+    var memoryAutoExtract: Boolean
+        get() = prefs.getBoolean(KEY_MEMORY_AUTO_EXTRACT, false)
+        set(value) = prefs.edit().putBoolean(KEY_MEMORY_AUTO_EXTRACT, value).apply()
+
+    /**
+     * Cloud extraction/summarization egress (plan §9.2). OFF stops all
+     * queued cognitive cloud calls (they stay PENDING, never dropped or
+     * faked); explicit tool writes stay local and keep working.
+     */
+    var memoryCloudEnabled: Boolean
+        get() = prefs.getBoolean(KEY_MEMORY_CLOUD_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_MEMORY_CLOUD_ENABLED, value).apply()
+
+    /**
+     * §12.4-2: sensitive-fact categories (HEALTH, politics, religion) are
+     * visible-but-marked by default for this single-user device; this switch
+     * controls whether they are INJECTED INTO PROMPTS at all (the inspector
+     * always shows them, marked).
+     */
+    var memorySensitiveVisible: Boolean
+        get() = prefs.getBoolean(KEY_MEMORY_SENSITIVE_VISIBLE, true)
+        set(value) = prefs.edit().putBoolean(KEY_MEMORY_SENSITIVE_VISIBLE, value).apply()
+
     /**
      * Y6: TTS voice for the assistant's speech (Settings «Голос» card).
      * "Mila" is the verified default; a free-text Salute voice ID is stored
@@ -161,23 +228,31 @@ class AppPrefs(context: Context, vaultOverride: SecretVault? = null) {
         get() = prefs.getBoolean(KEY_VOICE_STOP, true)
         set(value) = prefs.edit().putBoolean(KEY_VOICE_STOP, value).apply()
 
-    private companion object {
-        const val KEY_ONBOARDED = "onboarded"
-        const val KEY_USER_STOPPED = "user_stopped"
-        const val KEY_PROVIDER = "provider_type"
-        const val KEY_OPENAI_URL = "openai_base_url"
-        const val KEY_OPENAI_MODEL = "openai_model"
-        const val KEY_WAKE_SENSITIVITY = "wake_sensitivity"
-        const val KEY_WAKE_MODEL = "wake_word_model"
-        const val KEY_CUSTOM_WAKE_PATH = "custom_wake_word_path"
-        const val KEY_WAKE_ENGINE = "wake_word_engine"
-        const val KEY_SHERPA_ONNX = "sherpa_onnx_path"
-        const val KEY_SHERPA_KEYWORD = "sherpa_custom_keyword"
-        const val KEY_VOICE_STOP = "voice_stop_enabled"
-        const val KEY_MUSIC_PLAYER = "preferred_music_player"
-        const val KEY_AEC_MODE = "aec_mode"
-        const val KEY_FOLLOW_UP_ENABLED = "follow_up_enabled"
-        const val KEY_FOLLOW_UP_WINDOW_MS = "follow_up_window_ms"
-        const val KEY_TTS_VOICE = "tts_voice"
+    /**
+     * 0.7: keys are internal (not private) so the reactive [PrefsFlow]
+     * wrapper can fan out changes by key. Treat them as storage layout.
+     */
+    internal companion object {
+        internal const val KEY_ONBOARDED = "onboarded"
+        internal const val KEY_USER_STOPPED = "user_stopped"
+        internal const val KEY_PROVIDER = "provider_type"
+        internal const val KEY_OPENAI_URL = "openai_base_url"
+        internal const val KEY_OPENAI_MODEL = "openai_model"
+        internal const val KEY_WAKE_SENSITIVITY = "wake_sensitivity"
+        internal const val KEY_WAKE_MODEL = "wake_word_model"
+        internal const val KEY_CUSTOM_WAKE_PATH = "custom_wake_word_path"
+        internal const val KEY_WAKE_ENGINE = "wake_word_engine"
+        internal const val KEY_SHERPA_ONNX = "sherpa_onnx_path"
+        internal const val KEY_SHERPA_KEYWORD = "sherpa_custom_keyword"
+        internal const val KEY_VOICE_STOP = "voice_stop_enabled"
+        internal const val KEY_MUSIC_PLAYER = "preferred_music_player"
+        internal const val KEY_AEC_MODE = "aec_mode"
+        internal const val KEY_FOLLOW_UP_ENABLED = "follow_up_enabled"
+        internal const val KEY_FOLLOW_UP_WINDOW_MS = "follow_up_window_ms"
+        internal const val KEY_TTS_VOICE = "tts_voice"
+        internal const val KEY_MEMORY_ENABLED = "memory_enabled"
+        internal const val KEY_MEMORY_AUTO_EXTRACT = "memory_auto_extract"
+        internal const val KEY_MEMORY_CLOUD_ENABLED = "memory_cloud_enabled"
+        internal const val KEY_MEMORY_SENSITIVE_VISIBLE = "memory_sensitive_visible"
     }
 }

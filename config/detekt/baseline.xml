@@ -1,0 +1,185 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CommentWrapping:MusicOrchestratorTest.kt$MusicOrchestratorTest$/* ignore */</ID>
+    <ID>CommentWrapping:MusicOrchestratorTest.kt$MusicOrchestratorTest$/* ignore: old track keeps playing */</ID>
+    <ID>CommentWrapping:MusicOrchestratorTest.kt$MusicOrchestratorTest$/* never starts anything */</ID>
+    <ID>CommentWrapping:MusicOrchestratorTest.kt$MusicOrchestratorTest$/* would be ignored anyway */</ID>
+    <ID>ComplexCondition:JarvisForegroundService.kt$JarvisForegroundService$g != null &amp;&amp; initialized &amp;&amp; g.audioPipeline.hasGivenUp() &amp;&amp; !g.sessionManager.muted.value</ID>
+    <ID>ComplexCondition:SherpaModelStore.kt$SherpaModelStore$target.isFile &amp;&amp; !needsVersionRefresh &amp;&amp; assetSize in 0..Long.MAX_VALUE &amp;&amp; target.length() == assetSize</ID>
+    <ID>CyclomaticComplexMethod:LlmClients.kt$SseLlmClient$override fun chatStream(request: ChatRequest): Flow&lt;LlmChunk&gt;</ID>
+    <ID>CyclomaticComplexMethod:MusicTools.kt$MusicTools.ControlPlaybackTool$override suspend fun execute(arguments: String): String</ID>
+    <ID>CyclomaticComplexMethod:NlmsEchoCanceller.kt$NlmsEchoCanceller$override fun process(micFrame: ShortArray): ShortArray</ID>
+    <ID>CyclomaticComplexMethod:SettingsActivity.kt$SettingsActivity$override fun onCreate(savedInstanceState: Bundle?)</ID>
+    <ID>CyclomaticComplexMethod:SseParser.kt$SseParser$fun parseChunk(json: Json, data: String): ParsedChunk?</ID>
+    <ID>CyclomaticComplexMethod:TransportControl.kt$TransportControl$suspend fun control( spec: MusicPlaybackOrchestrator.ControlSpec, appHint: String?, ): MusicPlaybackOrchestrator.Outcome</ID>
+    <ID>CyclomaticComplexMethod:TurnActivity.kt$TurnActivityLabels$fun toolRes(tool: String): Int?</ID>
+    <ID>CyclomaticComplexMethod:TurnRunner.kt$TurnRunner$private suspend fun CoroutineScope.processLlm(id: Int, turn: TurnState)</ID>
+    <ID>EmptyFunctionBlock:AudioPipelineTest.kt$AudioPipelineTest.BrokenSource${}</ID>
+    <ID>EmptyFunctionBlock:AudioPipelineTest.kt$AudioPipelineTest.FlakySource${}</ID>
+    <ID>EmptyFunctionBlock:AudioPipelineTest.kt$RetryThenHealSource${}</ID>
+    <ID>EmptyFunctionBlock:AudioRingBufferTest.kt$AudioRingBufferTest.NoopSource${}</ID>
+    <ID>EmptyFunctionBlock:AudioRingBufferTest.kt$AudioRingBufferTest.PumpSource${}</ID>
+    <ID>EmptyFunctionBlock:FunctionRouterTest.kt$FunctionRouterTest.NoopArmer${}</ID>
+    <ID>EmptyFunctionBlock:FunctionRouterTest.kt$FunctionRouterTest.NoopDao${}</ID>
+    <ID>EmptyFunctionBlock:JarvisApplication.kt$JarvisApplication.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyFunctionBlock:PorcupineDetectorTest.kt$PorcupineDetectorTest.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyFunctionBlock:SessionFollowUpWindowTest.kt$SessionFollowUpWindowTest.MiniWake${}</ID>
+    <ID>EmptyFunctionBlock:SessionFollowUpWindowTest.kt$SessionFollowUpWindowTest.ParkingPlayer${}</ID>
+    <ID>EmptyFunctionBlock:SessionFollowUpWindowTest.kt$SessionFollowUpWindowTest.SpeechPumpAudioSource${}</ID>
+    <ID>EmptyFunctionBlock:SessionManagerTest.kt$FakeAsrStream${}</ID>
+    <ID>EmptyFunctionBlock:SessionManagerTest.kt$FakePlayer${}</ID>
+    <ID>EmptyFunctionBlock:SessionManagerTest.kt$FakeWakeWord${}</ID>
+    <ID>EmptyFunctionBlock:SessionManagerTest.kt$GatedPlayer${}</ID>
+    <ID>EmptyFunctionBlock:SessionManagerTest.kt$PumpAudioSource${}</ID>
+    <ID>EmptyFunctionBlock:SettingsActivity.kt$SettingsActivity.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyFunctionBlock:SettingsActivity.kt$SettingsActivity.StubCallbacks${ }</ID>
+    <ID>EmptyFunctionBlock:SettingsActivity.kt$SettingsActivity.StubCallbacks${}</ID>
+    <ID>LargeClass:MusicOrchestratorTest.kt$MusicOrchestratorTest</ID>
+    <ID>LargeClass:SessionManagerTest.kt$SessionManagerTest</ID>
+    <ID>LongMethod:SettingsActivity.kt$SettingsActivity$override fun onCreate(savedInstanceState: Bundle?)</ID>
+    <ID>LoopWithTooManyJumpStatements:AlarmScheduler.kt$AndroidAlarmScheduler$for</ID>
+    <ID>LoopWithTooManyJumpStatements:BpeTokenizer.kt$BpeTokenizer$for</ID>
+    <ID>LoopWithTooManyJumpStatements:ConversationManager.kt$ConversationManager$for</ID>
+    <ID>LoopWithTooManyJumpStatements:LlmClients.kt$SseLlmClient$while</ID>
+    <ID>LoopWithTooManyJumpStatements:StreamingAudioTrackPlayer.kt$StreamingAudioTrackPlayer$while</ID>
+    <ID>LoopWithTooManyJumpStatements:TurnRunner.kt$TurnRunner$while</ID>
+    <ID>MaxLineLength:MusicOrchestratorTest.kt$MusicOrchestratorTest$val out = orchestrator(gw).playSearchQuery("", artist = null, album = null, playlist = "Для тренировки", genre = null, appHint = null)</ID>
+    <ID>MaxLineLength:MusicPlaybackOrchestrator.kt$MusicPlaybackOrchestrator$?:</ID>
+    <ID>MaxLineLength:MusicTools.kt$MusicTools.ControlPlaybackTool$"action" to """{"type":"string","enum":["play","pause","toggle","next","previous","stop","seek","restart","like","repeat","shuffle","speed"],"description":"Transport command"}"""</ID>
+    <ID>MaxLineLength:MusicTools.kt$MusicTools.ControlPlaybackTool$"deltaMs" to """{"type":"integer","description":"seek: SIGNED offset from the current position in milliseconds (e.g. 30000 = forward 30 s, -15000 = back 15 s). Use for 'промотай на минуту'."}"""</ID>
+    <ID>MaxLineLength:MusicTools.kt$MusicTools.ControlPlaybackTool$"mode" to """{"type":"string","enum":["off","one","all"],"description":"repeat mode: 'one' = повтори трек, 'all' = повторить всё, 'off' = без повтора"}"""</ID>
+    <ID>MaxLineLength:MusicTools.kt$MusicTools.ControlPlaybackTool$"positionMs" to """{"type":"integer","description":"seek: ABSOLUTE target position in milliseconds from track start (e.g. 60000 = 1:00). Use for 'на второй минуте'."}"""</ID>
+    <ID>MaxLineLength:MusicTools.kt$MusicTools.ControlPlaybackTool$"speed" to """{"type":"number","description":"playback speed multiplier: 1.5 (быстрее), 0.75 (медленнее), 1.0 (нормально). Range 0.25–4.0."}"""</ID>
+    <ID>MaxLineLength:MusicTools.kt$MusicTools.PlayMusicTool$"app" to """{"type":"string","description":"Optional player name to disambiguate: 'Яндекс Музыка', 'Звук', 'VK Музыка'. Omit when the user did not name a player — the default (from Settings) applies."}"""</ID>
+    <ID>MaxLineLength:MusicTools.kt$MusicTools.PlayMusicTool$"artist" to """{"type":"string","description":"Artist/band name slot: 'Queen', 'Кино'. Fill when the user names the performer."}"""</ID>
+    <ID>MaxLineLength:MusicTools.kt$MusicTools.PlayMusicTool$"mediaId" to """{"type":"string","description":"EXACT library item id previously returned by listPlaylists or searchLibrary in THIS conversation. When set, query/slots are ignored — pass it together with the item's 'title'. Use only right after those tools returned items."}"""</ID>
+    <ID>MaxLineLength:MusicTools.kt$MusicTools.PlayMusicTool$"query" to """{"type":"string","description":"Track title or free search text. Only the title — put the artist/album into their own slots instead of gluing everything here. May be empty when the request is fully structured."}"""</ID>
+    <ID>MaxLineLength:MusicTools.kt$MusicTools.PlayMusicTool$"title" to """{"type":"string","description":"Title of the mediaId item, exactly as listPlaylists/searchLibrary returned it — used to verify playback started. Optional, only meaningful with mediaId."}"""</ID>
+    <ID>MultiLineIfElse:AlarmScheduler.kt$SystemAlertArmer$AlarmReceiver.ACTION_ALARM_FIRED</ID>
+    <ID>MultiLineIfElse:AlarmScheduler.kt$SystemAlertArmer$AlarmReceiver.ACTION_TIMER_FIRED</ID>
+    <ID>MultiLineIfElse:AndroidMediaGateway.kt$AndroidControllerHandle$MediaCapabilities.SHUFFLE_MODE_ALL</ID>
+    <ID>MultiLineIfElse:AndroidMediaGateway.kt$AndroidControllerHandle$MediaCapabilities.SHUFFLE_MODE_NONE</ID>
+    <ID>MultiLineIfElse:BargeInPolicyTest.kt$BargeInPolicyTest$"${scenario.name}: expected=${scenario.expected} actual=$actual"</ID>
+    <ID>MultiLineIfElse:BargeInPolicyTest.kt$BargeInPolicyTest$null</ID>
+    <ID>MultiLineIfElse:FollowUpWindowController.kt$FollowUpWindowController$null</ID>
+    <ID>MultiLineIfElse:HybridWakeWordDetector.kt$PorcupineWakeWordEngine$setKeyword(Porcupine.BuiltInKeyword.JARVIS)</ID>
+    <ID>MultiLineIfElse:HybridWakeWordDetector.kt$PorcupineWakeWordEngine$setKeywordPath(keywordPath)</ID>
+    <ID>MultiLineIfElse:LinearResampler.kt$LinearResampler$block[i - blockStart.toInt()].toFloat()</ID>
+    <ID>MultiLineIfElse:LinearResampler.kt$LinearResampler$last</ID>
+    <ID>MultiLineIfElse:MediaDiagnostics.kt$MediaDiagnostics$'-'</ID>
+    <ID>MultiLineIfElse:MediaDiagnostics.kt$MediaDiagnostics$'?'</ID>
+    <ID>MultiLineIfElse:MediaDiagnostics.kt$MediaDiagnostics$'Y'</ID>
+    <ID>MultiLineIfElse:NlmsEchoCanceller.kt$NlmsEchoCanceller$1.0</ID>
+    <ID>MultiLineIfElse:NlmsEchoCanceller.kt$NlmsEchoCanceller$null</ID>
+    <ID>MultiLineIfElse:SettingsActivity.kt$SettingsActivity$R.string.sherpa_keyword_applied</ID>
+    <ID>MultiLineIfElse:SettingsActivity.kt$SettingsActivity$R.string.sherpa_keyword_applied_default</ID>
+    <ID>MultiLineIfElse:TranscriptAdapter.kt$TranscriptAdapter.Companion.&lt;no name provided&gt;$oldItem == newItem</ID>
+    <ID>MultiLineIfElse:TranscriptAdapter.kt$TranscriptAdapter.Companion.&lt;no name provided&gt;$oldItem.id == newItem.id</ID>
+    <ID>MultiLineIfElse:TransportControl.kt$TransportControl$""</ID>
+    <ID>MultiLineIfElse:TurnRunner.kt$TurnRunner$AsrOutcome.Final(event.text)</ID>
+    <ID>MultiLineIfElse:TurnRunner.kt$TurnRunner$AsrOutcome.NoSpeech</ID>
+    <ID>NestedBlockDepth:AudioPipeline.kt$AudioPipeline$private suspend fun runProducer()</ID>
+    <ID>NestedBlockDepth:MusicPlaybackOrchestrator.kt$MusicPlaybackOrchestrator$private suspend fun runBrowserLane( app: MediaAppInfo, command: SearchCommand, vq: VoiceQuery, ): Outcome?</ID>
+    <ID>NestedBlockDepth:MusicPlaybackOrchestrator.kt$MusicPlaybackOrchestrator$suspend fun playSearchQuery( rawQuery: String, artist: String?, album: String?, playlist: String?, genre: String?, appHint: String?, ): Outcome</ID>
+    <ID>NestedBlockDepth:NlmsEchoCancellerTest.kt$NlmsEchoCancellerTest$@Test fun `converges on a linear echo path and preserves near-end speech`()</ID>
+    <ID>NestedBlockDepth:SentenceSplitter.kt$fun String.splitSentences(): List&lt;String&gt;</ID>
+    <ID>NestedBlockDepth:SseParser.kt$SseParser$fun parseChunk(json: Json, data: String): ParsedChunk?</ID>
+    <ID>NestedBlockDepth:TurnRunner.kt$TurnRunner$private suspend fun CoroutineScope.processLlm(id: Int, turn: TurnState)</ID>
+    <ID>NoBlankLineBeforeRbrace:FollowUpWindowControllerTest.kt$EnergyVadTest$ </ID>
+    <ID>NoBlankLineBeforeRbrace:ToolContract.kt$ToolRegistry$ </ID>
+    <ID>NoMultipleSpaces:AudioContracts.kt$AudioSpec$ </ID>
+    <ID>NoMultipleSpaces:BargeInPolicyTest.kt$BargeInPolicyTest$ </ID>
+    <ID>NoMultipleSpaces:EnergyVad.kt$EnergyVad.Companion$ </ID>
+    <ID>NoMultipleSpaces:JarvisConfig.kt$JarvisConfig$ </ID>
+    <ID>NoMultipleSpaces:LinearResampler.kt$LinearResampler$ </ID>
+    <ID>NoMultipleSpaces:MediaBrowserGatewayTest.kt$MediaBrowserGatewayTest$ </ID>
+    <ID>NoMultipleSpaces:NlmsEchoCanceller.kt$NlmsEchoCanceller.Companion$ </ID>
+    <ID>NoMultipleSpaces:SessionManagerTest.kt$SessionManagerTest$ </ID>
+    <ID>NoTrailingSpaces:SessionManagerTest.kt$SessionManagerTest$ </ID>
+    <ID>NoUnusedImports:AlarmRingingActivity.kt$com.jarvis.assistant.service.AlarmRingingActivity.kt</ID>
+    <ID>NoUnusedImports:AlertStoreTest.kt$com.jarvis.assistant.AlertStoreTest.kt</ID>
+    <ID>NoUnusedImports:BootReceiver.kt$com.jarvis.assistant.service.BootReceiver.kt</ID>
+    <ID>NoUnusedImports:ConversationManager.kt$com.jarvis.assistant.data.ConversationManager.kt</ID>
+    <ID>NoUnusedImports:DeviceTools.kt$com.jarvis.assistant.tools.DeviceTools.kt</ID>
+    <ID>NoUnusedImports:MessageDao.kt$com.jarvis.assistant.data.MessageDao.kt</ID>
+    <ID>NoUnusedImports:MigrationTest.kt$com.jarvis.assistant.data.MigrationTest.kt</ID>
+    <ID>NoUnusedImports:NlmsEchoCancellerTest.kt$com.jarvis.assistant.NlmsEchoCancellerTest.kt</ID>
+    <ID>NoUnusedImports:OpenAppAndStopGateTest.kt$com.jarvis.assistant.OpenAppAndStopGateTest.kt</ID>
+    <ID>NoUnusedImports:PlaybackCaptureFarEndSource.kt$com.jarvis.assistant.audio.aec.PlaybackCaptureFarEndSource.kt</ID>
+    <ID>NoUnusedImports:SessionManager.kt$com.jarvis.assistant.session.SessionManager.kt</ID>
+    <ID>NoUnusedImports:SessionManagerTest.kt$com.jarvis.assistant.SessionManagerTest.kt</ID>
+    <ID>NoUnusedImports:SettingsActivity.kt$com.jarvis.assistant.SettingsActivity.kt</ID>
+    <ID>NoUnusedImports:SseLlmClientTest.kt$com.jarvis.assistant.SseLlmClientTest.kt</ID>
+    <ID>NoUnusedImports:SseParser.kt$com.jarvis.assistant.llm.SseParser.kt</ID>
+    <ID>NoUnusedImports:StreamingAudioTrackPlayerTest.kt$com.jarvis.assistant.StreamingAudioTrackPlayerTest.kt</ID>
+    <ID>NoUnusedImports:TransportToolsTest.kt$com.jarvis.assistant.TransportToolsTest.kt</ID>
+    <ID>NoUnusedImports:WireDtoTest.kt$com.jarvis.assistant.WireDtoTest.kt</ID>
+    <ID>NoUnusedImports:WireDtos.kt$com.jarvis.assistant.wire.WireDtos.kt</ID>
+    <ID>ReturnCount:DeviceTools.kt$DeviceTools.SetBluetoothTool$override suspend fun execute(arguments: String): String</ID>
+    <ID>ReturnCount:HybridWakeWordDetector.kt$HybridWakeWordDetector$private fun armStopLaneIfNeeded()</ID>
+    <ID>ReturnCount:LibraryBrowser.kt$LibraryBrowser$suspend fun listPlaylists(appHint: String?): MusicPlaybackOrchestrator.Outcome</ID>
+    <ID>ReturnCount:LibraryBrowser.kt$LibraryBrowser$suspend fun searchLibrary(rawQuery: String, appHint: String?): MusicPlaybackOrchestrator.Outcome</ID>
+    <ID>ReturnCount:MusicPlaybackOrchestrator.kt$MusicPlaybackOrchestrator$private suspend fun runBrowserLane( app: MediaAppInfo, command: SearchCommand, vq: VoiceQuery, ): Outcome?</ID>
+    <ID>ReturnCount:MusicPlaybackOrchestrator.kt$MusicPlaybackOrchestrator$suspend fun playLibraryItem(mediaId: String, titleHint: String?, appHint: String?): Outcome</ID>
+    <ID>ReturnCount:MusicPlaybackOrchestrator.kt$MusicPlaybackOrchestrator$suspend fun playSearchQuery( rawQuery: String, artist: String?, album: String?, playlist: String?, genre: String?, appHint: String?, ): Outcome</ID>
+    <ID>ReturnCount:TransportControl.kt$TransportControl$suspend fun control( spec: MusicPlaybackOrchestrator.ControlSpec, appHint: String?, ): MusicPlaybackOrchestrator.Outcome</ID>
+    <ID>SpacingBetweenDeclarationsWithAnnotations:HybridWakeWordDetector.kt$HybridWakeWordDetector$@Volatile private var stopLaneBuildInFlight = false</ID>
+    <ID>SpacingBetweenDeclarationsWithAnnotations:JarvisForegroundService.kt$JarvisForegroundService$@Volatile private var bootstrapping = false</ID>
+    <ID>SpacingBetweenDeclarationsWithAnnotations:JarvisForegroundService.kt$JarvisForegroundService$@Volatile private var graph: AppGraph? = null</ID>
+    <ID>SpacingBetweenDeclarationsWithAnnotations:SentenceSplitterTest.kt$SentenceBufferTest$@Test fun `streamed abbreviation tail does not flush the sentence`()</ID>
+    <ID>SpacingBetweenDeclarationsWithAnnotations:StreamingAudioTrackPlayer.kt$StreamingAudioTrackPlayer$@Volatile private var generation = 0L</ID>
+    <ID>SpacingBetweenDeclarationsWithAnnotations:StreamingAudioTrackPlayer.kt$StreamingAudioTrackPlayer$@Volatile private var released = false</ID>
+    <ID>SpacingBetweenDeclarationsWithComments:FarEndMixer.kt$FarEndMixer.Lane$/** Sub-slot remainder of the frame being consumed (float to sum exactly). */</ID>
+    <ID>SpacingBetweenDeclarationsWithComments:HybridWakeWordDetector.kt$HybridWakeWordDetector$// L4: serialize concurrent engine builds (initial build + reconfigure) so</ID>
+    <ID>SpacingBetweenDeclarationsWithComments:JarvisForegroundService.kt$JarvisForegroundService$/** * Holds the MediaController that was paused during ducking so it can be * resumed in [unduck]. MediaController has no lifecycle callback for * remote session death; if the remote app is killed, [lastController] may * become stale. The surrounding [runCatching] in [unduck] handles this * gracefully (dead controller → swallowed exception → fallback to idle). */</ID>
+    <ID>SpacingBetweenDeclarationsWithComments:MediaGateway.kt$NowPlaying.Companion$// Framework STATE_STOPPED is 1 — value 4 is STATE_FAST_FORWARDING.</ID>
+    <ID>SpacingBetweenDeclarationsWithComments:SettingsActivity.kt$SettingsCallbacks$/** FIXPLAN B: the voice-stop toggle changed. */</ID>
+    <ID>SpacingBetweenDeclarationsWithComments:SettingsActivity.kt$SettingsCallbacks$/** FIXPLAN C: a validated custom Sherpa keyword was applied (blank = bundled Jarvis). */</ID>
+    <ID>SpacingBetweenDeclarationsWithComments:VoiceQuery.kt$SearchCommand.Companion$/** Title-focused (song) search: TITLE (+ ARTIST) extras. */</ID>
+    <ID>SpreadOperator:AppDatabase.kt$AppDatabase.Companion$(*ALL_MIGRATIONS)</ID>
+    <ID>SpreadOperator:AppDatabase.kt$AppDatabase.Companion$(*DESTRUCTIVE_FROM_VERSIONS)</ID>
+    <ID>StringTemplate:TranscriptAdapter.kt$TranscriptAdapter$${name}</ID>
+    <ID>SwallowedException:BpeTokenizer.kt$BpeTokenizer.Companion$e: Exception</ID>
+    <ID>SwallowedException:SherpaModelStore.kt$SherpaModelStore$e: Exception</ID>
+    <ID>SwallowedException:SseParser.kt$SseParser$e: Exception</ID>
+    <ID>SwallowedException:ToolContract.kt$ToolArgs$e: Exception</ID>
+    <ID>SwallowedException:WeatherTool.kt$OpenMeteoWeatherClient$e: Exception</ID>
+    <ID>ThrowsCount:LlmClient.kt$suspend fun &lt;T&gt; withLlmRetry( attempts: Int = 3, initialDelayMs: Long = 2_000, maxDelayMs: Long = 30_000, factor: Double = 3.0, onRetry: (attempt: Int, error: Throwable, delayMs: Long) -&gt; Unit = { _, _, _ -&gt; }, block: suspend (attempt: Int) -&gt; T, ): T</ID>
+    <ID>TooGenericExceptionCaught:AppGraph.kt$AppGraph$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SpeechFeedback.kt$TtsSpeechFeedback$t: Throwable</ID>
+    <ID>TooGenericExceptionThrown:SessionManagerTest.kt$FakeAsrClient$throw RuntimeException("connection refused")</ID>
+    <ID>TooGenericExceptionThrown:SpeechFeedbackTest.kt$SpeechFeedbackTest.FakePlayer$throw RuntimeException("AudioTrack died")</ID>
+    <ID>TooGenericExceptionThrown:TokenManager.kt$TokenManager$throw RuntimeException( "OAuth response is not valid JSON (HTTP ${response.code}) for scope='$scope'", e )</ID>
+    <ID>TooGenericExceptionThrown:TokenManager.kt$TokenManager$throw RuntimeException( "OAuth response missing 'access_token' (HTTP ${response.code}) for scope='$scope'" )</ID>
+    <ID>TooGenericExceptionThrown:TokenManager.kt$TokenManager$throw RuntimeException( "OAuth token request failed (HTTP ${response.code}) for scope='$scope'" )</ID>
+    <ID>UnusedParameter:AlarmRinger.kt$AlarmRinger$context: Context</ID>
+    <ID>UnusedParameter:LinearResampler.kt$LinearResampler$blockLen: Int</ID>
+    <ID>UnusedParameter:SherpaKwsEngine.kt$SherpaKwsEngine$config: KeywordSpotterConfig</ID>
+    <ID>UnusedPrivateMember:ConversationManagerTest.kt$ConversationManagerTest$private fun toolCallJson(id: String)</ID>
+    <ID>UnusedPrivateMember:NlmsEchoCancellerTest.kt$NlmsEchoCancellerTest$private fun echoOf(history: List&lt;Short&gt;, delay: Int, fir: DoubleArray, gain: Double): Double</ID>
+    <ID>UnusedPrivateMember:NlmsEchoCancellerTest.kt$NlmsEchoCancellerTest$private fun sineFrame(phase0: Double, amp: Double, n: Int = 320): Pair&lt;ShortArray, Double&gt;</ID>
+    <ID>UnusedPrivateMember:SessionManagerTest.kt$SessionManagerTest$private fun persistedToolCallIds(entity: MessageEntity): List&lt;String&gt;</ID>
+    <ID>UnusedPrivateProperty:LlmClients.kt$SseLlmClient$val producer = launch(Dispatchers.IO) { var acc = mutableMapOf&lt;Int, ToolCallAccumulator&gt;() var toolCallsFinalized = false suspend fun finalizeToolCalls() { if (toolCallsFinalized) return toolCallsFinalized = true acc.toSortedMap().forEach { (_, a) -&gt; val name = a.name ?: return@forEach send( LlmChunk.FunctionCallComplete( ToolCall( id = a.id ?: UUID.randomUUID().toString(), function = FunctionCall(name, a.args.toString()), ) ) ) } } try { val wire = customize(request).toWire() val bodyJson = json.encodeToString( com.jarvis.assistant.wire.WireChatRequest.serializer(), wire, ) val mediaType = "application/json; charset=utf-8".toMediaType() val httpRequest = newRequest(request, bodyJson) .post(bodyJson.toRequestBody(mediaType)) .header("Accept", "text/event-stream") .build() val httpCall = httpClient.newCall(httpRequest) call = httpCall // Cancellable open (M5): barge-in during connect/headers aborts // the in-flight request instead of waiting for the timeout. val response = httpCall.await() try { // Body lifecycle (M4): closed on EVERY exit below — normal // EOF, [DONE], error, and cancellation — via this finally. if (!response.isSuccessful) { val err = runCatching { response.body?.string() }.getOrNull().orEmpty() // Sanitized: never bake the raw body into the exception // (it can contain token/PII material and reaches the // rotating file log via collectors). Log a bounded // length only. Timber.e("LLM request failed: HTTP %d, body length=%d", response.code, err.length) // TYPED so the session layer can classify 4xx (fatal) // vs 5xx/429 (transient, retried) without parsing text. close(LlmHttpException(response.code)) return@launch } val source = response.body?.source() ?: run { close(RuntimeException("LLM returned an empty body")) return@launch } // Audit #13: events are assembled per the SSE spec — all // `data:` lines of one event (terminated by a blank line) // are joined with \n. Single-line events (GigaChat/OpenAI) // are byte-identical to the old line-at-a-time behavior. val assembler = SseParser.EventAssembler() var done = false suspend fun handleEventData(data: String): Boolean { if (SseParser.isDone(data)) { finalizeToolCalls() return true } val parsed = SseParser.parseChunk(json, data) ?: return false parsed.text?.takeIf { it.isNotEmpty() }?.let { send(LlmChunk.Text(it)) } for (d in parsed.toolDeltas) { val a = acc.getOrPut(d.index) { ToolCallAccumulator(d.index) } if (d.id != null) a.id = d.id if (d.name != null) a.name = d.name a.args.append(d.argsDelta) send(LlmChunk.FunctionCallDelta(d.index, d.name, d.argsDelta)) } if (parsed.finishReason != null) { finalizeToolCalls() acc = mutableMapOf() // defensive: no double-finalize } return false } while (!done) { // Stop consuming mid-stream as soon as we are cancelled. ensureActive() val line = try { source.readUtf8Line() ?: break // EOF } catch (e: IOException) { if (httpCall.isCanceled()) return@launch // barge-in: stop silently close(e) return@launch } val data = assembler.offer(line) ?: continue done = handleEventData(data) } // EOF tolerance: a server that omits the final blank line // still delivers its last event. assembler.flush()?.let { done = handleEventData(it) } // Normal end ([DONE] or EOF): finalize, emit Done, and // CLOSE the channel — the producer ending alone does not // complete a channelFlow parked in awaitClose, and without // close() every collector hangs until its timeout (the // same defect commit 3999acb fixed in the v3 client). finalizeToolCalls() send(LlmChunk.Done) close() } finally { runCatching { response.close() } } } catch (e: CancellationException) { throw e // never mask cancellation as a stream error } catch (e: IOException) { if (call?.isCanceled() != true) close(e) } catch (e: Exception) { if (call?.isCanceled() != true) close(e) } }</ID>
+    <ID>UnusedPrivateProperty:NlmsEchoCanceller.kt$NlmsEchoCanceller.Companion$private const val BYPASS_SILENCE_MS = 200L</ID>
+    <ID>UseCheckOrError:AlarmAndRegistryTest.kt$ToolRegistryTest.ThrowingTool$throw IllegalStateException("kaput")</ID>
+    <ID>UseCheckOrError:AppGraph.kt$AppGraph$throw IllegalStateException( "bpe.model is missing or unreadable in ${modelDir.path} — cannot tokenize wake words", )</ID>
+    <ID>UseCheckOrError:AudioPipelineTest.kt$AudioPipelineTest.FlakySource$throw IllegalStateException("AudioRecordSource not started")</ID>
+    <ID>UseCheckOrError:AudioRecordSource.kt$AudioRecordSource$throw IllegalStateException("AudioRecord failed to initialize")</ID>
+    <ID>UseCheckOrError:AudioRecordSource.kt$AudioRecordSource$throw IllegalStateException("AudioRecordSource not started")</ID>
+    <ID>UseCheckOrError:AudioRecordSource.kt$AudioRecordSource.Companion$throw IllegalStateException( "AudioRecord.getMinBufferSize returned $raw at ${sampleRate}Hz/mono/16-bit — microphone source unusable", )</ID>
+    <ID>UseCheckOrError:AudioRingBufferTest.kt$AudioRingBufferTest.PumpSource$throw IllegalStateException("AudioRecordSource not started")</ID>
+    <ID>UseCheckOrError:LlmClient.kt$throw IllegalStateException("withLlmRetry exhausted attempts without returning")</ID>
+    <ID>UseCheckOrError:PorcupineDetectorTest.kt$PorcupineDetectorTest.&lt;no name provided&gt;$throw IllegalStateException("native exploded")</ID>
+    <ID>UseCheckOrError:SherpaKwsEngine.kt$SherpaKwsEngine$throw IllegalStateException("Cannot create Sherpa work directory: $work")</ID>
+    <ID>UseCheckOrError:SherpaModelStore.kt$SherpaModelStore$throw IllegalStateException("Cannot create Sherpa model dir: $dir")</ID>
+    <ID>UseCheckOrError:SherpaModelStore.kt$SherpaModelStore$throw IllegalStateException("Extracted Sherpa asset '$assetName' is empty")</ID>
+    <ID>UseCheckOrError:SpeechFeedbackTest.kt$SpeechFeedbackTest.FakeTts$throw IllegalStateException("gRPC down")</ID>
+    <ID>UseCheckOrError:StreamingAudioTrackPlayer.kt$StreamingAudioTrackPlayer$throw IllegalStateException( "AudioTrack short write ($written &lt;= 0 at offset $offset of ${chunk.size}) — aborting sentence", )</ID>
+    <ID>UseCheckOrError:TransportControl.kt$TransportControl$throw IllegalStateException("unreachable")</ID>
+    <ID>UseRequire:BpeTokenizer.kt$BpeTokenizer.Companion$throw IllegalArgumentException("truncated submessage")</ID>
+    <ID>UseRequire:BpeTokenizer.kt$BpeTokenizer.Companion$throw IllegalArgumentException("varint too long")</ID>
+    <ID>UseRequire:KeystoreVault.kt$KeystoreVault$throw IllegalArgumentException("Vault entry too short to contain IV || ciphertext")</ID>
+  </CurrentIssues>
+</SmellBaseline>

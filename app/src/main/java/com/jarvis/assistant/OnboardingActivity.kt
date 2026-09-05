@@ -101,23 +101,6 @@ class OnboardingActivity : AppCompatActivity() {
                 check = { notificationListenerEnabled() },
                 action = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
             ),
-            // Android 13+ (API 33): POST_NOTIFICATIONS is a runtime permission.
-            // Without it, the foreground service notification and alarm FSI are silently blocked.
-            // Harmless on older API levels (auto-granted).
-            PermRow(
-                getString(R.string.onboarding_row_post_notif),
-                getString(R.string.onboarding_weight_required),
-                check = {
-                    Build.VERSION.SDK_INT < 33 ||
-                        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
-                            PackageManager.PERMISSION_GRANTED
-                },
-                action = {
-                    ActivityCompat.requestPermissions(
-                        this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFICATIONS,
-                    )
-                },
-            ),
             PermRow(
                 getString(R.string.onboarding_row_battery),
                 getString(R.string.onboarding_weight_required),
@@ -279,13 +262,12 @@ class OnboardingActivity : AppCompatActivity() {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_MIC || requestCode == REQ_NOTIFICATIONS) refreshStatus()
+        if (requestCode == REQ_MIC) refreshStatus()
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private companion object {
         const val REQ_MIC = 1
-        const val REQ_NOTIFICATIONS = 2
     }
 }

@@ -58,6 +58,10 @@ object TurnActivityLabels {
         "getNowPlaying" -> R.string.activity_tool_get_now_playing
         "listPlaylists" -> R.string.activity_tool_list_playlists
         "searchLibrary" -> R.string.activity_tool_search_library
+        // COGNITIVE_PLAN 1.5: memory tools get status pills like every tool.
+        "remember_fact" -> R.string.activity_tool_remember_fact
+        "recall_facts" -> R.string.activity_tool_recall_facts
+        "forget_fact" -> R.string.activity_tool_forget_fact
         else -> null
     }
 }

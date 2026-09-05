@@ -1,0 +1,17 @@
+{
+ "id": "004",
+ "kind": "life-fact",
+ "dialogue": [
+  {
+   "messageId": 13,
+   "text": "У меня день рождения 12 апреля"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"birthday\", \"value\": \"12 апреля\", \"confidence\": 0.95, \"evidence\": \"день рождения 12 апреля\", \"messageId\": 13}]}",
+ "expectedFacts": [
+  {
+   "predicate": "birthday",
+   "value": "12 апреля"
+  }
+ ]
+}

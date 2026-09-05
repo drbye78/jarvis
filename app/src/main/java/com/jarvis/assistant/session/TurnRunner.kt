@@ -27,6 +27,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.delay
@@ -78,6 +79,13 @@ class TurnRunner(
     private val onActivity: (TurnActivity?) -> Unit = {},
     /** Y6: TTS voice resolved per sentence so Settings changes apply live. */
     private val voiceSource: () -> String = { config.ttsVoice },
+    /**
+     * COGNITIVE_PLAN 1.2/1.6/1.7: memory gather + ingest hooks; null =
+     * pre-cognitive behaviour (byte-identical prompts, zero extra calls).
+     */
+    private val cognitive: CognitiveTurnHooks? = null,
+    /** COGNITIVE_PLAN 1.6: true when this session came from the follow-up. */
+    private val isFollowUpTurn: () -> Boolean = { false },
 ) {
     /** m10: bounds how many sentence jobs hold a TTS synthesis/playback slot. */
     private val ttsSynthPermits = Semaphore(TTS_SYNTH_PREFETCH)
@@ -128,8 +136,16 @@ class TurnRunner(
                     }
                     onStateEvent(SessionEvent.SpeechCaptured) // -> THINKING
                     Timber.i("ASR final: %s", outcome.text)
-                    conversationManager.addMessage("user", outcome.text)
-                    processLlm(sessionId, turn)
+                    // COGNITIVE_PLAN 1.7: persist, then fire-and-forget ingest
+                    // keyed by the row id (exactly-once per message).
+                    val messageId = conversationManager.addMessage("user", outcome.text)
+                    cognitive?.ingest(outcome.text, messageId, TurnOrigin.VOICE)
+
+                    // COGNITIVE_PLAN 1.6: one PromptContext per turn; the
+                    // memory gather starts NOW so its (≤40 ms) cost hides
+                    // inside the LLM call's time-to-first-token (§7.2).
+                    val promptContext = buildPromptContext(outcome.text)
+                    processLlm(sessionId, turn, promptContext)
                 }
 
                 AsrOutcome.NoSpeech -> {
@@ -245,6 +261,31 @@ class TurnRunner(
     // ------------------------------------------------------------------
 
     /**
+     * COGNITIVE_PLAN 1.6: per-turn prompt context. Built ONCE per turn; the
+     * memory provider is a deferred STARTED here (the moment ASR finalizes —
+     * plan §7.2) and awaited by the composer on first use, so its ≤40 ms
+     * cost hides inside the LLM call's time-to-first-token. The deferred is
+     * idempotent across the tool passes (one DB snapshot per turn).
+     */
+    private fun CoroutineScope.buildPromptContext(utterance: String): PromptContext {
+        val now = java.util.Calendar.getInstance()
+        val hooks = cognitive
+        val memory: suspend () -> String = if (hooks == null) {
+            suspend { "" }
+        } else {
+            val gatherDeferred = async { hooks.gather(utterance) }
+            suspend { gatherDeferred.await() }
+        }
+        return PromptContext(
+            utterance = utterance,
+            hour = now.get(java.util.Calendar.HOUR_OF_DAY),
+            dayOfWeek = now.get(java.util.Calendar.DAY_OF_WEEK),
+            isFollowUp = isFollowUpTurn(),
+            memory = memory,
+        )
+    }
+
+    /**
      * LLM turn: iterative tool loop + streaming sentence TTS.
      *
      * Interruption semantics (supersedes the v4-P1 "persist nothing" tradeoff):
@@ -255,8 +296,19 @@ class TurnRunner(
      * atomically under [NonCancellable]. Tools that fired real side effects no
      * longer vanish from the conversation; tools that never finished are
      * simply absent (no phantom results, never a dangling pair).
+     *
+     * COGNITIVE_PLAN 1.6: every pass re-renders the prompt from the SAME
+     * [context] — fresh clock per pass (via the composer), one memory
+     * snapshot per turn.
+     *
+     * The complexity/nesting suppressions are deliberate: this method IS the
+     * tool-loop state machine (retry ladder, interruption persistence,
+     * streaming TTS fan-out). Splitting it would scatter the interruption
+     * semantics that must stay atomic — the same tradeoff P7 made when it
+     * was extracted verbatim from SessionManager.
      */
-    private suspend fun CoroutineScope.processLlm(id: Int, turn: TurnState) {
+    @Suppress("CyclomaticComplexMethod", "NestedBlockDepth")
+    private suspend fun CoroutineScope.processLlm(id: Int, turn: TurnState, context: PromptContext) {
         onStateEvent(SessionEvent.LlmStarted)
         var pass = 0
 
@@ -274,7 +326,7 @@ class TurnRunner(
             val history = conversationManager.getHistoryForLLM()
             val tools = functionRouter.getToolDefinitions()
             val request = ChatRequest(
-                messages = listOf(Message.system(systemPrompt.build())) + history,
+                messages = listOf(Message.system(systemPrompt.build(context))) + history,
                 tools = tools,
                 model = null, // profile default
                 temperature = config.gigaChatTemperature,

@@ -1,0 +1,15 @@
+{
+ "id": "013",
+ "kind": "noise",
+ "dialogue": [
+  {
+   "messageId": 23,
+   "text": "Погода на завтра в Москве"
+  }
+ ],
+ "recordedResponse": "{\"facts\": []}",
+ "forbiddenFacts": [
+  "погода",
+  "Москве"
+ ]
+}

@@ -24,12 +24,21 @@ class FunctionRouter(
     toolStrings: ToolStrings = ToolStrings.Default,
     /** A6: geocoding language — follows the device locale in production. */
     weatherLanguageTag: String = "ru",
+    /**
+     * COGNITIVE_PLAN 0.7: ONE [AppPrefs] instance, injected from the graph —
+     * the router used to construct its own, so two instances of the same
+     * prefs file lived side by side and future cognitive tools would have
+     * read a different instance than the session layer.
+     */
+    val appPrefs: com.jarvis.assistant.util.AppPrefs,
+    /**
+     * COGNITIVE_PLAN 1.5: the memory tools (remember_fact / recall_facts /
+     * forget_fact), resolved LAZILY so registering them never forces the
+     * cognitive coordinator's first DB touch at graph construction.
+     */
+    private val cognitiveTools: () -> List<ToolContract> = { emptyList() },
 ) : ToolExecutor {
     private val appContext = context.applicationContext
-
-    // A10: ONE prefs instance — the per-resolve lambda used to construct a
-    // fresh AppPrefs on every music target resolution.
-    private val appPrefs = com.jarvis.assistant.util.AppPrefs(appContext)
 
     private val alarmScheduler = AndroidAlarmScheduler(
         appContext,
@@ -47,7 +56,7 @@ class FunctionRouter(
         },
     )
 
-    private val toolRegistry = ToolRegistry(
+    private val baseToolRegistry = ToolRegistry(
         listOf(
             SetAlarmTool(
                 alarmScheduler,
@@ -86,6 +95,15 @@ class FunctionRouter(
                 ),
             ).all(),
     )
+
+    /**
+     * The full registry = base tools + memory tools. Lazy: the cognitive
+     * coordinator (and its Room v4 migration) resolves on first LLM pass
+     * or first tool call, not at graph construction (§9.4 startup budget).
+     */
+    private val toolRegistry by lazy {
+        ToolRegistry(baseToolRegistry.available() + cognitiveTools())
+    }
 
     override fun getToolDefinitions(): List<ToolDefinition> =
         toolRegistry.getToolDefinitions()

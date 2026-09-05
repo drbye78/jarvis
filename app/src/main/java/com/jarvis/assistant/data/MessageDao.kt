@@ -31,6 +31,14 @@ interface MessageDao {
     @Query("SELECT * FROM messages ORDER BY id ASC")
     suspend fun all(): List<MessageEntity>
 
+    /** COGNITIVE_PLAN 1.4: utterance lookup for the extraction queue worker. */
+    @Query("SELECT * FROM messages WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): MessageEntity?
+
+    /** COGNITIVE_PLAN 1.9: backfill source — the newest user-role messages. */
+    @Query("SELECT * FROM messages WHERE role = 'user' ORDER BY id DESC LIMIT :limit")
+    suspend fun recentUserMessages(limit: Int): List<MessageEntity>
+
     @Query("SELECT * FROM messages ORDER BY id DESC LIMIT :n")
     suspend fun recentDesc(n: Int): List<MessageEntity>
 

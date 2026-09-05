@@ -1,0 +1,17 @@
+{
+ "id": "005",
+ "kind": "life-fact",
+ "dialogue": [
+  {
+   "messageId": 14,
+   "text": "Я живу в Москве, работаю в ИТ"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"lives_in\", \"value\": \"Москве\", \"confidence\": 0.95, \"evidence\": \"Я живу в Москве\", \"messageId\": 14}]}",
+ "expectedFacts": [
+  {
+   "predicate": "lives_in",
+   "value": "Москве"
+  }
+ ]
+}

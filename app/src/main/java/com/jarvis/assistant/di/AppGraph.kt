@@ -2,6 +2,7 @@ package com.jarvis.assistant.di
 
 import android.content.Context
 import com.jarvis.assistant.audio.AudioPipeline
+import androidx.room.withTransaction
 import com.jarvis.assistant.audio.AudioRecordSource
 import com.jarvis.assistant.audio.HybridWakeWordDetector
 import com.jarvis.assistant.audio.StreamingAudioTrackPlayer
@@ -23,7 +24,6 @@ import com.jarvis.assistant.llm.OpenAiCompatClient
 import com.jarvis.assistant.llm.TokenManager
 import com.jarvis.assistant.session.SessionManager
 import com.jarvis.assistant.session.SessionStateMachine
-import com.jarvis.assistant.session.TimeAwareSystemPrompt
 import com.jarvis.assistant.speech.asr.SberStreamingAsr
 import com.jarvis.assistant.speech.tts.SaluteSpeechTts
 import com.jarvis.assistant.speech.tts.TtsClient
@@ -92,6 +92,9 @@ class AppGraph(
         database.messageDao(),
         config.historyMaxMessages,
         config.historyMaxChars,
+        // COGNITIVE_PLAN 1.9: keep the recent dialogue on disk (LLM window
+        // stays historyMaxMessages) so the opt-in backfill has material.
+        config.historyRetentionMessages,
     )
 
     val networkMonitor = NetworkMonitor(appContext)
@@ -230,7 +233,40 @@ class AppGraph(
         toolStrings = com.jarvis.assistant.tools.AndroidToolStrings(appContext),
         // A6: weather geocoding answers in the device language.
         weatherLanguageTag = java.util.Locale.getDefault().language.ifBlank { "ru" },
+        // 0.7: ONE AppPrefs instance graph-wide (the router built its own).
+        appPrefs = appPrefs,
+        // COGNITIVE_PLAN 1.5: remember_fact / recall_facts / forget_fact.
+        cognitiveTools = { cognitiveCoordinator.tools() },
     )
+
+    /**
+     * COGNITIVE_PLAN 0.7/1.2: reactive settings. Every wake-word, voice-stop
+     * and follow-up pref as a StateFlow; the CognitiveCoordinator's switches
+     * are consumed from here, never re-snapshotted at graph build time.
+     */
+    val prefsFlow by lazy { com.jarvis.assistant.util.PrefsFlow(appPrefs) }
+
+    /**
+     * COGNITIVE_PLAN 1.2: the Cognitive Core. Lazy so graph construction
+     * stays off the cognitive path (startup budget §9.4 ≤ 30 ms); the daos
+     * trigger the v3→v4 migration on first touch, off the hot path.
+     */
+    val cognitiveCoordinator: com.jarvis.assistant.cognitive.CognitiveCoordinator by lazy {
+        com.jarvis.assistant.cognitive.CognitiveCoordinator(
+            factDao = database.userFactDao(),
+            queueDao = database.extractionQueueDao(),
+            metaDao = database.memoryMetaDao(),
+            messageDao = database.messageDao(),
+            llm = llmClient,
+            memoryEnabled = prefsFlow.memoryEnabled,
+            autoExtractEnabled = prefsFlow.memoryAutoExtract,
+            cloudEnabled = prefsFlow.memoryCloudEnabled,
+            sensitiveVisible = prefsFlow.memorySensitiveVisible,
+            strings = com.jarvis.assistant.tools.AndroidToolStrings(appContext),
+            parentScope = scope,
+            inTransaction = { block -> database.withTransaction { block() } },
+        )
+    }
 
     val stateMachine = SessionStateMachine()
 
@@ -252,7 +288,7 @@ class AppGraph(
         scope = scope,
         focus = audioFocus,
         phrases = speechPhrases,
-        systemPrompt = TimeAwareSystemPrompt(),
+        systemPrompt = com.jarvis.assistant.session.PromptComposer(),
         voiceSource = voiceSource,
         // Follow-up window: user-controllable, default OFF; the Settings
         // card updates it live through the service binder.
@@ -261,6 +297,16 @@ class AppGraph(
         // FIXPLAN B: live voice-stop toggle (Settings card, applies from the
         // next turn).
         voiceStopEnabled = { appPrefs.voiceStopEnabled },
+        // COGNITIVE_PLAN 1.2/1.6/1.7: memory gather + ingest hooks. Lazily
+        // resolved so the session lane never forces the cognitive migration
+        // at graph construction.
+        cognitive = object : com.jarvis.assistant.session.CognitiveTurnHooks {
+            override suspend fun gather(utterance: String?): String =
+                cognitiveCoordinator.gather(utterance)
+
+            override fun ingest(utterance: String, messageId: Long, origin: com.jarvis.assistant.session.TurnOrigin) =
+                cognitiveCoordinator.ingest(utterance, messageId, origin)
+        },
         // Phase 5 (M7): pause-on-wake reuses the real tool lane — the same
         // capability-gated control path the LLM uses, incl. the media-key
         // fallback for the app that owns audio focus.
@@ -433,6 +479,9 @@ class AppGraph(
         try {
             audioPipeline.start()
             sessionManager.startListening()
+            // COGNITIVE_PLAN 1.2: queue loop starts with the service; the
+            // first lazy touch of the coordinator runs the v3→v4 migration.
+            cognitiveCoordinator.startQueueLoop()
         } catch (e: Exception) {
             shutdown() // N11: tear down anything we built before the throw
             throw e
@@ -443,7 +492,9 @@ class AppGraph(
         // N11: every teardown is best-effort so shutdown() is safe to call even
         // if construction/start partially failed (no resource left dangling for
         // the watchdog's next retry).
+        runCatching { prefsFlow.close() } // 0.7: release the change listener
         runCatching { sessionManager.cancelAll() }
+        runCatching { cognitiveCoordinator.scope.cancel() } // 1.2: stop cognition first
         runCatching { playbackCapture.stop() }
         runCatching { audioPipeline.release() }
         runCatching { wakeWordDetector.release() }

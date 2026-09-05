@@ -1,0 +1,17 @@
+{
+ "id": "010",
+ "kind": "sensitive",
+ "dialogue": [
+  {
+   "messageId": 20,
+   "text": "У меня аллергия на пыльцу"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"health\", \"value\": \"аллергия на пыльцу\", \"confidence\": 0.95, \"evidence\": \"аллергия на пыльцу\", \"messageId\": 20}]}",
+ "expectedFacts": [
+  {
+   "predicate": "health",
+   "value": "аллергия на пыльцу"
+  }
+ ]
+}

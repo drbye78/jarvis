@@ -33,20 +33,31 @@ import kotlinx.serialization.json.Json
  */
 class ConversationManager(
     private val dao: MessageDao,
+    /** Window fed to the LLM (getHistoryForLLM). */
     private val maxMessages: Int = 20,
     /** Char budget for [getHistoryForLLM]; ~4 chars ≈ 1 token. 0 = unlimited. */
     private val maxChars: Int = 0,
+    /**
+     * COGNITIVE_PLAN 1.9: on-disk retention (deleteAllExceptRecent). Larger
+     * than the LLM window: the memory core's opt-in backfill needs recent
+     * utterances to exist in the table (plan: "backfill of last 200
+     * messages"), while the LLM context stays bounded by [maxMessages].
+     * Rows here are plain history, never auto-sent anywhere.
+     */
+    private val retentionMaxMessages: Int = maxMessages,
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun addMessage(role: String, content: String) {
+    suspend fun addMessage(role: String, content: String): Long =
         addMessage(Message(role = role, content = content))
-    }
 
-    suspend fun addMessage(message: Message) {
-        dao.insert(message.toEntity())
+    /** Persists one message, trims retention, returns the inserted row id —
+     *  the extraction ingest hook keys work on it (plan §6.1). */
+    suspend fun addMessage(message: Message): Long {
+        val id = dao.insert(message.toEntity())
         trim()
+        return id
     }
 
     /** Persists the assistant message and its tool results atomically (C2). */
@@ -55,10 +66,12 @@ class ConversationManager(
         trim()
     }
 
-    /** Keeps the newest [maxMessages] messages. Tool results always have higher
-     *  ids than their assistant, so a simple id-based cutoff preserves pairs. */
+    /** Keeps the newest [retentionMaxMessages] messages on disk. Tool results
+     *  always have higher ids than their assistant, so a simple id-based
+     *  cutoff preserves pairs. The LLM WINDOW stays [maxMessages] — this is
+     *  storage retention, not context. */
     private suspend fun trim() {
-        dao.deleteAllExceptRecent(maxMessages)
+        dao.deleteAllExceptRecent(retentionMaxMessages)
     }
 
     /**

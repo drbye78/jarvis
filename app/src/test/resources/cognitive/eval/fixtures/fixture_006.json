@@ -1,0 +1,17 @@
+{
+ "id": "006",
+ "kind": "likes",
+ "dialogue": [
+  {
+   "messageId": 15,
+   "text": "Я обожаю старые фильмы Тарковского"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"likes\", \"value\": \"старые фильмы Тарковского\", \"confidence\": 0.95, \"evidence\": \"обожаю старые фильмы Тарковского\", \"messageId\": 15}]}",
+ "expectedFacts": [
+  {
+   "predicate": "likes",
+   "value": "старые фильмы Тарковского"
+  }
+ ]
+}

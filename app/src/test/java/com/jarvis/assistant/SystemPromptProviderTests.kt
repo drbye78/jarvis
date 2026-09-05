@@ -1,11 +1,13 @@
 package com.jarvis.assistant
 
+import com.jarvis.assistant.session.PromptContext
 import com.jarvis.assistant.session.TimeAwareSystemPrompt
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import java.util.Calendar
 import java.util.TimeZone
@@ -39,8 +41,9 @@ class SystemPromptProviderTests {
         return { cal.timeInMillis }
     }
 
-    private fun promptAt(h: Int, m: Int = 15): String =
-        TimeAwareSystemPrompt(nowMs = at(h, m)).build()
+    private fun promptAt(h: Int, m: Int = 15): String = runBlocking {
+        TimeAwareSystemPrompt(nowMs = at(h, m)).build(PromptContext.blank())
+    }
 
     @Test
     fun `time line carries clock time, weekday and date`() {
@@ -121,8 +124,8 @@ class SystemPromptProviderTests {
     }
 
     @Test
-    fun `build is stable for a fixed clock`() {
+    fun `build is stable for a fixed clock`() = runBlocking {
         val p = TimeAwareSystemPrompt(nowMs = at(10, 30))
-        assertEquals(p.build(), p.build())
+        assertEquals(p.build(PromptContext.blank()), p.build(PromptContext.blank()))
     }
 }

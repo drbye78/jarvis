@@ -1,0 +1,24 @@
+{
+ "id": "014",
+ "kind": "mixed",
+ "dialogue": [
+  {
+   "messageId": 24,
+   "text": "Кстати, меня зовут Марина"
+  },
+  {
+   "messageId": 25,
+   "text": "Включи музыку двадцатых"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"name\", \"value\": \"Марина\", \"confidence\": 0.95, \"evidence\": \"меня зовут Марина\", \"messageId\": 24}]}",
+ "expectedFacts": [
+  {
+   "predicate": "name",
+   "value": "Марина"
+  }
+ ],
+ "forbiddenFacts": [
+  "музыка"
+ ]
+}

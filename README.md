@@ -37,8 +37,8 @@ OpenAI-compatible endpoint).
    The mandatory Salute/GigaChat pairs are **validated upfront in the panel as
    you type** (a live status row: valid / invalid / unreachable) and on every
    «Проверить ключи» press — a typo is caught in seconds, not at the next
-   voice command.    Credentials are stored encrypted in the Android Keystore
-   (`KeystoreVault`, AndroidKeyStore AES-GCM) on the device — **nothing secret is ever in
+   voice command. Credentials are stored encrypted in the Android Keystore
+   (`EncryptedSharedPreferences`) on the device — **nothing secret is ever in
    the APK or in `local.properties`**. GigaChat creds are optional if you use
    the OpenAI-compatible provider instead (also configured in Settings).
    The UI ships in Russian and English (full `values-en`), and the runtime
@@ -55,9 +55,9 @@ OpenAI-compatible endpoint).
       trained in [Picovoice Console](https://console.picovoice.ai/) (a Console
       `.ppn` is bound to your Picovoice key). Requires a free Picovoice account.
     Switching engines and the sensitivity slider apply live while the assistant
-    is running. Custom Sherpa wake words are supported: type any English keyword
-    in Settings (BPE-validated against the bundled model) or supply a custom
-    Sherpa model directory. See RUNBOOK for details.
+    is running. NOTE: a custom Sherpa model cannot be loaded with the current
+    AAR (it only loads the bundled asset); custom Sherpa wake words need a
+    self-trained model + a different build — see RUNBOOK.
 5. Launch Jarvis and follow the onboarding screen.
 
 ## Running tests

@@ -1,0 +1,17 @@
+{
+ "id": "003",
+ "kind": "third-party",
+ "dialogue": [
+  {
+   "messageId": 12,
+   "text": "Мой начальник Олег переехал в новый офис"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"boss\", \"value\": \"Олег\", \"confidence\": 0.95, \"evidence\": \"Мой начальник Олег\", \"messageId\": 12}]}",
+ "expectedFacts": [
+  {
+   "predicate": "boss",
+   "value": "Олег"
+  }
+ ]
+}

@@ -6,7 +6,6 @@ import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -36,6 +35,10 @@ class WeatherClientTest {
         conditionFor = { "condition" },
         languageTag = language,
         notAvailable = "N/A",
+        // Hermetic (COGNITIVE_PLAN 0.6): the mock server receives every
+        // request — never the live open-meteo endpoints.
+        geoBaseUrl = server.url("/").toString().trimEnd('/'),
+        forecastBaseUrl = server.url("/").toString().trimEnd('/'),
     )
 
     private fun enqueueGeoWithTwoCities() {

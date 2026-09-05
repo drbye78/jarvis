@@ -196,4 +196,92 @@ class MigrationTest {
 
         db.close()
     }
+
+    // ------------------------------------------------------------------
+    // COGNITIVE_PLAN 1.1: v3 → v4 (memory core). The migration must create
+    // the four cognitive tables WITHOUT touching messages/scheduled_alerts,
+    // and the FTS index must be queryable + trigger-synced on migrated
+    // installs (Room only creates the sync triggers at fresh-install time).
+    // ------------------------------------------------------------------
+
+    @Test
+    fun migrate3To4_createsCognitiveTables_andPreservesExistingData() {
+        // 1. Create a v3 database with data in both pre-existing tables.
+        var db = helper.createDatabase(TEST_DB_NAME, version = 3).apply {
+            insertMessage(role = "user", content = "меня зовут Алексей")
+            insertAlert(kind = ScheduledAlertEntity.KIND_ALARM, label = "подъём", triggerAtMillis = 1_700_003_600_000L)
+        }
+        db.close()
+
+        // 2. Migrate to v4 with full schema validation against 4.json.
+        db = helper.runMigrationsAndValidate(
+            TEST_DB_NAME,
+            version = 4,
+            validateDroppedTables = true,
+            AppDatabase.MIGRATION_3_4,
+        )
+
+        // 3. Pre-existing rows survive untouched.
+        val msgCursor = db.query("SELECT content FROM messages", emptyArray<Any?>())
+        msgCursor.moveToFirst()
+        assertEquals("меня зовут Алексей", msgCursor.getString(0))
+        msgCursor.close()
+
+        val alertCursor = db.query("SELECT COUNT(*) FROM scheduled_alerts", emptyArray<Any?>())
+        alertCursor.moveToFirst()
+        assertEquals(1, alertCursor.getInt(0))
+        alertCursor.close()
+
+        // 4. The FTS index works on the migrated DB and is kept in sync by
+        // the triggers (insert → search → update → stale value gone).
+        db.execSQL(
+            "INSERT INTO user_facts (factId, category, subject, predicate, value, valueNormalized, " +
+                "searchText, confidence, origin, status, supersedesId, contested, sensitive, " +
+                "sourceMessageId, createdAt, updatedAt, lastConfirmedAt, lastRecalledAt, recallCount) " +
+                "VALUES ('f-1', 'PREFERENCE', 'user', 'likes', 'фильмы Тарковского', 'фильмы тарковского', " +
+                "'user фильм тарковск preference', 0.9, 'EXPLICIT', 'ACTIVE', NULL, 0, 0, NULL, 1, 1, 1, NULL, 0)",
+        )
+        val ftsCursor = db.query(
+            "SELECT value FROM user_facts JOIN fact_fts ON user_facts.rowId = fact_fts.rowid " +
+                "WHERE fact_fts MATCH 'тарковск*'",
+            emptyArray<Any?>(),
+        )
+        assertTrue("FTS match must hit on a migrated install", ftsCursor.moveToFirst())
+        assertEquals("фильмы Тарковского", ftsCursor.getString(0))
+        ftsCursor.close()
+
+        // Trigger sync check: delete the fact → the FTS row must disappear too.
+        db.execSQL("DELETE FROM user_facts WHERE factId = 'f-1'")
+        val ftsAfter = db.query("SELECT COUNT(*) FROM fact_fts WHERE fact_fts MATCH 'тарковск*'", emptyArray<Any?>())
+        ftsAfter.moveToFirst()
+        assertEquals("FTS sync trigger must keep the index consistent", 0, ftsAfter.getInt(0))
+        ftsAfter.close()
+
+        // Queue + meta tables are usable.
+        db.execSQL("INSERT INTO extraction_queue (messageId, attempt, state, batchId, createdAt, updatedAt) VALUES (1, 0, 'PENDING', NULL, 1, 1)")
+        val qCursor = db.query("SELECT state FROM extraction_queue WHERE messageId = 1", emptyArray<Any?>())
+        qCursor.moveToFirst()
+        assertEquals("PENDING", qCursor.getString(0))
+        qCursor.close()
+
+        db.execSQL("INSERT INTO memory_meta (`key`, value) VALUES ('schemaRev', '4')")
+        val metaCursor = db.query("SELECT value FROM memory_meta WHERE `key` = 'schemaRev'", emptyArray<Any?>())
+        metaCursor.moveToFirst()
+        assertEquals("4", metaCursor.getString(0))
+        metaCursor.close()
+
+        db.close()
+    }
+
+    @Test
+    fun migration3To4_noData_stillValidates() {
+        helper.createDatabase(TEST_DB_NAME, version = 3).close()
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB_NAME,
+            version = 4,
+            validateDroppedTables = true,
+            AppDatabase.MIGRATION_3_4,
+        )
+        db.close()
+    }
 }

@@ -5,7 +5,7 @@ Compact ramp-up for agents. Every line is something easy to miss.
 ## Build & verify
 - Single Gradle module `:app` (root `settings.gradle.kts` includes only `:app`). Use the wrapper: `./gradlew ...`.
 - Build APK: `./gradlew :app:assembleDebug`
-- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~413 tests)
+- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~430 tests; refresh this count when you add a batch)
 - Single test class: `./gradlew :app:testDebugUnitTest --tests "com.jarvis.assistant.PorcupineDetectorTest"`
 - **Gate before claiming done:** `./gradlew :app:assembleDebug :app:testDebugUnitTest`
 - Instrumentation tests (`androidTest`) need a device/emulator; the gate above does not.
@@ -16,8 +16,8 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - NOTE: several tests are real-time budgeted (bounded waits on latches/polling, e.g. the wedged-engine release test ~2.5 s). They are deterministic but not instant; don't "optimize" them into thread-yield assertions.
 
 ## SDK / toolchain pins (verified in build files)
-- `compileSdk 34`, `minSdk 30`, `targetSdk 34` — Android 14+ guards are handled in code (typed FGS, SCHEDULE_EXACT_ALARM, RECEIVER_NOT_EXPORTED, POST_NOTIFICATIONS). HarmonyOS 2.0 (API-29-based) ignores unknown permissions and behavioral changes — compatibility is maintained.
-- Kotlin 2.2.21, AGP 8.11.1, JVM 17, minSdk 30 (A11: matches the Android 11 / HarmonyOS 2.0 support claim). KSP generates Room code; protobuf + gRPC generate Sber Salute Speech stubs into `build/generated/java/generate*Proto`.
+- `compileSdk 34`, `minSdk 30`, `targetSdk 30` — the low `targetSdk` is **intentional** (Android 11 / HarmonyOS 2.0 appliance profile). **Do not bump `targetSdk` to "fix" the lint warning** — `lint` is configured and would flag `ExpiredTargetSdkVersion`; it is deliberately disabled in `app/build.gradle.kts`. Android 14+ foreground-service/permission guards are handled in code but untested on 14+.
+- Kotlin 2.2.21, AGP 8.11.1, JVM 17. minSdk 30 (A11: matches the Android 11 / HarmonyOS 2.0 support claim — the historical "minSdk 24" in older docs was wrong). KSP generates Room code; protobuf + gRPC generate Sber Salute Speech stubs into `build/generated/java/generate*Proto`.
 
 ## Architecture (non-obvious)
 - Manual DI, no Hilt/Dagger. `di/AppGraph` is the composition root; `service/JarvisForegroundService.onStartCommand` builds it **on a background dispatcher** and completes `graphReady` (`CompletableDeferred`) — await it instead of polling `GraphHolder`. `GraphHolder` holds the running instance. Construct detectors/engines only through AppGraph.
@@ -32,10 +32,10 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - **AudioPipeline give-up + watchdog revive**: after 50 consecutive read failures the producer exits with `hasGivenUp() = true`; the service's 15-min watchdog ping revives it (never while muted). Do not add other auto-revive paths — the flag exists precisely to distinguish "source failing" from "user stopped".
 
 ## Critical gotchas (would be missed)
-- **Sherpa-ONNX custom wake words.** The bundled AAR (`app/libs/sherpa-onnx.aar`, v1.13.6) now supports filesystem models via a nullable `AssetManager` constructor (FIXPLAN C). `SherpaModelStore` extracts the bundled model into `filesDir`; `BpeTokenizer` validates custom keywords against the gigaspeech BPE vocabulary. User-supplied model directories (`sherpaOnnxPath` pref) are also honored. Passing an absolute `filesDir`/SAF path to the OLD non-null constructor would CRASH natively — the new nullable path resolves to `newFromFile` instead.
+- **Sherpa-ONNX loading modes (know the difference).** The bundled AAR (`app/libs/sherpa-onnx.aar`, v1.13.6) exposes TWO constructors: `KeywordSpotter(assetManager, config)` loads from APK **assets via RELATIVE paths (Mode A, `newFromAsset`)**, and `KeywordSpotter(null, config)` loads from the **filesystem (Mode B, `newFromFile`)** — this is how FIXPLAN C ships custom keywords and extracted/user models. Mixing the modes is the real trap: relative asset paths into `newFromFile`, or absolute `filesDir`/SAF paths into Mode A, crash natively (`AAssetManager_open` → `SHERPA_ONNX_EXIT`). Custom wake words go through `audio/SherpaModelStore` (model extraction) + `BpeTokenizer` (BPE keyword files) + `newFromFile` — that path is supported and tested; the old "do NOT add custom-Sherpa loading" claim applied to a pre-FIXPLAN-C AAR understanding and is obsolete.
 - **`assets/sherpa_kws/keywords.txt` must be BPE-tokenized** for the bundled `gigaspeech` model (tokens verified against `tokens.txt`). Hand-written `▁J A R V I S` fails silently (no detection). Regenerate with `sherpa-onnx-cli text2token`; never hand-edit.
 - **Never build the wake-word engine on the main thread.** The detector builds async on `Dispatchers.Default` (starts `Bootstrapping` → `Ready`/`Failed`). A synchronous build in the constructor reintroduces an ANR on Kirin 710A-class devices. Keep the `engineBuildDispatcher = Dispatchers.Unconfined` injection in the unit tests so the synchronous-contract assertions stay valid.
-- **No secrets in the APK.** Credentials (Picovoice key, Sber/GigaChat tokens) are entered in Settings and stored only in the Android Keystore via `KeystoreVault` (AndroidKeyStore AES-GCM, through `util/SecretVault`). `security-crypto`/`EncryptedSharedPreferences` is GONE — do not reintroduce it. Do not hardcode keys or move them to build config; API clients read them at runtime.
+- **No secrets in the APK.** Credentials (Picovoice key, Sber/GigaChat tokens) are entered in Settings and stored only in the Android Keystore via `util/KeystoreVault` (AES-256-GCM, zero dependencies). Do not hardcode keys or move them to build config; API clients read them at runtime. (The earlier `EncryptedSharedPreferences`/security-crypto claim was stale — that library is removed from the catalog and must not be reintroduced.)
 
 ## Conventions
 - Russian is the default UI/config language (target users; "Джарвис"). Keep user-facing strings in `res/values/strings.xml`.
@@ -44,7 +44,17 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - `getSystemService(...) as X` is FORBIDDEN — use `as?` with an honest degradation path (JSON error, skip + log, or fallback behavior). Odd OEM ROMs can return null.
 - Room: v1 (pre-release) upgrades destructively (`fallbackToDestructiveMigrationFrom(1)`); v2→v3 is a real migration. New schema bumps MUST add a real migration + exported schema json.
 - Version: `0.2.0`, pre-1.0 (in-development).
-- Large binaries are tracked via Git LFS: `app/libs/sherpa-onnx.aar` (~47 MB) and `app/src/main/assets/sherpa_kws/*` (~17 MB). Don't `.gitignore` them. `git lfs pull` is required after clone (CI does this automatically).
+- Large binaries are tracked via Git LFS: `app/libs/sherpa-onnx.aar` (~47 MB) and `app/src/main/assets/sherpa_kws/*` (~6.5 MB after the fp32 encoder was dropped — CI fails on unreferenced assets > 1 MB, so never add a model file nothing loads). Don't `.gitignore` them. `git lfs pull` is required after clone (CI does this automatically).
+
+## Cognitive subsystem conventions (COGNITIVE_PLAN 0.1)
+
+Binding from Phase 1 onward — the full contract lives in `COGNITIVE_PLAN.md` (§2, Appendix B of the plan):
+- Memory tools must return structured outcomes (`MemoryOutcome`), never bare success strings; user-facing strings go through `ToolStrings` + `ResourceParityTest`.
+- Cognitive config is consumed reactively (`util/PrefsFlow`) — never snapshotted at graph build time. Every new setting ships with a live-toggle regression test.
+- Cognitive coroutines run on the coordinator's own supervised scope, catch only IO/serialization errors, and ALWAYS rethrow `CancellationException`.
+- Never log fact content outside DEBUG; prompt sections have fixed char budgets enforced by the composer.
+- Schema changes require an exported Room schema + migration test + CHANGELOG entry. The turn's hot path is sacred: cognitive reads budget ≤ 40 ms, writes are fire-and-forget into Room-backed queues.
+- Cloud calls are gated, batched, capped, and honestly degradable — `memory.cloudEnabled=false` must yield zero new egress classes (privacy inventory in the plan §9.2).
 
 ## References
 - `README.md` (setup/usage), `RUNBOOK.md` (troubleshooting + Known limitations), `ARCHITECTURE.md` (data flow, layers, security). This file is the quick-start; those are the spec.

@@ -26,6 +26,13 @@ class FakeMessageDao : MessageDao {
 
     override suspend fun all(): List<MessageEntity> = rows.sortedBy { it.id }
 
+    /** COGNITIVE_PLAN 1.4: extraction worker lookup. */
+    override suspend fun byId(id: Long): MessageEntity? = rows.firstOrNull { it.id == id }
+
+    /** COGNITIVE_PLAN 1.9: backfill source. */
+    override suspend fun recentUserMessages(limit: Int): List<MessageEntity> =
+        rows.filter { it.role == "user" }.sortedByDescending { it.id }.take(limit)
+
     override suspend fun recentDesc(n: Int): List<MessageEntity> =
         rows.sortedByDescending { it.id }.take(n)
 

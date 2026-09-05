@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.protobuf)
+    alias(libs.plugins.detekt) // COGNITIVE_PLAN 0.6
 }
 
 android {
@@ -20,15 +21,13 @@ android {
 
     defaultConfig {
         applicationId = "com.jarvis.assistant"
-        // targetSdk 34: Android 14+ guards are handled in code (typed FGS,
-        // SCHEDULE_EXACT_ALARM, RECEIVER_NOT_EXPORTED, POST_NOTIFICATIONS).
-        // HarmonyOS 2.0 (API-29-based) ignores unknown permissions and
-        // behavioral changes — compatibility is maintained.
+        // targetSdk 30 on purpose: appliance profile for Android 11 / HarmonyOS 2.0+.
+        // Android 14+ guards are handled in code (typed FGS, runtime checks).
         // A11: minSdk 30 aligns the build with the documented support window
         // (Android 11 / HarmonyOS 2.0 is API-30-based) — no backward compat
         // below it is claimed or needed.
         minSdk = 30
-        targetSdk = 34
+        targetSdk = 30
         versionCode = 4
         versionName = "0.2.0"
 
@@ -64,7 +63,7 @@ android {
     }
 
     lint {
-        // ExpiredTargetSdkVersion is no longer disabled — targetSdk is now 34 (current).
+        disable += "ExpiredTargetSdkVersion"
     }
 
     sourceSets {
@@ -88,6 +87,16 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
     }
+}
+
+// COGNITIVE_PLAN 0.6: static analysis. buildUponDefaultConfig + the focused
+// config/detekt/detekt.yml; the checked-in baseline absorbs legacy findings
+// so every NEW violation fails the build. detekt-formatting = ktlint rules.
+detekt {
+    buildUponDefaultConfig = true
+    parallel = true
+    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+    baseline = file("$rootDir/config/detekt/baseline.xml")
 }
 
 ksp {
@@ -156,6 +165,9 @@ dependencies {
 
 
     implementation(libs.timber)
+
+    // 0.6: ktlint-backed formatting rules inside the detekt run.
+    detektPlugins(libs.detekt.formatting)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

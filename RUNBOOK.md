@@ -318,7 +318,55 @@ Streaming ASR means these numbers no longer grow with utterance length.
 3. **Conversation history corrupted** — Settings → Apps → Jarvis → Storage →
    Clear Data (wipes history and alarms; destructive by design).
 
+## Memory subsystem (Phase 1): E2E scenarios and the extraction gate
+
+The informal probe protocol from the cognitive review is replaced by these
+scripted, reproducible scenarios (COGNITIVE_PLAN §10.5 / Appendix D) and the
+fixture-based extraction gate.
+
+### E2E scenario: memory basics (Appendix D)
+
+Precondition: fresh `jarvis.db` (uninstall or «Забыть всё» after backing up),
+Sherpa engine, voice stop enabled, memory ON in Settings → Память.
+
+1. Say «Джарвис, меня зовут Алексей, я люблю фильмы Тарковского» → the
+   assistant acknowledges. `remember_fact` fires (pill «Запоминаю…»); the
+   fact lands in `user_facts` with `origin=EXPLICIT` immediately.
+2. Power-cycle the device, reopen the app (or just keep it running — memory
+   survives both).
+3. «Джарвис, как меня зовут?» → answers «Алексей» WITHOUT re-asking (the
+   `<memory-context>` block carries the profile line).
+4. «Джарвис, что ты обо мне помнишь?» → lists both facts; low-confidence
+   facts are labelled «не уверен».
+5. «Джарвис, забудь, что я люблю Тарковского» → the assistant lists the
+   candidate and asks to confirm → «Да» → the fact is marked FORGOTTEN
+   (visible in the Inspector with the «забыт» status; never silently
+   deleted).
+6. Repeat (3) for the forgotten fact → the assistant states it does not
+   remember that particular thing (honest refusal; the name still works).
+7. Settings → Память → Показать память → both rows visible with marks →
+   «Забыть всё» + confirm → repeat (4) → honest «ничего не помню».
+
+Pass: all seven observations hold, no crashes, and the stop-phrase behavior
+is unchanged throughout the scenario. Turn the «Долговременная память»
+switch OFF mid-session and repeat (4) → the assistant must not inject
+memory content (kill-switch degrades to the pre-cognitive prompt,
+snapshot-tested).
+
+### Extraction gate (autoExtract default decision)
+
+`memory.autoExtract` ships DEFAULT OFF. It flips to default-ON only after
+the full 40-fixture set (Appendix C format) passes the §10.1 gate:
+precision ≥ 0.85, recall ≥ 0.7, zero hallucinations, measured by
+`ExtractionEvalTest` (JVM, CI-runnable) over recorded GigaChat responses run
+through the real validator + normalizer. The 14-fixture starter set already
+enforces the gate so a validator regression fails CI. To extend the set,
+add `app/src/test/resources/cognitive/eval/fixtures/fixture_NNN.json`
+(dialogue + recorded response + expected/forbidden facts) and re-run
+`./gradlew :app:testDebugUnitTest --tests "*ExtractionEvalTest"`.
+
 ## Known limitations
+
 - **Voice stop on-device validation (FIXPLAN B).** The stop phrase (`▁ST O P`)
   is BPE-canonical for the bundled model, but its false-accept/false-reject
   behavior at speaker volume is a hardware question. Ladder: (1) wake word,
