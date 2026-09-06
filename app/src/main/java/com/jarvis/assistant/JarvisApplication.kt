@@ -37,9 +37,12 @@ class JarvisApplication : Application() {
         // RUNBOOK's debugging procedures work everywhere.
         Timber.plant(FileLoggingTree(this))
 
-        val missingModel = assets?.list("")?.let { !it.contains("jarvis_ru.ppn") } ?: true
-        if (missingModel) {
-            Timber.e("Wake word model 'jarvis_ru.ppn' not found in assets/")
+        // Verify Sherpa-ONNX wake-word model is present (bundled in assets/sherpa_kws/).
+        val hasSherpaModel = assets?.list("sherpa_kws")?.let {
+            it.any { f -> f.endsWith(".onnx") }
+        } ?: false
+        if (!hasSherpaModel) {
+            Timber.e("Sherpa-ONNX wake-word models not found in assets/sherpa_kws/")
         }
 
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
