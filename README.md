@@ -71,7 +71,7 @@ above — includes the Git-LFS-tracked native assets).
 Installs on schema v1 (the old `alarms` table, never exported) upgrade
 destructively: alarms and chat history are wiped once, in exchange for a
 non-crashing upgrade. v2→v3 is a no-op migration (identical schemas); real
-schema migrations start at v3→v4 (cognitive memory). The DB is currently at v6.
+schema migrations start at v3→v4 (cognitive memory). The DB is currently at v7.
 
 ## Building a signed release APK
 

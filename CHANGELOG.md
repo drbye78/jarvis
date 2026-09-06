@@ -6,6 +6,12 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Fixed — Room v7: alarm snooze drift
+- **`MIGRATION_6_7`** adds an `anchorTimeMillis` column to `scheduled_alerts`
+  (backfilled from each row's `triggerAtMillis`) so the next daily occurrence
+  is computed from the original recurring time, not the snoozed time;
+  exported schema 7.json + JVM migration test coverage.
+
 ### Fixed — Android 10 (minSdk 29) correctness pass
 The target appliance (Huawei AGS6-W09, HarmonyOS 2.0) reports API 29, so
 `minSdk` is 29. A full lint (`NewApi`) sweep found **no unguarded API 30+

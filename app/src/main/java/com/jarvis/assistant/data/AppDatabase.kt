@@ -18,8 +18,8 @@ import com.jarvis.assistant.cognitive.data.SessionSummaryEntity
 import com.jarvis.assistant.cognitive.data.UserFactEntity
 
 /**
- * Version 6 (COGNITIVE_PLAN Phase 3): adds the semantic-recall tables on
- * top of the Phase 2 behaviour tables.
+ * Version 7 (alarm-snooze-drift fix): adds the `anchorTimeMillis` column
+ * to `scheduled_alerts` on top of the Phase 3 semantic-recall tables.
  *
  * - v1→v2: DESTRUCTIVE by explicit decision (audit #21): the v1 `alarms`
  *   table was replaced by the unified `scheduled_alerts` schema and the v1
@@ -46,6 +46,10 @@ import com.jarvis.assistant.cognitive.data.UserFactEntity
  *   `fact_vectors` (one L2-normalized embedding per fact per engine),
  *   `entities` and `fact_entities` (the two-table entity model derived
  *   from RELATION facts). All NEW — existing tables untouched.
+ * - v6→v7 (alarm-snooze-drift fix): adds `anchorTimeMillis` to
+ *   `scheduled_alerts`, backfilled from each row's `triggerAtMillis`, so
+ *   the next daily occurrence is computed from the original recurring
+ *   time, not the snoozed time.
  * - DOWNGRADE: pre-release schema policy — an APK rollback (sideload, QA
  *   build) previously hit Room's IllegalStateException("Can't downgrade…")
  *   on first DB open; it now wipes destructively like the v1 stance instead

@@ -18,7 +18,7 @@ No backward compatibility is preserved (pre-1.0 appliance).
 | A8 | `AppGraph.speakVoiceSample` swallowed `CancellationException` | Rethrown after focus cleanup |
 | A9 | `SecurePrefs` reported keystore resets via `println` (invisible in release) | Moot with A3 — `KeystoreVault` logs via Timber |
 | A10 | `FunctionRouter` built a fresh `AppPrefs` per player resolve | One instance injected at construction |
-| A11 | minSdk 24 contradicted the "Android 11 / HarmonyOS 2.0+" support claim | minSdk 30 (HarmonyOS 2.0 is API-30-based); docs aligned |
+| A11 | minSdk 24 contradicted the "Android 11 / HarmonyOS 2.0+" support claim | minSdk 30 (HarmonyOS 2.0 is API-30-based); docs aligned [superseded: minSdk reverted to 29 — see build.gradle.kts] |
 
 ## B. Feature 1 — voice stop without the wake word
 

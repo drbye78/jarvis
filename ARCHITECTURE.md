@@ -30,13 +30,14 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `llm/` | `SseParser` (pure), `SseLlmClient` (shared SSE transport with correct cancellation), GigaChat / OpenAI-compatible profiles, `TokenManager` (mutex-serialized OAuth refresh). |
 | `speech/asr/` | `StreamingAsrClient` / `AsrStream` — bidi streaming ASR; server-side EOU. |
 | `speech/tts/` | `TtsClient` (SaluteSpeech, cancellable + deadline) and `TtsPlayer` contract. |
-| `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loaded asset-relative), player (generations), and the Phase-5 etiquette pair: `AssistantAudioFocus` (duck-during-TTS state machine + `AndroidAudioFocusAdapter`) and `SpeechFeedback` (spoken cascade progress). |
+| `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loads BOTH ways per FIXPLAN C — bundled models asset-relative (`newFromAsset`), custom/extracted models from the filesystem (`newFromFile` via `SherpaModelStore`)), player (generations), and the Phase-5 etiquette pair: `AssistantAudioFocus` (duck-during-TTS state machine + `AndroidAudioFocusAdapter`) and `SpeechFeedback` (spoken cascade progress). |
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns (job hand-offs under a monitor, seq-guarded supersede/cancel); TurnRunner (bounded tool loop; error turns end via reportFailure only); `SpeechPhrases` — locale-aware runtime spoken phrases (RU default + resource-backed values/values-en). |
 | `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. |
 | `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure capability-gated strategy cascade (structured playFromSearch, MediaBrowser search/token lane, query-aware verification) with rich transport; `MediaBrowserGateway` + `AndroidMediaBrowserGateway` (bind/search/children); `MediaCapabilities`/`VoiceQuery`/`MediaDiagnostics` (pure models). Android adapters: `AndroidMediaGateway` (compat-wrapped controllers), `AndroidMediaBrowserGateway`. |
-| `data/` | Room v6: messages (id-ordered, orphan-safe windowing) + alarms + user_facts (cognitive memory) + extraction_queue + fact_fts (FTS4) + command_events + habit_rules + behavior_log + session_summaries + fact_vectors + entities + fact_entities. |
+| `data/` | Room v7: messages (id-ordered, orphan-safe windowing) + alarms + user_facts (cognitive memory) + extraction_queue + memory_meta (cognitive bookkeeping: schema revision, cursors, counters) + fact_fts (FTS4) + command_events + habit_rules + behavior_log + session_summaries + fact_vectors + entities + fact_entities. |
 | `service/` | Foreground service (permission gate, retryable init, watchdog semantics), boot receiver, ringing activity, notification listener. |
 | `ui/` | Adapters for transcript and alarm lists. |
+| `MemoryInspectorActivity` (app root) | Memory Inspector (COGNITIVE_PLAN 1.8): fact list with provenance marks (sensitive/contested) + confidence/status lines, per-item delete, JSON export via SAF, «Забыть всё» wipe of the cognitive tables; honest read-only empty state when the service graph isn't running. |
 
 ## Concurrency model
 
@@ -186,8 +187,9 @@ with an instructive error.
 
 `play|pause|toggle|next|previous|stop|seek|restart|like|repeat|shuffle|
 speed` — every action gated by the session's capability bits (plus the
-heart-rating type for `like`, plus the API-29 guard for `speed` —
-minSdk is 30, so the guard is always satisfied); unsupported actions get
+heart-rating type for `like`, plus the API-29 guard for `speed` — still
+required at runtime: minSdk is 29 (HarmonyOS 2.0 devices report API 29),
+so API-29 devices hit the guard); unsupported actions get
 an honest Russian refusal naming
 the limitation, never a silent no-op. The media-key fallback (works
 without listener access) only covers the basic six — a media key cannot
@@ -353,8 +355,9 @@ Timer tool uses `setExactAndAllowWhileIdle` one-shots. Identity is the DB
 row id EVERYWHERE — AlarmManager request codes, the ringing notification
 id and the full-screen-intent request code — so two near-simultaneous
 alerts can never overwrite each other's notification extras. Schema v1
-(pre-release) upgrades destructively; v2→v3 is a no-op; v3→v6 are real
-schema migrations (cognitive memory, behaviour, semantic recall).
+(pre-release) upgrades destructively; v2→v3 is a no-op; v3→v7 are real
+schema migrations (cognitive memory, behaviour, semantic recall, the
+snooze-drift anchor fix).
 
 ## Lifecycle semantics
 

@@ -45,8 +45,9 @@ class BasicSmokeTest {
 
     @Test
     fun encryptedSharedPreferences_canBeCreated() {
-        // EncryptedSharedPreferences is used for the CredentialsStore; verify
-        // the underlying crypto primitives are available on the device.
+        // Credentials are stored via SecretVault (KeystoreVault — AndroidKeyStore
+        // AES-256-GCM; EncryptedSharedPreferences was removed); verify the
+        // underlying crypto primitives are available on the device.
         val prefs = context.getSharedPreferences("smoke_test_prefs", android.content.Context.MODE_PRIVATE)
         assertNotNull("SharedPreferences must be obtainable", prefs)
         prefs.edit().putString("smoke_key", "smoke_value").commit()

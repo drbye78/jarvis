@@ -260,7 +260,7 @@ AEC3 becomes linkable.
    state (logged as `hwAec=...` never changes — watch `diverged=true`).
 6. **Тихая речь при музыке (честный трейд-офф):** residual-гейт сохраняет
    двойной разговор, но тихий голос во время громкой музыки может частично
-   подавляться (до `MIN_GATE` ≈ −8 дБ) на ~3 с, пока пол не подтянется.
+   подавляться (до `MIN_GATE` = 0.15 ≈ −16.5 дБ) на ~3 с, пока пол не подтянется.
    Если тихую речь «съедает» — по порядку предпочтения: удлинить окно
    продолжения и говорить громче; отключить ПО-эхоподавление и включить
    pause-on-wake; поднять `GATE_OPEN_FACTOR` в `NlmsEchoCanceller` (15 по
@@ -512,7 +512,7 @@ CHANGELOG Phase 3 performance block.
   heart rating are actually exposed. Until that dump is read, every
   capability is an assumption the cascade degrades gracefully around.
 - **English locale: UI is fully localized, runtime speech is not.** Every
-  user-facing string resource now has an English twin (values-en, 319 keys
+  user-facing string resource now has an English twin (values-en, 322 keys
   incl. the credential-validation and behavior-setting rows), so the whole UI — Settings,
   onboarding, alarms, music card — renders in English under an English locale.
   Runtime spoken/system messages (turn failures, music outcome details,
