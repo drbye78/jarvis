@@ -222,7 +222,11 @@ class HybridWakeWordDetector(
                             "Sherpa model failed to load (bundled assets missing)"
                         store == null || !store.hasPicovoiceKey() ->
                             "Picovoice access key is missing (set it in Settings → Настройки)"
-                        else -> "Wake-word model failed to load. Check that jarvis_ru.ppn is in app assets."
+                        // P0.7 (REMEDIATION_PLAN): the repo intentionally does
+                        // NOT ship jarvis_ru.ppn (RUNBOOK) — do not point the
+                        // user at a bundled asset that never exists; give the
+                        // actionable fix instead.
+                        else -> "Picovoice engine unavailable: enter the access key in Settings and/or select a custom .ppn file"
                     }
                     _state.value = DetectorState.Failed(reason)
                     // Belt and suspenders: also surface through the event flow.

@@ -216,6 +216,15 @@ class SessionManager(
      * session only, and a stale session's late failure must not yank them.
      * Pass id=null for lifecycle-scoped failures (wake-word engine) that have
      * no session identity of their own.
+     *
+     * REMEDIATION_PLAN P0.3: `message` must be a FIXED classification phrase
+     * (a [SpeechPhrases] literal, or a fixed engine-failure reason string) —
+     * never user content (ASR text, tool output, exception payloads). It is
+     * both logged at WARN/ERROR here — and FileLoggingTree persists INFO+ to
+     * disk in release — and SPOKEN via [onErrorHandler]. Every current call
+     * site (TurnRunner's phrases.* funnel and this class's wake-word routing)
+     * passes fixed phrases, verified by audit; this contract keeps future
+     * call sites honest so raw content can never re-enter this funnel.
      */
     suspend fun reportFailure(id: Int?, message: String) {
         if (id != null && id != sessionSeq.get()) {

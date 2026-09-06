@@ -18,6 +18,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -98,10 +99,24 @@ class CognitiveBehaviorTest {
             nowMs = { now },
         )
 
-        /** Polls until [condition] or timeout — fire-and-forget launches. */
+        /**
+         * Polls until [condition] or timeout — fire-and-forget launches.
+         * A timeout is converted into an AssertionError carrying the DAO
+         * state, so a stalled fire-and-forget path reports WHAT it stalled
+         * on (e.g. rejectCount stuck at 1–2) instead of a bare
+         * TimeoutCancellationException.
+         */
         suspend fun await(condition: () -> Boolean) {
-            withTimeout(5_000) {
-                while (!condition()) delay(10)
+            try {
+                withTimeout(5_000) {
+                    while (!condition()) delay(10)
+                }
+            } catch (e: TimeoutCancellationException) {
+                throw AssertionError(
+                    "await timed out after 5 s; ruleDao=${ruleDao.rows.values} " +
+                        "logRows=${logDao.rows.size}",
+                    e,
+                )
             }
         }
     }
@@ -232,9 +247,18 @@ class CognitiveBehaviorTest {
             utterance = "Ты обычно слушаешь «джаз» в это время. Включить?",
         )
 
+        // Back-to-back launches on purpose: the three reject coroutines
+        // run concurrently on the coordinator scope (production does the
+        // same for rapid consecutive turns). The per-rule write mutex in
+        // the coordinator makes the increments lossless.
         fx.coordinator.onFollowUpUtterance("Нет")
         fx.coordinator.onFollowUpUtterance("не надо")
         fx.coordinator.onFollowUpUtterance("не нужно")
+        // Await each observable step so a lost update reports WHERE it
+        // stalled (rejectCount stuck at 1–2 with state ACTIVE) instead of
+        // one opaque timeout on the final condition.
+        fx.await { fx.ruleDao.rows.values.single().rejectCount >= 1 }
+        fx.await { fx.ruleDao.rows.values.single().rejectCount >= 2 }
         fx.await { fx.ruleDao.rows.values.single().state == HabitRuleEntity.STATE_MUTED }
         val muted = fx.ruleDao.rows.values.single()
         assertEquals(3, muted.rejectCount)

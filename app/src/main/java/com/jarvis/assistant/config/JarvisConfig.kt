@@ -6,6 +6,14 @@ package com.jarvis.assistant.config
  */
 data class JarvisConfig(
     // Porcupine wake word
+    /**
+     * REMEDIATION_PLAN P0.7: this default is a CONFIG PLACEHOLDER, not a
+     * shipped asset — the repo intentionally does NOT bundle `jarvis_ru.ppn`
+     * (see RUNBOOK: .ppn keywords are user-supplied via Settings and are
+     * bound to the user's Picovoice key). Building a Porcupine engine
+     * against this default path fails by design; the detector surfaces
+     * actionable guidance (enter key / select a custom .ppn) instead.
+     */
     val porcupineKeywordPath: String = "jarvis_ru.ppn",
 
     // Session

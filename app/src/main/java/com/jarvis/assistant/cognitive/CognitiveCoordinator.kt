@@ -64,6 +64,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -688,6 +690,19 @@ class CognitiveCoordinator(
     // ------------------------------------------------------------------
 
     /**
+     * Serializes read-modify-write cycles on habit-rule rows (reject /
+     * accept counters, mute transitions, fire bookkeeping). The reject
+     * path is fire-and-forget per utterance: three rapid refusals launch
+     * three concurrent coroutines whose `byId` → `rejectCount + 1` →
+     * `update` cycles interleave on the Dispatchers.IO pool and LOSE
+     * increments — the 3-strikes mute then never happens (reproduced:
+     * 70/300 scenarios ended at rejectCount 1–2). A lock per cycle here
+     * is microseconds and only ever contended between these rare paths.
+     */
+    private val ruleWriteMutex = Mutex()
+
+
+    /**
      * §8.1: one executed tool call lands here (via the ToolRegistry
      * observer wired by AppGraph). Writes the `command_events` row (slot
      * fingerprint ONLY — never raw utterances), reinforces a suggestion the
@@ -875,18 +890,24 @@ class CognitiveCoordinator(
     /** §8.2: the user executed the suggested command within the window. */
     private suspend fun reinforceAccept(tool: String, fingerprint: String) {
         val now = nowMs()
-        for (rule in ruleDao.byFingerprint(tool, fingerprint)) {
-            val firedAt = rule.lastFiredAt
-            if (firedAt == null || now - firedAt > ACCEPT_WINDOW_MS) continue
-            ruleDao.update(
-                rule.copy(
-                    acceptCount = rule.acceptCount + 1,
-                    // First accept completes the first successful suggestion
-                    // cycle — PROBATION graduates (§8.2).
-                    state = HabitRuleEntity.STATE_ACTIVE,
-                ),
-            )
-            Timber.i("Cognitive: habit accept for %s %s", tool, fingerprint)
+        // Same read-modify-write discipline as the reject path: an accept
+        // and a reject can overlap on the same rule row (fire-and-forget
+        // launches on both sides), and either losing an increment corrupts
+        // the reinforcement loop.
+        ruleWriteMutex.withLock {
+            for (rule in ruleDao.byFingerprint(tool, fingerprint)) {
+                val firedAt = rule.lastFiredAt
+                if (firedAt == null || now - firedAt > ACCEPT_WINDOW_MS) continue
+                ruleDao.update(
+                    rule.copy(
+                        acceptCount = rule.acceptCount + 1,
+                        // First accept completes the first successful
+                        // suggestion cycle — PROBATION graduates (§8.2).
+                        state = HabitRuleEntity.STATE_ACTIVE,
+                    ),
+                )
+                Timber.i("Cognitive: habit accept for %s %s", tool, fingerprint)
+            }
         }
     }
 
@@ -957,7 +978,14 @@ class CognitiveCoordinator(
         // longer IDLE — the arbiter raced a user interaction and lost. The
         // attempt is still logged (the cooldown applies either way: the
         // user must not be nagged twice because a race ate one attempt).
-        ruleDao.update(rule.copy(lastSuggestedAt = now, lastFiredAt = now))
+        // Re-read under the write mutex: the arbiter's snapshot is stale by
+        // delivery time; merging into the FRESH row keeps a concurrent
+        // accept/reject increment from being clobbered by this full-row
+        // write (same lost-update class as the reject path).
+        ruleWriteMutex.withLock {
+            val fresh = ruleDao.byId(rule.id) ?: rule
+            ruleDao.update(fresh.copy(lastSuggestedAt = now, lastFiredAt = now))
+        }
         behaviorLogDao.insert(
             BehaviorArbiter.toLogRow(BehaviorArbiter.Decision.Fired, rule.id, now, utterance = text),
         )
@@ -1016,26 +1044,31 @@ class CognitiveCoordinator(
         scope.launch(CoroutineName("cognitive-reject")) {
             try {
                 if (!isExplicitReject(utterance)) return@launch
-                val fired = behaviorLogDao.latestFiredSince(nowMs() - REJECT_WINDOW_MS)
-                    ?: return@launch
-                val ruleId = fired.ruleId ?: return@launch
-                val rule = ruleDao.byId(ruleId) ?: return@launch
-                val rejects = rule.rejectCount + 1
-                val now = nowMs()
-                when {
-                    rejects >= RETIRE_REJECTS -> ruleDao.update(
-                        rule.copy(rejectCount = rejects, state = HabitRuleEntity.STATE_RETIRED),
-                    )
-                    rejects >= MUTE_REJECTS -> ruleDao.update(
-                        rule.copy(
-                            rejectCount = rejects,
-                            state = HabitRuleEntity.STATE_MUTED,
-                            mutedUntil = now + MUTE_DURATION_MS,
-                        ),
-                    )
-                    else -> ruleDao.update(rule.copy(rejectCount = rejects))
+                // Lookup + read + write atomically under the rule write
+                // mutex: two overlapping reject coroutines must each count
+                // against the row the OTHER one has already incremented.
+                ruleWriteMutex.withLock {
+                    val fired = behaviorLogDao.latestFiredSince(nowMs() - REJECT_WINDOW_MS)
+                        ?: return@withLock
+                    val ruleId = fired.ruleId ?: return@withLock
+                    val rule = ruleDao.byId(ruleId) ?: return@withLock
+                    val rejects = rule.rejectCount + 1
+                    val now = nowMs()
+                    when {
+                        rejects >= RETIRE_REJECTS -> ruleDao.update(
+                            rule.copy(rejectCount = rejects, state = HabitRuleEntity.STATE_RETIRED),
+                        )
+                        rejects >= MUTE_REJECTS -> ruleDao.update(
+                            rule.copy(
+                                rejectCount = rejects,
+                                state = HabitRuleEntity.STATE_MUTED,
+                                mutedUntil = now + MUTE_DURATION_MS,
+                            ),
+                        )
+                        else -> ruleDao.update(rule.copy(rejectCount = rejects))
+                    }
+                    Timber.i("Cognitive: habit reject #%d for rule %d", rejects, ruleId)
                 }
-                Timber.i("Cognitive: habit reject #%d for rule %d", rejects, ruleId)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

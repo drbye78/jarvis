@@ -135,7 +135,12 @@ class TurnRunner(
                         return
                     }
                     onStateEvent(SessionEvent.SpeechCaptured) // -> THINKING
-                    Timber.i("ASR final: %s", outcome.text)
+                    // P0.1 (REMEDIATION_PLAN): the utterance is user content —
+                    // FileLoggingTree persists INFO+ to disk in release, so the
+                    // raw text may appear only at DEBUG (AGENTS.md: no fact
+                    // content outside DEBUG). INFO keeps a content-free summary.
+                    Timber.i("ASR final (len=%d)", outcome.text.length)
+                    Timber.d("ASR final: %s", outcome.text)
                     // COGNITIVE_PLAN 1.7: persist, then fire-and-forget ingest
                     // keyed by the row id (exactly-once per message).
                     val messageId = conversationManager.addMessage("user", outcome.text)
@@ -585,7 +590,11 @@ class TurnRunner(
                 // N1: a real TTS failure (gRPC error, token expiry, AudioTrack
                 // short write) must NOT escape and crash the scope. Drop the
                 // sentence instead of letting it kill the process.
-                Timber.e(e, "TTS sentence failed, dropping: $text")
+                // P0.2 (REMEDIATION_PLAN): the sentence may echo user facts —
+                // length only at ERROR (persisted at INFO+ in release); the
+                // content stays DEBUG-only.
+                Timber.e(e, "TTS sentence failed, dropping (len=%d)", text.length)
+                Timber.d(e, "TTS sentence failed, dropping: %s", text)
             } finally {
                 focus?.onTtsSentenceFinished()
             }
