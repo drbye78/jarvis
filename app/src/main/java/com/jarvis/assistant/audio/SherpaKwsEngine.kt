@@ -155,7 +155,10 @@ class SherpaKwsEngine(
         modelingUnit = "bpe",
         numThreads = 4,
         provider = "xnnpack",
-        modelType = "zipformer2",
+        // modelType intentionally omitted: auto-detected from ONNX metadata.
+        // The bundled models are zipformer v1 — forcing "zipformer2" selects
+        // the wrong C++ class, producing incompatible state shapes that crash
+        // the Reshape node during the first process() call.
     )
 
     private fun fileModelConfig(dir: File, provider: String): OnlineModelConfig {
@@ -186,7 +189,7 @@ class SherpaKwsEngine(
             modelingUnit = "bpe",
             numThreads = 4,
             provider = provider,
-            modelType = "zipformer2",
+            // modelType intentionally omitted: auto-detected from ONNX metadata.
         )
     }
 
