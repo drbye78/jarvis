@@ -170,6 +170,9 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.mockwebserver)
+    // P1.1: in-process gRPC transport for Salute ASR/TTS client suites —
+    // no real network, no credentials. Same gRPC version as production deps.
+    testImplementation(libs.grpc.inprocess)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)

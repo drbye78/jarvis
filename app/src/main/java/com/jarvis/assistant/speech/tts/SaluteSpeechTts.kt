@@ -76,9 +76,12 @@ class SaluteSpeechTts(
                     }
 
                     override fun onError(t: Throwable) {
-                        val cancelled = (t as? io.grpc.StatusException)
-                            ?.status?.code == io.grpc.Status.Code.CANCELLED
-                        if (cancelled) {
+                        // The async stub delivers StatusRuntimeException (not
+                        // StatusException) — check both or an expected barge-in
+                        // cancel would surface as a flow failure downstream.
+                        val code = (t as? io.grpc.StatusException)?.status?.code
+                            ?: (t as? io.grpc.StatusRuntimeException)?.status?.code
+                        if (code == io.grpc.Status.Code.CANCELLED) {
                             close() // expected on barge-in
                         } else {
                             Timber.e(t, "TTS stream error")
