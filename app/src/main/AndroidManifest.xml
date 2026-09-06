@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Android 12+ exact alarm permission for timers (setExactAndAllowWhileIdle).
+         Harmless on older API levels; setAlarmClock() for alarms is always exempt. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
     <!-- Core -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -9,6 +13,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Android 14+ typed foreground services (harmless on older versions) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- API 34+: required for the mediaProjection FGS type; ignored below 34.
+         Needed by the AEC playback-capture diagnostics lane on Android 10+. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!-- Android 13+ notification runtime permission -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -98,10 +105,16 @@
             android:turnScreenOn="true"
             android:theme="@style/Theme.Jarvis.Alarm" />
 
+        <!-- microphone: the always-on wake-word pipeline.
+             mediaProjection: AEC playback-capture diagnostics lane — Android
+             10+ refuses to build a capture AudioRecord unless the app runs a
+             foreground service with this type (API 34+ enforces it at
+             getMediaProjection time; the service promotes the type at
+             runtime). -->
         <service
             android:name=".service.JarvisForegroundService"
             android:exported="false"
-            android:foregroundServiceType="microphone" />
+            android:foregroundServiceType="microphone|mediaProjection" />
 
         <receiver
             android:name=".service.BootReceiver"

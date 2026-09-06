@@ -116,7 +116,12 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
             }
         val operation = fireOperation(id, kind, label)
         if (kind == ScheduledAlertEntity.KIND_TIMER) {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, operation)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
+                Timber.w("Exact alarm permission denied — arming timer %d as inexact", id)
+                am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, operation)
+            } else {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, operation)
+            }
         } else {
             // setAlarmClock: the correct API for user-facing alarms — fires
             // reliably through Doze and shows the system alarm-clock indicator.
@@ -235,7 +240,10 @@ class AndroidAlarmScheduler(
             return
         }
         if (alert.triggerAtMillis > now()) return // already re-armed (idempotent)
-        val next = AlarmTimes.nextDailyOccurrence(alert.triggerAtMillis, now())
+        // Use anchorTimeMillis to avoid snooze drift: if the alarm was snoozed,
+        // triggerAtMillis holds the snoozed time, but we need the original
+        // recurring anchor to compute the correct next daily occurrence.
+        val next = AlarmTimes.nextDailyOccurrence(alert.anchorTimeMillis, now())
         dao.update(alert.copy(triggerAtMillis = next))
         armer.arm(id, next, alert.kind, alert.label)
     }
@@ -275,7 +283,9 @@ class AndroidAlarmScheduler(
     /** Shared roll-forward policy: daily → next occurrence; one-shot → itself while future. */
     private fun nextTriggerFor(alert: ScheduledAlertEntity, nowMillis: Long): Long? =
         if (alert.repeatDaily) {
-            AlarmTimes.nextDailyOccurrence(alert.triggerAtMillis, nowMillis)
+            // Use anchorTimeMillis so boot re-arm and setEnabled re-compute from
+            // the original recurring time, not a potentially snoozed triggerAtMillis.
+            AlarmTimes.nextDailyOccurrence(alert.anchorTimeMillis, nowMillis)
         } else if (alert.triggerAtMillis > nowMillis) {
             alert.triggerAtMillis
         } else {

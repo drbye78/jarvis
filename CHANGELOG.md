@@ -6,6 +6,40 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Fixed — Android 10 (minSdk 29) correctness pass
+The target appliance (Huawei AGS6-W09, HarmonyOS 2.0) reports API 29, so
+`minSdk` is 29. A full lint (`NewApi`) sweep found **no unguarded API 30+
+calls**, but four genuine Android 10 behavioral gaps were found and fixed:
+- **Background-started microphone was silenced on Android 10** (while-in-use
+  rule): every non-activity start (BootReceiver on boot / app update, the
+  watchdog and maintenance alarms, START_STICKY recreation) used to promote
+  the service to a foreground service whose `AudioRecord` returns zeros with
+  no error — the assistant looked alive but never heard the wake word.
+  Background-originated starts now post a high-priority "tap to activate"
+  notification instead (`JarvisForegroundService.postActivationPrompt`);
+  the tap opens `MainActivity` with `EXTRA_ACTIVATE_ASSISTANT`, and the
+  pipeline starts from a user-present context — the only start flavor
+  Android 10 rewards with a working microphone (and the only one Android 12+
+  permits at all, which the old boot path violated with a
+  `ForegroundServiceStartNotAllowedException` crash).
+- **AEC playback-capture lane was dead on arrival on Android 10**: the
+  platform refuses to build a capture `AudioRecord` unless the app runs a
+  foreground service with the `mediaProjection` type. The manifest now
+  declares `microphone|mediaProjection` (+ the API 34+
+  `FOREGROUND_SERVICE_MEDIA_PROJECTION` permission), and the Settings flow
+  routes through `JarvisForegroundService.startPlaybackCapture`, which
+  promotes the FGS type at runtime (explicit `startForeground` union on
+  API 34+; manifest-inherited types on 29–33).
+- **Lint errors** (pre-existing, now fixed so `:app:lintDebug` runs clean):
+  `WrongConstant` in `AndroidMediaGateway.setShuffleMode` (pass the
+  `PlaybackStateCompat` constants directly), `MissingPermission` annotations
+  on `AudioRecordSource.start` / `PlaybackCaptureFarEndSource.start` with
+  documented upstream gates.
+- Known platform limits documented in code: `setExactAndAllowWhileIdle`
+  needs no special permission on Android 10 but does on Android 12+
+  (`SCHEDULE_EXACT_ALARM` — not requested; timers/alarms are Android-10
+  correct, Android-12+ devices will need the permission or a fallback).
+
 ### Added — COGNITIVE_PLAN Phase 3 (semantic recall, strictly gated)
 - **Room v6 — semantic tables** (§11): `fact_vectors` (one L2-normalized
   float32 embedding per fact, stamped with the engine id + dim),

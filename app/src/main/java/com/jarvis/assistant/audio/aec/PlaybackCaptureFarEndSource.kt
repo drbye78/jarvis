@@ -1,5 +1,6 @@
 package com.jarvis.assistant.audio.aec
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
@@ -82,7 +83,15 @@ class PlaybackCaptureFarEndSource(
      * Start capturing with a consented projection. The consent flow lives in
      * the Settings UI (button → MediaProjectionManager screen-capture
      * intent); this method only consumes the granted result.
+     *
+     * Lint false positive: playback capture does NOT require RECORD_AUDIO —
+     * it is authorized by the MediaProjection consent dialog plus the
+     * mediaProjection foreground-service type (the service promotes it in
+     * [com.jarvis.assistant.service.JarvisForegroundService.startPlaybackCapture]
+     * before this method runs; without the type Android 10+ throws
+     * SecurityException at the AudioRecord build below).
      */
+    @SuppressLint("MissingPermission")
     fun start(resultCode: Int, data: android.content.Intent) {
         if (!apiSupported()) {
             Timber.tag("AecDiag").w("playback capture unavailable: API ${Build.VERSION.SDK_INT} < 29")

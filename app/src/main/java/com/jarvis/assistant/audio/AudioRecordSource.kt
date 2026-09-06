@@ -1,5 +1,6 @@
 package com.jarvis.assistant.audio
 
+import android.annotation.SuppressLint
 import android.media.AudioFormat
 import com.jarvis.assistant.audio.aec.AecMode
 import com.jarvis.assistant.audio.aec.AecProbe
@@ -64,6 +65,10 @@ class AudioRecordSource(
     private val bufferB = ShortArray(frameSize)
     private var useA = true
 
+    // RECORD_AUDIO is gated by JarvisForegroundService.ensureInitialized
+    // before the graph (and this source) can exist; a revoked grant surfaces
+    // through the STATE_INITIALIZED check below instead of a ctor throw.
+    @SuppressLint("MissingPermission")
     override fun start() {
         if (audioRecord != null) return
         val record = android.media.AudioRecord(

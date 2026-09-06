@@ -62,6 +62,13 @@ import java.util.Locale
  * - **Mute is a user intent (m12)**: [setMuted] stops the pipeline AND
  *   cancels the active session; the power receiver never silently unmutes.
  * - **Media-key duck fallback now resumes** playback on unduck.
+ * - **Android 10 microphone policy (minSdk 29)**: mic access is granted only
+ *   to foreground services started while the user is present (Android 10
+ *   while-in-use rule; Android 12+ additionally restricts background FGS
+ *   starts). Background-originated starts (watchdog / maintenance alarms,
+ *   START_STICKY recreation, boot) no longer become foreground services —
+ *   they post the "tap to activate" notification ([postActivationPrompt]);
+ *   the tap opens the activity and starts the pipeline with working mic.
  */
 class JarvisForegroundService : Service() {
 
@@ -105,6 +112,17 @@ class JarvisForegroundService : Service() {
     private var lastController: MediaController? = null
     private var usedMediaKeyFallback = false
 
+    // Android 10 mic policy: true once this instance passed through the
+    // EXPLICIT_START path (startForeground with a user-present guarantee).
+    // Instances created by background starts (alarm-delivered service
+    // intents, START_STICKY recreation) never set it and are torn down
+    // instead of becoming microphone-silenced foreground services.
+    @Volatile private var everForegrounded = false
+
+    // Last notification posted on the main channel — reused when the FGS
+    // type is promoted for media projection so the text does not regress.
+    @Volatile private var lastStateNotification: Notification? = null
+
     // ------------------------------------------------------------------
     // Lifecycle
     // ------------------------------------------------------------------
@@ -134,12 +152,79 @@ class JarvisForegroundService : Service() {
         } else {
             Timber.e("NotificationManager unavailable — notification channels not created")
         }
-        startForegroundCompat(buildStateNotification(getString(R.string.state_idle)))
+        // NOTE: no startForeground() here. Whether this instance may become a
+        // foreground service is decided in onStartCommand: only the
+        // EXPLICIT_START flavor (user-present) promotes; background-created
+        // instances post the activation prompt and tear down (the Android 10
+        // while-in-use rule would silence their microphone).
+        GraphHolder.service = this
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_EXPLICIT_START -> prefs.userStopped = false
+        val action = intent?.action
+        if (action == ACTION_EXPLICIT_START) {
+            // The ONLY start flavor that carries a user-present guarantee:
+            // every caller (MainActivity toggle, onboarding finish, the
+            // activation notification tap) invokes it while an activity is
+            // visible. On Android 10+ microphone access is granted
+            // exclusively to foreground services started while the app is in
+            // use, so this is the sole path allowed to promote to an FGS and
+            // build the capture pipeline.
+            prefs.userStopped = false
+            if (!everForegrounded) {
+                everForegrounded = true
+                startForegroundCompat(buildStateNotification(getString(R.string.state_idle)))
+            }
+        } else if (!everForegrounded) {
+            // Fresh instance created by a BACKGROUND start: the watchdog or
+            // maintenance alarm (PendingIntent.getService) or a START_STICKY
+            // recreation (null intent). On minSdk 29 (Android 10) an FGS
+            // started here would run with a SILENCED microphone (while-in-use
+            // rule) — the assistant would look alive but never hear the wake
+            // word — and on Android 12+ the start itself is restricted. Never
+            // become a deaf FGS: keep the maintenance chain booked, ask the
+            // user to tap-activate, and tear this instance down.
+            if (action == ACTION_RUN_COGNITIVE_MAINTENANCE) {
+                scheduleCognitiveMaintenanceAlarm()
+            }
+            if (prefs.userStopped) {
+                Timber.i("Background start ignored — user stopped the assistant")
+            } else {
+                JarvisForegroundService.postActivationPrompt(this)
+            }
+            stopSelf()
+            return START_NOT_STICKY
+        } else {
+            if (handleRunningInstanceCommand(action)) {
+                return START_NOT_STICKY
+            }
+        }
+
+        scheduleRestartAlarm()
+        // COGNITIVE_PLAN 2.2: nightly cognitive maintenance — schedule the
+        // ~03:30 inexact alarm (idempotent; each firing reschedules), and
+        // opportunistically run maintenance now if the last one is > 20 h
+        // old (EMUI defers inexact alarms; the wall device is nearly always
+        // on, so the opportunistic path keeps the latency tolerable without
+        // a WorkManager dependency).
+        scheduleCognitiveMaintenanceAlarm()
+        maybeRunMaintenanceOpportunistically()
+        ensureInitialized()
+        return START_STICKY
+    }
+
+    /**
+     * Alarm-delivered commands that target an ALREADY user-activated
+     * instance ([everForegrounded] == true). Fresh background-created
+     * instances never reach this — they take the activation-prompt branch
+     * in [onStartCommand].
+     *
+     * @return true when the caller must return immediately (the command
+     *   stopped the service); false to fall through to the common tail
+     *   (restart alarm, maintenance scheduling, [ensureInitialized]).
+     */
+    private fun handleRunningInstanceCommand(action: String?): Boolean {
+        when (action) {
             ACTION_RUN_COGNITIVE_MAINTENANCE -> {
                 // COGNITIVE_PLAN 2.2: the nightly ~03:30 tick. Reschedule
                 // first so the next night is always booked even if the run
@@ -166,8 +251,11 @@ class JarvisForegroundService : Service() {
                 if (prefs.userStopped) {
                     Timber.i("Watchdog fired but user stopped the assistant — shutting down")
                     stopSelf()
-                    return START_NOT_STICKY
+                    return true
                 }
+                // (revive logic below runs only for user-activated instances;
+                // a watchdog that had to CREATE this instance took the
+                // background-start branch in onStartCommand instead)
                 // Audit #25: self-heal a capture pipeline that gave up after
                 // 50 consecutive read failures. hasGivenUp() is true ONLY for
                 // that case — never for a user stop/mute or the power-receiver
@@ -182,19 +270,9 @@ class JarvisForegroundService : Service() {
                         .onFailure { Timber.w(it, "Pipeline revive failed — retrying next tick") }
                 }
             }
+            else -> Unit
         }
-
-        scheduleRestartAlarm()
-        // COGNITIVE_PLAN 2.2: nightly cognitive maintenance — schedule the
-        // ~03:30 inexact alarm (idempotent; each firing reschedules), and
-        // opportunistically run maintenance now if the last one is > 20 h
-        // old (EMUI defers inexact alarms; the wall device is nearly always
-        // on, so the opportunistic path keeps the latency tolerable without
-        // a WorkManager dependency).
-        scheduleCognitiveMaintenanceAlarm()
-        maybeRunMaintenanceOpportunistically()
-        ensureInitialized()
-        return START_STICKY
+        return false
     }
 
     // ------------------------------------------------------------------
@@ -336,12 +414,12 @@ class JarvisForegroundService : Service() {
 
                 // Switch back to the main notification channel now that the
                 // pipeline is live.
-                nm?.notify(NOTIFICATION_ID, buildStateNotification(getString(R.string.state_idle)))
+                postStateNotification(getString(R.string.state_idle))
 
                 // Live state -> notification text + ducking.
                 built.scope.launch {
                     built.stateMachine.state.collect { state ->
-                        nm?.notify(NOTIFICATION_ID, buildStateNotification(stateLabel(state)))
+                        postStateNotification(stateLabel(state))
                     }
                 }
                 built.scope.launch {
@@ -523,6 +601,16 @@ class JarvisForegroundService : Service() {
         }
     }
 
+    /** Posts the main-channel state notification and remembers it so the FGS
+     *  type promotion ([promoteForMediaProjection]) can re-use the current
+     *  text instead of regressing to a stale label. */
+    private fun postStateNotification(text: String) {
+        val notification = buildStateNotification(text)
+        lastStateNotification = notification
+        (getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)
+            ?.notify(NOTIFICATION_ID, notification)
+    }
+
     // ------------------------------------------------------------------
     // Ducking (pause/resume) with working media-key fallback
     // ------------------------------------------------------------------
@@ -644,6 +732,7 @@ class JarvisForegroundService : Service() {
         // Cancel any in-flight background initialization.
         initJob?.cancel()
         serviceScope.cancel()
+        GraphHolder.service = null
         // If bootstrapping was in progress, complete exceptionally so any
         // code awaiting graphReady doesn't hang forever.
         if (bootstrapping && !graphReady.isCompleted) {
@@ -718,7 +807,31 @@ class JarvisForegroundService : Service() {
             Timber.tag("AecDiag").w("playback capture requested outside SOFTWARE aec mode — ignored")
             return
         }
+        // Android 10+ requires the capturing app to run a foreground service
+        // with the mediaProjection type; without it the capture AudioRecord
+        // build throws SecurityException (on API 34+ even getMediaProjection
+        // does). The manifest declares microphone|mediaProjection and API
+        // 29–33 instances already carry both types via the manifest-inherited
+        // two-arg startForeground; API 34+ needs the explicit promotion.
+        promoteForMediaProjection()
         g.playbackCapture.start(resultCode, data)
+    }
+
+    /**
+     * Adds the mediaProjection FGS type at runtime where the platform
+     * requires it to be passed to startForeground explicitly. On API 29–33
+     * the two-arg startForeground inherits ALL manifest-declared types, so
+     * the manifest `microphone|mediaProjection` declaration suffices; only
+     * API 34+ needs this call. No-op before the instance became a foreground
+     * service (nothing to promote).
+     */
+    private fun promoteForMediaProjection() {
+        if (!everForegrounded || Build.VERSION.SDK_INT < 34) return
+        startForeground(
+            NOTIFICATION_ID,
+            lastStateNotification ?: buildStateNotification(getString(R.string.state_idle)),
+            ServiceInfo_MICROPHONE or ServiceInfo_MEDIA_PROJECTION,
+        )
     }
 
     fun stopPlaybackCapture() {
@@ -739,6 +852,14 @@ class JarvisForegroundService : Service() {
         const val ACTION_RUN_COGNITIVE_MAINTENANCE = "com.jarvis.assistant.RUN_COGNITIVE_MAINTENANCE"
         const val NOTIFICATION_ID = 1
         private const val NOTIFICATION_PERMISSION = 2
+
+        /** "Tap to activate" prompt (Android 10 background-start policy). */
+        private const val ACTIVATION_NOTIFICATION_ID = 3
+        private const val ACTIVATION_REQUEST_CODE = 1003
+        private const val CHANNEL_ACTIVATION = "jarvis_activation"
+
+        /** MainActivity extra: start the pipeline from a user tap. */
+        const val EXTRA_ACTIVATE_ASSISTANT = "com.jarvis.assistant.ACTIVATE_ASSISTANT"
         private const val RESTART_REQUEST_CODE = 1001
         private const val MAINTENANCE_REQUEST_CODE = 1002
 
@@ -753,6 +874,10 @@ class JarvisForegroundService : Service() {
         private const val ServiceInfo_MICROPHONE =
             android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
 
+        @Suppress("InlinedApi") // constant is inlined at compile time; only used on API 34+
+        private const val ServiceInfo_MEDIA_PROJECTION =
+            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+
         fun explicitStart(context: Context) {
             val intent = Intent(context, JarvisForegroundService::class.java)
                 .setAction(ACTION_EXPLICIT_START)
@@ -762,6 +887,56 @@ class JarvisForegroundService : Service() {
         fun explicitStop(context: Context) {
             AppPrefs(context).userStopped = true
             context.stopService(Intent(context, JarvisForegroundService::class.java))
+        }
+
+        /**
+         * Android 10+ activation prompt (see the class KDoc mic-policy
+         * bullet). Posts a high-priority notification whose tap opens
+         * [MainActivity] with [EXTRA_ACTIVATE_ASSISTANT]; the activity then
+         * starts the pipeline from a user-present context — the only start
+         * flavor the Android 10 while-in-use rule rewards with a working
+         * microphone. Idempotent: re-posting updates the same notification
+         * (setOnlyAlertOnce). Safe to call from a BroadcastReceiver — no
+         * service start is involved, so neither the Android 10 microphone
+         * rule nor the Android 12+ FGS-start restriction applies.
+         */
+        fun postActivationPrompt(context: Context) {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                ?: return
+            if (Build.VERSION.SDK_INT >= 33 &&
+                ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED
+            ) {
+                Timber.tag("Activation").w("POST_NOTIFICATIONS denied — activation prompt not shown")
+                return
+            }
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ACTIVATION, context.getString(R.string.channel_activation),
+                    NotificationManager.IMPORTANCE_HIGH,
+                )
+            )
+            val tap = PendingIntent.getActivity(
+                context, ACTIVATION_REQUEST_CODE,
+                Intent(context, MainActivity::class.java)
+                    .putExtra(EXTRA_ACTIVATE_ASSISTANT, true)
+                    .addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                    ),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val notification = NotificationCompat.Builder(context, CHANNEL_ACTIVATION)
+                .setContentTitle(context.getString(R.string.activation_notif_title))
+                .setContentText(context.getString(R.string.activation_notif_text))
+                .setSmallIcon(R.drawable.ic_mic)
+                .setContentIntent(tap)
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
+                .setCategory(NotificationCompat.CATEGORY_SYSTEM)
+                .build()
+            nm.notify(ACTIVATION_NOTIFICATION_ID, notification)
         }
     }
 }

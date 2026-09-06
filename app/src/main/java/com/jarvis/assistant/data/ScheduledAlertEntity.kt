@@ -22,6 +22,16 @@ data class ScheduledAlertEntity(
     val kind: String,
     val label: String,
     val triggerAtMillis: Long,
+    /**
+     * The original wall-clock anchor for recurring alarms. [snooze] overwrites
+     * [triggerAtMillis] with `now() + delay` but leaves this field intact, so
+     * that [AlarmScheduler.onFired] can compute the next daily occurrence from
+     * the true anchor instead of drifting to the snoozed time.
+     *
+     * Defaults to [triggerAtMillis] for new rows and is backfilled by the
+     * v6→v7 migration.
+     */
+    val anchorTimeMillis: Long = triggerAtMillis,
     val repeatDaily: Boolean = false,
     val enabled: Boolean = true,
 ) {

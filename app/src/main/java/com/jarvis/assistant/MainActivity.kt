@@ -120,6 +120,32 @@ class MainActivity : AppCompatActivity() {
         }
 
         observeTranscript()
+
+        // Android 10 activation flow: tapping the post-boot / post-update
+        // "tap to activate" notification lands here with the extra; the
+        // activity is visible, so the start is user-present and the mic
+        // is granted (the while-in-use rule).
+        maybeActivateFromIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        maybeActivateFromIntent(intent)
+    }
+
+    /**
+     * Android 10 background-start policy: the post-boot / post-update
+     * activation notification opens this activity with
+     * [JarvisForegroundService.EXTRA_ACTIVATE_ASSISTANT]; while the activity
+     * is visible the explicit start is user-present — the only start context
+     * that grants microphone access on Android 10+.
+     */
+    private fun maybeActivateFromIntent(intent: Intent?) {
+        val activate = intent
+            ?.getBooleanExtra(JarvisForegroundService.EXTRA_ACTIVATE_ASSISTANT, false) == true
+        if (activate && !GraphHolder.isRunning) {
+            JarvisForegroundService.explicitStart(this)
+        }
     }
 
     override fun onResume() {

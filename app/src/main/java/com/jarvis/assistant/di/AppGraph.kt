@@ -359,6 +359,12 @@ class AppGraph(
 
             override fun ingest(utterance: String, messageId: Long, origin: com.jarvis.assistant.session.TurnOrigin) =
                 cognitiveCoordinator.ingest(utterance, messageId, origin)
+
+            override suspend fun gatherSummary(utterance: String?, isFollowUpTurn: Boolean): String =
+                cognitiveCoordinator.gatherSummary(utterance, isFollowUpTurn)
+
+            override fun onFollowUpUtterance(text: String) =
+                cognitiveCoordinator.onFollowUpUtterance(text)
         },
         // Phase 5 (M7): pause-on-wake reuses the real tool lane — the same
         // capability-gated control path the LLM uses, incl. the media-key

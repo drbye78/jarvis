@@ -14,10 +14,17 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Starts the assistant after boot / app update AND re-arms every persisted
- * alert through the unified scheduler: alarms always (dailies rolled past
- * missed days) and timers while still in the future — before the unified
- * store timers vanished on reboot entirely (M9/S3).
+ * Reacts to boot / app update AND re-arms every persisted alert through the
+ * unified scheduler: alarms always (dailies rolled past missed days) and
+ * timers while still in the future — before the unified store timers vanished
+ * on reboot entirely (M9/S3).
+ *
+ * The receiver no longer starts the assistant service itself. Since minSdk 29
+ * (Android 10 / HarmonyOS 2.0 wall device) a foreground service started from
+ * this always-background context would run with a silenced microphone
+ * (Android 10 while-in-use rule), so the receiver posts the "tap to
+ * activate" prompt instead; the user's tap provides the user-present start
+ * the platform requires.
  *
  * A fresh boot clears the userStopped flag: the appliance profile expects the
  * assistant to come back after a reboot. An app UPDATE (MY_PACKAGE_REPLACED)
@@ -55,11 +62,22 @@ class BootReceiver : BroadcastReceiver() {
         if (freshBoot) {
             prefs.userStopped = false // fresh boot = assistant may auto-start
         }
-        // Start the pipeline only when the assistant is supposed to run:
+        // Activate the pipeline only when the assistant is supposed to run:
         // onboarding finished AND (fresh boot OR the user never stopped it).
-        val shouldStart = prefs.onboarded && (freshBoot || !prefs.userStopped)
-        if (shouldStart) {
-            JarvisForegroundService.explicitStart(context)
+        //
+        // Android 10 (minSdk 29): this receiver ALWAYS runs while the app is
+        // in the background, and the while-in-use rule grants microphone
+        // access only to foreground services started while the user is
+        // present — a service started here would run with a SILENCED
+        // microphone (AudioRecord returns zeros, no error) and the wake word
+        // would never fire. Android 12+ goes further and restricts the
+        // background FGS start itself. So instead of starting the service,
+        // post the activation prompt: the user taps it (or the app icon),
+        // the activity comes to the foreground, and the pipeline starts with
+        // a guaranteed-working microphone.
+        val shouldActivate = prefs.onboarded && (freshBoot || !prefs.userStopped)
+        if (shouldActivate) {
+            JarvisForegroundService.postActivationPrompt(context)
         }
     }
 }

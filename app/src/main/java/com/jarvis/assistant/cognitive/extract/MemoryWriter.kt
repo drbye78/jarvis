@@ -19,6 +19,7 @@ import com.jarvis.assistant.cognitive.model.ValidatedFact
 class MemoryWriter(
     private val factDao: UserFactDao,
     private val normalizer: FactNormalizer,
+    private val inTransaction: suspend (suspend () -> Unit) -> Unit = { block -> block() },
 ) {
 
     /** One applied write, for counters and tool outcomes. */
@@ -74,18 +75,22 @@ class MemoryWriter(
         }
 
         is NormalizationDecision.Supersede -> {
-            factDao.updateStatus(
-                decision.oldFact.factId,
-                FactStatus.SUPERSEDED.name,
-                decision.newFact.updatedAt,
-            )
-            factDao.insert(UserFactEntity.fromSnapshot(decision.newFact))
+            inTransaction {
+                factDao.updateStatus(
+                    decision.oldFact.factId,
+                    FactStatus.SUPERSEDED.name,
+                    decision.newFact.updatedAt,
+                )
+                factDao.insert(UserFactEntity.fromSnapshot(decision.newFact))
+            }
             Applied.Superseded(decision.oldFact, decision.newFact)
         }
 
         is NormalizationDecision.Contest -> {
-            factDao.setContested(decision.oldFact.factId, true, decision.newFact.updatedAt)
-            factDao.insert(UserFactEntity.fromSnapshot(decision.newFact))
+            inTransaction {
+                factDao.setContested(decision.oldFact.factId, true, decision.newFact.updatedAt)
+                factDao.insert(UserFactEntity.fromSnapshot(decision.newFact))
+            }
             Applied.Contested(decision.oldFact, decision.newFact)
         }
     }

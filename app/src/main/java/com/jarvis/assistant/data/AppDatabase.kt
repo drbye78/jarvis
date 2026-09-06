@@ -71,7 +71,7 @@ import com.jarvis.assistant.cognitive.data.UserFactEntity
         EntityRefEntity::class,
         FactEntityLinkEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -345,7 +345,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        private val ALL_MIGRATIONS = arrayOf(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        /**
+         * Fix alarm snooze drift (alarm-snooze-drift): adds `anchorTimeMillis`
+         * to `scheduled_alerts` so that `onFired` computes the next daily
+         * occurrence from the original recurring time, not the snoozed time.
+         * Existing rows are backfilled with their current `triggerAtMillis`.
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE scheduled_alerts ADD COLUMN anchorTimeMillis INTEGER NOT NULL DEFAULT 0",
+                )
+                // Backfill: set anchorTimeMillis = triggerAtMillis for all existing rows
+                db.execSQL("UPDATE scheduled_alerts SET anchorTimeMillis = triggerAtMillis")
+            }
+        }
+
+        private val ALL_MIGRATIONS = arrayOf(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
         /** Pre-release schema with no exportable history: wipe, don't crash (audit #21). */
         private val DESTRUCTIVE_FROM_VERSIONS = intArrayOf(1)

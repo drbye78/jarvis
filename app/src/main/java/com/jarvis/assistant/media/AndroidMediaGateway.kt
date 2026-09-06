@@ -15,6 +15,7 @@ import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.RatingCompat
 import android.support.v4.media.session.MediaControllerCompat
 import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import com.jarvis.assistant.service.JarvisNotificationListener
 import timber.log.Timber
 
@@ -297,9 +298,15 @@ internal class AndroidControllerHandle(
 
     override fun setShuffleMode(enabled: Boolean) =
         transport {
+            // Pass the PlaybackStateCompat constants directly: the
+            // MediaCapabilities mirrors hold identical values, but lint
+            // cannot track the alias through the @IntDef check (WrongConstant).
             it.setShuffleMode(
-                if (enabled) MediaCapabilities.SHUFFLE_MODE_ALL
-                else MediaCapabilities.SHUFFLE_MODE_NONE,
+                if (enabled) {
+                    PlaybackStateCompat.SHUFFLE_MODE_ALL
+                } else {
+                    PlaybackStateCompat.SHUFFLE_MODE_NONE
+                },
             )
         }
 

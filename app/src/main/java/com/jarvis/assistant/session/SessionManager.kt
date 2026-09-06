@@ -223,6 +223,7 @@ class SessionManager(
             return
         }
         Timber.e("Session failure: %s", message)
+        player.flush()
         _partialTranscript.value = ""
         _turnActivity.value = null
         stateMachine.onEvent(SessionEvent.ErrorOccurred)

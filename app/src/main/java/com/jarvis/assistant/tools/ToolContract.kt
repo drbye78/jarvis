@@ -8,6 +8,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import timber.log.Timber
@@ -93,7 +94,12 @@ class ToolRegistry(
      */
     suspend fun executeResult(call: FunctionCall): ToolResult {
         val tool = tools.find { it.name == call.name }
-            ?: return ToolResult("""{"error":"Unknown function: ${call.name}"}""", isError = true)
+            ?: return ToolResult(
+                buildJsonObject {
+                    put("error", "Unknown function: ${call.name}")
+                }.toString(),
+                isError = true,
+            )
         val timeout = tool.timeoutMs ?: perToolTimeoutMs
         val startedAt = System.nanoTime()
         val result = try {
@@ -105,7 +111,12 @@ class ToolRegistry(
             throw e // barge-in / shutdown — the session must observe it
         } catch (e: Exception) {
             Timber.e(e, "Tool %s failed", call.name)
-            ToolResult("""{"error":"Tool execution failed: ${e.message}"}""", isError = true)
+            ToolResult(
+                buildJsonObject {
+                    put("error", "Tool execution failed: ${e.message}")
+                }.toString(),
+                isError = true,
+            )
         }
         // COGNITIVE_PLAN 2.1: record AFTER the outcome is known, for both
         // success and failure; latency includes the tool's own timeout wait.

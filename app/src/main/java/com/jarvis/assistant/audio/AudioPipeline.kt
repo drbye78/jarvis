@@ -79,6 +79,15 @@ class AudioPipeline(
 
     val ringBuffer = AudioRingBuffer(ringCapacity(preRollMs))
 
+    /**
+     * SharedFlow drop observability. Frames emitted while no subscribers are
+     * active may overflow the extra buffer (capacity 10) and be silently
+     * dropped by [kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST].
+     * This counter tracks such events; logged periodically to avoid spam.
+     */
+    private var sharedFlowDropCount = 0
+    private var lastSharedFlowDropLog = 0L
+
     @Volatile private var running = false
 
     /**
@@ -144,6 +153,21 @@ class AudioPipeline(
                         )
                     }
                     _frames.emit(snapshot)
+                    // Track frames emitted with no active subscribers — these
+                    // may overflow the SharedFlow buffer and be silently
+                    // dropped by DROP_OLDEST. Log periodically for observability.
+                    if (_frames.subscriptionCount.value == 0) {
+                        sharedFlowDropCount++
+                        val now = System.currentTimeMillis()
+                        if (sharedFlowDropCount >= 100 || now - lastSharedFlowDropLog >= 5_000) {
+                            Timber.w(
+                                "SharedFlow: %d frames emitted with no active subscribers (potential drops)",
+                                sharedFlowDropCount,
+                            )
+                            lastSharedFlowDropLog = now
+                            sharedFlowDropCount = 0
+                        }
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e

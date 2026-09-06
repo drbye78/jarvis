@@ -161,16 +161,48 @@ class MigrationTest {
     }
 
     @Test
-    fun `AppDatabase migration chain ends at version 6`() {
+    fun `AppDatabase migration chain ends at version 7`() {
         // Ensure the migration chain end-point matches the declared database
         // version so callers cannot bump the annotation without updating
         // the migration.
-        val maxVersion = AppDatabase.MIGRATION_5_6.endVersion
+        val maxVersion = AppDatabase.MIGRATION_6_7.endVersion
         assertEquals(
-            "Migration chain must end at the declared database version (6)",
-            6,
+            "Migration chain must end at the declared database version (7)",
+            7,
             maxVersion,
         )
+    }
+
+    @Test
+    fun `MIGRATION_6_7 is defined and has correct version range`() {
+        val migration = AppDatabase.MIGRATION_6_7
+        assertNotNull("MIGRATION_6_7 must not be null", migration)
+        assertEquals("start version must be 6", 6, migration.startVersion)
+        assertEquals("end version must be 7", 7, migration.endVersion)
+    }
+
+    @Test
+    fun `MIGRATION_6_7 adds anchorTimeMillis column and backfills`() {
+        val migration = AppDatabase.MIGRATION_6_7
+        val recorder = RecordingSqliteDatabase()
+        migration.migrate(recorder.asDb)
+
+        val sql = recorder.statements.joinToString("\n")
+        assertTrue(
+            "must add anchorTimeMillis column",
+            sql.contains("ALTER TABLE scheduled_alerts ADD COLUMN anchorTimeMillis"),
+        )
+        assertTrue(
+            "must backfill anchorTimeMillis from triggerAtMillis",
+            sql.contains("UPDATE scheduled_alerts SET anchorTimeMillis = triggerAtMillis"),
+        )
+
+        recorder.statements.forEach { statement ->
+            assertTrue(
+                "migration must not drop any table: $statement",
+                !statement.contains("DROP TABLE"),
+            )
+        }
     }
 
     /**

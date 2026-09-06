@@ -317,5 +317,36 @@ class AlertStoreTest {
         assertEquals(expected, h.dao.byId(id)!!.triggerAtMillis)
         assertEquals(expected, h.armer.armed.getValue(id).triggerAtMillis)
         assertEquals(id, h.armer.armed.getValue(id).id)
+        // anchorTimeMillis must NOT be overwritten by snooze — the original
+        // recurring time is preserved for onFired to compute the next day.
+        assertEquals(5_000L, h.dao.byId(id)!!.anchorTimeMillis)
+    }
+
+    // ---- Snooze-drift regression test ----------------------------------------
+
+    @Test
+    fun `snoozed daily alarm does not drift after onFired`() = runBlocking {
+        // Simulates: daily alarm at 07:00 (triggerAtMillis=5000), snoozed to
+        // 07:10 (triggerAtMillis=66000), then fired. onFired must compute the
+        // next occurrence from anchorTimeMillis (07:00) not the snoozed time.
+        val h = AlertHarness(nowMillis = 5_000L)
+        val id = h.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
+
+        // Snooze to 10 minutes later
+        h.now = 6_000L
+        h.scheduler.snooze(id)
+        val snoozedTrigger = 6_000L + 10 * 60 * 1000L // 66_000
+        assertEquals(snoozedTrigger, h.dao.byId(id)!!.triggerAtMillis)
+        assertEquals(5_000L, h.dao.byId(id)!!.anchorTimeMillis)
+
+        // The snoozed alarm fires
+        h.now = snoozedTrigger
+        h.scheduler.onFired(id)
+
+        // Next occurrence must be anchored at 07:00 (5_000), not 07:10 (66_000).
+        // nextDailyOccurrence(5_000, 66_000) = 5_000 + 86400000 = 86405_000
+        val expectedNext = 5_000L + ALERT_DAY_MS
+        assertEquals(expectedNext, h.dao.byId(id)!!.triggerAtMillis)
+        assertEquals(expectedNext, h.armer.armed.getValue(id).triggerAtMillis)
     }
 }

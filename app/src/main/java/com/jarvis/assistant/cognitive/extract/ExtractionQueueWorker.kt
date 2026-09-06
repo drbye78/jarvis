@@ -43,9 +43,10 @@ class ExtractionQueueWorker(
     private val llm: LlmClient,
     private val normalizer: FactNormalizer = FactNormalizer(),
     private val parser: ExtractionParser = ExtractionParser(),
+    private val inTransaction: suspend (suspend () -> Unit) -> Unit = { block -> block() },
 ) {
 
-    private val writer = MemoryWriter(factDao, normalizer)
+    private val writer = MemoryWriter(factDao, normalizer, inTransaction)
 
     /** Counters flushed to memory_meta daily counters (plan principle 7). */
     var extractedCount: Long = 0
@@ -201,26 +202,30 @@ class ExtractionQueueWorker(
             }
 
             is ExtractionParser.Result.Ok -> {
-                val applied = writer.writeAll(result.facts)
-                extractedCount += applied.size
-                droppedCount += result.droppedCount
-                fresh.forEach {
-                    queueDao.updateState(
-                        it.messageId,
-                        ExtractionQueueEntity.STATE_DONE,
-                        it.attempt + 1,
-                        null,
-                        System.currentTimeMillis(),
-                    )
+                var appliedSize = 0
+                inTransaction {
+                    val applied = writer.writeAll(result.facts)
+                    appliedSize = applied.size
+                    extractedCount += applied.size
+                    droppedCount += result.droppedCount
+                    fresh.forEach {
+                        queueDao.updateState(
+                            it.messageId,
+                            ExtractionQueueEntity.STATE_DONE,
+                            it.attempt + 1,
+                            null,
+                            System.currentTimeMillis(),
+                        )
+                    }
                 }
                 Timber.i(
                     "Cognitive: batch %s → %d fact(s) from %d message(s) (%d dropped)",
                     batchId,
-                    applied.size,
+                    appliedSize,
                     pairs.size,
                     result.droppedCount,
                 )
-                ExtractionBatchReport(batchId, pairs.size, applied.size, result.droppedCount, quarantined = false)
+                ExtractionBatchReport(batchId, pairs.size, appliedSize, result.droppedCount, quarantined = false)
             }
         }
     }

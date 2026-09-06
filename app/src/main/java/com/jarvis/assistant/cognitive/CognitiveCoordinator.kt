@@ -167,7 +167,7 @@ class CognitiveCoordinator(
 
     private val ranker = FactRanker(nowMs)
     private val normalizer = FactNormalizer(nowMs = nowMs)
-    private val writer = MemoryWriter(factDao, normalizer)
+    private val writer = MemoryWriter(factDao, normalizer, inTransaction)
     private val worker = ExtractionQueueWorker(
         queueDao = queueDao,
         factDao = factDao,
@@ -175,6 +175,7 @@ class CognitiveCoordinator(
         messageDao = messageDao,
         llm = llm,
         normalizer = normalizer,
+        inTransaction = inTransaction,
     )
 
     // ---- Phase 2 behaviour layer (§8) ---------------------------------------

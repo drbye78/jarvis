@@ -910,7 +910,11 @@ class SettingsActivity : AppCompatActivity() {
             } else if (graph.aecMode != com.jarvis.assistant.audio.aec.AecMode.SOFTWARE) {
                 Toast.makeText(this, R.string.aec_hw_probe_unavailable, Toast.LENGTH_SHORT).show()
             } else {
-                graph.playbackCapture.start(resultCode, data)
+                // Routed through the service so the mediaProjection FGS type
+                // is promoted before the capture AudioRecord is built —
+                // Android 10+ throws SecurityException without the type
+                // (API 34+ enforces it even at getMediaProjection time).
+                GraphHolder.service?.startPlaybackCapture(resultCode, data)
                 aecCaptureSwitch.isChecked = true
             }
             return
