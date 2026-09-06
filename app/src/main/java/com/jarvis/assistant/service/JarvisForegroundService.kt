@@ -69,6 +69,11 @@ import java.util.Locale
  *   START_STICKY recreation, boot) no longer become foreground services —
  *   they post the "tap to activate" notification ([postActivationPrompt]);
  *   the tap opens the activity and starts the pipeline with working mic.
+ * - **Decision logic externalized (P1.4)**: the watchdog revive gate, action
+ *   routing, mute gating, init gate, FGS-type / activation-prompt decisions
+ *   and maintenance timing live in [ServicePolicy] (pure JVM, unit-tested
+ *   without Android); this class only reads state and executes decisions —
+ *   all Android I/O stays here.
  */
 class JarvisForegroundService : Service() {
 
@@ -183,14 +188,19 @@ class JarvisForegroundService : Service() {
             // rule) — the assistant would look alive but never hear the wake
             // word — and on Android 12+ the start itself is restricted. Never
             // become a deaf FGS: keep the maintenance chain booked, ask the
-            // user to tap-activate, and tear this instance down.
-            if (action == ACTION_RUN_COGNITIVE_MAINTENANCE) {
+            // user to tap-activate, and tear this instance down. The decision
+            // table is [ServicePolicy.backgroundStartRoute] (P1.4).
+            val route = ServicePolicy.backgroundStartRoute(
+                action = ServicePolicy.actionFor(action),
+                userStopped = prefs.userStopped,
+            )
+            if (route.rescheduleMaintenance) {
                 scheduleCognitiveMaintenanceAlarm()
             }
-            if (prefs.userStopped) {
-                Timber.i("Background start ignored — user stopped the assistant")
-            } else {
+            if (route.postActivationPrompt) {
                 JarvisForegroundService.postActivationPrompt(this)
+            } else {
+                Timber.i("Background start ignored — user stopped the assistant")
             }
             stopSelf()
             return START_NOT_STICKY
@@ -219,60 +229,73 @@ class JarvisForegroundService : Service() {
      * instances never reach this — they take the activation-prompt branch
      * in [onStartCommand].
      *
+     * The decision table lives in [ServicePolicy.runningInstanceCommand];
+     * this method only executes it — all Android I/O stays here.
+     *
      * @return true when the caller must return immediately (the command
      *   stopped the service); false to fall through to the common tail
      *   (restart alarm, maintenance scheduling, [ensureInitialized]).
      */
     private fun handleRunningInstanceCommand(action: String?): Boolean {
-        when (action) {
-            ACTION_RUN_COGNITIVE_MAINTENANCE -> {
-                // COGNITIVE_PLAN 2.2: the nightly ~03:30 tick. Reschedule
-                // first so the next night is always booked even if the run
-                // itself throws; the coordinator guards every step.
-                scheduleCognitiveMaintenanceAlarm()
-                val g = graph
-                if (g != null && initialized) {
-                    serviceScope.launch {
-                        try {
-                            g.cognitiveCoordinator.onMaintenance()
-                            Timber.i("Cognitive: nightly maintenance complete")
-                        } catch (e: kotlinx.coroutines.CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            Timber.w(e, "Cognitive: nightly maintenance failed")
+        val g = graph
+        // (revive logic below runs only for user-activated instances;
+        // a watchdog that had to CREATE this instance took the
+        // background-start branch in onStartCommand instead)
+        val decision = ServicePolicy.runningInstanceCommand(
+            action = ServicePolicy.actionFor(action),
+            inputs = ServicePolicy.RunningInstanceInputs(
+                graphReady = g != null && initialized,
+                userStopped = prefs.userStopped,
+                pipelineGivenUp = g?.audioPipeline?.hasGivenUp() ?: false,
+                muted = g?.sessionManager?.muted?.value ?: false,
+            ),
+        )
+        return when (decision) {
+            is ServicePolicy.RunningCommandDecision.StopForUserStop -> {
+                // The 15-minute keep-alive ping. Respect an explicit stop.
+                Timber.i("Watchdog fired but user stopped the assistant — shutting down")
+                stopSelf()
+                true
+            }
+            is ServicePolicy.RunningCommandDecision.RunTail -> {
+                if (decision.rescheduleMaintenance) {
+                    // COGNITIVE_PLAN 2.2: the nightly ~03:30 tick. Reschedule
+                    // first so the next night is always booked even if the run
+                    // itself throws; the coordinator guards every step.
+                    scheduleCognitiveMaintenanceAlarm()
+                }
+                when (decision.runMaintenanceNow) {
+                    true -> {
+                        // runMaintenanceNow == true implies a ready graph.
+                        val readyGraph = requireNotNull(g) { "maintenance run-now implies a ready graph" }
+                        serviceScope.launch {
+                            try {
+                                readyGraph.cognitiveCoordinator.onMaintenance()
+                                Timber.i("Cognitive: nightly maintenance complete")
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Timber.w(e, "Cognitive: nightly maintenance failed")
+                            }
                         }
                     }
-                } else {
-                    Timber.i("Cognitive: maintenance tick arrived before init — opportunistic path will run it")
+                    false -> Timber.i("Cognitive: maintenance tick arrived before init — opportunistic path will run it")
+                    null -> Unit
                 }
-            }
-            ACTION_WATCHDOG -> {
-                // The 15-minute keep-alive ping. Respect an explicit stop.
-                if (prefs.userStopped) {
-                    Timber.i("Watchdog fired but user stopped the assistant — shutting down")
-                    stopSelf()
-                    return true
-                }
-                // (revive logic below runs only for user-activated instances;
-                // a watchdog that had to CREATE this instance took the
-                // background-start branch in onStartCommand instead)
-                // Audit #25: self-heal a capture pipeline that gave up after
-                // 50 consecutive read failures. hasGivenUp() is true ONLY for
-                // that case — never for a user stop/mute or the power-receiver
-                // stop — so the ping cannot silently undo a user intent.
-                val g = graph
-                if (g != null && initialized &&
-                    g.audioPipeline.hasGivenUp() &&
-                    !g.sessionManager.muted.value
-                ) {
+                if (decision.revivePipeline) {
+                    // Audit #25: self-heal a capture pipeline that gave up after
+                    // 50 consecutive read failures. hasGivenUp() is true ONLY for
+                    // that case — never for a user stop/mute or the power-receiver
+                    // stop — so the ping cannot silently undo a user intent.
+                    // revivePipeline == true implies a ready graph.
+                    val readyGraph = requireNotNull(g) { "pipeline revive implies a ready graph" }
                     Timber.w("Watchdog: audio pipeline gave up — reviving capture")
-                    runCatching { g.audioPipeline.start() }
+                    runCatching { readyGraph.audioPipeline.start() }
                         .onFailure { Timber.w(it, "Pipeline revive failed — retrying next tick") }
                 }
+                false
             }
-            else -> Unit
         }
-        return false
     }
 
     // ------------------------------------------------------------------
@@ -297,7 +320,7 @@ class JarvisForegroundService : Service() {
             this, MAINTENANCE_REQUEST_CODE, intent,
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
         )
-        val triggerAt = nextMaintenanceAt(System.currentTimeMillis())
+        val triggerAt = ServicePolicy.nextMaintenanceAt(System.currentTimeMillis())
         // Inexact BY DESIGN (plan §9.1): maintenance is patient background
         // work; doze batching is acceptable, the opportunistic path covers
         // the deferral.
@@ -323,10 +346,12 @@ class JarvisForegroundService : Service() {
             try {
                 val meta = g.database.memoryMetaDao()
                     .get(com.jarvis.assistant.cognitive.data.MemoryMetaEntity.KEY_LAST_MAINTENANCE_AT)
-                    ?.toLongOrNull() ?: 0L
+                    ?.toLongOrNull()
                 val now = System.currentTimeMillis()
-                if (now - meta > MAINTENANCE_STALE_MS) {
-                    Timber.i("Cognitive: opportunistic maintenance (last %d ms ago)", now - meta)
+                // P1.4: null (never recorded) counts as epoch 0 — stale — in
+                // [ServicePolicy.isMaintenanceStale], like the original `?: 0L`.
+                if (ServicePolicy.isMaintenanceStale(meta, now)) {
+                    Timber.i("Cognitive: opportunistic maintenance (last %d ms ago)", now - (meta ?: 0L))
                     g.cognitiveCoordinator.onMaintenance()
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -337,35 +362,35 @@ class JarvisForegroundService : Service() {
         }
     }
 
-    /** Next local ~03:30 (today if still before it, tomorrow otherwise). */
-    private fun nextMaintenanceAt(now: Long): Long {
-        val cal = java.util.Calendar.getInstance().apply {
-            timeInMillis = now
-            set(java.util.Calendar.HOUR_OF_DAY, MAINTENANCE_HOUR)
-            set(java.util.Calendar.MINUTE, 30)
-            set(java.util.Calendar.SECOND, 0)
-            set(java.util.Calendar.MILLISECOND, 0)
-            if (timeInMillis <= now) add(java.util.Calendar.DAY_OF_YEAR, 1)
-        }
-        return cal.timeInMillis
-    }
+    // P1.4: nextMaintenanceAt moved to [ServicePolicy.nextMaintenanceAt].
 
     // ------------------------------------------------------------------
     // Initialization (idempotent, retryable)
     // ------------------------------------------------------------------
 
     private fun ensureInitialized() {
-        if (initialized || bootstrapping) return
-
+        // P1.4: the RECORD_AUDIO-first gate is [ServicePolicy.initializationStep].
         // Permission gate FIRST — the original crashed AudioRecord init on
-        // fresh installs and never retried.
-        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
+        // fresh installs and never retried. The permission lookup is a pure
+        // read the original performed only after the initialized/bootstrapping
+        // guard — evaluated unconditionally here (no observable difference);
+        // the SKIP step preserves the early return.
+        when (
+            ServicePolicy.initializationStep(
+                initialized = initialized,
+                bootstrapping = bootstrapping,
+                micPermissionGranted = ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED,
+            )
         ) {
-            Timber.w("RECORD_AUDIO not granted; showing permission notification")
-            showPermissionNotification()
-            initialized = false // retry on next start command
-            return
+            ServicePolicy.InitStep.SKIP -> return
+            ServicePolicy.InitStep.REQUEST_MIC_PERMISSION -> {
+                Timber.w("RECORD_AUDIO not granted; showing permission notification")
+                showPermissionNotification()
+                initialized = false // retry on next start command
+                return
+            }
+            ServicePolicy.InitStep.BEGIN_BOOTSTRAP -> Unit
         }
 
         // Show bootstrapping notification immediately (main thread, fast).
@@ -594,7 +619,7 @@ class JarvisForegroundService : Service() {
     }
 
     private fun startForegroundCompat(notification: Notification) {
-        if (Build.VERSION.SDK_INT >= 34) {
+        if (ServicePolicy.requiresTypedForegroundStart(Build.VERSION.SDK_INT)) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo_MICROPHONE)
         } else {
             startForeground(NOTIFICATION_ID, notification)
@@ -698,8 +723,8 @@ class JarvisForegroundService : Service() {
             this, RESTART_REQUEST_CODE, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val triggerAt = System.currentTimeMillis() + config.restartIntervalMs
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val triggerAt = ServicePolicy.watchdogTriggerAt(System.currentTimeMillis(), config.restartIntervalMs)
+        if (ServicePolicy.useExactAllowWhileIdle(Build.VERSION.SDK_INT)) {
             alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
         } else {
             alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pending)
@@ -743,8 +768,9 @@ class JarvisForegroundService : Service() {
         runCatching { unduck() }
         // m7: only an EXPLICIT user stop may cancel the watchdog. Any other
         // teardown (system service-stop, Apply-restart handoff) leaves the
-        // restart alarm armed so the assistant revives.
-        if (prefs.userStopped) {
+        // restart alarm armed so the assistant revives. (P1.4: decision is
+        // [ServicePolicy.cancelWatchdogOnDestroy].)
+        if (ServicePolicy.cancelWatchdogOnDestroy(userStopped = prefs.userStopped)) {
             cancelRestartAlarm()
         }
         runCatching { powerReceiver?.let { unregisterReceiver(it) } }
@@ -826,7 +852,7 @@ class JarvisForegroundService : Service() {
      * service (nothing to promote).
      */
     private fun promoteForMediaProjection() {
-        if (!everForegrounded || Build.VERSION.SDK_INT < 34) return
+        if (!ServicePolicy.mayPromoteForMediaProjection(everForegrounded, Build.VERSION.SDK_INT)) return
         startForeground(
             NOTIFICATION_ID,
             lastStateNotification ?: buildStateNotification(getString(R.string.state_idle)),
@@ -863,11 +889,7 @@ class JarvisForegroundService : Service() {
         private const val RESTART_REQUEST_CODE = 1001
         private const val MAINTENANCE_REQUEST_CODE = 1002
 
-        /** COGNITIVE_PLAN §9.1: nightly maintenance lands at ~03:30 local. */
-        private const val MAINTENANCE_HOUR = 3
-
-        /** §9.1: the opportunistic trigger — last maintenance older than 20 h. */
-        private const val MAINTENANCE_STALE_MS = 20L * 60 * 60_000L
+        // P1.4: MAINTENANCE_HOUR / MAINTENANCE_STALE_MS moved to ServicePolicy.
         private const val CHANNEL_ID = "jarvis_foreground"
         private const val CHANNEL_BOOTSTRAP = "jarvis_bootstrap"
         private const val CHANNEL_ERROR = "jarvis_errors"
@@ -903,9 +925,19 @@ class JarvisForegroundService : Service() {
         fun postActivationPrompt(context: Context) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
                 ?: return
-            if (Build.VERSION.SDK_INT >= 33 &&
-                ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
-                    != PackageManager.PERMISSION_GRANTED
+            // P1.4: the API-33 POST_NOTIFICATIONS gate is
+            // [ServicePolicy.activationPromptAllowed]. The permission lookup
+            // is a pure read; on API < 33 its result is irrelevant (the
+            // policy allows the prompt unconditionally there), so evaluating
+            // it unconditionally is observationally identical to the
+            // original short-circuit.
+            if (!ServicePolicy.activationPromptAllowed(
+                    sdkInt = Build.VERSION.SDK_INT,
+                    notificationsPermissionGranted = ContextCompat.checkSelfPermission(
+                        context,
+                        android.Manifest.permission.POST_NOTIFICATIONS,
+                    ) == PackageManager.PERMISSION_GRANTED,
+                )
             ) {
                 Timber.tag("Activation").w("POST_NOTIFICATIONS denied — activation prompt not shown")
                 return
