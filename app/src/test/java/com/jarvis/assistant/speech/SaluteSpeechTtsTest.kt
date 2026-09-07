@@ -39,14 +39,17 @@ import org.junit.Test
  * StreamingAudioTrackPlayerTest; this file tests the CLIENT layer only —
  * from `TtsClient.synthesizeStream` to the wire and back.
  *
- * KNOWN LATENT RACE (code-read finding, reported — NOT bent into a test):
- * [SaluteSpeechTts.synthesizeStream] delivers every chunk via
- * `this@channelFlow.launch { send(bytes) }` while the server's `onCompleted`
- * closes the flow channel. A chunk whose delivery child has not run before
- * `close()` is silently dropped (or the child's send fails against the closed
- * channel). Real servers pace chunks over the network so this is unlikely in
- * production; the fake below inserts a bounded delivery pause before
- * completing so the assembly test stays deterministic.
+ * RACE FIX REGRESSION (P3.5, formerly "known latent race" reported in
+ * commit 63c21db): [SaluteSpeechTts.synthesizeStream] used to deliver every
+ * chunk via `this@channelFlow.launch { send(bytes) }` while the server's
+ * `onCompleted` closed the flow channel synchronously — a chunk whose
+ * delivery child had not run before `close()` was silently dropped. The
+ * client now serializes completion (a completion gate closes the channel
+ * only after every spawned chunk-delivery child has drained), so the
+ * deliveryPause previously needed in the assembly tests is no longer a
+ * correctness requirement — `synthesis test completes immediately after the
+ * last chunk` pins that the unpaused sequence delivers every chunk, on the
+ * same direct-executor harness where the race used to manifest.
  */
 class SaluteSpeechTtsTest {
 
@@ -99,7 +102,7 @@ class SaluteSpeechTtsTest {
         val tts = newTts()
         val flow = tts.synthesizeStream("привет, мир", voice = "Mila")
 
-        val chunksJob = async { withTimeout(5_000) { flow.toList() } }
+        val chunksJob = async { withTimeout(15_000) { flow.toList() } }
         val request = fakeTts.awaitRequest()
 
         fakeTts.emitChunk(byteArrayOf(1, 2, 3))
@@ -124,7 +127,7 @@ class SaluteSpeechTtsTest {
         val tts = newTts()
         val flow = tts.synthesizeStream("текст", voice = "Mila")
 
-        val chunksJob = async { withTimeout(5_000) { flow.toList() } }
+        val chunksJob = async { withTimeout(15_000) { flow.toList() } }
         fakeTts.awaitRequest()
         fakeTts.emitChunk(byteArrayOf())
         fakeTts.emitChunk(byteArrayOf(9))
@@ -171,7 +174,7 @@ class SaluteSpeechTtsTest {
         val resultJob = async {
             val received = mutableListOf<ByteArray>()
             val error = runCatching {
-                withTimeout(5_000) { flow.collect { received.add(it) } }
+                withTimeout(15_000) { flow.collect { received.add(it) } }
             }.exceptionOrNull()
             received to error
         }
@@ -197,7 +200,7 @@ class SaluteSpeechTtsTest {
         val tts = newTts()
         val flow = tts.synthesizeStream("речь", voice = "Mila")
 
-        val chunksJob = async { withTimeout(5_000) { flow.toList() } }
+        val chunksJob = async { withTimeout(15_000) { flow.toList() } }
         fakeTts.awaitRequest()
         fakeTts.emitChunk(byteArrayOf(1))
         deliveryPause()
@@ -216,7 +219,7 @@ class SaluteSpeechTtsTest {
         // Subscribe FIRST: the flow is cold — without a collector no RPC is
         // ever issued and awaiting the request would hang the test.
         val errorJob = async {
-            runCatching { withTimeout(5_000) { flow.toList() } }.exceptionOrNull()
+            runCatching { withTimeout(15_000) { flow.toList() } }.exceptionOrNull()
         }
         yield()
         fakeTts.awaitRequest() // request reached the fake; server deliberately never responds

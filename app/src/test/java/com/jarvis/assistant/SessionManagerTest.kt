@@ -738,6 +738,13 @@ class SessionManagerTest {
             // The CURRENT session's failure still surfaces.
             h.manager.reportFailure(2, "сбой текущей сессии")
             assertEquals(1, errors)
+            // P3.2: the ErrorOccurred reset now travels through the FIFO
+            // machine-event lane (apply-time guards), so its application is
+            // asynchronous on the single consumer — wait for the drain rather
+            // than racing it (a bounded wait, per AGENTS.md).
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
+            }
             assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
         } finally {
             h.shutdown()

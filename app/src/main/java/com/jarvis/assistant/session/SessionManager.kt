@@ -52,7 +52,10 @@ import java.util.concurrent.atomic.AtomicInteger
  * - A [sessionSeq] guard prevents a stale session's terminal transition OR
  *   late failure from clobbering the new session's state; all failures funnel
  *   through [reportFailure] (M6). cancelAll() performs an explicit guarded
- *   reset of the state machine to IDLE.
+ *   reset of the state machine to IDLE. REMEDIATION_PLAN P3.2: every machine
+ *   event applies through [applyMachineEvent] — the seq/state guard and the
+ *   transition are atomic on one thread (no launch hop), so a superseded
+ *   turn's late event can never interleave out of order.
  * - Live ASR partials are published on [partialTranscript] (S1); mic muting
  *   is a user intent exposed via [setMuted]/[muted] (m12).
  */
@@ -105,6 +108,61 @@ class SessionManager(
     private var detectionJob: Job? = null
     private var windowJob: Job? = null
     private val sessionSeq = AtomicInteger(0)
+
+    // ------------------------------------------------------------------
+    // REMEDIATION_PLAN P3.2: race-free machine-event application
+    //
+    // The audit flagged that terminal machine events were `scope.launch`ed
+    // from multiple threads (cancelAll / stopActiveTurn / closeFollowUpWindow),
+    // so the ORDER in which they reached the (mutex-serialized) state machine
+    // depended on dispatcher dispatch order — the sessionSeq GUARD was
+    // checked on the caller's thread BEFORE the launch, so a concurrent
+    // startSession could bump the seq in the check-vs-launch gap and a
+    // stale global-reset Cancelled could still stomp the fresh session.
+    //
+    // Fix: guard and transition happen ATOMICALLY on the caller's thread —
+    // [applyMachineEvent] validates the seq/state guard and applies the
+    // event in the same synchronous call, with NO launch hop in between.
+    // With no gap, a supersede can no longer slip between "guard passed"
+    // and "event applied": a superseded turn's late event (e.g. a draining
+    // turn's PlaybackStarted) carries the OLD seq and is dropped here.
+    // Cross-thread concurrency is serialized by the state machine's own
+    // mutex; the guards make every stale write a no-op, so the machine can
+    // only ever record documented, current-session transitions.
+    //
+    // This deliberately replaces an earlier async FIFO-channel design: a
+    // lane consumer made previously-synchronous transitions (startSession →
+    // LISTENING) asynchronous and broke call-site and test contracts, while
+    // synchronous guarded applies close the same race without that cost.
+    // Non-suspending by construction — safe inside [controlLock] guarded
+    // blocks (the monitor discipline of AGENTS.md is preserved).
+    /**
+     * Apply [event] to the machine with apply-time guards:
+     * - [validSeq]: drop unless [sessionSeq] still equals it (stale-session
+     *   suppression — e.g. a Cancelled cancelled by a later supersede);
+     * - [requireState]: drop unless the machine is currently in this state
+     *   (the closeFollowUpWindow CONDITIONAL expired event — the state check
+     *   must ride with the transition atomically).
+     */
+    private fun applyMachineEvent(
+        event: SessionEvent,
+        validSeq: Int? = null,
+        requireState: AssistantState? = null,
+    ) {
+        if (validSeq != null && validSeq != sessionSeq.get()) {
+            Timber.w(
+                "Dropping stale machine event %s (seq guard: %d != %d)",
+                event.javaClass.simpleName,
+                validSeq,
+                sessionSeq.get(),
+            )
+            return
+        }
+        if (requireState != null && stateMachine.currentState() != requireState) {
+            return
+        }
+        stateMachine.onEvent(event)
+    }
 
     /**
      * COGNITIVE_PLAN 1.6: whether the CURRENT session was opened from the
@@ -174,7 +232,16 @@ class SessionManager(
     private val turnRunner = TurnRunner(
         audioPipeline, asrClient, llm, ttsClient, player, functionRouter,
         conversationManager, config,
-            stateMachine::onEvent, this::reportFailure, this::finish,
+            // P3.2: turn-runner state events apply through the SAME guarded
+            // path as every other event (a direct stateMachine::onEvent here
+            // was the remaining race: a cancelled-but-still-draining turn
+            // could land PlaybackStarted AFTER a newer session's reset).
+            // validSeq is captured at EMISSION time: if a supersede bumped
+            // the seq before this call applies the event, the event is
+            // dropped instead of stomping the fresh session. Synchronous —
+            // no launch hop, so guard and transition stay atomic.
+            { event -> applyMachineEvent(event, validSeq = sessionSeq.get()) },
+            this::reportFailure, this::finish,
             { _partialTranscript.value = it },
             isCurrentSession = { it == sessionSeq.get() },
             focus = focus,
@@ -235,7 +302,9 @@ class SessionManager(
         player.flush()
         _partialTranscript.value = ""
         _turnActivity.value = null
-        stateMachine.onEvent(SessionEvent.ErrorOccurred)
+        // P3.2: routed through the lane — a failure's reset cannot interleave
+        // out of order with a concurrent cancelAll/stopActiveTurn reset.
+        applyMachineEvent(SessionEvent.ErrorOccurred)
         onErrorHandler(message)
     }
 
@@ -329,7 +398,9 @@ class SessionManager(
             }
         }
         if (!networkMonitor.isCurrentlyOnline()) {
-            stateMachine.onEvent(SessionEvent.WakeWordOrBargeIn)
+            // P3.2: validSeq=id — the lane drops the LISTENING jump if this
+            // session was superseded before the event applied.
+            applyMachineEvent(SessionEvent.WakeWordOrBargeIn, validSeq = id)
             reportFailure(id, phrases.offline)
             return
         }
@@ -356,13 +427,11 @@ class SessionManager(
             _partialTranscript.value = ""
             _turnActivity.value = null
         }
-        // M6: cancellation itself emits no terminal event, so without this the
-        // machine stays wedged in THINKING/SPEAKING forever. Guarded: if a new
-        // session started concurrently (seq moved on), do not stomp its fresh
-        // LISTENING state back to IDLE.
-        if (sessionSeq.get() == seqAfterInvalidate) {
-            scope.launch { stateMachine.onEvent(SessionEvent.Cancelled) }
-        }
+        // P3.2: guarded at APPLY time by the lane consumer (see above).
+        // trySend is non-suspending; submitting in submission order means
+        // events submitted by a later startSession's runSession cannot
+        // overtake this Cancelled, and vice versa.
+        applyMachineEvent(SessionEvent.Cancelled, validSeq = seqAfterInvalidate)
     }
 
     // ------------------------------------------------------------------
@@ -408,19 +477,18 @@ class SessionManager(
         synchronized(controlLock) {
             hadActive = sessionJob != null
             if (hadActive) {
-                sessionSeq.incrementAndGet()
+                val bumped = sessionSeq.incrementAndGet()
                 sessionJob?.cancel()
                 sessionJob = null
                 player.flush() // generation bump: current + queued sentences die
                 focus?.onTtsFlushed()
                 _partialTranscript.value = ""
                 _turnActivity.value = null
+                // P3.2: guarded at APPLY time by the lane consumer (the old
+                // check on the caller's thread + launch left a gap where a
+                // concurrent startSession could bump the seq first).
+                applyMachineEvent(SessionEvent.Cancelled, validSeq = bumped)
             }
-        }
-        if (hadActive) {
-            // Cancelled is a global reset — THINKING/SPEAKING → IDLE. Kept
-            // outside the lock (suspension-free monitor discipline).
-            scope.launch { stateMachine.onEvent(SessionEvent.Cancelled) }
         }
     }
 
@@ -429,7 +497,9 @@ class SessionManager(
         if (id != sessionSeq.get()) return
         _partialTranscript.value = "" // session end clears any live partial
         _turnActivity.value = null // and the live activity label
-        stateMachine.onEvent(SessionEvent.LlmDone)
+        // P3.2: validSeq guard moves INTO the lane — the seq can no longer
+        // bump between the check above and the event applying.
+        applyMachineEvent(SessionEvent.LlmDone, validSeq = id)
         maybeOpenFollowUpWindow(spoke)
     }
 
@@ -475,7 +545,9 @@ class SessionManager(
 
     /** Body of the proactive mini-session — launched under [controlLock]. */
     private suspend fun CoroutineScope.runProactive(id: Int, text: String) {
-        stateMachine.onEvent(SessionEvent.ProactiveSpeechStarted)
+        // P3.2: routed through the lane with the session-id guard (the
+        // machine itself enforces IDLE at apply time either way).
+        applyMachineEvent(SessionEvent.ProactiveSpeechStarted, validSeq = id)
         // Persist BEFORE synthesis: a barge-in during playback must still
         // leave the suggestion in the LLM context (the follow-up "да" has to
         // know what was proposed).
@@ -507,19 +579,20 @@ class SessionManager(
             Timber.w(e, "Proactive: synthesis/playback IO failure")
             focus?.onTtsFlushed()
             if (id == sessionSeq.get()) {
-                stateMachine.onEvent(SessionEvent.ErrorOccurred) // → IDLE
+                applyMachineEvent(SessionEvent.ErrorOccurred, validSeq = id) // → IDLE
             }
             return
         } catch (e: IllegalStateException) {
             Timber.w(e, "Proactive: player/tts in a bad state")
             focus?.onTtsFlushed()
             if (id == sessionSeq.get()) {
-                stateMachine.onEvent(SessionEvent.ErrorOccurred) // → IDLE
+                applyMachineEvent(SessionEvent.ErrorOccurred, validSeq = id) // → IDLE
             }
             return
         }
         if (id != sessionSeq.get()) return // superseded while speaking
-        stateMachine.onEvent(SessionEvent.LlmDone) // SPEAKING → IDLE
+        // P3.2: validSeq=id — SPEAKING → IDLE through the lane.
+        applyMachineEvent(SessionEvent.LlmDone, validSeq = id) // SPEAKING → IDLE
         // The follow-up window is the accept/reject loop's entry — opened
         // regardless of the standalone follow-up pref (see KDoc).
         maybeOpenFollowUpWindow(spoke = true, forceOpen = true)
@@ -544,7 +617,7 @@ class SessionManager(
         when (followUp.onTurnEnded(spoke, enabled = true)) {
             FollowUpWindowController.Effect.OpenWindow -> {
                 Timber.i("Follow-up window open")
-                stateMachine.onEvent(SessionEvent.FollowUpWindowOpened)
+                applyMachineEvent(SessionEvent.FollowUpWindowOpened)
                 startFollowUpCollector()
             }
             FollowUpWindowController.Effect.StartFollowUpTurn,
@@ -585,7 +658,7 @@ class SessionManager(
                             followUpVad.process(frame)
                             if (followUpVad.onset) {
                                 Timber.i("Follow-up speech detected — starting turn")
-                                stateMachine.onEvent(SessionEvent.FollowUpSpeechDetected)
+                                applyMachineEvent(SessionEvent.FollowUpSpeechDetected)
                                 followUp.onVadActive()
                                 // COGNITIVE_PLAN 1.6: tag the turn origin.
                                 startSession(fromFollowUp = true) // cancels this collector via windowJob
@@ -595,7 +668,7 @@ class SessionManager(
                         _followUpProgress.value = followUp.remainingFraction()
                         if (followUp.transition() != null) {
                             Timber.i("Follow-up window expired")
-                            stateMachine.onEvent(SessionEvent.FollowUpWindowExpired)
+                            applyMachineEvent(SessionEvent.FollowUpWindowExpired, requireState = AssistantState.FOLLOW_UP_WINDOW)
                             _followUpProgress.value = 0f
                             throw CancellationException("follow-up window expired")
                         }
@@ -621,17 +694,14 @@ class SessionManager(
             _followUpProgress.value = 0f
         }
         if (!silent) {
-            // #17: read the machine state INSIDE the coroutine. The machine's
-            // transitions are serialized (mutex, upstream 9e933c5), so an
-            // unprotected read on this thread can be stale before the launched
-            // onEvent runs — the UI orb would clear while the machine stays
-            // wedged in FOLLOW_UP_WINDOW. Reading inside the hop keeps the
-            // check and the transition on the same serialized timeline.
-            scope.launch {
-                if (stateMachine.currentState() == AssistantState.FOLLOW_UP_WINDOW) {
-                    stateMachine.onEvent(SessionEvent.FollowUpWindowExpired)
-                }
-            }
+            // #17 + P3.2: the state check rides WITH the transition on the
+            // lane's serialized timeline (requireState is evaluated by the
+            // consumer at apply time — no stale caller-thread read, no
+            // launch-dispatch-order dependence).
+            applyMachineEvent(
+                SessionEvent.FollowUpWindowExpired,
+                requireState = AssistantState.FOLLOW_UP_WINDOW,
+            )
         }
     }
 

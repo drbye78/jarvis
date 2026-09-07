@@ -12,9 +12,11 @@ import io.grpc.Status
 import io.grpc.stub.MetadataUtils
 import io.grpc.stub.StreamObserver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
@@ -66,13 +68,35 @@ class SaluteSpeechTts(
                     .setContentType(SynthesisRequest.ContentType.TEXT)
                     .build()
 
+                // P3.5 (fix of the documented latent race): a chunk is
+                // delivered via a spawned CHILD coroutine
+                // (`launch { send(bytes) }`, needed for backpressure from the
+                // non-suspending gRPC callback), so a synchronous `close()`
+                // from onCompleted could outrun a still-undelivered child and
+                // silently drop the final audio chunk.
+                //
+                // Fix: gRPC delivers an observer's callbacks SERIALLY on one
+                // thread (guaranteed by the async stub), so no new child can
+                // appear after onCompleted/onError. The close path therefore
+                // joins the children spawned so far and closes only after —
+                // a Job list is the whole mechanism. (An earlier monitor-
+                // based "completion gate" hung here: its deferred close
+                // could never fire once the downstream consumer cancelled
+                // the producer scope first.)
+                // Note: if the DOWNSTREAM consumer cancels first, the
+                // producer scope is cancelled and these launches are no-ops —
+                // the channel is already dead; awaitClose below still runs
+                // and cancels the RPC server-side, which is the contract the
+                // "downstream cancel" test pins.
+                val childJobs = ArrayList<Job>()
+
                 val responseObserver = object : StreamObserver<SynthesisResponse> {
                     override fun onNext(value: SynthesisResponse) {
                         val bytes = value.data.toByteArray()
                         // N5: bridge the gRPC callback (non-suspend) to the
                         // channelFlow producer scope. send() suspends on
                         // backpressure so audio chunks are never silently dropped.
-                        if (bytes.isNotEmpty()) this@channelFlow.launch { this@channelFlow.send(bytes) }
+                        if (bytes.isNotEmpty()) childJobs += this@channelFlow.launch { this@channelFlow.send(bytes) }
                     }
 
                     override fun onError(t: Throwable) {
@@ -81,16 +105,17 @@ class SaluteSpeechTts(
                         // cancel would surface as a flow failure downstream.
                         val code = (t as? io.grpc.StatusException)?.status?.code
                             ?: (t as? io.grpc.StatusRuntimeException)?.status?.code
-                        if (code == io.grpc.Status.Code.CANCELLED) {
-                            close() // expected on barge-in
+                        val failure = if (code == io.grpc.Status.Code.CANCELLED) null else t
+                        if (failure == null) {
+                            this@channelFlow.launch { childJobs.joinAll(); close() } // expected on barge-in
                         } else {
                             Timber.e(t, "TTS stream error")
-                            close(t)
+                            this@channelFlow.launch { childJobs.joinAll(); close(failure) }
                         }
                     }
 
                     override fun onCompleted() {
-                        close()
+                        this@channelFlow.launch { childJobs.joinAll(); close() }
                     }
                 }
 

@@ -22,6 +22,11 @@ import java.util.concurrent.Executors
  * dedicated daemon writer thread (FIFO order preserved); the caller only
  * formats its arguments. Pending lines are lost on process death — an
  * accepted trade-off for log records.
+ *
+ * P3.4: every persisted line runs through [LogScrubber] (message + stack
+ * trace) — pattern-based redaction as defense-in-depth behind the
+ * DEBUG-only convention for content-bearing material. See [LogScrubber]
+ * for the documented rule set.
  */
 class FileLoggingTree(
     context: Context,
@@ -53,8 +58,8 @@ class FileLoggingTree(
                     append(stamp.format(Date()))
                     append(' ').append(priorityChar(capturedPriority))
                     append('/').append(capturedTag)
-                    append(": ").append(message)
-                    t?.let { append("\n").append(Log.getStackTraceString(it)) }
+                    append(": ").append(LogScrubber.scrub(message))
+                    t?.let { append("\n").append(LogScrubber.scrub(Log.getStackTraceString(it))) }
                     append('\n')
                 }
                 rotateIfNeeded()

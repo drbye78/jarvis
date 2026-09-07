@@ -105,6 +105,12 @@ Follow-ups recorded from P0 execution:
 
 **Gate:** full suite + assembleDebug; stress test reproducible-green over 100 iterations.
 
+**Status: ✅ COMPLETE (2026-09).** Full gate green ×2 (suite re-executed via `--rerun`).
+- P3.2: supersede race closed. Final design: **synchronous guarded application** — `SessionStateMachine.onEvent` converted from suspend/Mutex to a plain monitor so `SessionManager.applyMachineEvent` evaluates the seq/state guard and applies the transition atomically on one thread (no launch hop → no gap for a supersede to slip through). ALL event sources route through it, including TurnRunner's `onStateEvent` (the bypass the audit missed). An intermediate async FIFO-lane design (by a specialist lane whose report was lost to infra failures) made previously-synchronous transitions async and broke 5 test classes — replaced by the sync design. Stress test: 100 seeded interleavings of cancelAll/stopActiveTurn/startSession/speakProactively; every recorded transition legal, quiesce→IDLE, zero orphaned LLM streams.
+- P3.3: revive budget in `ServicePolicy` (cap 3/day, 20-min backoff, day-roll reset); service-side attempt bookkeeping + `ReviveDiag` logs; suppressed revives log honestly, watchdog keeps ticking; the inert-fields pinning test became a real decision matrix.
+- P3.4: `LogScrubber` (content-key assignments + 6+-char quoted spans → `<redacted>`) wired into `FileLoggingTree`; AGENTS.md convention sentence added. Fixed the lane's delimiter bug (span closer is `m.value.last()`, not a repeated opener).
+- P3.5: TTS close serialization redone with a Job list (gRPC observer callbacks are serial → join children, then close). The lane's monitor-gate version deadlocked — the "downstream cancel" test hung forever and 4 chunk tests timed out under load; caught only by full-suite validation after the lane's report was lost. TTS test wait budgets widened 5s→15s (load robustness; assertions unchanged).
+
 ## Phase 4 — Cognitive: keep & finish
 
 | ID | Action | Files | Size |

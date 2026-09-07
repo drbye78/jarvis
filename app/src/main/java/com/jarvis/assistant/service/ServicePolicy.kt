@@ -65,10 +65,12 @@ object ServicePolicy {
      * `graph`/`prefs` at the same points the original branch conditions
      * read them. `graphReady` means `graph != null && initialized`.
      *
-     * The `revive*` fields are RESERVED for P3.3 (wedge-revive guard: revive
-     * counter + daily cap + backoff). They are passed in so the policy is
-     * structurally ready, but the counter is deliberately NOT implemented
-     * yet: with the inert defaults no current decision changes.
+     * P3.3 revive budget: the SERVICE owns the bookkeeping (counter
+     * increments, day-key roll, last-revive timestamp — plain Android-side
+     * fields recorded when a revive is actually attempted); this class only
+     * evaluates it. Callers that don't track a budget can leave the revive
+     * fields at their defaults (`reviveCountToday = 0`, infinite cap, no
+     * last-revive) — the decision is then identical to the pre-P3.3 gate.
      */
     data class RunningInstanceInputs(
         val graphReady: Boolean,
@@ -81,15 +83,81 @@ object ServicePolicy {
         val nowMs: Long = 0L,
     )
 
+    // ------------------------------------------------------------------
+    // P3.3: watchdog revive budget
+    // ------------------------------------------------------------------
+
+    /**
+     * Pipeline revives allowed per local day before the watchdog goes
+     * hands-off. The guard exists so a persistently failing audio source
+     * cannot turn every 15-min watchdog tick into a capture restart storm
+     * (battery + log spam on an always-on appliance). Three give-up
+     * recoveries a day already covers every documented transient
+     * (USB unplug, driver stall, firmware hiccup); more than that means the
+     * root cause lives outside this process.
+     */
+    const val DEFAULT_DAILY_REVIVE_CAP = 3
+
+    /**
+     * Minimum gap between consecutive revive attempts. Deliberately LONGER
+     * than one watchdog interval (15 min) so consecutive ticks can never
+     * serially re-attempt through the backoff — under a failing source the
+     * next automatic attempt is ≥ 35 min after the previous one, and the
+     * day cap bounds the total. A manual restart (app revisit →
+     * EXPLICIT_START) or the next-day reset recovers at any time.
+     */
+    const val REVIVE_BACKOFF_MS: Long = 20L * 60_000L
+
+    enum class ReviveBudget { ALLOWED, BACKING_OFF, EXHAUSTED }
+
+    /**
+     * Budget gate for one potential pipeline revive. Exhaustion (count ≥
+     * cap) always wins over backoff; backoff applies only when some budget
+     * is still left. A `nowMs` earlier than `lastReviveMs` (clock skew)
+     * is treated as past-backoff, never as an eternal backoff.
+     */
+    fun reviveBudget(
+        reviveCountToday: Int,
+        dailyCap: Int,
+        lastReviveMs: Long?,
+        nowMs: Long,
+        backoffMs: Long = REVIVE_BACKOFF_MS,
+    ): ReviveBudget = when {
+        reviveCountToday >= dailyCap -> ReviveBudget.EXHAUSTED
+        lastReviveMs != null && nowMs >= lastReviveMs && nowMs - lastReviveMs < backoffMs ->
+            ReviveBudget.BACKING_OFF
+        else -> ReviveBudget.ALLOWED
+    }
+
+    /** Local-calendar day stamp (year + day-of-year) that resets the revive counter at midnight. */
+    fun dayKey(nowMs: Long): Int {
+        val cal = Calendar.getInstance().apply { timeInMillis = nowMs }
+        return cal.get(Calendar.YEAR) * 1_000 + cal.get(Calendar.DAY_OF_YEAR)
+    }
+
     /** Watchdog tick outcome. Evaluation order: user stop FIRST (the ping
      *  must never silently undo a user intent), then the audit #25 revive
-     *  gate (`graphReady && pipelineGivenUp && !muted`). */
-    enum class WatchdogDecision { STOP_FOR_USER_STOP, REVIVE_PIPELINE, NO_ACTION }
+     *  gate (`graphReady && pipelineGivenUp && !muted`), then the P3.3
+     *  revive budget. A revive blocked by the budget is an honest, visible
+     *  outcome — the watchdog keeps ticking and logs it (next-day reset or
+     *  a manual restart recovers). */
+    enum class WatchdogDecision { STOP_FOR_USER_STOP, REVIVE_PIPELINE, REVIVE_BACKING_OFF, REVIVE_CAP_EXHAUSTED, NO_ACTION }
 
     fun watchdogDecision(inputs: RunningInstanceInputs): WatchdogDecision = when {
         inputs.userStopped -> WatchdogDecision.STOP_FOR_USER_STOP
-        inputs.graphReady && inputs.pipelineGivenUp && !inputs.muted -> WatchdogDecision.REVIVE_PIPELINE
-        else -> WatchdogDecision.NO_ACTION
+        !inputs.graphReady || !inputs.pipelineGivenUp || inputs.muted -> WatchdogDecision.NO_ACTION
+        else -> when (
+            reviveBudget(
+                reviveCountToday = inputs.reviveCountToday,
+                dailyCap = inputs.dailyReviveCap,
+                lastReviveMs = inputs.lastReviveMs,
+                nowMs = inputs.nowMs,
+            )
+        ) {
+            ReviveBudget.ALLOWED -> WatchdogDecision.REVIVE_PIPELINE
+            ReviveBudget.BACKING_OFF -> WatchdogDecision.REVIVE_BACKING_OFF
+            ReviveBudget.EXHAUSTED -> WatchdogDecision.REVIVE_CAP_EXHAUSTED
+        }
     }
 
     /**
@@ -110,7 +178,10 @@ object ServicePolicy {
         data class RunTail(
             val rescheduleMaintenance: Boolean = false,
             val runMaintenanceNow: Boolean? = null,
+            /** Revive authorized by the budget — the service must count the attempt. */
             val revivePipeline: Boolean = false,
+            /** Revive refused by the budget (backoff / exhausted cap) — service logs honestly. */
+            val reviveSuppressed: Boolean = false,
         ) : RunningCommandDecision
     }
 
@@ -123,6 +194,8 @@ object ServicePolicy {
             ServiceAction.WATCHDOG -> when (watchdogDecision(inputs)) {
                 WatchdogDecision.STOP_FOR_USER_STOP -> RunningCommandDecision.StopForUserStop
                 WatchdogDecision.REVIVE_PIPELINE -> RunningCommandDecision.RunTail(revivePipeline = true)
+                WatchdogDecision.REVIVE_BACKING_OFF, WatchdogDecision.REVIVE_CAP_EXHAUSTED ->
+                    RunningCommandDecision.RunTail(reviveSuppressed = true)
                 WatchdogDecision.NO_ACTION -> RunningCommandDecision.RunTail()
             }
             ServiceAction.EXPLICIT_START, ServiceAction.UNKNOWN -> RunningCommandDecision.RunTail()

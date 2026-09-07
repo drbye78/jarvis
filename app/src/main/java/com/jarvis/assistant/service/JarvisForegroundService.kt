@@ -124,6 +124,20 @@ class JarvisForegroundService : Service() {
     // instead of becoming microphone-silenced foreground services.
     @Volatile private var everForegrounded = false
 
+    // ------------------------------------------------------------------
+    // P3.3: watchdog revive budget — Android-side bookkeeping ONLY.
+    // The decisions (cap/backoff/day-roll) live in [ServicePolicy]; these
+    // plain fields record what happened so the policy can evaluate it.
+    // All watchdog/maintenance intents arrive on the service's main-thread
+    // looper, so no locking is needed. The counter counts every ATTEMPT
+    // (success or `start()` failure — a failing attempt was still an
+    // audio-restart event the backoff must gate). lastReviveAtMs is
+    // @Volatile because graph/UI code could read it via a future probe.
+    // ------------------------------------------------------------------
+    private var reviveCountToday = 0
+    private var reviveDayKey = Int.MIN_VALUE
+    @Volatile private var lastReviveAtMs: Long? = null
+
     // Last notification posted on the main channel — reused when the FGS
     // type is promoted for media projection so the text does not regress.
     @Volatile private var lastStateNotification: Notification? = null
@@ -241,6 +255,15 @@ class JarvisForegroundService : Service() {
         // (revive logic below runs only for user-activated instances;
         // a watchdog that had to CREATE this instance took the
         // background-start branch in onStartCommand instead)
+        // P3.3: day-key roll resets the revive counter — the budget is per
+        // local day. Every alarm-delivered command lands here on the main
+        // looper, so the roll cannot interleave with an attempt.
+        val now = System.currentTimeMillis()
+        val dayKey = ServicePolicy.dayKey(now)
+        if (dayKey != reviveDayKey) {
+            reviveDayKey = dayKey
+            reviveCountToday = 0
+        }
         val decision = ServicePolicy.runningInstanceCommand(
             action = ServicePolicy.actionFor(action),
             inputs = ServicePolicy.RunningInstanceInputs(
@@ -248,6 +271,10 @@ class JarvisForegroundService : Service() {
                 userStopped = prefs.userStopped,
                 pipelineGivenUp = g?.audioPipeline?.hasGivenUp() ?: false,
                 muted = g?.sessionManager?.muted?.value ?: false,
+                reviveCountToday = reviveCountToday,
+                dailyReviveCap = ServicePolicy.DEFAULT_DAILY_REVIVE_CAP,
+                lastReviveMs = lastReviveAtMs,
+                nowMs = now,
             ),
         )
         return when (decision) {
@@ -287,11 +314,38 @@ class JarvisForegroundService : Service() {
                     // 50 consecutive read failures. hasGivenUp() is true ONLY for
                     // that case — never for a user stop/mute or the power-receiver
                     // stop — so the ping cannot silently undo a user intent.
-                    // revivePipeline == true implies a ready graph.
+                    // revivePipeline == true implies a ready graph AND an
+                    // authorized budget ServicePolicy.REVIVE_PIPELINE.
+                    // The backend engine leak on a genuine native wedge stays
+                    // BY DESIGN (HybridWakeWordDetector deliberately leaks the
+                    // engine instead of use-after-free); this guard only bounds
+                    // how often we attempt audio restarts, never the leak.
                     val readyGraph = requireNotNull(g) { "pipeline revive implies a ready graph" }
-                    Timber.w("Watchdog: audio pipeline gave up — reviving capture")
+                    Timber.w(
+                        "Watchdog: audio pipeline gave up — reviving capture (attempt %d/%d today)",
+                        reviveCountToday + 1, ServicePolicy.DEFAULT_DAILY_REVIVE_CAP,
+                    )
                     runCatching { readyGraph.audioPipeline.start() }
                         .onFailure { Timber.w(it, "Pipeline revive failed — retrying next tick") }
+                    // Count every ATTEMPT (success or failure) — an attempt that
+                    // just restarted capture hardware must be gated by the
+                    // backoff regardless of its outcome (honest bookkeeping).
+                    reviveCountToday++
+                    lastReviveAtMs = System.currentTimeMillis()
+                    Timber.tag("ReviveDiag")
+                        .i("pipeline revive #%d/%d today (bookkeeping: attempts=%d, lastAt=%s)",
+                            reviveCountToday, ServicePolicy.DEFAULT_DAILY_REVIVE_CAP,
+                            reviveCountToday, lastReviveAtMs)
+                } else if (decision.reviveSuppressed) {
+                    // P3.3: budget refused the revive. Log honestly, do NOT
+                    // revive; the watchdog keeps ticking (common tail below
+                    // re-arms the alarm), so a later manual restart via
+                    // EXPLICIT_START or the next-day counter reset recovers.
+                    Timber.tag("ReviveDiag").w(
+                        "Watchdog: pipeline revive SKIPPED — revive budget spent (%d/%d today, last revive %s ms ago); watchdog keeps ticking, day roll or a manual restart recovers",
+                        reviveCountToday, ServicePolicy.DEFAULT_DAILY_REVIVE_CAP,
+                        lastReviveAtMs?.let { now - it } ?: "n/a",
+                    )
                 }
                 false
             }

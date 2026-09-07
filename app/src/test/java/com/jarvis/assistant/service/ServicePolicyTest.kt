@@ -161,16 +161,132 @@ class ServicePolicyTest {
     }
 
     @Test
-    fun `watchdog - P3_3 revive-budget fields are reserved and currently inert`() {
-        // The counter/cap/backoff (P3.3) must NOT change today's decision:
-        // a would-be-exhausted budget still revives until the counter lands.
-        val budgeted = inputs(givenUp = true, muted = false).copy(
-            reviveCountToday = 999,
+    fun `watchdog - P3_3 revive budget - exhausted cap suppresses the revive`() {
+        val spent = inputs(givenUp = true, muted = false).copy(
+            reviveCountToday = 3,
             dailyReviveCap = 3,
-            lastReviveMs = 1000L,
-            nowMs = 10_000_000L,
+            lastReviveMs = null,
+            nowMs = 0L,
         )
-        assertEquals(ServicePolicy.WatchdogDecision.REVIVE_PIPELINE, ServicePolicy.watchdogDecision(budgeted))
+        assertEquals(ServicePolicy.WatchdogDecision.REVIVE_CAP_EXHAUSTED, ServicePolicy.watchdogDecision(spent))
+        // At-cap is already exhausted; one attempt left still revives.
+        assertEquals(
+            ServicePolicy.WatchdogDecision.REVIVE_PIPELINE,
+            ServicePolicy.watchdogDecision(spent.copy(reviveCountToday = 2)),
+        )
+    }
+
+    @Test
+    fun `watchdog - P3_3 revive budget - backoff suppresses while budget remains`() {
+        val budgeted = inputs(givenUp = true, muted = false).copy(
+            reviveCountToday = 1,
+            dailyReviveCap = 3,
+            lastReviveMs = 0L,
+            nowMs = 0L,
+        )
+        assertEquals(
+            ServicePolicy.WatchdogDecision.REVIVE_BACKING_OFF,
+            ServicePolicy.watchdogDecision(budgeted.copy(nowMs = ServicePolicy.REVIVE_BACKOFF_MS - 1)),
+        )
+        // Backoff elapsed (and the boundary itself) → next attempt is allowed.
+        assertEquals(
+            ServicePolicy.WatchdogDecision.REVIVE_PIPELINE,
+            ServicePolicy.watchdogDecision(budgeted.copy(nowMs = ServicePolicy.REVIVE_BACKOFF_MS)),
+        )
+    }
+
+    @Test
+    fun `watchdog - P3_3 revive budget gates are inert below the defaults`() {
+        // Fresh bookkeeping (count 0, no last revive) — identical to the
+        // pre-P3.3 decision.
+        val fresh = inputs(givenUp = true, muted = false).copy(
+            reviveCountToday = 0,
+            dailyReviveCap = ServicePolicy.DEFAULT_DAILY_REVIVE_CAP,
+        )
+        assertEquals(ServicePolicy.WatchdogDecision.REVIVE_PIPELINE, ServicePolicy.watchdogDecision(fresh))
+    }
+
+    @Test
+    fun `watchdog - user stop outranks a spent revive budget`() {
+        val stopped = inputs(userStopped = true, givenUp = true).copy(
+            reviveCountToday = 99,
+            dailyReviveCap = 3,
+        )
+        assertEquals(ServicePolicy.WatchdogDecision.STOP_FOR_USER_STOP, ServicePolicy.watchdogDecision(stopped))
+    }
+
+    @Test
+    fun `watchdog routing - suppressed budget maps to RunTail(reviveSuppressed), tail keeps falling through`() {
+        // Backoff and exhausted both keep the common tail (watchdog re-arms);
+        // neither is a stop and neither revitalizes directly.
+        for (count in listOf(1, 99)) {
+            assertEquals(
+                ServicePolicy.RunningCommandDecision.RunTail(reviveSuppressed = true),
+                ServicePolicy.runningInstanceCommand(
+                    ServiceAction.WATCHDOG,
+                    inputs(givenUp = true).copy(
+                        reviveCountToday = count,
+                        dailyReviveCap = 3,
+                        lastReviveMs = 0L,
+                        nowMs = 0L,
+                    ),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `reviveBudget - cap bounds the backoff, exhaustion wins over a stale backoff`() {
+        assertEquals(
+            ServicePolicy.ReviveBudget.EXHAUSTED,
+            ServicePolicy.reviveBudget(reviveCountToday = 3, dailyCap = 3, lastReviveMs = null, nowMs = 0L),
+        )
+        // Exhausted even though the last revive is ancient (backoff long over).
+        assertEquals(
+            ServicePolicy.ReviveBudget.EXHAUSTED,
+            ServicePolicy.reviveBudget(reviveCountToday = 5, dailyCap = 3, lastReviveMs = 0L, nowMs = 1_000_000L),
+        )
+        // Backoff applies only when some budget is left.
+        assertEquals(
+            ServicePolicy.ReviveBudget.BACKING_OFF,
+            ServicePolicy.reviveBudget(reviveCountToday = 2, dailyCap = 3, lastReviveMs = 0, nowMs = 1),
+        )
+        assertEquals(
+            ServicePolicy.ReviveBudget.ALLOWED,
+            ServicePolicy.reviveBudget(reviveCountToday = 2, dailyCap = 3, lastReviveMs = 0, nowMs = ServicePolicy.REVIVE_BACKOFF_MS),
+        )
+        // No prior revive → allowed regardless of count below cap.
+        assertEquals(
+            ServicePolicy.ReviveBudget.ALLOWED,
+            ServicePolicy.reviveBudget(reviveCountToday = 0, dailyCap = 3, lastReviveMs = null, nowMs = 1),
+        )
+        // Cap semantics: `count >= cap` exhausts, including count == cap.
+        assertEquals(
+            ServicePolicy.ReviveBudget.ALLOWED,
+            ServicePolicy.reviveBudget(reviveCountToday = 2, dailyCap = 3, lastReviveMs = null, nowMs = 1),
+        )
+    }
+
+    @Test
+    fun `reviveBudget - clock skew (nowMs before lastReviveMs) never becomes an eternal backoff`() {
+        assertEquals(
+            ServicePolicy.ReviveBudget.ALLOWED,
+            ServicePolicy.reviveBudget(reviveCountToday = 0, dailyCap = 3, lastReviveMs = 10_000, nowMs = 9_999),
+        )
+    }
+
+    @Test
+    fun `dayKey - same calendar day is stable, midnight roll produces a new key`() {
+        val noon = utc(2026, Calendar.SEPTEMBER, 6, 12, 0)
+        val lateNight = utc(2026, Calendar.SEPTEMBER, 6, 23, 59)
+        val midnight = utc(2026, Calendar.SEPTEMBER, 7, 0, 0)
+        assertEquals(ServicePolicy.dayKey(noon), ServicePolicy.dayKey(lateNight))
+        assertTrue(ServicePolicy.dayKey(noon) != ServicePolicy.dayKey(midnight))
+        // Different years never collide (year*1000 + day-of-year).
+        assertTrue(
+            ServicePolicy.dayKey(utc(2025, Calendar.DECEMBER, 31, 12, 0)) !=
+                ServicePolicy.dayKey(utc(2026, Calendar.DECEMBER, 31, 12, 0)),
+        )
     }
 
     // ------------------------------------------------------------------

@@ -4,8 +4,6 @@ import com.jarvis.assistant.model.AssistantState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 
 sealed interface SessionEvent {
@@ -92,15 +90,21 @@ object SessionTransitions {
 class SessionStateMachine {
     private val _state = MutableStateFlow(AssistantState.IDLE)
     val state: StateFlow<AssistantState> = _state.asStateFlow()
-    private val mutex = Mutex()
+
+    // P3.2: a plain monitor, not kotlinx Mutex — [onEvent] must be callable
+    // SYNCHRONOUSLY (guard + transition atomic on the caller's thread, no
+    // launch hop; see SessionManager.applyMachineEvent). The critical
+    // section is a pure table lookup + StateFlow set: no suspension needed,
+    // so a JVM monitor is both sufficient and strictly safer here.
+    private val lock = Any()
 
     fun currentState(): AssistantState = _state.value
 
-    suspend fun onEvent(event: SessionEvent) = mutex.withLock {
+    fun onEvent(event: SessionEvent) = synchronized(lock) {
         val next = SessionTransitions.next(_state.value, event)
         if (next == null) {
             Timber.w("Rejected transition: state=%s event=%s", _state.value, event)
-            return@withLock
+            return@synchronized
         }
         if (next != _state.value) {
             Timber.d("State: %s --%s--> %s", _state.value, event.javaClass.simpleName, next)
