@@ -37,14 +37,15 @@ object LogScrubber {
      * surrounding spaces.
      */
     private val CONTENT_KEY_ASSIGNMENT = Regex(
-        "(?i)\\b(text|utterance|transcript|sentence|reply|answer|response|content|payload|query|prompt|label|script|search)\\b\\s*[:=]\\s*([^\\n]+)",
+        "(?i)\\b(text|utterance|transcript|sentence|reply|answer|response|content|payload|" +
+            "query|prompt|label|script|search)\\b\\s*[:=]\\s*([^\\n]+)",
     )
 
     /** Guillemet or straight-double-quote span of 6+ characters. */
     private val QUOTED_SPAN = Regex("«[^»]{6,}»|\"[^\"]{6,}\"")
 
     fun scrub(message: String): String = message
-        .replace(CONTENT_KEY_ASSIGNMENT) { m -> "${m.groupValues[1]}=${REDACTED}" }
+        .replace(CONTENT_KEY_ASSIGNMENT) { m -> "${m.groupValues[1]}=$REDACTED" }
         .replace(QUOTED_SPAN) { m ->
             // Keep BOTH delimiters of the matched span: the opening char may
             // be « while the match always ends with the matching closer

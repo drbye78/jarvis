@@ -7,7 +7,6 @@ import com.jarvis.assistant.media.MediaGateway
 import com.jarvis.assistant.media.MusicAppCatalog
 import com.jarvis.assistant.media.MusicPlaybackOrchestrator
 import com.jarvis.assistant.media.NowPlaying
-import com.jarvis.assistant.media.SearchCommand
 import com.jarvis.assistant.tools.MusicTools
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -33,9 +32,14 @@ class TransportToolsTest {
         override val packageName: String = "ru.yandex.music",
         var caps: MediaCapabilities = MediaCapabilities.UNKNOWN,
         var np: NowPlaying = NowPlaying(
-            title = "Группа крови", artist = "Кино", album = "Группа крови",
-            state = NowPlaying.STATE_PLAYING, positionMs = 90_000, durationMs = 280_000,
-            queueIndex = 2, queueSize = 12,
+            title = "Группа крови",
+            artist = "Кино",
+            album = "Группа крови",
+            state = NowPlaying.STATE_PLAYING,
+            positionMs = 90_000,
+            durationMs = 280_000,
+            queueIndex = 2,
+            queueSize = 12,
         ),
     ) : MediaControllerHandle {
         var seekTarget: Long? = null
@@ -60,11 +64,26 @@ class TransportToolsTest {
             seekTarget = positionMs
             return true
         }
-        override fun skipToQueueItem(queueId: Long): Boolean { queueItemId = queueId; return true }
-        override fun like(): Boolean { liked = true; return true }
-        override fun setRepeatMode(mode: Int): Boolean { repeatMode = mode; return true }
-        override fun setShuffleMode(enabled: Boolean): Boolean { shuffleEnabled = enabled; return true }
-        override fun setPlaybackSpeed(speed: Float): Boolean { this.speed = speed; return true }
+        override fun skipToQueueItem(queueId: Long): Boolean {
+            queueItemId = queueId
+            return true
+        }
+        override fun like(): Boolean {
+            liked = true
+            return true
+        }
+        override fun setRepeatMode(mode: Int): Boolean {
+            repeatMode = mode
+            return true
+        }
+        override fun setShuffleMode(enabled: Boolean): Boolean {
+            shuffleEnabled = enabled
+            return true
+        }
+        override fun setPlaybackSpeed(speed: Float): Boolean {
+            this.speed = speed
+            return true
+        }
     }
 
     private class TransportGateway(
@@ -84,8 +103,10 @@ class TransportToolsTest {
         TransportGateway(handle),
         MusicAppCatalog({ listOf("ru.yandex.music" to "Яндекс Музыка") }),
         budgets = MusicPlaybackOrchestrator.Budgets(
-            verifyPollMs = 50, verifyTotalMs = 300,
-            coldStartPollMs = 50, coldStartTotalMs = 300,
+            verifyPollMs = 50,
+            verifyTotalMs = 300,
+            coldStartPollMs = 50,
+            coldStartTotalMs = 300,
         ),
         deviceApiLevel = apiLevel,
     )
@@ -141,12 +162,18 @@ class TransportToolsTest {
     fun `like requires the heart rating type`() {
         assertTrue(
             MusicPlaybackOrchestrator.TransportPolicy.likeAllowed(
-                MediaCapabilities.fromActionMask(MediaCapabilities.ACTION_SET_RATING, ratingType = MediaCapabilities.RATING_HEART),
+                MediaCapabilities.fromActionMask(
+                    MediaCapabilities.ACTION_SET_RATING,
+                    ratingType = MediaCapabilities.RATING_HEART
+                ),
             ),
         )
         assertFalse(
             MusicPlaybackOrchestrator.TransportPolicy.likeAllowed(
-                MediaCapabilities.fromActionMask(MediaCapabilities.ACTION_SET_RATING, ratingType = MediaCapabilities.RATING_5_STARS),
+                MediaCapabilities.fromActionMask(
+                    MediaCapabilities.ACTION_SET_RATING,
+                    ratingType = MediaCapabilities.RATING_5_STARS
+                ),
             ),
         )
     }
@@ -345,8 +372,10 @@ class TransportToolsTest {
             gw,
             MusicAppCatalog({ listOf("ru.yandex.music" to "Яндекс Музыка") }),
             budgets = MusicPlaybackOrchestrator.Budgets(
-                verifyPollMs = 50, verifyTotalMs = 300,
-                coldStartPollMs = 50, coldStartTotalMs = 300,
+                verifyPollMs = 50,
+                verifyTotalMs = 300,
+                coldStartPollMs = 50,
+                coldStartTotalMs = 300,
             ),
         )
         val out = orch.control(

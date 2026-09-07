@@ -14,8 +14,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.jarvis.assistant.data.ScheduledAlertEntity
 import com.jarvis.assistant.data.AppDatabase
+import com.jarvis.assistant.data.ScheduledAlertEntity
 import com.jarvis.assistant.tools.AndroidAlarmScheduler
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch

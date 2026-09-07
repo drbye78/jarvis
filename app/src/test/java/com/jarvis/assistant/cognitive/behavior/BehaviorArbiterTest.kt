@@ -94,11 +94,21 @@ class BehaviorArbiterTest {
     fun `gate 6 cooldown and quota block`() {
         assertEquals(
             "cooldown",
-            (BehaviorArbiter.evaluate(rule, ctx { it.copy(cooldownOk = false) }) as BehaviorArbiter.Decision.Blocked).reason,
+            (
+                BehaviorArbiter.evaluate(
+                    rule,
+                    ctx { it.copy(cooldownOk = false) }
+                ) as BehaviorArbiter.Decision.Blocked
+                ).reason,
         )
         assertEquals(
             "daily_quota",
-            (BehaviorArbiter.evaluate(rule, ctx { it.copy(quotaLeft = false) }) as BehaviorArbiter.Decision.Blocked).reason,
+            (
+                BehaviorArbiter.evaluate(
+                    rule,
+                    ctx { it.copy(quotaLeft = false) }
+                ) as BehaviorArbiter.Decision.Blocked
+                ).reason,
         )
     }
 

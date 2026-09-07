@@ -2,7 +2,6 @@ package com.jarvis.assistant
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -17,8 +16,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.textfield.TextInputEditText
-import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
+import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.llm.CredentialCheck
 import com.jarvis.assistant.llm.CredentialCheckController
 import com.jarvis.assistant.llm.OAuthCredentialValidator
@@ -28,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 
 /** Short alias for the material switch used across the Settings cards. */
 private typealias MemorySwitch = com.google.android.material.materialswitch.MaterialSwitch
@@ -56,8 +56,10 @@ interface SettingsCallbacks {
 
     /** The chosen wake-word model changed (`builtin` | `custom_bundled`). */
     fun onWakeWordSelected(modelId: String)
+
     /** FIXPLAN C: a validated custom Sherpa keyword was applied (blank = bundled Jarvis). */
     suspend fun onSherpaKeywordApplied(keyword: String)
+
     /** FIXPLAN B: the voice-stop toggle changed. */
     fun onVoiceStopToggled(enabled: Boolean)
 
@@ -672,9 +674,11 @@ class SettingsActivity : AppCompatActivity() {
         // (each apply rebuilds the native engine).
         sherpaKeywordInput.setText(appPrefs.sherpaCustomKeyword)
         renderKeywordStatus(appPrefs.sherpaCustomKeyword)
-        sherpaKeywordInput.addTextChangedListener(textWatcher {
-            renderKeywordStatus(sherpaKeywordInput.text.toString())
-        })
+        sherpaKeywordInput.addTextChangedListener(
+            textWatcher {
+                renderKeywordStatus(sherpaKeywordInput.text.toString())
+            }
+        )
         sherpaKeywordInput.setOnEditorActionListener { _, action, _ ->
             if (action == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
                 applySherpaKeyword()
@@ -863,7 +867,7 @@ class SettingsActivity : AppCompatActivity() {
         val encodable = keywordTokenizer?.tokenizeKeywordPhrase(keyword) != null
         sherpaKeywordStatus.visibility = View.VISIBLE
         if (encodable) {
-            sherpaKeywordStatus.text = "✓ $keyword"
+            sherpaKeywordStatus.text = getString(R.string.settings_sherpa_keyword_ok, keyword)
             sherpaKeywordStatus.setTextColor(
                 ContextCompat.getColor(this, R.color.jarvis_status_listening),
             )
@@ -888,8 +892,11 @@ class SettingsActivity : AppCompatActivity() {
             callbacks.onSherpaKeywordApplied(keyword)
             Toast.makeText(
                 this@SettingsActivity,
-                if (keyword.isEmpty()) R.string.sherpa_keyword_applied_default
-                else R.string.sherpa_keyword_applied,
+                if (keyword.isEmpty()) {
+                    R.string.sherpa_keyword_applied_default
+                } else {
+                    R.string.sherpa_keyword_applied
+                },
                 Toast.LENGTH_SHORT,
             ).show()
         }
@@ -1040,8 +1047,13 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** No-op stand-in until onCreate replaces it with [RealCallbacks]. */
+    /** No-op stand-in until onCreate replaces it with [RealCallbacks]; every
+     *  invocation is logged so a pre-init settings tap is visible (P5.3). */
     private object StubCallbacks : SettingsCallbacks {
+        private fun notReady(name: String) {
+            Timber.w("Settings: callback %s invoked before the graph is ready — ignored", name)
+        }
+
         override suspend fun onSaveCredentials(
             picovoiceKey: String,
             saluteId: String,
@@ -1049,23 +1061,40 @@ class SettingsActivity : AppCompatActivity() {
             gigaChatId: String,
             gigaChatSecret: String,
         ) {
+            notReady("onSaveCredentials")
         }
 
-        override fun onLlmProviderSelected(type: String) {}
+        override fun onLlmProviderSelected(type: String) {
+            notReady("onLlmProviderSelected")
+        }
 
-        override suspend fun onSaveLlmProviderSettings(baseUrl: String, model: String, apiKey: String) {}
+        override suspend fun onSaveLlmProviderSettings(baseUrl: String, model: String, apiKey: String) {
+            notReady("onSaveLlmProviderSettings")
+        }
 
-        override fun onWakeWordSelected(modelId: String) {}
+        override fun onWakeWordSelected(modelId: String) {
+            notReady("onWakeWordSelected")
+        }
 
-        override suspend fun onSherpaKeywordApplied(keyword: String) {}
+        override suspend fun onSherpaKeywordApplied(keyword: String) {
+            notReady("onSherpaKeywordApplied")
+        }
 
-        override fun onVoiceStopToggled(enabled: Boolean) {}
+        override fun onVoiceStopToggled(enabled: Boolean) {
+            notReady("onVoiceStopToggled")
+        }
 
-        override fun onLoadCustomPpn() {}
+        override fun onLoadCustomPpn() {
+            notReady("onLoadCustomPpn")
+        }
 
-        override fun onEngineSelected(engine: String) {}
+        override fun onEngineSelected(engine: String) {
+            notReady("onEngineSelected")
+        }
 
-        override fun onSensitivityChanged(value: Float) {}
+        override fun onSensitivityChanged(value: Float) {
+            notReady("onSensitivityChanged")
+        }
     }
 
     private companion object {

@@ -2,6 +2,7 @@ package com.jarvis.assistant.session
 
 import com.jarvis.assistant.audio.AudioPipeline
 import com.jarvis.assistant.config.JarvisConfig
+import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.llm.LlmClient
 import com.jarvis.assistant.llm.LlmHttpException
 import com.jarvis.assistant.llm.ToolCallAccumulator
@@ -17,19 +18,17 @@ import com.jarvis.assistant.speech.asr.StreamingAsrClient
 import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
 import com.jarvis.assistant.tools.ToolExecutor
-import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.util.SentenceBuffer
 import com.jarvis.assistant.util.toByteArray
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -39,6 +38,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
+import kotlin.coroutines.coroutineContext
 
 /**
  * Per-turn execution engine extracted verbatim from [SessionManager] (P7).
@@ -225,8 +225,11 @@ class TurnRunner(
                     is AsrEvent.Final -> {
                         setPartial("") // final replaces the partial
                         result.complete(
-                            if (event.text.isBlank()) AsrOutcome.NoSpeech
-                            else AsrOutcome.Final(event.text)
+                            if (event.text.isBlank()) {
+                                AsrOutcome.NoSpeech
+                            } else {
+                                AsrOutcome.Final(event.text)
+                            }
                         )
                     }
 

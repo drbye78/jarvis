@@ -1,7 +1,6 @@
 package com.jarvis.assistant.data
 
 import com.jarvis.assistant.model.Message
-import com.jarvis.assistant.model.ToolCall
 import com.jarvis.assistant.wire.WireToolCall
 import com.jarvis.assistant.wire.toDomain
 import com.jarvis.assistant.wire.toWire

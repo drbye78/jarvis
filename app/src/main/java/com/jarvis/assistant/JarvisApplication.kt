@@ -1,10 +1,10 @@
 package com.jarvis.assistant
 
 import android.app.Application
-import timber.log.Timber
 import com.jarvis.assistant.media.AppForegroundTracker
 import com.jarvis.assistant.util.CredentialsStore
 import com.jarvis.assistant.util.FileLoggingTree
+import timber.log.Timber
 
 class JarvisApplication : Application() {
     override fun onCreate() {

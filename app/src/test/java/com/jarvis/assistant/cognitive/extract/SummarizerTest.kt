@@ -58,7 +58,10 @@ class SummarizerTest {
     }
 
     private fun row(id: Long, role: String, text: String, at: Long) = MessageEntity(
-        id = id, role = role, content = text, createdAt = at,
+        id = id,
+        role = role,
+        content = text,
+        createdAt = at,
     )
 
     @Test
@@ -67,7 +70,10 @@ class SummarizerTest {
         val messages = FakeMessageDao(row(1, "tool", """{"x":1}""", 100))
         val llm = ScriptedLlm("summary")
         val s = Summarizer(
-            FakeSessionSummaryDao(), messages, meta, llm,
+            FakeSessionSummaryDao(),
+            messages,
+            meta,
+            llm,
             memoryEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             cloudEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             modelId = { "m1" },
@@ -86,7 +92,11 @@ class SummarizerTest {
         )
         val dao = FakeSessionSummaryDao()
         val llm = ScriptedLlm("Пользователь просил включить джаз.")
-        val s = Summarizer(dao, messages, meta, llm,
+        val s = Summarizer(
+            dao,
+            messages,
+            meta,
+            llm,
             memoryEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             cloudEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             modelId = { "m1" },
@@ -105,7 +115,11 @@ class SummarizerTest {
         val messages = FakeMessageDao(row(1, "user", "Привет", 100))
         val dao = FakeSessionSummaryDao()
         val llm = ScriptedLlm("ignored", failAttempts = 2)
-        val s = Summarizer(dao, messages, meta, llm,
+        val s = Summarizer(
+            dao,
+            messages,
+            meta,
+            llm,
             memoryEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             cloudEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             modelId = { "m1" },
@@ -121,13 +135,21 @@ class SummarizerTest {
         val meta = FakeMemoryMetaDao()
         val messages = FakeMessageDao(row(1, "user", "Привет", 100))
         val llm = ScriptedLlm("x")
-        val cloudOff = Summarizer(FakeSessionSummaryDao(), messages, meta, llm,
+        val cloudOff = Summarizer(
+            FakeSessionSummaryDao(),
+            messages,
+            meta,
+            llm,
             memoryEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             cloudEnabled = kotlinx.coroutines.flow.MutableStateFlow(false),
             modelId = { "m1" },
         )
         assertNull(cloudOff.summarizeBatch(messages.all(), upToMessageId = 1))
-        val memoryOff = Summarizer(FakeSessionSummaryDao(), messages, meta, llm,
+        val memoryOff = Summarizer(
+            FakeSessionSummaryDao(),
+            messages,
+            meta,
+            llm,
             memoryEnabled = kotlinx.coroutines.flow.MutableStateFlow(false),
             cloudEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             modelId = { "m1" },
@@ -143,7 +165,11 @@ class SummarizerTest {
         val messages = FakeMessageDao()
         val llm = ScriptedLlm("Итог дня.")
         val now = 100L * 24 * 60 * 60_000L + 20L * 60 * 60_000L
-        val s = Summarizer(dao, messages, meta, llm,
+        val s = Summarizer(
+            dao,
+            messages,
+            meta,
+            llm,
             memoryEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             cloudEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             modelId = { "m1" },
@@ -177,7 +203,11 @@ class SummarizerTest {
         val meta = FakeMemoryMetaDao()
         val dao = FakeSessionSummaryDao()
         val messages = FakeMessageDao()
-        val s = Summarizer(dao, messages, meta, ScriptedLlm("x"),
+        val s = Summarizer(
+            dao,
+            messages,
+            meta,
+            ScriptedLlm("x"),
             memoryEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             cloudEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             modelId = { "m1" },
@@ -210,7 +240,11 @@ class SummarizerTest {
     fun `renderForPrompt truncates by whole lines within the budget`() = runBlocking {
         val meta = FakeMemoryMetaDao()
         val dao = FakeSessionSummaryDao()
-        val s = Summarizer(dao, FakeMessageDao(), meta, ScriptedLlm("x"),
+        val s = Summarizer(
+            dao,
+            FakeMessageDao(),
+            meta,
+            ScriptedLlm("x"),
             memoryEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             cloudEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
             modelId = { "m1" },

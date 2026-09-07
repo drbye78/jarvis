@@ -2,12 +2,12 @@ package com.jarvis.assistant
 
 import com.jarvis.assistant.media.MediaAppInfo
 import com.jarvis.assistant.media.MediaCapabilities
-import com.jarvis.assistant.media.MediaGateway
 import com.jarvis.assistant.media.MediaControllerHandle
+import com.jarvis.assistant.media.MediaGateway
+import com.jarvis.assistant.media.MediaKey
 import com.jarvis.assistant.media.MusicAppCatalog
 import com.jarvis.assistant.media.MusicPlaybackOrchestrator
 import com.jarvis.assistant.media.NowPlaying
-import com.jarvis.assistant.media.MediaKey
 import com.jarvis.assistant.media.SearchCommand
 import com.jarvis.assistant.tools.MusicTools
 import kotlinx.coroutines.test.runTest
@@ -68,11 +68,26 @@ class MusicOrchestratorTest {
             return super.playFromSearchStructured(command)
         }
 
-        override fun play(): Boolean { playCalls++; return true }
-        override fun pause(): Boolean { pauseCalls++; return true }
-        override fun skipToNext(): Boolean { nextCalls++; return true }
-        override fun skipToPrevious(): Boolean { prevCalls++; return true }
-        override fun stop(): Boolean { stopCalls++; return true }
+        override fun play(): Boolean {
+            playCalls++
+            return true
+        }
+        override fun pause(): Boolean {
+            pauseCalls++
+            return true
+        }
+        override fun skipToNext(): Boolean {
+            nextCalls++
+            return true
+        }
+        override fun skipToPrevious(): Boolean {
+            prevCalls++
+            return true
+        }
+        override fun stop(): Boolean {
+            stopCalls++
+            return true
+        }
     }
 
     private class FakeGateway(
@@ -96,8 +111,10 @@ class MusicOrchestratorTest {
          * now-playing of that session (null = nothing ever appears). */
         var legacySessionPolls: Int = 2,
         var legacySessionNp: NowPlaying? = NowPlaying(
-            title = "Bohemian Rhapsody", artist = "Queen",
-            state = NowPlaying.STATE_PLAYING, positionMs = 0,
+            title = "Bohemian Rhapsody",
+            artist = "Queen",
+            state = NowPlaying.STATE_PLAYING,
+            positionMs = 0,
         ),
     ) : MediaGateway {
         val handles = mutableListOf<FakeHandle>()
@@ -160,8 +177,10 @@ class MusicOrchestratorTest {
         gateway,
         MusicAppCatalog({ installed }),
         budgets = MusicPlaybackOrchestrator.Budgets(
-            verifyPollMs = 50, verifyTotalMs = 500,
-            coldStartPollMs = 50, coldStartTotalMs = 2_000,
+            verifyPollMs = 50,
+            verifyTotalMs = 500,
+            coldStartPollMs = 50,
+            coldStartTotalMs = 2_000,
         ),
     )
 
@@ -195,7 +214,8 @@ class MusicOrchestratorTest {
             FakeHandle(
                 "ru.yandex.music",
                 np = NowPlaying(
-                    title = "Старая песня", state = NowPlaying.STATE_PLAYING,
+                    title = "Старая песня",
+                    state = NowPlaying.STATE_PLAYING,
                     positionMs = 120_000,
                 ),
                 onPlayFromSearch = { h, q ->
@@ -219,7 +239,8 @@ class MusicOrchestratorTest {
             FakeHandle(
                 "ru.yandex.music",
                 np = NowPlaying(
-                    title = "Старая песня", state = NowPlaying.STATE_PLAYING,
+                    title = "Старая песня",
+                    state = NowPlaying.STATE_PLAYING,
                     positionMs = 60_000,
                 ),
                 onPlayFromSearch = { _, _ -> /* ignore: old track keeps playing */ },
@@ -337,8 +358,12 @@ class MusicOrchestratorTest {
         )
 
         val out = orchestrator(gw).playSearchQuery(
-            rawQuery = "Группа крови", artist = "Кино", album = null,
-            playlist = null, genre = null, appHint = null,
+            rawQuery = "Группа крови",
+            artist = "Кино",
+            album = null,
+            playlist = null,
+            genre = null,
+            appHint = null,
         )
 
         assertEquals(MusicPlaybackOrchestrator.Status.PLAYING, out.status)
@@ -365,7 +390,9 @@ class MusicOrchestratorTest {
             ),
         )
 
-        val out = orchestrator(gw).playSearchQuery("", artist = "Кино", album = null, playlist = null, genre = null, appHint = null)
+        val out = orchestrator(
+            gw
+        ).playSearchQuery("", artist = "Кино", album = null, playlist = null, genre = null, appHint = null)
 
         assertEquals(MusicPlaybackOrchestrator.Status.SEARCH_OPENED, out.status)
         assertEquals(SearchCommand.FOCUS_ARTIST, gw.handles.first().lastCommand?.focus)
@@ -411,8 +438,10 @@ class MusicOrchestratorTest {
             launchWorks = false,
             legacySearchHandled = true,
             legacySessionNp = NowPlaying(
-                title = "Совсем другая песня", artist = "Никто",
-                state = NowPlaying.STATE_PLAYING, positionMs = 0,
+                title = "Совсем другая песня",
+                artist = "Никто",
+                state = NowPlaying.STATE_PLAYING,
+                positionMs = 0,
             ),
         )
 
@@ -466,7 +495,9 @@ class MusicOrchestratorTest {
         )
         gw.handles.add(handle)
 
-        val out = orchestrator(gw).playSearchQuery("", artist = null, album = null, playlist = "Для тренировки", genre = null, appHint = null)
+        val out = orchestrator(
+            gw
+        ).playSearchQuery("", artist = null, album = null, playlist = "Для тренировки", genre = null, appHint = null)
 
         assertEquals(MusicPlaybackOrchestrator.Status.PLAYING, out.status)
         assertEquals("active_session", out.strategy)
@@ -491,7 +522,9 @@ class MusicOrchestratorTest {
         )
         gw.handles.add(handle)
 
-        val out = orchestrator(gw).playSearchQuery("", artist = null, album = null, playlist = "Для тренировки", genre = null, appHint = null)
+        val out = orchestrator(
+            gw
+        ).playSearchQuery("", artist = null, album = null, playlist = "Для тренировки", genre = null, appHint = null)
 
         assertEquals(MusicPlaybackOrchestrator.Status.SEARCH_OPENED, out.status)
         assertNotEquals("active_session", out.strategy)
@@ -617,7 +650,8 @@ class MusicOrchestratorTest {
             FakeHandle(
                 "ru.yandex.music",
                 np = NowPlaying(
-                    title = "Bohemian Rhapsody", artist = "Queen",
+                    title = "Bohemian Rhapsody",
+                    artist = "Queen",
                     state = NowPlaying.STATE_PLAYING,
                 ),
             ),

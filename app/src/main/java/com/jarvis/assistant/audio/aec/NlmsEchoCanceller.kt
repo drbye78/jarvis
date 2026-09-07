@@ -23,7 +23,7 @@ package com.jarvis.assistant.audio.aec
  *     SOFT speech within that margin is still partially attenuated toward
  *     MIN_GATE — the honest double-talk trade-off, not a guarantee (audit
  *     #23; on-device tuning guidance lives in the RUNBOOK).
- *  5. Far-end silent for > [BYPASS_SILENCE_MS] ⇒ bit-exact passthrough —
+ *  5. Far-end silent for > [BYPASS_SLOTS] frames (~200 ms) ⇒ bit-exact passthrough —
  *     the canceller NEVER touches near-end-only audio.
  *
  * Honesty (PLAN-AEC-FOLLOWUP §0): this is a linear-filter canceller, NOT
@@ -114,13 +114,17 @@ class NlmsEchoCanceller(
             estimatedDelayMs = if (delaySamples >= 0) (delaySamples * 1000L) / sampleRate else null,
             erleDb = if (micPowerSum > 1e-6 && errorPowerSum > 1e-6) {
                 10.0 * Math.log10(micPowerSum / errorPowerSum)
-            } else null,
+            } else {
+                null
+            },
             adapting = adaptingFlag,
             diverged = divergedFlag,
             gateGain = gateSmooth.toFloat().coerceIn(MIN_GATE.toFloat(), 1f),
             errorToFloor = if (residFloor < Double.MAX_VALUE && residFloor > 0 && lastFrameErrPower > 0) {
                 lastFrameErrPower / residFloor
-            } else null,
+            } else {
+                null
+            },
             droppedFarEndFrames = mixer.droppedFrames,
         )
 
@@ -245,7 +249,9 @@ class NlmsEchoCanceller(
         val gate: Float = if (farActive || farEndSilentSlots < RELEASE_SLOTS) {
             val target = if (residFloor < Double.MAX_VALUE) {
                 residualGateTarget(frameErrPower, residFloor)
-            } else 1.0
+            } else {
+                1.0
+            }
             smoothGate(target)
         } else {
             smoothGate(1.0)
@@ -361,9 +367,8 @@ class NlmsEchoCanceller(
         private const val RING_MASK = RING_SAMPLES - 1
 
         private const val ESTIMATE_INTERVAL_SLOTS = 12 // ~250 ms
-        private const val BYPASS_SLOTS = 10            // 200 ms of far-end silence
-        private const val RELEASE_SLOTS = 12           // 240 ms gate release
-        private const val BYPASS_SILENCE_MS = 200L
+        private const val BYPASS_SLOTS = 10 // 200 ms of far-end silence
+        private const val RELEASE_SLOTS = 12 // 240 ms gate release
 
         /** Delay search window (samples, 250 ms @ 16 kHz). */
         private const val SEARCH_LAG = 4000

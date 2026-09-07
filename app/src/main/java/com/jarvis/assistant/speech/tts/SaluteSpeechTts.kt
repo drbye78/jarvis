@@ -107,15 +107,24 @@ class SaluteSpeechTts(
                             ?: (t as? io.grpc.StatusRuntimeException)?.status?.code
                         val failure = if (code == io.grpc.Status.Code.CANCELLED) null else t
                         if (failure == null) {
-                            this@channelFlow.launch { childJobs.joinAll(); close() } // expected on barge-in
+                            this@channelFlow.launch {
+                                childJobs.joinAll()
+                                close()
+                            } // expected on barge-in
                         } else {
                             Timber.e(t, "TTS stream error")
-                            this@channelFlow.launch { childJobs.joinAll(); close(failure) }
+                            this@channelFlow.launch {
+                                childJobs.joinAll()
+                                close(failure)
+                            }
                         }
                     }
 
                     override fun onCompleted() {
-                        this@channelFlow.launch { childJobs.joinAll(); close() }
+                        this@channelFlow.launch {
+                            childJobs.joinAll()
+                            close()
+                        }
                     }
                 }
 

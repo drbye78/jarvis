@@ -124,24 +124,28 @@ class AndroidMediaBrowserGateway(private val context: Context) : MediaBrowserGat
         ): List<BrowserMediaItem>? = withTimeoutOrNull(timeoutMs) {
             suspendCancellableCoroutine { cont ->
                 runCatching {
-                    browser.search(query, null, object : MediaBrowserCompat.SearchCallback() {
-                        override fun onSearchResult(
-                            query: String,
-                            extras: Bundle?,
-                            items: MutableList<MediaBrowserCompat.MediaItem>,
-                        ) {
-                            if (cont.isActive) {
-                                cont.resume(items.map { it.toItem() })
+                    browser.search(
+                        query,
+                        null,
+                        object : MediaBrowserCompat.SearchCallback() {
+                            override fun onSearchResult(
+                                query: String,
+                                extras: Bundle?,
+                                items: MutableList<MediaBrowserCompat.MediaItem>,
+                            ) {
+                                if (cont.isActive) {
+                                    cont.resume(items.map { it.toItem() })
+                                }
+                            }
+
+                            override fun onError(query: String, extras: Bundle?) {
+                                // Most common cause: the service never implemented
+                                // onSearch — an expected miss, not an error.
+                                Timber.d("BrowserDiag: onSearch unsupported or failed for «%s»", query)
+                                if (cont.isActive) cont.resume(null)
                             }
                         }
-
-                        override fun onError(query: String, extras: Bundle?) {
-                            // Most common cause: the service never implemented
-                            // onSearch — an expected miss, not an error.
-                            Timber.i("BrowserDiag: onSearch unsupported or failed for «%s»", query)
-                            if (cont.isActive) cont.resume(null)
-                        }
-                    })
+                    )
                 }.onFailure {
                     if (cont.isActive) cont.resume(null)
                 }

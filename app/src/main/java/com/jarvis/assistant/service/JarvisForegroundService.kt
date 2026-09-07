@@ -27,17 +27,17 @@ import androidx.core.content.ContextCompat
 import com.jarvis.assistant.MainActivity
 import com.jarvis.assistant.R
 import com.jarvis.assistant.config.JarvisConfig
-import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.di.AppGraph
 import com.jarvis.assistant.di.GraphHolder
+import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.util.AppPrefs
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.Locale
@@ -81,7 +81,9 @@ class JarvisForegroundService : Service() {
     private lateinit var prefs: AppPrefs
 
     @Volatile private var initialized = false
+
     @Volatile private var bootstrapping = false
+
     @Volatile private var graph: AppGraph? = null
     private var initJob: Job? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -107,6 +109,7 @@ class JarvisForegroundService : Service() {
     @Volatile private var errorTts: TextToSpeech? = null
 
     private var wasMusicPlaying = false
+
     /**
      * Holds the MediaController that was paused during ducking so it can be
      * resumed in [unduck].  MediaController has no lifecycle callback for
@@ -136,6 +139,7 @@ class JarvisForegroundService : Service() {
     // ------------------------------------------------------------------
     private var reviveCountToday = 0
     private var reviveDayKey = Int.MIN_VALUE
+
     @Volatile private var lastReviveAtMs: Long? = null
 
     // Last notification posted on the main channel — reused when the FGS
@@ -156,7 +160,8 @@ class JarvisForegroundService : Service() {
             // Main channel: ongoing foreground notification (low importance = no sound).
             nm.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_ID, getString(R.string.channel_name),
+                    CHANNEL_ID,
+                    getString(R.string.channel_name),
                     NotificationManager.IMPORTANCE_LOW,
                 )
             )
@@ -164,7 +169,8 @@ class JarvisForegroundService : Service() {
             // still starting (visible in Settings → Notifications if needed).
             nm.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_BOOTSTRAP, getString(R.string.channel_bootstrap_name),
+                    CHANNEL_BOOTSTRAP,
+                    getString(R.string.channel_bootstrap_name),
                     NotificationManager.IMPORTANCE_LOW,
                 )
             )
@@ -306,7 +312,9 @@ class JarvisForegroundService : Service() {
                             }
                         }
                     }
-                    false -> Timber.i("Cognitive: maintenance tick arrived before init — opportunistic path will run it")
+                    false -> Timber.i(
+                        "Cognitive: maintenance tick arrived before init — opportunistic path will run it"
+                    )
                     null -> Unit
                 }
                 if (decision.revivePipeline) {
@@ -323,7 +331,8 @@ class JarvisForegroundService : Service() {
                     val readyGraph = requireNotNull(g) { "pipeline revive implies a ready graph" }
                     Timber.w(
                         "Watchdog: audio pipeline gave up — reviving capture (attempt %d/%d today)",
-                        reviveCountToday + 1, ServicePolicy.DEFAULT_DAILY_REVIVE_CAP,
+                        reviveCountToday + 1,
+                        ServicePolicy.DEFAULT_DAILY_REVIVE_CAP,
                     )
                     runCatching { readyGraph.audioPipeline.start() }
                         .onFailure { Timber.w(it, "Pipeline revive failed — retrying next tick") }
@@ -333,17 +342,23 @@ class JarvisForegroundService : Service() {
                     reviveCountToday++
                     lastReviveAtMs = System.currentTimeMillis()
                     Timber.tag("ReviveDiag")
-                        .i("pipeline revive #%d/%d today (bookkeeping: attempts=%d, lastAt=%s)",
-                            reviveCountToday, ServicePolicy.DEFAULT_DAILY_REVIVE_CAP,
-                            reviveCountToday, lastReviveAtMs)
+                        .i(
+                            "pipeline revive #%d/%d today (bookkeeping: attempts=%d, lastAt=%s)",
+                            reviveCountToday,
+                            ServicePolicy.DEFAULT_DAILY_REVIVE_CAP,
+                            reviveCountToday,
+                            lastReviveAtMs
+                        )
                 } else if (decision.reviveSuppressed) {
                     // P3.3: budget refused the revive. Log honestly, do NOT
                     // revive; the watchdog keeps ticking (common tail below
                     // re-arms the alarm), so a later manual restart via
                     // EXPLICIT_START or the next-day counter reset recovers.
                     Timber.tag("ReviveDiag").w(
-                        "Watchdog: pipeline revive SKIPPED — revive budget spent (%d/%d today, last revive %s ms ago); watchdog keeps ticking, day roll or a manual restart recovers",
-                        reviveCountToday, ServicePolicy.DEFAULT_DAILY_REVIVE_CAP,
+                        "Watchdog: pipeline revive SKIPPED — budget spent (%d/%d today, %s ms ago); " +
+                            "watchdog keeps ticking, day roll or a manual restart recovers",
+                        reviveCountToday,
+                        ServicePolicy.DEFAULT_DAILY_REVIVE_CAP,
                         lastReviveAtMs?.let { now - it } ?: "n/a",
                     )
                 }
@@ -371,7 +386,9 @@ class JarvisForegroundService : Service() {
         val intent = Intent(this, JarvisForegroundService::class.java)
             .setAction(ACTION_RUN_COGNITIVE_MAINTENANCE)
         val pending = android.app.PendingIntent.getService(
-            this, MAINTENANCE_REQUEST_CODE, intent,
+            this,
+            MAINTENANCE_REQUEST_CODE,
+            intent,
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
         )
         val triggerAt = ServicePolicy.nextMaintenanceAt(System.currentTimeMillis())
@@ -617,7 +634,9 @@ class JarvisForegroundService : Service() {
 
     private fun buildStateNotification(text: String): Notification {
         val contentIntent = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
@@ -635,7 +654,9 @@ class JarvisForegroundService : Service() {
      */
     private fun buildBootstrapNotification(): Notification {
         val contentIntent = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, CHANNEL_BOOTSTRAP)
@@ -649,7 +670,9 @@ class JarvisForegroundService : Service() {
 
     private fun showPermissionNotification() {
         val intent = PendingIntent.getActivity(
-            this, 1, Intent(this, MainActivity::class.java),
+            this,
+            1,
+            Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_ERROR)
@@ -665,7 +688,8 @@ class JarvisForegroundService : Service() {
                 return
             }
         val channel = NotificationChannel(
-            CHANNEL_ERROR, getString(R.string.channel_errors),
+            CHANNEL_ERROR,
+            getString(R.string.channel_errors),
             NotificationManager.IMPORTANCE_DEFAULT,
         )
         nm.createNotificationChannel(channel)
@@ -774,7 +798,9 @@ class JarvisForegroundService : Service() {
         val intent = Intent(this, JarvisForegroundService::class.java)
             .setAction(ACTION_WATCHDOG)
         val pending = PendingIntent.getService(
-            this, RESTART_REQUEST_CODE, intent,
+            this,
+            RESTART_REQUEST_CODE,
+            intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val triggerAt = ServicePolicy.watchdogTriggerAt(System.currentTimeMillis(), config.restartIntervalMs)
@@ -797,7 +823,9 @@ class JarvisForegroundService : Service() {
             .setAction(ACTION_WATCHDOG)
         alarmManager.cancel(
             PendingIntent.getService(
-                this, RESTART_REQUEST_CODE, intent,
+                this,
+                RESTART_REQUEST_CODE,
+                intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
         )
@@ -998,12 +1026,14 @@ class JarvisForegroundService : Service() {
             }
             nm.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_ACTIVATION, context.getString(R.string.channel_activation),
+                    CHANNEL_ACTIVATION,
+                    context.getString(R.string.channel_activation),
                     NotificationManager.IMPORTANCE_HIGH,
                 )
             )
             val tap = PendingIntent.getActivity(
-                context, ACTIVATION_REQUEST_CODE,
+                context,
+                ACTIVATION_REQUEST_CODE,
                 Intent(context, MainActivity::class.java)
                     .putExtra(EXTRA_ACTIVATE_ASSISTANT, true)
                     .addFlags(

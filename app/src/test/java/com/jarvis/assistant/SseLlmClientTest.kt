@@ -1,9 +1,9 @@
 package com.jarvis.assistant
 
 import com.jarvis.assistant.llm.OpenAiCompatClient
+import com.jarvis.assistant.model.ChatRequest
 import com.jarvis.assistant.model.LlmChunk
 import com.jarvis.assistant.model.Message
-import com.jarvis.assistant.model.ChatRequest
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
@@ -12,13 +12,12 @@ import okhttp3.Response
 import okhttp3.ResponseBody
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
-import okio.BufferedSource
 import okio.ForwardingSource
 import okio.buffer
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger

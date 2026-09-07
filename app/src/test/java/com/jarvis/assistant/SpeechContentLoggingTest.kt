@@ -6,7 +6,6 @@ import com.jarvis.assistant.contracts.Detection
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.llm.LlmClient
 import com.jarvis.assistant.model.AssistantState
-import com.jarvis.assistant.model.ChatRequest
 import com.jarvis.assistant.model.LlmChunk
 import com.jarvis.assistant.session.SessionManager
 import com.jarvis.assistant.session.SessionStateMachine
@@ -20,8 +19,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import org.junit.Assert.assertTrue
 import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import timber.log.Timber
@@ -69,7 +68,7 @@ class FailingTtsClient : TtsClient {
 
     override fun synthesizeStream(text: String, voice: String): Flow<ByteArray> = flow {
         asked.add(text)
-        throw RuntimeException("tts synthesis boom")
+        error("tts synthesis boom")
     }
 }
 

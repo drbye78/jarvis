@@ -5,10 +5,10 @@ import com.jarvis.assistant.media.BrowserResultMatcher
 import com.jarvis.assistant.media.BrowserServiceInfo
 import com.jarvis.assistant.media.BrowserSession
 import com.jarvis.assistant.media.MediaAppInfo
+import com.jarvis.assistant.media.MediaBrowserGateway
 import com.jarvis.assistant.media.MediaCapabilities
 import com.jarvis.assistant.media.MediaControllerHandle
 import com.jarvis.assistant.media.MediaGateway
-import com.jarvis.assistant.media.MediaBrowserGateway
 import com.jarvis.assistant.media.MusicAppCatalog
 import com.jarvis.assistant.media.MusicPlaybackOrchestrator
 import com.jarvis.assistant.media.NowPlaying
@@ -136,10 +136,13 @@ class MediaBrowserGatewayTest {
         MusicAppCatalog({ listOf("ru.yandex.music" to "Яндекс Музыка") }),
         browser,
         budgets = MusicPlaybackOrchestrator.Budgets(
-            verifyPollMs = 50, verifyTotalMs = 500,
-            coldStartPollMs = 50, coldStartTotalMs = 300,
+            verifyPollMs = 50,
+            verifyTotalMs = 500,
+            coldStartPollMs = 50,
+            coldStartTotalMs = 300,
             legacyWaitTotalMs = 300,
-            browserConnectTimeoutMs = 200, browserSearchTimeoutMs = 200,
+            browserConnectTimeoutMs = 200,
+            browserSearchTimeoutMs = 200,
         ),
     )
 
@@ -287,8 +290,10 @@ class MediaBrowserGatewayTest {
             MusicAppCatalog({ listOf("ru.yandex.music" to "Яндекс Музыка") }),
             browser,
             budgets = MusicPlaybackOrchestrator.Budgets(
-                verifyPollMs = 50, verifyTotalMs = 500,
-                coldStartPollMs = 50, coldStartTotalMs = 300,
+                verifyPollMs = 50,
+                verifyTotalMs = 500,
+                coldStartPollMs = 50,
+                coldStartTotalMs = 300,
                 legacyWaitTotalMs = 300,
             ),
         ).playSearchQuery("Bohemian Rhapsody", null)
@@ -359,8 +364,10 @@ class MediaBrowserGatewayTest {
             FakeGateway(),
             MusicAppCatalog({ listOf("ru.yandex.music" to "Яндекс Музыка") }),
             budgets = MusicPlaybackOrchestrator.Budgets(
-                verifyPollMs = 50, verifyTotalMs = 500,
-                coldStartPollMs = 50, coldStartTotalMs = 300,
+                verifyPollMs = 50,
+                verifyTotalMs = 500,
+                coldStartPollMs = 50,
+                coldStartTotalMs = 300,
             ),
         ).listPlaylists(null)
 
@@ -447,7 +454,7 @@ class MediaBrowserGatewayTest {
     fun `bestMatch picks the strongest playable item`() {
         val vq = VoiceQuery.clean("Bohemian Rhapsody")!!
         val items = listOf(
-            BrowserMediaItem("weak", "Bohemian", "Someone"),      // partial title
+            BrowserMediaItem("weak", "Bohemian", "Someone"), // partial title
             BrowserMediaItem("strong", "Bohemian Rhapsody", "Queen"),
             BrowserMediaItem("blocked", "Bohemian Rhapsody", "Queen", playable = false),
         )
@@ -491,8 +498,12 @@ class MediaBrowserGatewayTest {
         val browser = FakeBrowserGateway(sessionFactory = { session })
 
         val out = orchestrator(FakeGateway(), browser).playSearchQuery(
-            rawQuery = "Группа крови", artist = "Кино", album = null,
-            playlist = null, genre = null, appHint = null,
+            rawQuery = "Группа крови",
+            artist = "Кино",
+            album = null,
+            playlist = null,
+            genre = null,
+            appHint = null,
         )
 
         assertEquals(MusicPlaybackOrchestrator.Status.PLAYING, out.status)

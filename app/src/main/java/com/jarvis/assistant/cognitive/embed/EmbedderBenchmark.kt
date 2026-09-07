@@ -1,9 +1,9 @@
 package com.jarvis.assistant.cognitive.embed
 
 import com.jarvis.assistant.cognitive.model.FactCategory
+import com.jarvis.assistant.cognitive.model.FactOrigin
 import com.jarvis.assistant.cognitive.model.FactSnapshot
 import com.jarvis.assistant.cognitive.model.FactStatus
-import com.jarvis.assistant.cognitive.model.FactOrigin
 import com.jarvis.assistant.cognitive.recall.FactRanker
 import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 import kotlinx.serialization.Serializable

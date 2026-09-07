@@ -197,51 +197,63 @@ class OnboardingActivity : AppCompatActivity() {
             setPadding(dp(14), dp(12), dp(12), dp(12))
         }
 
-        rowLayout.addView(ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(14) }
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            if (done) {
-                setImageResource(R.drawable.ic_check_circle)
-                setColorFilter(color(R.color.jarvis_status_listening))
-            } else {
-                setImageResource(R.drawable.ic_radio_unchecked)
-                setColorFilter(color(R.color.jarvis_outline))
+        rowLayout.addView(
+            ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(14) }
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                if (done) {
+                    setImageResource(R.drawable.ic_check_circle)
+                    setColorFilter(color(R.color.jarvis_status_listening))
+                } else {
+                    setImageResource(R.drawable.ic_radio_unchecked)
+                    setColorFilter(color(R.color.jarvis_outline))
+                }
             }
-        })
+        )
 
-        rowLayout.addView(LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            orientation = LinearLayout.VERTICAL
-            addView(TextView(this@OnboardingActivity).apply {
-                text = row.label
-                setTextColor(color(R.color.jarvis_on_surface))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            })
-            addView(TextView(this@OnboardingActivity).apply {
-                text = if (done) getString(R.string.onboarding_done) else row.caption
-                setTextColor(color(R.color.jarvis_on_surface_variant))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
-            })
-        })
+        rowLayout.addView(
+            LinearLayout(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                orientation = LinearLayout.VERTICAL
+                addView(
+                    TextView(this@OnboardingActivity).apply {
+                        text = row.label
+                        setTextColor(color(R.color.jarvis_on_surface))
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    }
+                )
+                addView(
+                    TextView(this@OnboardingActivity).apply {
+                        text = if (done) getString(R.string.onboarding_done) else row.caption
+                        setTextColor(color(R.color.jarvis_on_surface_variant))
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                    }
+                )
+            }
+        )
 
         if (done) {
-            rowLayout.addView(TextView(this).apply {
-                text = getString(R.string.onboarding_done)
-                setTextColor(color(R.color.jarvis_primary))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            })
+            rowLayout.addView(
+                TextView(this).apply {
+                    text = getString(R.string.onboarding_done)
+                    setTextColor(color(R.color.jarvis_primary))
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                }
+            )
         } else {
-            rowLayout.addView(TextView(this).apply {
-                text = rowActionLabel(row)
-                setTextColor(color(R.color.jarvis_primary))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                val out = TypedValue()
-                theme.resolveAttribute(android.R.attr.selectableItemBackground, out, true)
-                setBackgroundResource(out.resourceId)
-                setPadding(dp(12), dp(8), dp(12), dp(8))
-                setOnClickListener { row.action() }
-            })
+            rowLayout.addView(
+                TextView(this).apply {
+                    text = rowActionLabel(row)
+                    setTextColor(color(R.color.jarvis_primary))
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    val out = TypedValue()
+                    theme.resolveAttribute(android.R.attr.selectableItemBackground, out, true)
+                    setBackgroundResource(out.resourceId)
+                    setPadding(dp(12), dp(8), dp(12), dp(8))
+                    setOnClickListener { row.action() }
+                }
+            )
         }
         return rowLayout
     }
@@ -259,7 +271,9 @@ class OnboardingActivity : AppCompatActivity() {
     private fun color(res: Int): Int = ContextCompat.getColor(this, res)
 
     override fun onRequestPermissionsResult(
-        requestCode: Int, permissions: Array<out String>, grantResults: IntArray,
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_MIC) refreshStatus()

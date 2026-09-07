@@ -3,9 +3,7 @@ package com.jarvis.assistant.speech.grpc
 import com.jarvis.assistant.grpc.recognition.Hypothesis
 import com.jarvis.assistant.grpc.recognition.RecognitionRequest
 import com.jarvis.assistant.grpc.recognition.RecognitionResponse
-import com.jarvis.assistant.grpc.recognition.SmartSpeechGrpc as RecognitionSmartSpeechGrpc
 import com.jarvis.assistant.grpc.recognition.Transcription
-import com.jarvis.assistant.grpc.synthesis.SmartSpeechGrpc as SynthesisSmartSpeechGrpc
 import com.jarvis.assistant.grpc.synthesis.SynthesisRequest
 import com.jarvis.assistant.grpc.synthesis.SynthesisResponse
 import com.jarvis.assistant.speech.asr.AsrEvent
@@ -13,9 +11,9 @@ import io.grpc.BindableService
 import io.grpc.ManagedChannel
 import io.grpc.Metadata
 import io.grpc.Server
-import io.grpc.ServerInterceptor
 import io.grpc.ServerCall
 import io.grpc.ServerCallHandler
+import io.grpc.ServerInterceptor
 import io.grpc.Status
 import io.grpc.inprocess.InProcessChannelBuilder
 import io.grpc.inprocess.InProcessServerBuilder
@@ -27,7 +25,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withTimeout
-import java.util.concurrent.TimeUnit
+import com.jarvis.assistant.grpc.recognition.SmartSpeechGrpc as RecognitionSmartSpeechGrpc
+import com.jarvis.assistant.grpc.synthesis.SmartSpeechGrpc as SynthesisSmartSpeechGrpc
 
 /**
  * P1.1 shared test harness: in-process gRPC for the SaluteSpeech streaming

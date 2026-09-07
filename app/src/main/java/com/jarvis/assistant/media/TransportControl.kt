@@ -49,7 +49,9 @@ class TransportControl(
         // whichever player happens to be playing would act on the wrong app.
         if (appHint != null && target == null) {
             return MusicPlaybackOrchestrator.Outcome(
-                MusicPlaybackOrchestrator.Status.ERROR, null, strategy = "named_app_unresolved",
+                MusicPlaybackOrchestrator.Status.ERROR,
+                null,
+                strategy = "named_app_unresolved",
                 detail = "Не нашёл плеер «$appHint» на планшете — установи его или назови другой.",
                 isError = true,
             )
@@ -61,7 +63,9 @@ class TransportControl(
         // NOT fall through to some other player's session.
         if (controller == null && target != null) {
             return MusicPlaybackOrchestrator.Outcome(
-                MusicPlaybackOrchestrator.Status.ERROR, target, strategy = "named_app_miss",
+                MusicPlaybackOrchestrator.Status.ERROR,
+                target,
+                strategy = "named_app_miss",
                 detail = "В ${target.label} сейчас ничего не играет. Скажи, какой трек включить, " +
                     "или запусти плеер вручную.",
                 isError = true,
@@ -70,11 +74,17 @@ class TransportControl(
 
         val namedApp = target ?: controller?.let { MediaAppInfo(it.packageName, it.packageName) }
         fun detail(what: String) = MusicPlaybackOrchestrator.Outcome(
-            MusicPlaybackOrchestrator.Status.DISPATCHED, namedApp, strategy = "session", detail = what,
+            MusicPlaybackOrchestrator.Status.DISPATCHED,
+            namedApp,
+            strategy = "session",
+            detail = what,
         )
         fun unsupported(what: String) = MusicPlaybackOrchestrator.Outcome(
-            MusicPlaybackOrchestrator.Status.ERROR, namedApp, strategy = "unsupported",
-            detail = "Этот плеер не поддерживает $what.", isError = true,
+            MusicPlaybackOrchestrator.Status.ERROR,
+            namedApp,
+            strategy = "unsupported",
+            detail = "Этот плеер не поддерживает $what.",
+            isError = true,
         )
 
         if (controller != null) {
@@ -86,7 +96,9 @@ class TransportControl(
                 !MusicPlaybackOrchestrator.TransportPolicy.speedAllowed(deviceApiLevel)
             ) {
                 return MusicPlaybackOrchestrator.Outcome(
-                    MusicPlaybackOrchestrator.Status.ERROR, namedApp, strategy = "api_guard",
+                    MusicPlaybackOrchestrator.Status.ERROR,
+                    namedApp,
+                    strategy = "api_guard",
                     detail = "Смену скорости этот планшет не поддерживает (нужен Android 10+).",
                     isError = true,
                 )
@@ -121,7 +133,9 @@ class TransportControl(
                     // success (the M4 honesty rule).
                     if (spec.positionMs == null && spec.deltaMs == null) {
                         return MusicPlaybackOrchestrator.Outcome(
-                            MusicPlaybackOrchestrator.Status.ERROR, namedApp, strategy = "missing_seek_target",
+                            MusicPlaybackOrchestrator.Status.ERROR,
+                            namedApp,
+                            strategy = "missing_seek_target",
                             detail = "Не понял, куда перематывать — скажи «промотай на минуту» " +
                                 "или «на вторую минуту».",
                             isError = true,
@@ -145,7 +159,9 @@ class TransportControl(
                 detail("Команда отправлена плееру (${controller.packageName}).")
             } else {
                 MusicPlaybackOrchestrator.Outcome(
-                    MusicPlaybackOrchestrator.Status.ERROR, namedApp, strategy = "dispatch_failed",
+                    MusicPlaybackOrchestrator.Status.ERROR,
+                    namedApp,
+                    strategy = "dispatch_failed",
                     detail = "Плеер не принял команду (возможно, перезапустился) — попробуй ещё раз.",
                     isError = true,
                 )
@@ -156,7 +172,9 @@ class TransportControl(
         // six actions — a media key cannot seek, like, repeat or set speed.
         if (!MusicPlaybackOrchestrator.TransportPolicy.mediaKeyEligible(action)) {
             return MusicPlaybackOrchestrator.Outcome(
-                MusicPlaybackOrchestrator.Status.ERROR, namedApp, strategy = "no_session",
+                MusicPlaybackOrchestrator.Status.ERROR,
+                namedApp,
+                strategy = "no_session",
                 detail = "Нет запущенного плеера — ${actionName(action)} работает только при включённой музыке.",
                 isError = true,
             )
@@ -174,8 +192,10 @@ class TransportControl(
         return if (action == MusicPlaybackOrchestrator.Action.STOP) {
             gateway.dispatchMediaKey(key)
             MusicPlaybackOrchestrator.Outcome(
-                MusicPlaybackOrchestrator.Status.DISPATCHED, namedApp,
-                strategy = "media_key", detail = "Отправил стоп.",
+                MusicPlaybackOrchestrator.Status.DISPATCHED,
+                namedApp,
+                strategy = "media_key",
+                detail = "Отправил стоп.",
             )
         } else {
             if (action == MusicPlaybackOrchestrator.Action.PLAY &&
@@ -187,14 +207,18 @@ class TransportControl(
                 if (app != null && gateway.launchApp(app)) {
                     gateway.dispatchMediaKey(key)
                     return MusicPlaybackOrchestrator.Outcome(
-                        MusicPlaybackOrchestrator.Status.APP_OPENED, app,
-                        strategy = "launch_and_key", detail = "Открыл ${app.label}.",
+                        MusicPlaybackOrchestrator.Status.APP_OPENED,
+                        app,
+                        strategy = "launch_and_key",
+                        detail = "Открыл ${app.label}.",
                     )
                 }
             }
             gateway.dispatchMediaKey(key)
             MusicPlaybackOrchestrator.Outcome(
-                MusicPlaybackOrchestrator.Status.DISPATCHED, namedApp, strategy = "media_key",
+                MusicPlaybackOrchestrator.Status.DISPATCHED,
+                namedApp,
+                strategy = "media_key",
                 detail = "Живой сессии плеера нет — отправил команду медиаклавишей.",
             )
         }
@@ -214,7 +238,9 @@ class TransportControl(
         // fabricated an answer about a different player.
         if (appHint != null && target == null) {
             return MusicPlaybackOrchestrator.Outcome(
-                MusicPlaybackOrchestrator.Status.ERROR, null, strategy = "named_app_unresolved",
+                MusicPlaybackOrchestrator.Status.ERROR,
+                null,
+                strategy = "named_app_unresolved",
                 detail = "Не нашёл плеер «$appHint» на планшете — не могу сказать, что в нём играет.",
                 isError = true,
             )
@@ -225,13 +251,16 @@ class TransportControl(
         if (controller == null) {
             return if (target != null) {
                 MusicPlaybackOrchestrator.Outcome(
-                    MusicPlaybackOrchestrator.Status.ERROR, target, strategy = "named_app_miss",
+                    MusicPlaybackOrchestrator.Status.ERROR,
+                    target,
+                    strategy = "named_app_miss",
                     detail = "В ${target.label} сейчас ничего не играет.",
                     isError = true,
                 )
             } else {
                 MusicPlaybackOrchestrator.Outcome(
-                    MusicPlaybackOrchestrator.Status.ERROR, null,
+                    MusicPlaybackOrchestrator.Status.ERROR,
+                    null,
                     detail = "Сейчас ничего не играет — нет активного плеера.",
                     isError = true,
                 )
@@ -244,7 +273,9 @@ class TransportControl(
         val stateWord = if (np.isPlaying) "играет" else "на паузе"
         val queueWord = if (np.queueSize > 0 && np.queueIndex >= 0) {
             ", ${np.queueIndex + 1} из ${np.queueSize}"
-        } else ""
+        } else {
+            ""
+        }
         val extras = buildList {
             if (np.speed != 1.0f && np.speed > 0f) add("скорость ${np.speed}x")
             when (np.repeatMode) {

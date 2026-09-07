@@ -24,7 +24,10 @@ class LogScrubberTest {
         assertEquals("sentence=<redacted>", LogScrubber.scrub("sentence: ой, всё"))
         assertEquals("query=<redacted>", LogScrubber.scrub("query = включи свет"))
         assertEquals("Prompt=<redacted>", LogScrubber.scrub("Prompt=system secret"))
-        assertFalse("content keys are case-insensitive", LogScrubber.scrub("reply: секретный текст").contains("секретный"))
+        assertFalse(
+            "content keys are case-insensitive",
+            LogScrubber.scrub("reply: секретный текст").contains("секретный")
+        )
     }
 
     @Test

@@ -189,14 +189,17 @@ class MusicPlaybackOrchestrator(
             val opened = gateway.openAppSearch(app, flat)
             return if (opened) {
                 Outcome(
-                    Status.SEARCH_OPENED, app, strategy = "deep_link_no_access",
+                    Status.SEARCH_OPENED,
+                    app,
+                    strategy = "deep_link_no_access",
                     detail = "Голосовое управление музыкой недоступно: нет доступа к уведомлениям. " +
                         "Открой настройки → Доступ к уведомлениям → разреши Джарвису. " +
                         launchAttemptPhrasing(flat, app),
                 )
             } else {
                 Outcome(
-                    Status.ERROR, app,
+                    Status.ERROR,
+                    app,
                     detail = "Нет доступа к уведомлениям — не могу управлять плеером. " +
                         "Открой настройки → Специальный доступ → Доступ к уведомлениям → включи Джарвиса.",
                     isError = true,
@@ -221,7 +224,10 @@ class MusicPlaybackOrchestrator(
                     }
                 } else {
                     Timber.tag("MusicDiag")
-                        .i("music-diag: %s cold-start session lacks playFromSearch — skipping dispatch", app.packageName)
+                        .i(
+                            "music-diag: %s cold-start session lacks playFromSearch — skipping dispatch",
+                            app.packageName
+                        )
                 }
             }
         }
@@ -241,7 +247,9 @@ class MusicPlaybackOrchestrator(
         val opened = gateway.openAppSearch(app, flat)
         return if (opened) {
             Outcome(
-                Status.SEARCH_OPENED, app, strategy = "deep_link",
+                Status.SEARCH_OPENED,
+                app,
+                strategy = "deep_link",
                 detail = "Плеер не принял голосовую команду — " + launchAttemptPhrasing(flat, app),
             )
         } else {
@@ -255,7 +263,9 @@ class MusicPlaybackOrchestrator(
                     "если экран не появился, открой плеер вручную."
             }
             Outcome(
-                Status.APP_OPENED, app, strategy = "launch_only",
+                Status.APP_OPENED,
+                app,
+                strategy = "launch_only",
                 detail = launchedDetail,
             )
         }
@@ -292,7 +302,9 @@ class MusicPlaybackOrchestrator(
             if (best != null) {
                 Timber.d(
                     "Music: browser search hit «%s» (mediaId=%s) for «%s»",
-                    best.title, best.mediaId, command.query,
+                    best.title,
+                    best.mediaId,
+                    command.query,
                 )
                 val handle = session.controller()
                 if (handle != null) {
@@ -351,7 +363,12 @@ class MusicPlaybackOrchestrator(
                 isError = true,
             )
         if (mediaId.isBlank()) {
-            return Outcome(Status.ERROR, app, detail = "Пустой идентификатор трека — скажи название, я найду его поиском.", isError = true)
+            return Outcome(
+                Status.ERROR,
+                app,
+                detail = "Пустой идентификатор трека — скажи название, я найду его поиском.",
+                isError = true
+            )
         }
         val session = libraryBrowser.connectBrowser(app)
             ?: return libraryBrowser.browserUnavailable(app)
@@ -361,7 +378,9 @@ class MusicPlaybackOrchestrator(
             val before = runCatching { handle.snapshot() }.getOrDefault(NowPlaying())
             if (!session.playFromMediaId(mediaId)) {
                 return Outcome(
-                    Status.ERROR, app, strategy = "browser_media_id",
+                    Status.ERROR,
+                    app,
+                    strategy = "browser_media_id",
                     detail = "Плеер не принял команду для этого трека — возможно, библиотека обновилась. " +
                         "Скажи название, я включу его поиском.",
                     isError = true,
@@ -377,7 +396,9 @@ class MusicPlaybackOrchestrator(
                 playing(app, "browser_media_id", verified)
             } else {
                 Outcome(
-                    Status.APP_OPENED, app, strategy = "browser_media_id",
+                    Status.APP_OPENED,
+                    app,
+                    strategy = "browser_media_id",
                     detail = "Отправил команду плееру, но подтверждения не дождался — проверь экран.",
                 )
             }
@@ -655,7 +676,10 @@ class MusicPlaybackOrchestrator(
     private fun playing(app: MediaAppInfo, strategy: String, np: NowPlaying): Outcome {
         val what = listOfNotNull(np.title, np.artist).joinToString(" — ").ifBlank { "запрошенный трек" }
         return Outcome(
-            Status.PLAYING, app, strategy = strategy, nowPlaying = np,
+            Status.PLAYING,
+            app,
+            strategy = strategy,
+            nowPlaying = np,
             detail = "Включил: $what (${app.label}).",
         )
     }

@@ -54,7 +54,7 @@ class TranscriptAdapter : ListAdapter<Message, TranscriptAdapter.VH>(DIFF) {
             // Tool line: name + truncated payload — compact, non-interactive.
             ROLE_TOOL -> {
                 val name = msg.name ?: "tool"
-                "${name}: ${shorten(msg.content)}"
+                "$name: ${shorten(msg.content)}"
             }
             else -> msg.content
         }
@@ -82,8 +82,11 @@ class TranscriptAdapter : ListAdapter<Message, TranscriptAdapter.VH>(DIFF) {
             // removal+insert. Fresh messages carry id = 0 before persistence,
             // where equality is still the only identity available.
             override fun areItemsTheSame(oldItem: Message, newItem: Message): Boolean =
-                if (oldItem.id != 0L || newItem.id != 0L) oldItem.id == newItem.id
-                else oldItem == newItem
+                if (oldItem.id != 0L || newItem.id != 0L) {
+                    oldItem.id == newItem.id
+                } else {
+                    oldItem == newItem
+                }
 
             override fun areContentsTheSame(oldItem: Message, newItem: Message): Boolean =
                 oldItem == newItem

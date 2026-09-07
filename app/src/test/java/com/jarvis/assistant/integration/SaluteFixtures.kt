@@ -142,7 +142,11 @@ fun String.decodeBase64(): ByteArray = Base64.getDecoder().decode(this)
  * emits Failed only from onError[gRPC] or onCompleted[clean-close]).
  */
 fun AsrEvent.toRecordedResponse(): RecordedResponse = when (this) {
-    is AsrEvent.Partial -> RecordedResponse(type = RecordedResponse.TYPE_TRANSCRIPTION, eou = false, texts = listOf(text))
+    is AsrEvent.Partial -> RecordedResponse(
+        type = RecordedResponse.TYPE_TRANSCRIPTION,
+        eou = false,
+        texts = listOf(text)
+    )
     is AsrEvent.Final -> RecordedResponse(type = RecordedResponse.TYPE_TRANSCRIPTION, eou = true, texts = listOf(text))
     is AsrEvent.Failed -> {
         val status = (cause as? StatusRuntimeException)?.status?.code

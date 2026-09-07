@@ -118,7 +118,11 @@ class MemoryInspectorActivity : AppCompatActivity() {
                 .setPositiveButton(R.string.settings_memory_wipe) { _, _ ->
                     lifecycleScope.launch {
                         coordinator?.wipeAll()
-                        Toast.makeText(this@MemoryInspectorActivity, R.string.settings_memory_wipe_done, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@MemoryInspectorActivity,
+                            R.string.settings_memory_wipe_done,
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
                 .setNegativeButton(android.R.string.cancel, null)
@@ -130,7 +134,11 @@ class MemoryInspectorActivity : AppCompatActivity() {
                 val json = coordinator?.exportJson() ?: return@launch
                 val count = (json["facts"] as? kotlinx.serialization.json.JsonArray)?.size ?: 0
                 if (count == 0) {
-                    Toast.makeText(this@MemoryInspectorActivity, R.string.settings_memory_export_none, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@MemoryInspectorActivity,
+                        R.string.settings_memory_export_none,
+                        Toast.LENGTH_SHORT
+                    ).show()
                     return@launch
                 }
                 exportLauncher.launch("jarvis-memory.json")
@@ -166,12 +174,20 @@ class MemoryInspectorActivity : AppCompatActivity() {
                 contentResolver.openOutputStream(uri)?.use { stream ->
                     stream.write(prettyJson(json).toByteArray(Charsets.UTF_8))
                 }
-                Toast.makeText(this@MemoryInspectorActivity, R.string.settings_memory_export_done, Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this@MemoryInspectorActivity,
+                    R.string.settings_memory_export_done,
+                    Toast.LENGTH_SHORT
+                ).show()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Timber.e(e, "Memory export failed")
-                Toast.makeText(this@MemoryInspectorActivity, R.string.settings_memory_export_failed, Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this@MemoryInspectorActivity,
+                    R.string.settings_memory_export_failed,
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }

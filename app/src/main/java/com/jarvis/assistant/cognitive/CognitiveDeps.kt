@@ -65,7 +65,9 @@ data class CognitiveDeps(
     val behaviorEnabled: StateFlow<Boolean> = kotlinx.coroutines.flow.MutableStateFlow(false),
     val behaviorQuietStart: StateFlow<Int> = kotlinx.coroutines.flow.MutableStateFlow(23),
     val behaviorQuietEnd: StateFlow<Int> = kotlinx.coroutines.flow.MutableStateFlow(8),
-    val behaviorDailyQuota: StateFlow<Int> = kotlinx.coroutines.flow.MutableStateFlow(BehaviorArbiter.DEFAULT_DAILY_QUOTA),
+    val behaviorDailyQuota: StateFlow<Int> = kotlinx.coroutines.flow.MutableStateFlow(
+        BehaviorArbiter.DEFAULT_DAILY_QUOTA
+    ),
     /** Gates 2/4: DND/battery/media — Android-backed in production, static in tests. */
     val deviceSignals: DeviceSignals = DeviceSignals.Static,
     /** Gate 3: session-state bridge (AppGraph maps the state machine into it). */

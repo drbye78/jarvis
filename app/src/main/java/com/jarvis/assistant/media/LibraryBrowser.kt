@@ -34,12 +34,16 @@ class LibraryBrowser(
                 ?: return browserUnavailable(app)
             if (children.isEmpty()) {
                 return MusicPlaybackOrchestrator.Outcome(
-                    MusicPlaybackOrchestrator.Status.DISPATCHED, app, strategy = "browser_children",
+                    MusicPlaybackOrchestrator.Status.DISPATCHED,
+                    app,
+                    strategy = "browser_children",
                     detail = "В библиотеке ${app.label} ничего не нашлось.",
                 )
             }
             return MusicPlaybackOrchestrator.Outcome(
-                MusicPlaybackOrchestrator.Status.DISPATCHED, app, strategy = "browser_children",
+                MusicPlaybackOrchestrator.Status.DISPATCHED,
+                app,
+                strategy = "browser_children",
                 items = children,
                 detail = "Вот что есть в библиотеке ${app.label}. Назови название — включу.",
             )
@@ -59,7 +63,8 @@ class LibraryBrowser(
             )
         if (query.isBlank()) {
             return MusicPlaybackOrchestrator.Outcome(
-                MusicPlaybackOrchestrator.Status.ERROR, app,
+                MusicPlaybackOrchestrator.Status.ERROR,
+                app,
                 detail = "Не понял, что искать — назови трек, исполнителя или плейлист.",
                 isError = true,
             )
@@ -77,12 +82,16 @@ class LibraryBrowser(
             val playable = results.filter { it.playable }.take(budgets.maxLibraryItems)
             if (playable.isEmpty()) {
                 return MusicPlaybackOrchestrator.Outcome(
-                    MusicPlaybackOrchestrator.Status.DISPATCHED, app, strategy = "browser_search",
+                    MusicPlaybackOrchestrator.Status.DISPATCHED,
+                    app,
+                    strategy = "browser_search",
                     detail = "В библиотеке ничего не нашлось по «$query».",
                 )
             }
             return MusicPlaybackOrchestrator.Outcome(
-                MusicPlaybackOrchestrator.Status.DISPATCHED, app, strategy = "browser_search",
+                MusicPlaybackOrchestrator.Status.DISPATCHED,
+                app,
+                strategy = "browser_search",
                 items = playable,
                 detail = "Вот что нашлось по «$query». Назови номер или название — включу.",
             )
@@ -103,7 +112,8 @@ class LibraryBrowser(
 
     internal fun browserUnavailable(app: MediaAppInfo): MusicPlaybackOrchestrator.Outcome =
         MusicPlaybackOrchestrator.Outcome(
-            MusicPlaybackOrchestrator.Status.ERROR, app,
+            MusicPlaybackOrchestrator.Status.ERROR,
+            app,
             detail = "${app.label} не открывает свою библиотеку для голосового помощника. " +
                 "Скажи название трека — я включу его поиском.",
             isError = true,

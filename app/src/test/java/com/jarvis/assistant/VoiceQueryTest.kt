@@ -269,7 +269,9 @@ class VoiceQueryTest {
     fun `position reset plus partial match verifies`() {
         val vq = VoiceQuery.clean("Группа крови")!!
         val before = NowPlaying(
-            title = "Группа крови", state = NowPlaying.STATE_PLAYING, positionMs = 120_000,
+            title = "Группа крови",
+            state = NowPlaying.STATE_PLAYING,
+            positionMs = 120_000,
         )
         val now = before.copy(positionMs = 0) // same song restarted
         assertTrue(VoiceQueryMatcher.isVerified(now, vq, before))

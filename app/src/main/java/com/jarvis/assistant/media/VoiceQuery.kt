@@ -149,6 +149,7 @@ data class SearchCommand(
         const val FOCUS_ALBUM = "vnd.android.cursor.item/album"
         const val FOCUS_PLAYLIST = "vnd.android.cursor.item/playlist"
         const val FOCUS_GENRE = "vnd.android.cursor.item/genre"
+
         /** Title-focused (song) search: TITLE (+ ARTIST) extras. */
         const val FOCUS_TITLE = "vnd.android.cursor.item/audio"
 

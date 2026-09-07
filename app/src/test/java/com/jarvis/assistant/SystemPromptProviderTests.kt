@@ -2,12 +2,12 @@ package com.jarvis.assistant
 
 import com.jarvis.assistant.session.PromptContext
 import com.jarvis.assistant.session.TimeAwareSystemPrompt
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import java.util.Calendar
 import java.util.TimeZone

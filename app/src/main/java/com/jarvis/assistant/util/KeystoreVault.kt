@@ -5,8 +5,8 @@ import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import timber.log.Timber
-import java.security.KeyStore
 import java.security.GeneralSecurityException
+import java.security.KeyStore
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator

@@ -15,8 +15,12 @@ object ExtractionGate {
 
     /** Explicit memory verbs — always extract. */
     private val MEMORY_VERBS = listOf(
-        "запомни", "запомнить", "помни, что", "напомни, что я",
-        "не забудь", "на будущее",
+        "запомни",
+        "запомнить",
+        "помни, что",
+        "напомни, что я",
+        "не забудь",
+        "на будущее",
     )
 
     /** First-person self-statements / possessives (word-start anchored). */
@@ -27,8 +31,14 @@ object ExtractionGate {
 
     /** Likes / dislikes patterns. */
     private val LIKES = listOf(
-        "люблю", "любим", "нравится", "ненавижу", "не люблю", "обожаю",
-        "не выношу", "увлекаюсь",
+        "люблю",
+        "любим",
+        "нравится",
+        "ненавижу",
+        "не люблю",
+        "обожаю",
+        "не выношу",
+        "увлекаюсь",
     )
 
     /** Life facts: names, dates, workplaces. */

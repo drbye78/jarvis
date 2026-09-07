@@ -1,9 +1,9 @@
 package com.jarvis.assistant
 
-import com.jarvis.assistant.audio.aec.EnergyVad
-import com.jarvis.assistant.session.FollowUpWindowController
 import com.jarvis.assistant.audio.aec.AecMode
+import com.jarvis.assistant.audio.aec.EnergyVad
 import com.jarvis.assistant.audio.aec.MicProfile
+import com.jarvis.assistant.session.FollowUpWindowController
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -145,7 +145,6 @@ class EnergyVadTest {
         // Level music: 4× floor — under the 6× onset ratio.
         repeat(30) { vad.process(frame(600.0)) }
         assertEquals(EnergyVad.State.SILENT, vad.state)
-
     }
 
     @Test
@@ -176,7 +175,10 @@ class EnergyVadTest {
         assertTrue("floor must rise: ${vad.noiseFloor}", vad.noiseFloor > floorQuiet * 2)
         // Speech above the NEW floor still triggers.
         var onset = false
-        repeat(10) { vad.process(frame(9000.0)); if (vad.onset) onset = true }
+        repeat(10) {
+            vad.process(frame(9000.0))
+            if (vad.onset) onset = true
+        }
         assertTrue(onset)
     }
 }

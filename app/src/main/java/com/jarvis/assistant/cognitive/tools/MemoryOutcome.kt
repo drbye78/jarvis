@@ -93,16 +93,22 @@ fun MemoryOutcome.toJson(): String {
             is MemoryOutcome.Disabled -> put("outcome", "disabled")
             is MemoryOutcome.Recalled -> {
                 put("outcome", "recalled")
-                put("facts", kotlinx.serialization.json.JsonArray(
-                    facts.map { JsonPrimitive(it) },
-                ))
+                put(
+                    "facts",
+                    kotlinx.serialization.json.JsonArray(
+                        facts.map { JsonPrimitive(it) },
+                    )
+                )
             }
             is MemoryOutcome.RecallEmpty -> put("outcome", "empty")
             is MemoryOutcome.ForgetCandidates -> {
                 put("outcome", "confirm_forget")
-                put("candidates", kotlinx.serialization.json.JsonArray(
-                    candidates.map { JsonPrimitive(it) },
-                ))
+                put(
+                    "candidates",
+                    kotlinx.serialization.json.JsonArray(
+                        candidates.map { JsonPrimitive(it) },
+                    )
+                )
                 put("confirmToken", confirmToken)
             }
             is MemoryOutcome.Forgotten -> {

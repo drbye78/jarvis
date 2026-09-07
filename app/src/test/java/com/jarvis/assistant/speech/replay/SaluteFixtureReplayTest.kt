@@ -207,7 +207,11 @@ class SaluteFixtureReplayTest {
         assertEquals("${file.name}: kind", SaluteFixture.KIND_TTS, fixture.kind)
         val request = requireNotNull(fixture.ttsRequest) { "${file.name}: TTS fixture must carry ttsRequest" }
         val expectedChunks = fixture.serverResponses.map { response ->
-            assertEquals("${file.name}: TTS fixtures record chunk sequences", RecordedResponse.TYPE_CHUNK, response.type)
+            assertEquals(
+                "${file.name}: TTS fixtures record chunk sequences",
+                RecordedResponse.TYPE_CHUNK,
+                response.type
+            )
             requireNotNull(response.base64) { "${file.name}: chunk entry without base64 payload" }.decodeBase64()
         }
 
@@ -226,7 +230,11 @@ class SaluteFixtureReplayTest {
         ) { _ -> "replay" to "replay" }
         try {
             val tts = SaluteSpeechTts(tokenManager, harness.channel, deadlineMs = 20_000)
-            val chunksJob = async { withTimeout(5_000) { tts.synthesizeStream(request.text, request.voiceInput).toList() } }
+            val chunksJob = async {
+                withTimeout(
+                    5_000
+                ) { tts.synthesizeStream(request.text, request.voiceInput).toList() }
+            }
             val wireRequest = fakeTts.awaitRequest()
             expectedChunks.forEach { fakeTts.emitChunk(it) }
             delay(100) // bounded delivery pause — same pattern the P1 TTS suite uses
@@ -234,7 +242,11 @@ class SaluteFixtureReplayTest {
 
             val chunks = chunksJob.await()
             assertEquals("${file.name}: chunk count", expectedChunks.size, chunks.size)
-            assertEquals("${file.name}: chunk bytes in order", expectedChunks.map { it.toList() }, chunks.map { it.toList() })
+            assertEquals(
+                "${file.name}: chunk bytes in order",
+                expectedChunks.map { it.toList() },
+                chunks.map { it.toList() }
+            )
 
             // The wire request matches the recorded one.
             assertEquals(request.text, wireRequest.text)

@@ -54,7 +54,9 @@ class AndroidAudioTrackAdapter(spec: AudioSpec) : AudioTrackAdapter {
         val bufferSize = if (minBuf <= 0) {
             Timber.w(
                 "AudioTrack.getMinBufferSize returned %d at %dHz — using floor %d bytes",
-                minBuf, spec.sampleRate, MIN_BUFFER_FLOOR_BYTES,
+                minBuf,
+                spec.sampleRate,
+                MIN_BUFFER_FLOOR_BYTES,
             )
             MIN_BUFFER_FLOOR_BYTES
         } else {
@@ -145,7 +147,9 @@ class StreamingAudioTrackPlayer(
     private val lock = Any()
 
     @Volatile private var currentPlay: Job? = null
+
     @Volatile private var generation = 0L
+
     @Volatile private var released = false
 
     // Actor-thread-only state; currentDone is read best-effort by release()

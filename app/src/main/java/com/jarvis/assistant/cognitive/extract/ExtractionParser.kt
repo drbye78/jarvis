@@ -33,7 +33,10 @@ import timber.log.Timber
  */
 class ExtractionParser {
 
-    private val json = Json { ignoreUnknownKeys = true; isLenient = false }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = false
+    }
 
     sealed interface Result {
         /** Parsed + validated candidates, ready for the normalizer. */

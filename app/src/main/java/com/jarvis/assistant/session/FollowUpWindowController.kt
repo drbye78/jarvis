@@ -77,7 +77,9 @@ class FollowUpWindowController(
         if (state == ControllerState.OPEN) {
             state = ControllerState.IDLE
             Effect.StartFollowUpTurn
-        } else null
+        } else {
+            null
+        }
 
     /** Wake word accepted (any state) — the normal path supersedes the window. */
     fun onWakeWord() {

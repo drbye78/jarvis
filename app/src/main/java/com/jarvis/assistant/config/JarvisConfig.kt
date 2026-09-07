@@ -17,8 +17,8 @@ data class JarvisConfig(
     val porcupineKeywordPath: String = "jarvis_ru.ppn",
 
     // Session
-    val maxUtteranceMs: Long = 90_000,      // hard cap for one utterance
-    val maxToolPasses: Int = 5,             // bounded tool loop
+    val maxUtteranceMs: Long = 90_000, // hard cap for one utterance
+    val maxToolPasses: Int = 5, // bounded tool loop
 
     // ASR
     val asrMaxRetries: Int = 2,

@@ -27,8 +27,8 @@ android {
         // No backward compat below it is claimed or needed.
         minSdk = 29
         targetSdk = 34
-        versionCode = 4
-        versionName = "0.2.0"
+        versionCode = 5
+        versionName = "0.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -94,6 +94,7 @@ kotlin {
 detekt {
     buildUponDefaultConfig = true
     parallel = true
+    autoCorrect = true // P5.1: formatting rules re-enabled; ktlint fixes apply in place
     config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
     baseline = file("$rootDir/config/detekt/baseline.xml")
 }

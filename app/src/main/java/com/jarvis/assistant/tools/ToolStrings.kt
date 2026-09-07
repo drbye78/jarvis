@@ -169,7 +169,11 @@ class AndroidToolStrings(private val context: Context) : ToolStrings {
     override val wifiPanelUnavailable: String
         get() = context.getString(R.string.tool_wifi_panel_unavailable)
     override fun wifiPanelOpenFailed(detail: String?): String =
-        context.getString(R.string.tool_open_failed_with_detail, context.getString(R.string.tool_wifi_panel), detail ?: "")
+        context.getString(
+            R.string.tool_open_failed_with_detail,
+            context.getString(R.string.tool_wifi_panel),
+            detail ?: ""
+        )
     override val wifiPanelDetail: String
         get() = context.getString(R.string.tool_wifi_panel_detail)
     override val btNearbyPermissionMissing: String
@@ -177,7 +181,11 @@ class AndroidToolStrings(private val context: Context) : ToolStrings {
     override val btSettingsUnavailable: String
         get() = context.getString(R.string.tool_bt_settings_unavailable)
     override fun btSettingsOpenFailed(detail: String?): String =
-        context.getString(R.string.tool_open_failed_with_detail, context.getString(R.string.tool_bt_settings), detail ?: "")
+        context.getString(
+            R.string.tool_open_failed_with_detail,
+            context.getString(R.string.tool_bt_settings),
+            detail ?: ""
+        )
     override val btToggleFailed: String
         get() = context.getString(R.string.tool_bt_toggle_failed)
     override val btAdapterUnavailable: String

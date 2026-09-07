@@ -1,10 +1,10 @@
 package com.jarvis.assistant.speech.asr
 
+import com.google.protobuf.ByteString
 import com.jarvis.assistant.grpc.recognition.RecognitionRequest
 import com.jarvis.assistant.grpc.recognition.RecognitionResponse
 import com.jarvis.assistant.grpc.recognition.SmartSpeechGrpc
 import com.jarvis.assistant.llm.TokenManager
-import com.google.protobuf.ByteString
 import io.grpc.ClientInterceptors
 import io.grpc.Context
 import io.grpc.ManagedChannel
@@ -103,7 +103,9 @@ class SberStreamingAsr(
                 }
 
                 override fun onError(t: Throwable) {
-                    val cause = (t as? StatusException)?.status?.code?.toString() ?: t.message
+                    val cause = (t as? StatusException)?.status?.code?.toString()
+                        ?: (t as? io.grpc.StatusRuntimeException)?.status?.code?.toString()
+                        ?: t.message
                     Timber.e(t, "ASR stream error ($cause)")
                     _events.tryEmit(AsrEvent.Failed(t))
                 }
@@ -112,9 +114,11 @@ class SberStreamingAsr(
                     // Server closed without EOU: treat as final empty if we
                     // never emitted anything; otherwise the session's hard
                     // cap resolves it.
-                    _events.tryEmit(AsrEvent.Failed(
-                        RuntimeException("ASR stream completed without end-of-utterance")
-                    ))
+                    _events.tryEmit(
+                        AsrEvent.Failed(
+                            RuntimeException("ASR stream completed without end-of-utterance")
+                        )
+                    )
                 }
             }
 

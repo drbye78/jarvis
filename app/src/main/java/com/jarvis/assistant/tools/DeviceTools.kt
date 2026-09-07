@@ -13,7 +13,6 @@ import android.os.Build
 import android.provider.Settings
 import com.jarvis.assistant.R
 import com.jarvis.assistant.util.JsonOut
-import kotlinx.serialization.json.jsonObject
 
 /**
  * On-tablet device control tools — the REAL implementation replacing the old
@@ -358,7 +357,10 @@ class DeviceTools(
             val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
             val level = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
             val charging = bm?.isCharging == true
-            val time = java.text.SimpleDateFormat(context.getString(R.string.device_time_format), java.util.Locale.getDefault())
+            val time = java.text.SimpleDateFormat(
+                context.getString(R.string.device_time_format),
+                java.util.Locale.getDefault()
+            )
                 .format(java.util.Date())
             return JsonOut.obj(
                 "battery" to (if (level in 1..100) level else context.getString(R.string.device_battery_na)),

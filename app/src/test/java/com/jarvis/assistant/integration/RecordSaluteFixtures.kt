@@ -63,7 +63,10 @@ private fun out(message: String) {
     System.out.println(message)
 }
 
-private val fixtureJson = Json { prettyPrint = true; ignoreUnknownKeys = true }
+private val fixtureJson = Json {
+    prettyPrint = true
+    ignoreUnknownKeys = true
+}
 
 fun main(args: Array<String>) {
     val outputDir = args.getOrNull(0)?.let(::File) ?: run {
@@ -73,8 +76,10 @@ fun main(args: Array<String>) {
 
     if (!LiveSecrets.hasSalute) {
         out("recordSaluteFixtures SKIPPED: Salute credentials not present — nothing recorded.")
-        out("Provide jarvis.salute.clientId / jarvis.salute.clientSecret in local.secrets.properties " +
-                "(copy local.secrets.properties.example) or via JARVIS_SALUTE_* env vars.")
+        out(
+            "Provide jarvis.salute.clientId / jarvis.salute.clientSecret in local.secrets.properties " +
+                "(copy local.secrets.properties.example) or via JARVIS_SALUTE_* env vars."
+        )
         exitProcess(0)
     }
 
@@ -137,7 +142,12 @@ fun main(args: Array<String>) {
                             "Audio is the service's own voice speaking the fixed probe phrase — no user data.",
                     ),
                     ttsRequest = request,
-                    serverResponses = chunks.map { RecordedResponse(type = RecordedResponse.TYPE_CHUNK, base64 = it.toBase64()) },
+                    serverResponses = chunks.map {
+                        RecordedResponse(
+                            type = RecordedResponse.TYPE_CHUNK,
+                            base64 = it.toBase64()
+                        )
+                    },
                 )
                 writeFixture(outputDir, TTS_FIXTURE_FILE, fixture, written)
                 out("TTS capture: ${chunks.size} chunk(s), ${chunks.sumOf { it.size }} bytes")

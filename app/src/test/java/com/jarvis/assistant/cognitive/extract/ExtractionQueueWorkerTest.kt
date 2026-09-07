@@ -30,7 +30,10 @@ class ExtractionQueueWorkerTest {
         override fun chatStream(request: ChatRequest): Flow<LlmChunk> {
             calls++
             requests.add(request)
-            return flow { emit(LlmChunk.Text(respond(request))); emit(LlmChunk.Done) }
+            return flow {
+                emit(LlmChunk.Text(respond(request)))
+                emit(LlmChunk.Done)
+            }
         }
 
         override suspend fun chatOnce(request: ChatRequest): String = respond(request).also {
@@ -65,10 +68,18 @@ class ExtractionQueueWorkerTest {
     fun `one batch of three messages produces one cloud call`() = runTest {
         val (queue, messages) = seed("меня зовут Алексей", "люблю Тарковского", "работаю в Яндексе")
         val llm = FakeLlm {
-            """{"facts":[${factJson(10, "Алексей", "меня зовут Алексей")},${factJson(11, "Тарковского", "люблю Тарковского")}]}"""
+            """{"facts":[${factJson(
+                10,
+                "Алексей",
+                "меня зовут Алексей"
+            )},${factJson(11, "Тарковского", "люблю Тарковского")}]}"""
         }
         val worker = ExtractionQueueWorker(
-            queue, FakeUserFactDao(), FakeMemoryMetaDao(), messages, llm,
+            queue,
+            FakeUserFactDao(),
+            FakeMemoryMetaDao(),
+            messages,
+            llm,
             normalizer = FactNormalizer(nowMs = { 1L }, newId = { "f-${idCounter++}" }),
         )
 
@@ -94,7 +105,10 @@ class ExtractionQueueWorkerTest {
         val queue = FakeExtractionQueueDao()
         queue.rows[99] = ExtractionQueueEntity(99, createdAt = 0, updatedAt = 0)
         val worker = ExtractionQueueWorker(
-            queue, FakeUserFactDao(), FakeMemoryMetaDao(), FakeMessageDao(),
+            queue,
+            FakeUserFactDao(),
+            FakeMemoryMetaDao(),
+            FakeMessageDao(),
             FakeLlm { """{"facts":[]}""" },
         )
         val report = worker.drainOnce()!!
@@ -106,7 +120,10 @@ class ExtractionQueueWorkerTest {
     fun `unparseable response quarantines the batch`() = runTest {
         val (queue, messages) = seed("меня зовут Алексей")
         val worker = ExtractionQueueWorker(
-            queue, FakeUserFactDao(), FakeMemoryMetaDao(), messages,
+            queue,
+            FakeUserFactDao(),
+            FakeMemoryMetaDao(),
+            messages,
             FakeLlm { "Извините, я не могу ответить JSON-ом." },
         )
         val report = worker.drainOnce()!!
@@ -118,7 +135,10 @@ class ExtractionQueueWorkerTest {
     fun `hallucinated evidence never reaches storage`() = runTest {
         val (queue, messages) = seed("люблю Тарковского")
         val worker = ExtractionQueueWorker(
-            queue, FakeUserFactDao(), FakeMemoryMetaDao(), messages,
+            queue,
+            FakeUserFactDao(),
+            FakeMemoryMetaDao(),
+            messages,
             FakeLlm {
                 // Evidence does NOT occur in the utterance → the fact is dropped.
                 """{"facts":[${factJson(10, "Пушкина", "обожаю Пушкина", 0.99)}]}"""
@@ -138,7 +158,11 @@ class ExtractionQueueWorkerTest {
                 throw LlmHttpException(429)
         }
         val worker = ExtractionQueueWorker(
-            queue, FakeUserFactDao(), FakeMemoryMetaDao(), messages, llm,
+            queue,
+            FakeUserFactDao(),
+            FakeMemoryMetaDao(),
+            messages,
+            llm,
         )
         val report = worker.drainOnce()!!
         assertTrue(worker.lastBatchTransportFailed)
@@ -155,7 +179,11 @@ class ExtractionQueueWorkerTest {
                 throw IOExceptionSim()
         }
         val worker = ExtractionQueueWorker(
-            queue, FakeUserFactDao(), FakeMemoryMetaDao(), messages, llm,
+            queue,
+            FakeUserFactDao(),
+            FakeMemoryMetaDao(),
+            messages,
+            llm,
         )
         // Attempts 1..MAX: transport failure → PENDING; after MAX → quarantine.
         repeat(ExtractionQueueEntity.MAX_ATTEMPTS) { worker.drainOnce() }
@@ -174,7 +202,10 @@ class ExtractionQueueWorkerTest {
         messages.rows[200] = MessageEntity(id = 200, role = "assistant", content = "ответ")
         val meta = FakeMemoryMetaDao()
         val worker = ExtractionQueueWorker(
-            FakeExtractionQueueDao(), FakeUserFactDao(), meta, messages,
+            FakeExtractionQueueDao(),
+            FakeUserFactDao(),
+            meta,
+            messages,
             FakeLlm { """{"facts":[]}""" },
         )
         val first = worker.backfillRecent()

@@ -1,12 +1,11 @@
 package com.jarvis.assistant
 
-import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.contracts.BargeInPolicy
 import com.jarvis.assistant.contracts.Detection
 import com.jarvis.assistant.contracts.gatedBy
+import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.tools.OpenAppOutcome
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals

@@ -5,15 +5,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import com.jarvis.assistant.R
 import com.jarvis.assistant.data.AppDatabase
-import com.jarvis.assistant.tools.AlarmRinger
 import com.jarvis.assistant.tools.AlarmReceiver
+import com.jarvis.assistant.tools.AlarmRinger
 import com.jarvis.assistant.tools.AndroidAlarmScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -97,13 +96,16 @@ class AlarmRingingActivity : Activity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
                 NotificationChannel(
-                    "jarvis_alarm", getString(R.string.channel_alarm),
+                    "jarvis_alarm",
+                    getString(R.string.channel_alarm),
                     NotificationManager.IMPORTANCE_HIGH,
                 )
             )
         }
         val fullScreen = PendingIntent.getActivity(
-            this, notificationId, intent,
+            this,
+            notificationId,
+            intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(this, "jarvis_alarm")

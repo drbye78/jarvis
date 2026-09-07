@@ -10,7 +10,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -70,7 +69,8 @@ class WireDtoTest {
         )
         val wire = request.toWire()
         val encoded = json.encodeToString(
-            com.jarvis.assistant.wire.WireChatRequest.serializer(), wire
+            com.jarvis.assistant.wire.WireChatRequest.serializer(),
+            wire
         )
         // max_tokens (not maxTokens), tools present, stream=true
         assertTrue(encoded.contains("\"max_tokens\""))

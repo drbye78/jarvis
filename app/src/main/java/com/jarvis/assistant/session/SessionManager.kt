@@ -3,30 +3,29 @@ package com.jarvis.assistant.session
 import com.jarvis.assistant.audio.AudioPipeline
 import com.jarvis.assistant.audio.aec.EnergyVad
 import com.jarvis.assistant.config.JarvisConfig
+import com.jarvis.assistant.contracts.BargeInPolicy
 import com.jarvis.assistant.contracts.Detection
 import com.jarvis.assistant.contracts.DetectorState
 import com.jarvis.assistant.contracts.WakeWordDetector
-import com.jarvis.assistant.contracts.BargeInPolicy
 import com.jarvis.assistant.contracts.gatedBy
+import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.llm.LlmClient
+import com.jarvis.assistant.model.AssistantState
+import com.jarvis.assistant.model.Message
 import com.jarvis.assistant.speech.asr.StreamingAsrClient
 import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
 import com.jarvis.assistant.tools.ToolExecutor
-import com.jarvis.assistant.data.ConversationManager
-import com.jarvis.assistant.model.Message
-import com.jarvis.assistant.model.AssistantState
-import java.io.IOException
-import com.jarvis.assistant.util.NetworkMonitor
 import com.jarvis.assistant.util.OnlineChecker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -232,26 +231,26 @@ class SessionManager(
     private val turnRunner = TurnRunner(
         audioPipeline, asrClient, llm, ttsClient, player, functionRouter,
         conversationManager, config,
-            // P3.2: turn-runner state events apply through the SAME guarded
-            // path as every other event (a direct stateMachine::onEvent here
-            // was the remaining race: a cancelled-but-still-draining turn
-            // could land PlaybackStarted AFTER a newer session's reset).
-            // validSeq is captured at EMISSION time: if a supersede bumped
-            // the seq before this call applies the event, the event is
-            // dropped instead of stomping the fresh session. Synchronous —
-            // no launch hop, so guard and transition stay atomic.
-            { event -> applyMachineEvent(event, validSeq = sessionSeq.get()) },
-            this::reportFailure, this::finish,
-            { _partialTranscript.value = it },
-            isCurrentSession = { it == sessionSeq.get() },
-            focus = focus,
-            systemPrompt = systemPrompt,
-            onActivity = { _turnActivity.value = it },
-            voiceSource = voiceSource,
-            // COGNITIVE_PLAN 1.6/1.7: per-turn memory gather + ingest hook.
-            cognitive = cognitive,
-            isFollowUpTurn = { currentTurnFromFollowUp },
-        )
+        // P3.2: turn-runner state events apply through the SAME guarded
+        // path as every other event (a direct stateMachine::onEvent here
+        // was the remaining race: a cancelled-but-still-draining turn
+        // could land PlaybackStarted AFTER a newer session's reset).
+        // validSeq is captured at EMISSION time: if a supersede bumped
+        // the seq before this call applies the event, the event is
+        // dropped instead of stomping the fresh session. Synchronous —
+        // no launch hop, so guard and transition stay atomic.
+        { event -> applyMachineEvent(event, validSeq = sessionSeq.get()) },
+        this::reportFailure, this::finish,
+        { _partialTranscript.value = it },
+        isCurrentSession = { it == sessionSeq.get() },
+        focus = focus,
+        systemPrompt = systemPrompt,
+        onActivity = { _turnActivity.value = it },
+        voiceSource = voiceSource,
+        // COGNITIVE_PLAN 1.6/1.7: per-turn memory gather + ingest hook.
+        cognitive = cognitive,
+        isFollowUpTurn = { currentTurnFromFollowUp },
+    )
 
     // @Volatile: registered once at construction, read from session
     // coroutines on other dispatchers.

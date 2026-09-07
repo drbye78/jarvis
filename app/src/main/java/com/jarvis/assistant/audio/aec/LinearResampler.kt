@@ -48,9 +48,9 @@ class LinearResampler(
         // Available absolute samples after this block: [0, n+bn) — with only
         // x(n-1) ("last") and the block itself (x(n..n+bn-1)) in memory.
         while (true) {
-            val i0 = (num / outRate).toInt()          // floor(pos)
-            val need = i0 + 1                          // lookahead sample index
-            if (need > n + bn - 1) break               // wait for more input
+            val i0 = (num / outRate).toInt() // floor(pos)
+            val need = i0 + 1 // lookahead sample index
+            if (need > n + bn - 1) break // wait for more input
             val frac = ((num % outRate).toDouble() / outRate).toFloat()
             val s0 = readSample(i0, n, bn, block)
             val s1 = readSample(need, n, bn, block)
@@ -71,8 +71,11 @@ class LinearResampler(
 
     /** Absolute sample i: the previous block's tail or this block. */
     private fun readSample(i: Int, blockStart: Long, blockLen: Int, block: ShortArray): Float =
-        if (i < blockStart.toInt()) last // only i == blockStart-1 is reachable
-        else block[i - blockStart.toInt()].toFloat()
+        if (i < blockStart.toInt()) {
+            last // only i == blockStart-1 is reachable
+        } else {
+            block[i - blockStart.toInt()].toFloat()
+        }
 
     private fun clamp16(v: Float): Short =
         v.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()

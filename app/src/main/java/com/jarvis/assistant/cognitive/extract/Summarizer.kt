@@ -11,10 +11,10 @@ import com.jarvis.assistant.llm.withLlmRetry
 import com.jarvis.assistant.model.ChatRequest
 import com.jarvis.assistant.model.Message
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.flow.StateFlow
 import timber.log.Timber
 
 /**

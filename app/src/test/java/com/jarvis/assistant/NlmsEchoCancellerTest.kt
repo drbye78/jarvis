@@ -7,7 +7,6 @@ import com.jarvis.assistant.audio.aec.NlmsEchoCanceller
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.PI
@@ -33,27 +32,6 @@ class NlmsEchoCancellerTest {
 
     private fun frameOf(gen: Lcg, n: Int = 320): ShortArray =
         ShortArray(n) { (gen.next() * 8000).toInt().toShort() }
-
-    private fun sineFrame(phase0: Double, amp: Double, n: Int = 320): Pair<ShortArray, Double> {
-        val out = ShortArray(n)
-        var p = phase0
-        for (i in 0 until n) {
-            out[i] = (sin(p) * amp).toInt().toShort()
-            p += 2 * PI * 300.0 / 16000.0
-        }
-        return out to p
-    }
-
-    /** FIR echo path applied at float scale. */
-    private fun echoOf(history: List<Short>, delay: Int, fir: DoubleArray, gain: Double): Double {
-        val idx = history.size - 1 - delay
-        var acc = 0.0
-        for (k in fir.indices) {
-            val hIdx = idx - k
-            if (hIdx >= 0) acc += fir[k] * history[hIdx]
-        }
-        return acc * gain
-    }
 
     @Test
     fun `delay aligner finds an injected bulk delay`() {
@@ -218,7 +196,11 @@ class NlmsEchoCancellerTest {
                     p += 2 * PI * 300.0 / 16000.0
                 }
                 mic[i] = d.toInt().coerceIn(-32768, 32767).toShort()
-                if (f >= frameStartNear) nearEndSignal.add((sin(p - 2 * PI * 300.0 / 16000.0) * 1500.0).toInt().toShort())
+                if (f >= frameStartNear) {
+                    nearEndSignal.add(
+                        (sin(p - 2 * PI * 300.0 / 16000.0) * 1500.0).toInt().toShort()
+                    )
+                }
             }
             sinePhase = p
             mics.add(mic)

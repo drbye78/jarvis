@@ -2,6 +2,8 @@ package com.jarvis.assistant.cognitive.behavior
 
 import com.jarvis.assistant.cognitive.CognitiveCoordinator
 import com.jarvis.assistant.cognitive.CognitiveDeps
+import com.jarvis.assistant.cognitive.data.CommandEventEntity
+import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 import com.jarvis.assistant.cognitive.extract.FakeBehaviorLogDao
 import com.jarvis.assistant.cognitive.extract.FakeCommandEventDao
 import com.jarvis.assistant.cognitive.extract.FakeExtractionQueueDao
@@ -9,17 +11,15 @@ import com.jarvis.assistant.cognitive.extract.FakeHabitRuleDao
 import com.jarvis.assistant.cognitive.extract.FakeMemoryMetaDao
 import com.jarvis.assistant.cognitive.extract.FakeMessageDao
 import com.jarvis.assistant.cognitive.extract.FakeUserFactDao
-import com.jarvis.assistant.cognitive.data.CommandEventEntity
-import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 import com.jarvis.assistant.tools.ToolStrings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -72,32 +72,35 @@ class CognitiveBehaviorTest {
         val lastInteraction = now - 60 * 60_000L // one hour ago — presence OK
 
         val coordinator = CognitiveCoordinator(
-        deps = CognitiveDeps(
-            factDao = factDao,
-            queueDao = queueDao,
-            metaDao = metaDao,
-            messageDao = messageDao,
-            llm = llm,
-            memoryEnabled = memoryEnabled,
-            autoExtractEnabled = autoExtract,
-            cloudEnabled = cloudEnabled,
-            sensitiveVisible = sensitive,
-            eventDao = eventDao,
-            ruleDao = ruleDao,
-            behaviorLogDao = logDao,
-            summaryDao = summaryDao,
-            behaviorEnabled = behaviorEnabled,
-            behaviorQuietStart = quietStart,
-            behaviorQuietEnd = quietEnd,
-            behaviorDailyQuota = quota,
-            sessionIdle = sessionIdle,
-            lastInteractionAt = { lastInteraction },
-            speaker = { text -> spoken.add(text); true },
-            habitEligibleTools = setOf("playMusic", "getWeather"),
-            modelId = { "test-model" },
-            hourOfDay = { hour },
-            strings = ToolStrings.Default,
-            nowMs = { now },
+            deps = CognitiveDeps(
+                factDao = factDao,
+                queueDao = queueDao,
+                metaDao = metaDao,
+                messageDao = messageDao,
+                llm = llm,
+                memoryEnabled = memoryEnabled,
+                autoExtractEnabled = autoExtract,
+                cloudEnabled = cloudEnabled,
+                sensitiveVisible = sensitive,
+                eventDao = eventDao,
+                ruleDao = ruleDao,
+                behaviorLogDao = logDao,
+                summaryDao = summaryDao,
+                behaviorEnabled = behaviorEnabled,
+                behaviorQuietStart = quietStart,
+                behaviorQuietEnd = quietEnd,
+                behaviorDailyQuota = quota,
+                sessionIdle = sessionIdle,
+                lastInteractionAt = { lastInteraction },
+                speaker = { text ->
+                    spoken.add(text)
+                    true
+                },
+                habitEligibleTools = setOf("playMusic", "getWeather"),
+                modelId = { "test-model" },
+                hourOfDay = { hour },
+                strings = ToolStrings.Default,
+                nowMs = { now },
             ),
             parentScope = scope,
         )

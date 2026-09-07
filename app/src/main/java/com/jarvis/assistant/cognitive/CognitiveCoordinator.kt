@@ -9,12 +9,6 @@ import com.jarvis.assistant.cognitive.data.ExtractionQueueEntity
 import com.jarvis.assistant.cognitive.data.FactEntityLinkEntity
 import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
-import com.jarvis.assistant.cognitive.extract.ExtractionContract
-import com.jarvis.assistant.cognitive.extract.ExtractionGate
-import com.jarvis.assistant.cognitive.extract.ExtractionQueueWorker
-import com.jarvis.assistant.cognitive.extract.FactNormalizer
-import com.jarvis.assistant.cognitive.extract.MemoryWriter
-import com.jarvis.assistant.cognitive.extract.Summarizer
 import com.jarvis.assistant.cognitive.embed.BenchmarkRunner
 import com.jarvis.assistant.cognitive.embed.EmbedderBenchmark
 import com.jarvis.assistant.cognitive.embed.EmbedderChoice
@@ -24,6 +18,12 @@ import com.jarvis.assistant.cognitive.embed.HybridRecall
 import com.jarvis.assistant.cognitive.embed.VectorBackfill
 import com.jarvis.assistant.cognitive.embed.VectorMath
 import com.jarvis.assistant.cognitive.entity.EntityIndex
+import com.jarvis.assistant.cognitive.extract.ExtractionContract
+import com.jarvis.assistant.cognitive.extract.ExtractionGate
+import com.jarvis.assistant.cognitive.extract.ExtractionQueueWorker
+import com.jarvis.assistant.cognitive.extract.FactNormalizer
+import com.jarvis.assistant.cognitive.extract.MemoryWriter
+import com.jarvis.assistant.cognitive.extract.Summarizer
 import com.jarvis.assistant.cognitive.maint.Maintenance
 import com.jarvis.assistant.cognitive.model.FactSnapshot
 import com.jarvis.assistant.cognitive.model.FactStatus
@@ -33,8 +33,8 @@ import com.jarvis.assistant.cognitive.prompt.MemorySectionData
 import com.jarvis.assistant.cognitive.prompt.MemorySectionRenderer
 import com.jarvis.assistant.cognitive.prompt.renderMemorySection
 import com.jarvis.assistant.cognitive.recall.FactRanker
-import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 import com.jarvis.assistant.cognitive.recall.ScoredFact
+import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 import com.jarvis.assistant.cognitive.tools.MemoryOutcome
 import com.jarvis.assistant.cognitive.tools.MemoryToolsFactory
 import com.jarvis.assistant.session.CognitiveTurnHooks
@@ -505,7 +505,8 @@ class CognitiveCoordinator(
                     val pending = try {
                         queueDao.pendingCount()
                     } catch (e: Exception) {
-                        Timber.w(e, "Cognitive: pendingCount failed"); 0
+                        Timber.w(e, "Cognitive: pendingCount failed")
+                        0
                     }
                     when {
                         pending == 0 ->
@@ -852,7 +853,8 @@ class CognitiveCoordinator(
         val rules = try {
             ruleDao.candidateRules()
         } catch (e: Exception) {
-            Timber.w(e, "Cognitive: rule query failed"); return
+            Timber.w(e, "Cognitive: rule query failed")
+            return
         }
         if (rules.isEmpty()) return
 
@@ -1286,7 +1288,13 @@ class CognitiveCoordinator(
 
         /** Unambiguous refusal heads (utterance starts with one of these). */
         private val REJECT_HEAD_TOKENS = setOf(
-            "нет", "не", "no", "неа", "стоп", "отстань", "не",
+            "нет",
+            "не",
+            "no",
+            "неа",
+            "стоп",
+            "отстань",
+            "не",
         )
 
         /** Unambiguous refusal phrases (matched anywhere in a short reply). */

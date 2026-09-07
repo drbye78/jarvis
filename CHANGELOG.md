@@ -6,6 +6,13 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-09
+
+REMEDIATION_PLAN Phases 0–5: privacy hardening, doc-truth pass, failure-lane
+test suites, local-only live-service tier, correctness landmines, cognitive
+eval completion, formatting pass. See the entries below (released as 0.2.1;
+in-development pre-1.0 line).
+
 ### Added — REMEDIATION_PLAN Phase 4: extraction eval completed to the full 40-fixture set (§10.1)
 - Authored the remaining 26 RU dialogue fixtures (015–040): explicit remember,
   self-facts, third parties (subject ≠ user), corrections, negations, noise

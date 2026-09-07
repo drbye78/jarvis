@@ -139,6 +139,6 @@ class EnergyVad(
 
     companion object {
         private const val FLOOR_ATTACK_SLOTS = 200.0 // ~4 s to track rising noise
-        private const val MIN_FLOOR = 40.0            // int16 RMS quantum
+        private const val MIN_FLOOR = 40.0 // int16 RMS quantum
     }
 }

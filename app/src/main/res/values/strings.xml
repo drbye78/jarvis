@@ -73,6 +73,7 @@
     <string name="sensitivity_value">Чувствительность: %1$.2f</string>
     <string name="apply">Применить и перезапустить</string>
     <string name="settings_applied">Настройки применены, сервис перезапущен</string>
+    <string name="settings_sherpa_keyword_ok">✓ %1$s</string>
     <string name="error_base_url">Укажите Base URL</string>
     <string name="error_api_key">Укажите API-ключ</string>
 

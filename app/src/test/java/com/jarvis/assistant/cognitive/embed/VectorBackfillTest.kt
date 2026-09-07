@@ -2,13 +2,13 @@ package com.jarvis.assistant.cognitive.embed
 
 import com.jarvis.assistant.cognitive.data.FactVectorEntity
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
+import com.jarvis.assistant.cognitive.data.UserFactEntity
 import com.jarvis.assistant.cognitive.extract.FakeFactVectorDao
 import com.jarvis.assistant.cognitive.extract.FakeMemoryMetaDao
 import com.jarvis.assistant.cognitive.extract.FakeUserFactDao
 import com.jarvis.assistant.cognitive.model.FactCategory
 import com.jarvis.assistant.cognitive.model.FactOrigin
 import com.jarvis.assistant.cognitive.model.FactStatus
-import com.jarvis.assistant.cognitive.data.UserFactEntity
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -82,7 +82,9 @@ class VectorBackfillTest {
         val vectorDao = FakeFactVectorDao()
         val metaDao = FakeMemoryMetaDao()
         val backfill = VectorBackfill(
-            factDao, vectorDao, metaDao,
+            factDao,
+            vectorDao,
+            metaDao,
             cloudEnabled = { false },
             inTransaction = { it() },
         )
@@ -102,7 +104,9 @@ class VectorBackfillTest {
         factDao.insert(fact("a", "люблю джаз"))
         val vectorDao = FakeFactVectorDao()
         val backfill = VectorBackfill(
-            factDao, vectorDao, FakeMemoryMetaDao(),
+            factDao,
+            vectorDao,
+            FakeMemoryMetaDao(),
             cloudEnabled = { false },
             inTransaction = { it() },
         )
@@ -115,7 +119,9 @@ class VectorBackfillTest {
     @Test
     fun `cloud engine refuses to run while egress is disabled`() = runBlocking {
         val backfill = VectorBackfill(
-            FakeUserFactDao(), FakeFactVectorDao(), FakeMemoryMetaDao(),
+            FakeUserFactDao(),
+            FakeFactVectorDao(),
+            FakeMemoryMetaDao(),
             cloudEnabled = { false },
             inTransaction = { it() },
         )

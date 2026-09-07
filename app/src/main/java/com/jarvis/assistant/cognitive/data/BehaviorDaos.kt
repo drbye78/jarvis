@@ -50,8 +50,10 @@ interface HabitRuleDao {
     @Update
     suspend fun update(rule: HabitRuleEntity)
 
-    @Query("SELECT * FROM habit_rules WHERE tool = :tool AND argsFingerprint = :fingerprint " +
-        "AND hourBucket IS :hourBucket AND kind = :kind LIMIT 1")
+    @Query(
+        "SELECT * FROM habit_rules WHERE tool = :tool AND argsFingerprint = :fingerprint " +
+            "AND hourBucket IS :hourBucket AND kind = :kind LIMIT 1"
+    )
     suspend fun byKey(
         tool: String,
         fingerprint: String,
@@ -90,8 +92,10 @@ interface BehaviorLogDao {
     suspend fun latestForRule(ruleId: Long): BehaviorLogEntity?
 
     /** §8.2 reject detection: was a suggestion FIRED within [since]? */
-    @Query("SELECT * FROM behavior_log WHERE decision = 'FIRED' AND at >= :since " +
-        "ORDER BY at DESC, id DESC LIMIT 1")
+    @Query(
+        "SELECT * FROM behavior_log WHERE decision = 'FIRED' AND at >= :since " +
+            "ORDER BY at DESC, id DESC LIMIT 1"
+    )
     suspend fun latestFiredSince(since: Long): BehaviorLogEntity?
 
     /** DEFERRED throttle: ≥1 row for the rule since [since]? */
@@ -116,13 +120,17 @@ interface SessionSummaryDao {
     suspend fun latestDaily(): SessionSummaryEntity?
 
     /** SESSION rows the DAILY digest does not cover yet (§7.1 SummarySection). */
-    @Query("SELECT * FROM session_summaries WHERE kind = 'SESSION' AND toAt > :fromAt " +
-        "ORDER BY toAt ASC, id ASC")
+    @Query(
+        "SELECT * FROM session_summaries WHERE kind = 'SESSION' AND toAt > :fromAt " +
+            "ORDER BY toAt ASC, id ASC"
+    )
     suspend fun sessionsAfter(fromAt: Long): List<SessionSummaryEntity>
 
     /** DAILY digest input: SESSION rows created since this time. */
-    @Query("SELECT * FROM session_summaries WHERE kind = 'SESSION' AND toAt >= :fromAt " +
-        "ORDER BY toAt ASC, id ASC")
+    @Query(
+        "SELECT * FROM session_summaries WHERE kind = 'SESSION' AND toAt >= :fromAt " +
+            "ORDER BY toAt ASC, id ASC"
+    )
     suspend fun sessionsSince(fromAt: Long): List<SessionSummaryEntity>
 
     /** The SESSION cursor: summaries of messages up to this id already exist. */
@@ -158,7 +166,12 @@ object NoopBehaviorDaos : CommandEventDao, HabitRuleDao, BehaviorLogDao, Session
 
     override suspend fun insert(rule: HabitRuleEntity): Long = 0
     override suspend fun update(rule: HabitRuleEntity) = Unit
-    override suspend fun byKey(tool: String, fingerprint: String, hourBucket: Int?, kind: String): HabitRuleEntity? = null
+    override suspend fun byKey(
+        tool: String,
+        fingerprint: String,
+        hourBucket: Int?,
+        kind: String
+    ): HabitRuleEntity? = null
     override suspend fun byFingerprint(tool: String, fingerprint: String): List<HabitRuleEntity> = emptyList()
     override suspend fun all(): List<HabitRuleEntity> = emptyList()
     override suspend fun candidateRules(): List<HabitRuleEntity> = emptyList()

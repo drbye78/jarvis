@@ -55,6 +55,7 @@ data class NowPlaying(
         const val STATE_BUFFERING = 6
         const val STATE_PLAYING = 3
         const val STATE_PAUSED = 2
+
         // Framework STATE_STOPPED is 1 — value 4 is STATE_FAST_FORWARDING.
         // The wrong mirror made MusicDiag log a stopped session as "state1"
         // and a fast-forwarding one as "STOPPED".

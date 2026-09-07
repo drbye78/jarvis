@@ -1,8 +1,8 @@
 package com.jarvis.assistant.di
 
 import android.content.Context
-import com.jarvis.assistant.audio.AudioPipeline
 import androidx.room.withTransaction
+import com.jarvis.assistant.audio.AudioPipeline
 import com.jarvis.assistant.audio.AudioRecordSource
 import com.jarvis.assistant.audio.HybridWakeWordDetector
 import com.jarvis.assistant.audio.StreamingAudioTrackPlayer
@@ -12,10 +12,10 @@ import com.jarvis.assistant.audio.aec.LinearResampler
 import com.jarvis.assistant.audio.aec.NlmsEchoCanceller
 import com.jarvis.assistant.audio.aec.NoopEchoCanceller
 import com.jarvis.assistant.audio.aec.PlaybackCaptureFarEndSource
-import com.jarvis.assistant.contracts.WakeWordDetector
-import com.jarvis.assistant.contracts.WakeWordRequest
 import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.config.ProviderSettings
+import com.jarvis.assistant.contracts.WakeWordDetector
+import com.jarvis.assistant.contracts.WakeWordRequest
 import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.llm.GigaChatClient
@@ -32,8 +32,8 @@ import com.jarvis.assistant.tools.FunctionRouter
 import com.jarvis.assistant.util.NetworkMonitor
 import io.grpc.ManagedChannel
 import io.grpc.okhttp.OkHttpChannelBuilder
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -228,7 +228,12 @@ class AppGraph(
     val voiceSource: () -> String = { appPrefs.ttsVoice.ifBlank { config.ttsVoice } }
 
     val speechFeedback = com.jarvis.assistant.audio.TtsSpeechFeedback(
-        scope, ttsClient, player, voiceSource, audioFocus, appContext,
+        scope,
+        ttsClient,
+        player,
+        voiceSource,
+        audioFocus,
+        appContext,
     )
 
     val functionRouter = FunctionRouter(
@@ -279,46 +284,46 @@ class AppGraph(
         com.jarvis.assistant.cognitive.CognitiveCoordinator(
             deps = com.jarvis.assistant.cognitive.CognitiveDeps(
 
-            factDao = database.userFactDao(),
-            queueDao = database.extractionQueueDao(),
-            metaDao = database.memoryMetaDao(),
-            messageDao = database.messageDao(),
-            llm = llmClient,
-            memoryEnabled = prefsFlow.memoryEnabled,
-            autoExtractEnabled = prefsFlow.memoryAutoExtract,
-            cloudEnabled = prefsFlow.memoryCloudEnabled,
-            sensitiveVisible = prefsFlow.memorySensitiveVisible,
-            // ---- COGNITIVE_PLAN Phase 2 (§8): behaviour layer ----
-            eventDao = database.commandEventDao(),
-            ruleDao = database.habitRuleDao(),
-            behaviorLogDao = database.behaviorLogDao(),
-            summaryDao = database.sessionSummaryDao(),
-            // ---- COGNITIVE_PLAN Phase 3 (§11): semantic recall ----
-            vectorDao = database.factVectorDao(),
-            entityDao = database.entityDao(),
-            embedderChoice = prefsFlow.memoryEmbedder,
-            cloudEmbedder = com.jarvis.assistant.cognitive.embed.GigaChatEmbedder(
-                embeddingsEndpoint = com.jarvis.assistant.cognitive.embed.GigaChatEmbedder
-                    .endpointFor(config.gigaChatEndpoint),
-                postJson = com.jarvis.assistant.cognitive.embed.GigaChatEmbedder
-                    .gigaChatHttpTransport(httpClient) { tokenManager.getGigaChatToken() },
-            ),
-            // §12.4-1: default OFF; the Settings card flips the pref and the
-            // flow pushes it here live (no restart).
-            behaviorEnabled = prefsFlow.behaviorEnabled,
-            behaviorQuietStart = prefsFlow.behaviorQuietStart,
-            behaviorQuietEnd = prefsFlow.behaviorQuietEnd,
-            behaviorDailyQuota = prefsFlow.behaviorDailyQuota,
-            deviceSignals = com.jarvis.assistant.cognitive.behavior.AndroidDeviceSignals(appContext),
-            sessionIdle = sessionIdleFlow,
-            lastInteractionAt = { database.messageDao().lastMessageAt() },
-            speaker = com.jarvis.assistant.cognitive.behavior.ProactiveSpeaker { text ->
-                sessionManager.speakProactively(text)
-            },
-            habitEligibleTools = config.habitEligibleTools,
-            modelId = { provider.openAiModel },
-            strings = com.jarvis.assistant.tools.AndroidToolStrings(appContext),
-            inTransaction = { block -> database.withTransaction { block() } },
+                factDao = database.userFactDao(),
+                queueDao = database.extractionQueueDao(),
+                metaDao = database.memoryMetaDao(),
+                messageDao = database.messageDao(),
+                llm = llmClient,
+                memoryEnabled = prefsFlow.memoryEnabled,
+                autoExtractEnabled = prefsFlow.memoryAutoExtract,
+                cloudEnabled = prefsFlow.memoryCloudEnabled,
+                sensitiveVisible = prefsFlow.memorySensitiveVisible,
+                // ---- COGNITIVE_PLAN Phase 2 (§8): behaviour layer ----
+                eventDao = database.commandEventDao(),
+                ruleDao = database.habitRuleDao(),
+                behaviorLogDao = database.behaviorLogDao(),
+                summaryDao = database.sessionSummaryDao(),
+                // ---- COGNITIVE_PLAN Phase 3 (§11): semantic recall ----
+                vectorDao = database.factVectorDao(),
+                entityDao = database.entityDao(),
+                embedderChoice = prefsFlow.memoryEmbedder,
+                cloudEmbedder = com.jarvis.assistant.cognitive.embed.GigaChatEmbedder(
+                    embeddingsEndpoint = com.jarvis.assistant.cognitive.embed.GigaChatEmbedder
+                        .endpointFor(config.gigaChatEndpoint),
+                    postJson = com.jarvis.assistant.cognitive.embed.GigaChatEmbedder
+                        .gigaChatHttpTransport(httpClient) { tokenManager.getGigaChatToken() },
+                ),
+                // §12.4-1: default OFF; the Settings card flips the pref and the
+                // flow pushes it here live (no restart).
+                behaviorEnabled = prefsFlow.behaviorEnabled,
+                behaviorQuietStart = prefsFlow.behaviorQuietStart,
+                behaviorQuietEnd = prefsFlow.behaviorQuietEnd,
+                behaviorDailyQuota = prefsFlow.behaviorDailyQuota,
+                deviceSignals = com.jarvis.assistant.cognitive.behavior.AndroidDeviceSignals(appContext),
+                sessionIdle = sessionIdleFlow,
+                lastInteractionAt = { database.messageDao().lastMessageAt() },
+                speaker = com.jarvis.assistant.cognitive.behavior.ProactiveSpeaker { text ->
+                    sessionManager.speakProactively(text)
+                },
+                habitEligibleTools = config.habitEligibleTools,
+                modelId = { provider.openAiModel },
+                strings = com.jarvis.assistant.tools.AndroidToolStrings(appContext),
+                inTransaction = { block -> database.withTransaction { block() } },
             ),
             parentScope = scope,
         )
@@ -478,7 +483,7 @@ class AppGraph(
                 provider = provider,
             ),
             generatedKeywordsContent =
-                com.jarvis.assistant.audio.SherpaKeywords.toKeywordsFileContent(entries),
+            com.jarvis.assistant.audio.SherpaKeywords.toKeywordsFileContent(entries),
             workDir = if (usingUserModel) {
                 // Never write into a user-supplied directory.
                 java.io.File(appContext.filesDir, "sherpa_generated")

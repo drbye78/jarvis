@@ -65,7 +65,15 @@ interface EntityDao {
     ): Long {
         val existing = byNameNormalized(nameNormalized)
         return if (existing == null) {
-            insert(EntityRefEntity(name = name, nameNormalized = nameNormalized, kind = kind, firstSeenAt = now, lastSeenAt = now))
+            insert(
+                EntityRefEntity(
+                    name = name,
+                    nameNormalized = nameNormalized,
+                    kind = kind,
+                    firstSeenAt = now,
+                    lastSeenAt = now
+                )
+            )
         } else {
             update(
                 existing.copy(

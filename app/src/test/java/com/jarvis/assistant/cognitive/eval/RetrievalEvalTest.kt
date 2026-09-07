@@ -4,9 +4,9 @@ import com.jarvis.assistant.cognitive.embed.EmbedderBenchmark
 import com.jarvis.assistant.cognitive.embed.EmbeddingEngine
 import com.jarvis.assistant.cognitive.embed.LexicalEmbedder
 import com.jarvis.assistant.cognitive.embed.RetrievalGate
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

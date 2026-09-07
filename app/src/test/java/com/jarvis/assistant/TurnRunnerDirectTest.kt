@@ -1,6 +1,7 @@
 package com.jarvis.assistant
 
 import com.jarvis.assistant.audio.AudioPipeline
+import com.jarvis.assistant.cognitive.extract.FakeMessageDao
 import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.llm.LlmClient
@@ -15,7 +16,6 @@ import com.jarvis.assistant.session.SpeechPhrases
 import com.jarvis.assistant.session.TurnRunner
 import com.jarvis.assistant.speech.tts.TtsPlayer
 import com.jarvis.assistant.tools.ToolResult
-import com.jarvis.assistant.cognitive.extract.FakeMessageDao
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -76,7 +76,7 @@ private class AlwaysFailingLlm(private val error: Exception) : LlmClient {
 /** Tools whose execution always fails the turn (non-cancellation exception). */
 private class ExplodingTools : FakeTools() {
     override suspend fun executeResult(call: FunctionCall): ToolResult {
-        throw RuntimeException("tool exploded")
+        error("tool exploded")
     }
 }
 
@@ -134,7 +134,10 @@ private class TurnRunnerHarness(
         // terminal) and LlmDone (finish). Rejected transitions would throw
         // inside onEvent? No — the machine logs and keeps state, so the
         // explicit state assertions below are the legality check.
-        onStateEvent = { events.add(it); stateMachine.onEvent(it) },
+        onStateEvent = {
+            events.add(it)
+            stateMachine.onEvent(it)
+        },
         reportFailure = { id, msg ->
             failures.add(id to msg)
             stateMachine.onEvent(SessionEvent.ErrorOccurred)
@@ -339,7 +342,10 @@ class TurnRunnerDirectTest {
             awaitCond { h.events.contains(SessionEvent.LlmStarted) }
 
             job.cancel() // what stopActiveTurn does to the session job
-            assertTrue("CancellationException must propagate", outcome.await() is kotlinx.coroutines.CancellationException)
+            assertTrue(
+                "CancellationException must propagate",
+                outcome.await() is kotlinx.coroutines.CancellationException
+            )
 
             // The runner ran its cancellation cleanup BEFORE rethrowing.
             assertEquals(listOf(1 to false), h.finished.toList())

@@ -41,20 +41,20 @@ class MemoryToolsTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val coordinator = CognitiveCoordinator(
             deps = CognitiveDeps(
-            factDao = factDao,
-            queueDao = FakeExtractionQueueDao(),
-            metaDao = FakeMemoryMetaDao(),
-            llm = object : LlmClient {
-                override fun chatStream(request: ChatRequest): Flow<LlmChunk> =
-                    throw AssertionError("tools must never call the LLM")
-            },
-            messageDao = FakeMessageDao(),
-            memoryEnabled = memoryEnabled,
-            autoExtractEnabled = autoExtract,
-            cloudEnabled = cloudEnabled,
-            sensitiveVisible = sensitiveVisible,
-            strings = ToolStrings.Default,
-            nowMs = { 1_000L },
+                factDao = factDao,
+                queueDao = FakeExtractionQueueDao(),
+                metaDao = FakeMemoryMetaDao(),
+                llm = object : LlmClient {
+                    override fun chatStream(request: ChatRequest): Flow<LlmChunk> =
+                        throw AssertionError("tools must never call the LLM")
+                },
+                messageDao = FakeMessageDao(),
+                memoryEnabled = memoryEnabled,
+                autoExtractEnabled = autoExtract,
+                cloudEnabled = cloudEnabled,
+                sensitiveVisible = sensitiveVisible,
+                strings = ToolStrings.Default,
+                nowMs = { 1_000L },
             ),
             parentScope = scope,
         )

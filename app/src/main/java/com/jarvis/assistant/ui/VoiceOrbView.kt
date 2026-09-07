@@ -121,10 +121,14 @@ class VoiceOrbView @JvmOverloads constructor(
     }
 
     private fun stopAnimators() {
-        breatheAnimator?.cancel(); breatheAnimator = null
-        rippleAnimator?.cancel(); rippleAnimator = null
-        rotationAnimator?.cancel(); rotationAnimator = null
-        pulseAnimator?.cancel(); pulseAnimator = null
+        breatheAnimator?.cancel()
+        breatheAnimator = null
+        rippleAnimator?.cancel()
+        rippleAnimator = null
+        rotationAnimator?.cancel()
+        rotationAnimator = null
+        pulseAnimator?.cancel()
+        pulseAnimator = null
     }
 
     private inline fun floatAnimator(durationMs: Long, crossinline update: (Float) -> Unit) =
@@ -226,8 +230,14 @@ class VoiceOrbView @JvmOverloads constructor(
         for (i in 0..2) {
             val start = rotationDegrees + i * 120f
             canvas.drawArc(
-                cx - ring, cy - ring, cx + ring, cy + ring,
-                start, 55f, false, ringPaint,
+                cx - ring,
+                cy - ring,
+                cx + ring,
+                cy + ring,
+                start,
+                55f,
+                false,
+                ringPaint,
             )
         }
     }
@@ -269,8 +279,14 @@ class VoiceOrbView @JvmOverloads constructor(
         if (sweep > 1f) {
             ringPaint.color = withAlpha(speakingColor, 0.9f)
             canvas.drawArc(
-                cx - ring, cy - ring, cx + ring, cy + ring,
-                -90f, sweep, false, ringPaint,
+                cx - ring,
+                cy - ring,
+                cx + ring,
+                cy + ring,
+                -90f,
+                sweep,
+                false,
+                ringPaint,
             )
         }
     }

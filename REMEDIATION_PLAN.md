@@ -130,6 +130,14 @@ Follow-ups recorded from P0 execution:
 
 ## Phase 5 — Debt & hygiene (parallelizable, fixer-friendly)
 
+**Status: ✅ COMPLETE (2026-09).**
+- P5.1: 5 of 6 disabled formatting rules re-enabled with in-place ktlint auto-correct (109 files reformatted, converged over repeated detekt passes, all findings resolved). `formatting.MaximumLineLength` deliberately stays disabled: `style.MaxLineLength` at 140 owns line length and the formatting twin's 120 default ignores per-config override. `detektBaseline` regenerated — stale absorbed entries (incl. the dead test helpers) removed; `maxIssues: 0` holds.
+- P5.2: dead code removed (`BYPASS_SILENCE_MS` + KDoc reference, 4 unused test helpers).
+- P5.3: `settings_sherpa_keyword_ok` resource (both locales) replaces the hardcoded "✓ $keyword"; `StubCallbacks` logs every pre-init invocation; wake-word failure-reason localization remains tracked as the P5.3 addendum (needs the `DetectorState`/`SpeechPhrases` seam change).
+- P5.4: version `0.2.1` (versionCode 5) + CHANGELOG release section.
+- P5.5: media-browser search query demoted to DEBUG (was INFO → release file log).
+- P5.6: `SberStreamingAsr` typed-failure extraction now accepts `StatusRuntimeException` (the async stub's actual type).
+
 | ID | Action | Size |
 |----|--------|------|
 | P5.1 | Dedicated formatting pass: re-enable the 7 disabled detekt formatting rules; shrink 179-entry baseline in batches; `maxIssues: 0` holds | M |

@@ -72,6 +72,7 @@
     <string name="sensitivity_value">Sensitivity: %1$.2f</string>
     <string name="apply">Apply and restart</string>
     <string name="settings_applied">Settings applied, service restarted</string>
+    <string name="settings_sherpa_keyword_ok">✓ %1$s</string>
     <string name="error_base_url">Enter a Base URL</string>
     <string name="error_api_key">Enter an API key</string>
 

@@ -3,9 +3,9 @@ package com.jarvis.assistant
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.data.MessageDao
 import com.jarvis.assistant.data.MessageEntity
+import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.model.Message
 import com.jarvis.assistant.model.ToolCall
-import com.jarvis.assistant.model.FunctionCall
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -63,9 +63,6 @@ class FakeMessageDao : MessageDao {
 
 class ConversationManagerTest {
 
-    private fun toolCallJson(id: String) =
-        """[{"id":"$id","type":"function","function":{"name":"setAlarm","arguments":"{}"}}]"""
-
     @Test
     fun `ordering is by id not timestamp`() = runBlocking {
         val dao = FakeMessageDao()
@@ -85,7 +82,8 @@ class ConversationManagerTest {
         cm.addMessage(Message(role = "user", content = "u1"))
         cm.addMessage(
             Message(
-                role = "assistant", content = "a1",
+                role = "assistant",
+                content = "a1",
                 toolCalls = listOf(ToolCall("t1", function = FunctionCall("setAlarm", "{}"))),
             )
         )
@@ -93,7 +91,8 @@ class ConversationManagerTest {
         cm.addMessage(Message(role = "user", content = "u2"))
         cm.addMessage(
             Message(
-                role = "assistant", content = "a2",
+                role = "assistant",
+                content = "a2",
                 toolCalls = listOf(ToolCall("t2", function = FunctionCall("getWeather", "{}"))),
             )
         )
@@ -147,7 +146,8 @@ class ConversationManagerTest {
         cm.addMessage(Message(role = "user", content = "u1"))
         cm.addMessage(
             Message(
-                role = "assistant", content = "partial answer",
+                role = "assistant",
+                content = "partial answer",
                 toolCalls = listOf(ToolCall("tX", function = FunctionCall("setAlarm", "{}"))),
             )
         )
@@ -202,7 +202,8 @@ class ConversationManagerTest {
         val dangling = ToolCall("d1", function = FunctionCall("setAlarm", "{}"))
         cm.addAssistantWithToolResults(
             assistant = Message(
-                role = "assistant", content = "",
+                role = "assistant",
+                content = "",
                 toolCalls = listOf(paired, dangling),
             ),
             results = listOf(Message(role = "tool", content = "ok", toolCallId = "p1")),

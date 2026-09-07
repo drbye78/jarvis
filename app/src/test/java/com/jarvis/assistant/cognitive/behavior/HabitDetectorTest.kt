@@ -20,7 +20,14 @@ class HabitDetectorTest {
     private val eligible = setOf("playMusic", "getWeather", "getNowPlaying")
 
     private fun event(tool: String, fingerprint: String, at: Long, ok: Boolean = true) =
-        CommandEventEntity(at = at, tool = tool, argsFingerprint = fingerprint, ok = ok, latencyMs = 100, origin = "VOICE")
+        CommandEventEntity(
+            at = at,
+            tool = tool,
+            argsFingerprint = fingerprint,
+            ok = ok,
+            latencyMs = 100,
+            origin = "VOICE"
+        )
 
     private fun day7At20() = 6L * 24 * 60 * 60_000L + 20L * 60 * 60_000L
 

@@ -1,12 +1,12 @@
 package com.jarvis.assistant.tools
 
 import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.jarvis.assistant.R
@@ -73,6 +73,7 @@ object ExactAlarmPolicy {
     sealed interface TimerSchedule {
         /** Permission available (declared+granted): exact, Doze-proof alarm path. */
         data object ExactAllowWhileIdle : TimerSchedule
+
         /**
          * DENIED (API 31+, revoked in Settings) or unusable: honest inexact
          * degradation — a bounded-latency `setWindow` window instead of the
@@ -90,8 +91,11 @@ object ExactAlarmPolicy {
      * the manifest-declared normal permission is granted there, so exact.
      */
     fun timerSchedule(sdkInt: Int, canScheduleExactAlarms: Boolean?): TimerSchedule =
-        if (sdkInt >= 31 && canScheduleExactAlarms != true) TimerSchedule.Inexact
-        else TimerSchedule.ExactAllowWhileIdle
+        if (sdkInt >= 31 && canScheduleExactAlarms != true) {
+            TimerSchedule.Inexact
+        } else {
+            TimerSchedule.ExactAllowWhileIdle
+        }
 
     /** Separate low-importance lane: never competes with the alarm channel. */
     const val DEGRADE_CHANNEL_ID = "jarvis_alarm_hint"
@@ -125,21 +129,27 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
     private fun fireIntent(id: Int, kind: String, label: String): Intent =
         Intent(context, AlarmReceiver::class.java).apply {
             action =
-                if (kind == ScheduledAlertEntity.KIND_TIMER) AlarmReceiver.ACTION_TIMER_FIRED
-                else AlarmReceiver.ACTION_ALARM_FIRED
+                if (kind == ScheduledAlertEntity.KIND_TIMER) {
+                    AlarmReceiver.ACTION_TIMER_FIRED
+                } else {
+                    AlarmReceiver.ACTION_ALARM_FIRED
+                }
             putExtra(AlarmReceiver.EXTRA_ALERT_ID, id)
             putExtra(AlarmReceiver.EXTRA_LABEL, label)
         }
 
     private fun fireOperation(id: Int, kind: String, label: String): PendingIntent =
         PendingIntent.getBroadcast(
-            context, id, fireIntent(id, kind, label),
+            context,
+            id,
+            fireIntent(id, kind, label),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
     private fun showOperation(id: Int, kind: String, label: String): PendingIntent =
         PendingIntent.getActivity(
-            context, id,
+            context,
+            id,
             Intent(context, com.jarvis.assistant.service.AlarmRingingActivity::class.java).apply {
                 action = fireIntent(id, kind, label).action
                 putExtra(AlarmReceiver.EXTRA_ALERT_ID, id)
@@ -491,7 +501,9 @@ class AlarmReceiver : BroadcastReceiver() {
             // Request code = the alert row id, so FLAG_UPDATE_CURRENT updates
             // only THIS alert's pending intent — not every concurrent alarm's.
             val fullScreen = PendingIntent.getActivity(
-                context, notificationId, activityIntent,
+                context,
+                notificationId,
+                activityIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             val notification = NotificationCompat.Builder(context, "jarvis_alarm")

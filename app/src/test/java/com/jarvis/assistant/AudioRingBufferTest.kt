@@ -116,7 +116,8 @@ class AudioRingBufferTest {
     @Test
     fun `eviction counter increments when buffer overflows`() {
         val ring = AudioRingBuffer(capacity = 2)
-        ring.add(frame(0)); ring.add(frame(1))
+        ring.add(frame(0))
+        ring.add(frame(1))
         assertEquals("no evictions while under capacity", 0L, ring.evictionCount)
         ring.add(frame(2))
         assertEquals(1L, ring.evictionCount)

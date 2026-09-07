@@ -8,7 +8,6 @@ import com.jarvis.assistant.contracts.DetectorState
 import com.jarvis.assistant.contracts.WakeWordDetector
 import com.jarvis.assistant.contracts.WakeWordRequest
 import com.jarvis.assistant.data.ConversationManager
-import com.jarvis.assistant.data.MessageEntity
 import com.jarvis.assistant.llm.LlmClient
 import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.model.ChatRequest
@@ -23,10 +22,9 @@ import com.jarvis.assistant.speech.asr.AsrStream
 import com.jarvis.assistant.speech.asr.StreamingAsrClient
 import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
-import com.jarvis.assistant.tools.ToolResult
 import com.jarvis.assistant.tools.ToolExecutor
+import com.jarvis.assistant.tools.ToolResult
 import com.jarvis.assistant.util.OnlineChecker
-import com.jarvis.assistant.wire.WireToolCall
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -42,9 +40,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.yield
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
@@ -781,10 +776,10 @@ class SessionManagerTest {
     @Test
     fun `drain finishes under one overall deadline when sentences hang`() = runBlocking {
         val config = JarvisConfig(
-            
+
             maxUtteranceMs = Long.MAX_VALUE,
             ttsSentenceTimeoutMs = 30_000, // sentence timeout must NOT rescue the drain
-            ttsDrainTimeoutMs = 600,       // ONE overall budget for all children
+            ttsDrainTimeoutMs = 600, // ONE overall budget for all children
             llmTimeoutMs = 10_000,
         )
         val h = Harness(
@@ -819,12 +814,16 @@ class SessionManagerTest {
     @Test
     fun `tts synthesis prefetch is bounded to two concurrent sentences`() = runBlocking {
         val h = Harness(
-            ScriptedLlm(mutableListOf(listOf(
-                LlmChunk.Text("one."),
-                LlmChunk.Text("two."),
-                LlmChunk.Text("three."),
-                LlmChunk.Done,
-            ))),
+            ScriptedLlm(
+                mutableListOf(
+                    listOf(
+                        LlmChunk.Text("one."),
+                        LlmChunk.Text("two."),
+                        LlmChunk.Text("three."),
+                        LlmChunk.Done,
+                    )
+                )
+            ),
             playerOverride = GatedPlayer(),
         )
         val gated = h.player as GatedPlayer
@@ -929,11 +928,6 @@ class SessionManagerTest {
         }
     }
 
-    private fun persistedToolCallIds(entity: MessageEntity): List<String> =
-        Json { ignoreUnknownKeys = true }
-            .decodeFromString(ListSerializer(WireToolCall.serializer()), entity.toolCallsJson!!)
-            .map { it.id }
-
     // ------------------------------------------------------------------
     // G4: transient LLM failures are retried (zero output only)
     // ------------------------------------------------------------------
@@ -954,7 +948,9 @@ class SessionManagerTest {
             assertEquals(2, flaky.attempts.get())
             // No error voice: the turn completed normally.
             assertEquals(null, error)
-            assertTrue(h.conversation.getHistoryForLLM().any { it.role == "assistant" && it.content.contains("Готово") })
+            assertTrue(
+                h.conversation.getHistoryForLLM().any { it.role == "assistant" && it.content.contains("Готово") }
+            )
         } finally {
             h.shutdown()
         }
@@ -1082,7 +1078,7 @@ class SessionManagerTest {
             withTimeout(5_000) {
                 while (
                     seen.none { it is com.jarvis.assistant.session.TurnActivity.ToolRunning }
-                ) delay(10)
+                    ) delay(10)
             }
             withTimeout(5_000) {
                 while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
@@ -1152,7 +1148,9 @@ class SessionManagerTest {
         try {
             h.runTurn("Привет, Джарвис")
             withTimeout(5_000) {
-                while ((h.tts as FakeTtsClient).spoken.isEmpty() && h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
+                while ((h.tts as FakeTtsClient).spoken.isEmpty() && h.stateMachine.currentState() != AssistantState.IDLE) delay(
+                    20
+                )
             }
             assertEquals(listOf("Anton"), (h.tts as FakeTtsClient).voices)
         } finally {
@@ -1400,7 +1398,11 @@ class SessionManagerVoiceStopToggleTest {
 
             h.wake.detections.emit(Detection.StopPhrase("stop"))
             delay(200)
-            assertEquals("disabled from the start — never cancels", AssistantState.THINKING, h.stateMachine.currentState())
+            assertEquals(
+                "disabled from the start — never cancels",
+                AssistantState.THINKING,
+                h.stateMachine.currentState()
+            )
 
             voiceStop = true
             h.wake.detections.emit(Detection.StopPhrase("stop"))

@@ -58,10 +58,12 @@ class SearchTokenizerTest {
         val index = SearchTokenizer.indexText("user", source)
         val indexTokens = index.split(' ')
         val query = SearchTokenizer.matchQuery(source)!!
-        assertTrue(query.split(" OR ").all { term ->
-            val bare = term.removeSuffix("*")
-            indexTokens.any { it.startsWith(bare) }
-        })
+        assertTrue(
+            query.split(" OR ").all { term ->
+                val bare = term.removeSuffix("*")
+                indexTokens.any { it.startsWith(bare) }
+            }
+        )
     }
 
     @Test

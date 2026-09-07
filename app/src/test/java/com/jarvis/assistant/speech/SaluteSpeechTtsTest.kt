@@ -207,7 +207,11 @@ class SaluteSpeechTtsTest {
         fakeTts.emitError(Status.CANCELLED)
 
         val chunks = chunksJob.await()
-        assertEquals("barge-in close must surface collected audio, not an error", listOf(listOf<Byte>(1)), chunks.asByteLists())
+        assertEquals(
+            "barge-in close must surface collected audio, not an error",
+            listOf(listOf<Byte>(1)),
+            chunks.asByteLists()
+        )
     }
 
     @Test

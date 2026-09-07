@@ -163,7 +163,8 @@ class TokenManager(
                 json.parseToJsonElement(raw).jsonObject
             } catch (e: Exception) {
                 throw RuntimeException(
-                    "OAuth response is not valid JSON (HTTP ${response.code}) for scope='$scope'", e
+                    "OAuth response is not valid JSON (HTTP ${response.code}) for scope='$scope'",
+                    e
                 )
             }
 

@@ -51,9 +51,13 @@ object MediaDiagnostics {
     private fun sessionLine(index: Int, row: SessionRow): String {
         val c = row.capabilities
         fun f(action: TransportAction): Char =
-            if (!c.known) '?'
-            else if (c.supports(action)) 'Y'
-            else '-'
+            if (!c.known) {
+                '?'
+            } else if (c.supports(action)) {
+                'Y'
+            } else {
+                '-'
+            }
 
         val flags = listOf(
             TransportAction.PLAY_FROM_SEARCH,

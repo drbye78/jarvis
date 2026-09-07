@@ -41,7 +41,13 @@ class FunctionRouter(
      * COGNITIVE_PLAN 2.1: telemetry observer passed through to the
      * ToolRegistry (command_events). Null = no telemetry (tests).
      */
-    private val executionObserver: (suspend (com.jarvis.assistant.model.FunctionCall, ToolResult, Long) -> Unit)? = null,
+    private val executionObserver: (
+        suspend (
+            com.jarvis.assistant.model.FunctionCall,
+            ToolResult,
+            Long
+        ) -> Unit
+    )? = null,
 ) : ToolExecutor {
     private val appContext = context.applicationContext
 

@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +28,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.cancel
 import timber.log.Timber
 
 /** Real engine wrapping the native Porcupine object. */
@@ -42,8 +42,11 @@ private class PorcupineWakeWordEngine(
         // fails the build honestly) instead of crashing on a store lookup.
         .setAccessKey(CredentialsStore.peek()?.picovoiceKey.orEmpty())
         .apply {
-            if (keywordPath != null) setKeywordPath(keywordPath)
-            else setKeyword(Porcupine.BuiltInKeyword.JARVIS)
+            if (keywordPath != null) {
+                setKeywordPath(keywordPath)
+            } else {
+                setKeyword(Porcupine.BuiltInKeyword.JARVIS)
+            }
         }
         .setSensitivity(sensitivity)
         .build(requireNotNull(context) { "Context required for native Porcupine init" })
@@ -139,6 +142,7 @@ class HybridWakeWordDetector(
     override val state: StateFlow<DetectorState> = _state
 
     private val processMutex = Mutex()
+
     // L4: serialize concurrent engine builds (initial build + reconfigure) so
     // native engine builds don't pile up on top of each other.
     private val reconfigureMutex = Mutex()
@@ -170,6 +174,7 @@ class HybridWakeWordDetector(
     // stop in a dead lane-less state.
     // ------------------------------------------------------------------
     @Volatile private var stopLaneEnabled = false
+
     @Volatile private var stopLaneBuildInFlight = false
     private var stopEngine: WakeWordEngine? = null
 

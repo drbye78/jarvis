@@ -34,6 +34,7 @@ class FarEndMixer(
     private class Lane {
         val pending = ArrayDeque<ShortArray>()
         var pendingSamples = 0
+
         /** Sub-slot remainder of the frame being consumed (float to sum exactly). */
         var carry: FloatArray? = null
         var carryOffset = 0
@@ -92,7 +93,10 @@ class FarEndMixer(
                     Timber.tag("AecDiag").w(
                         "far-end lane '%s' overflow: dropped oldest %d frame(s), %d total so far " +
                             "(queue cap = %d slots) — AEC reference is starved, check the lane's producer pacing",
-                        id, dropped, droppedFrames, maxQueuedSlotsPerLane,
+                        id,
+                        dropped,
+                        droppedFrames,
+                        maxQueuedSlotsPerLane,
                     )
                 }
             }

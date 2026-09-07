@@ -48,7 +48,8 @@ class BargeInPolicyTest {
                 add(
                     Scenario(
                         name = "$state/$mode: first detection passes immediately",
-                        mode = mode, state = state,
+                        mode = mode,
+                        state = state,
                         steps = listOf(wwAt(0)),
                         expected = listOf(ww),
                     ),
@@ -60,7 +61,8 @@ class BargeInPolicyTest {
         add(
             Scenario(
                 "SPEAKING/SINGLE: first detection barges in immediately",
-                mode = BargeInPolicy.Mode.SINGLE, state = AssistantState.SPEAKING,
+                mode = BargeInPolicy.Mode.SINGLE,
+                state = AssistantState.SPEAKING,
                 steps = listOf(wwAt(0)),
                 expected = listOf(ww),
             ),
@@ -70,7 +72,8 @@ class BargeInPolicyTest {
         add(
             Scenario(
                 "SPEAKING/REPEAT: second detection inside window passes",
-                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK, state = AssistantState.SPEAKING,
+                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK,
+                state = AssistantState.SPEAKING,
                 steps = listOf(wwAt(0), wwAt(500)),
                 expected = listOf(ww), // only the SECOND one passes
             ),
@@ -78,7 +81,8 @@ class BargeInPolicyTest {
         add(
             Scenario(
                 "SPEAKING/REPEAT: second detection at exact window boundary passes",
-                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK, state = AssistantState.SPEAKING,
+                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK,
+                state = AssistantState.SPEAKING,
                 steps = listOf(wwAt(0), wwAt(1_200)),
                 expected = listOf(ww),
             ),
@@ -86,7 +90,8 @@ class BargeInPolicyTest {
         add(
             Scenario(
                 "SPEAKING/REPEAT: second detection outside window does not pass (window restarts)",
-                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK, state = AssistantState.SPEAKING,
+                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK,
+                state = AssistantState.SPEAKING,
                 steps = listOf(wwAt(0), wwAt(1_201)),
                 expected = emptyList(),
             ),
@@ -94,7 +99,8 @@ class BargeInPolicyTest {
         add(
             Scenario(
                 "SPEAKING/REPEAT: stale window restarts and third detection accepts",
-                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK, state = AssistantState.SPEAKING,
+                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK,
+                state = AssistantState.SPEAKING,
                 steps = listOf(wwAt(0), wwAt(1_300), wwAt(700)), // 700 after restart candidate
                 expected = listOf(ww),
             ),
@@ -104,7 +110,8 @@ class BargeInPolicyTest {
         add(
             Scenario(
                 "IDLE/REPEAT: detections within postAcceptCooldownMs are suppressed",
-                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK, state = AssistantState.IDLE,
+                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK,
+                state = AssistantState.IDLE,
                 steps = listOf(wwAt(0), wwAt(300), wwAt(400)), // accept @0, suppressed @300, passes @700
                 expected = listOf(ww, ww),
             ),
@@ -112,7 +119,8 @@ class BargeInPolicyTest {
         add(
             Scenario(
                 "SPEAKING/REPEAT: suppression wins over opening a new candidate window",
-                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK, state = AssistantState.SPEAKING,
+                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK,
+                state = AssistantState.SPEAKING,
                 steps = listOf(wwAt(0), wwAt(100), wwAt(300), wwAt(400)),
                 // accept @100; @400 suppressed by cooldown; @800 opens a fresh
                 // candidate only -> nothing more passes.
@@ -124,7 +132,8 @@ class BargeInPolicyTest {
         add(
             Scenario(
                 "SPEAKING/REPEAT: DetectorError passes mid-window and does not disturb candidates",
-                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK, state = AssistantState.SPEAKING,
+                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK,
+                state = AssistantState.SPEAKING,
                 steps = listOf(wwAt(0), errAt(10), wwAt(40)),
                 expected = listOf(err, ww),
             ),
@@ -132,7 +141,8 @@ class BargeInPolicyTest {
         add(
             Scenario(
                 "IDLE/SINGLE: DetectorError passes even inside post-accept suppression",
-                mode = BargeInPolicy.Mode.SINGLE, state = AssistantState.IDLE,
+                mode = BargeInPolicy.Mode.SINGLE,
+                state = AssistantState.IDLE,
                 steps = listOf(wwAt(0), errAt(100), wwAt(200)),
                 // WW@200 lands inside the 600 ms suppression window -> dropped.
                 expected = listOf(ww, err),
@@ -143,7 +153,8 @@ class BargeInPolicyTest {
         add(
             Scenario(
                 "custom repeatWindowMs=100: second detection at 150ms misses the window",
-                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK, state = AssistantState.SPEAKING,
+                mode = BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK,
+                state = AssistantState.SPEAKING,
                 repeatWindowMs = 100,
                 steps = listOf(wwAt(0), wwAt(150)),
                 expected = emptyList(),
@@ -175,8 +186,11 @@ class BargeInPolicyTest {
     fun `gatedBy decision matrix over states modes and timings`() = runTest {
         val failures = scenarios().mapNotNull { scenario ->
             val actual = run(scenario)
-            if (actual == scenario.expected) null
-            else "${scenario.name}: expected=${scenario.expected} actual=$actual"
+            if (actual == scenario.expected) {
+                null
+            } else {
+                "${scenario.name}: expected=${scenario.expected} actual=$actual"
+            }
         }
         assertTrue(
             "matrix failures (${failures.size}):\n" + failures.joinToString("\n"),
@@ -189,11 +203,11 @@ class BargeInPolicyTest {
         var now = 0L
         val state = MutableStateFlow(AssistantState.SPEAKING)
         val source = flow {
-            emit(ww)                                // candidate opened while speaking
+            emit(ww) // candidate opened while speaking
             state.value = AssistantState.LISTENING
             now += 100
             delay(100)
-            emit(ww)                                // passes immediately outside SPEAKING
+            emit(ww) // passes immediately outside SPEAKING
         }
         val passed = source
             .gatedBy(BargeInPolicy(BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK), state) { now }

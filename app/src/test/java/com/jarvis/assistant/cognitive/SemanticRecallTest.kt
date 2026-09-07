@@ -3,6 +3,7 @@ package com.jarvis.assistant.cognitive
 import com.jarvis.assistant.cognitive.data.EntityRefEntity
 import com.jarvis.assistant.cognitive.data.FactVectorEntity
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
+import com.jarvis.assistant.cognitive.data.UserFactEntity
 import com.jarvis.assistant.cognitive.embed.EmbeddingEngine
 import com.jarvis.assistant.cognitive.embed.VectorMath
 import com.jarvis.assistant.cognitive.extract.FakeEntityDao
@@ -14,12 +15,11 @@ import com.jarvis.assistant.cognitive.extract.FakeUserFactDao
 import com.jarvis.assistant.cognitive.model.FactCategory
 import com.jarvis.assistant.cognitive.model.FactOrigin
 import com.jarvis.assistant.cognitive.model.FactStatus
-import com.jarvis.assistant.cognitive.data.UserFactEntity
 import com.jarvis.assistant.cognitive.recall.SearchTokenizer
+import com.jarvis.assistant.cognitive.tools.MemoryOutcome
 import com.jarvis.assistant.llm.LlmClient
 import com.jarvis.assistant.model.ChatRequest
 import com.jarvis.assistant.model.LlmChunk
-import com.jarvis.assistant.cognitive.tools.MemoryOutcome
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -86,22 +86,22 @@ class SemanticRecallTest {
         cloudEngine: EmbeddingEngine? = null,
     ) = CognitiveCoordinator(
         deps = CognitiveDeps(
-        factDao = factDao,
-        queueDao = FakeExtractionQueueDao(),
-        metaDao = metaDao,
-        messageDao = FakeMessageDao(),
-        llm = object : LlmClient {
-            override fun chatStream(request: ChatRequest) = flowOf(LlmChunk.Done)
-        },
-        memoryEnabled = memoryEnabled,
-        autoExtractEnabled = MutableStateFlow(false),
-        cloudEnabled = cloudEnabled,
-        sensitiveVisible = MutableStateFlow(true),
-        vectorDao = vectorDao,
-        entityDao = entityDao,
-        embedderChoice = embedderChoice,
-        localEmbedder = localEngine,
-        cloudEmbedder = cloudEngine,
+            factDao = factDao,
+            queueDao = FakeExtractionQueueDao(),
+            metaDao = metaDao,
+            messageDao = FakeMessageDao(),
+            llm = object : LlmClient {
+                override fun chatStream(request: ChatRequest) = flowOf(LlmChunk.Done)
+            },
+            memoryEnabled = memoryEnabled,
+            autoExtractEnabled = MutableStateFlow(false),
+            cloudEnabled = cloudEnabled,
+            sensitiveVisible = MutableStateFlow(true),
+            vectorDao = vectorDao,
+            entityDao = entityDao,
+            embedderChoice = embedderChoice,
+            localEmbedder = localEngine,
+            cloudEmbedder = cloudEngine,
         ),
         parentScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob()),
     )
@@ -117,9 +117,13 @@ class SemanticRecallTest {
 
     @Test
     fun `default AUTO with no benchmark verdict keeps the Phase 2 order`() = runBlocking {
-        val factDao = FakeUserFactDao(); seedTied(factDao)
+        val factDao = FakeUserFactDao()
+        seedTied(factDao)
         val c = coordinator(
-            factDao, FakeFactVectorDao(), FakeEntityDao(), FakeMemoryMetaDao(),
+            factDao,
+            FakeFactVectorDao(),
+            FakeEntityDao(),
+            FakeMemoryMetaDao(),
             MutableStateFlow("AUTO"),
         )
         val out = c.gather(queryText)
@@ -130,12 +134,17 @@ class SemanticRecallTest {
 
     @Test
     fun `LOCAL selector reranks via vectors and applies LIVE`() = runBlocking {
-        val factDao = FakeUserFactDao(); seedTied(factDao)
+        val factDao = FakeUserFactDao()
+        seedTied(factDao)
         val vectorDao = FakeFactVectorDao()
         val choice = MutableStateFlow("AUTO")
         val metaDao = FakeMemoryMetaDao()
         val c = coordinator(
-            factDao, vectorDao, FakeEntityDao(), metaDao, choice,
+            factDao,
+            vectorDao,
+            FakeEntityDao(),
+            metaDao,
+            choice,
             localEngine = QueryVecEngine(
                 EmbeddingEngine.LOCAL_ID,
                 EmbeddingEngine.Kind.LOCAL,
@@ -162,13 +171,17 @@ class SemanticRecallTest {
 
     @Test
     fun `CLOUD engine never enters the gather path`() = runBlocking {
-        val factDao = FakeUserFactDao(); seedTied(factDao)
+        val factDao = FakeUserFactDao()
+        seedTied(factDao)
         val vectorDao = FakeFactVectorDao()
         val cloud = QueryVecEngine(EmbeddingEngine.CLOUD_ID, EmbeddingEngine.Kind.CLOUD) {
             floatArrayOf(1f, 0f)
         }
         val c = coordinator(
-            factDao, vectorDao, FakeEntityDao(), FakeMemoryMetaDao(),
+            factDao,
+            vectorDao,
+            FakeEntityDao(),
+            FakeMemoryMetaDao(),
             MutableStateFlow("CLOUD"),
             cloudEngine = cloud,
         )
@@ -183,13 +196,17 @@ class SemanticRecallTest {
 
     @Test
     fun `recall_facts uses the CLOUD channel only with egress enabled`() = runBlocking {
-        val factDao = FakeUserFactDao(); seedTied(factDao)
+        val factDao = FakeUserFactDao()
+        seedTied(factDao)
         val vectorDao = FakeFactVectorDao()
         val cloud = QueryVecEngine(EmbeddingEngine.CLOUD_ID, EmbeddingEngine.Kind.CLOUD) {
             floatArrayOf(1f, 0f)
         }
         val c = coordinator(
-            factDao, vectorDao, FakeEntityDao(), FakeMemoryMetaDao(),
+            factDao,
+            vectorDao,
+            FakeEntityDao(),
+            FakeMemoryMetaDao(),
             MutableStateFlow("CLOUD"),
             cloudEngine = cloud,
         )
@@ -225,7 +242,10 @@ class SemanticRecallTest {
         factDao.insert(lowConfBoss)
         factDao.insert(fact("sp", "жена Маша", FactCategory.RELATION).copy(predicate = "spouse"))
         val c = coordinator(
-            factDao, FakeFactVectorDao(), FakeEntityDao(), FakeMemoryMetaDao(),
+            factDao,
+            FakeFactVectorDao(),
+            FakeEntityDao(),
+            FakeMemoryMetaDao(),
             MutableStateFlow("OFF"),
         )
         // Neutral utterance: no relation question → the higher-confidence
@@ -246,13 +266,22 @@ class SemanticRecallTest {
 
     @Test
     fun `wipeAll clears the semantic stores too`() = runBlocking {
-        val factDao = FakeUserFactDao(); seedTied(factDao)
+        val factDao = FakeUserFactDao()
+        seedTied(factDao)
         val vectorDao = FakeFactVectorDao()
         val entityDao = FakeEntityDao()
         val metaDao = FakeMemoryMetaDao()
         val c = coordinator(factDao, vectorDao, entityDao, metaDao, MutableStateFlow("OFF"))
         vectorDao.upsert(vec("a", EmbeddingEngine.LOCAL_ID, floatArrayOf(1f, 0f)))
-        entityDao.insert(EntityRefEntity(name = "Иванов", nameNormalized = "иванов", kind = "PERSON", firstSeenAt = 1L, lastSeenAt = 1L))
+        entityDao.insert(
+            EntityRefEntity(
+                name = "Иванов",
+                nameNormalized = "иванов",
+                kind = "PERSON",
+                firstSeenAt = 1L,
+                lastSeenAt = 1L
+            )
+        )
         metaDao.values[MemoryMetaEntity.KEY_EMBEDDER_WINNER] = EmbeddingEngine.LOCAL_ID
 
         c.wipeAll()
@@ -272,7 +301,9 @@ class SemanticRecallTest {
         // vector step ever sees them — that IS the production contract.
         fun fresh(id: String, value: String, category: FactCategory = FactCategory.OTHER) =
             fact(id, value, category).copy(
-                createdAt = now, updatedAt = now, lastConfirmedAt = now,
+                createdAt = now,
+                updatedAt = now,
+                lastConfirmedAt = now,
             )
         factDao.insert(fresh("a", "плейлист альфа"))
         factDao.insert(fact("gone", "устаревший факт"))

@@ -1,9 +1,9 @@
 package com.jarvis.assistant.llm
 
 import com.jarvis.assistant.model.ChatRequest
+import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.model.LlmChunk
 import com.jarvis.assistant.model.ToolCall
-import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.wire.toWire
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

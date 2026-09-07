@@ -9,8 +9,8 @@ import kotlinx.coroutines.flow.flow
 /** Shared audio format contract. */
 data class AudioSpec(
     val sampleRate: Int,
-    val channels: Int,      // 1 = mono
-    val encodingBits: Int,  // 16
+    val channels: Int, // 1 = mono
+    val encodingBits: Int, // 16
 ) {
     companion object {
         val MIC = AudioSpec(16_000, 1, 16)

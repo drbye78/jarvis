@@ -11,10 +11,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
-import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.di.GraphHolder
+import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.service.JarvisForegroundService
 import com.jarvis.assistant.session.TurnActivity
 import com.jarvis.assistant.session.TurnActivityLabels

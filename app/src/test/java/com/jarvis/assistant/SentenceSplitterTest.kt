@@ -84,6 +84,7 @@ class SentenceBufferTest {
         val out = buf.append("Раз. Два. Три.")
         assertEquals(listOf("Раз.", " Два.", " Три."), out)
     }
+
     @Test
     fun `streamed abbreviation tail does not flush the sentence`() {
         // B3: a delta ending right after "т.д." used to force-flush an

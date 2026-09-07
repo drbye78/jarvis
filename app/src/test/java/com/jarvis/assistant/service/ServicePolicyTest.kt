@@ -96,6 +96,9 @@ class ServicePolicyTest {
     // ------------------------------------------------------------------
 
     @Test
+    // P5.1: the exhaustive 2^4 truth table is intentionally one nested
+    // decision ladder — flattening it would obscure the branch being pinned.
+    @Suppress("NestedBlockDepth")
     fun `exhaustive watchdog matrix - stop outranks revive, revive needs ready given-up unmuted`() {
         // The full 2^4 truth table of the original branch condition:
         //   userStopped -> STOP
@@ -253,7 +256,12 @@ class ServicePolicyTest {
         )
         assertEquals(
             ServicePolicy.ReviveBudget.ALLOWED,
-            ServicePolicy.reviveBudget(reviveCountToday = 2, dailyCap = 3, lastReviveMs = 0, nowMs = ServicePolicy.REVIVE_BACKOFF_MS),
+            ServicePolicy.reviveBudget(
+                reviveCountToday = 2,
+                dailyCap = 3,
+                lastReviveMs = 0,
+                nowMs = ServicePolicy.REVIVE_BACKOFF_MS
+            ),
         )
         // No prior revive → allowed regardless of count below cap.
         assertEquals(
@@ -501,7 +509,9 @@ class ServicePolicyTest {
 
     @Test
     fun `next maintenance rolls to tomorrow once 03_30 has passed`() {
-        val after = gmtCalendar(ServicePolicy.nextMaintenanceAt(utc(2026, Calendar.SEPTEMBER, 6, 3, 30, second = 0, millis = 1)))
+        val after = gmtCalendar(
+            ServicePolicy.nextMaintenanceAt(utc(2026, Calendar.SEPTEMBER, 6, 3, 30, second = 0, millis = 1))
+        )
         assertEquals(7, after.get(Calendar.DAY_OF_MONTH))
         assertEquals(3, after.get(Calendar.HOUR_OF_DAY))
         assertEquals(30, after.get(Calendar.MINUTE))
@@ -509,7 +519,9 @@ class ServicePolicyTest {
         val evening = gmtCalendar(ServicePolicy.nextMaintenanceAt(utc(2026, Calendar.SEPTEMBER, 6, 23, 45)))
         assertEquals(7, evening.get(Calendar.DAY_OF_MONTH))
 
-        val exactlyAt = gmtCalendar(ServicePolicy.nextMaintenanceAt(utc(2026, Calendar.SEPTEMBER, 6, 3, 30, second = 0, millis = 0)))
+        val exactlyAt = gmtCalendar(
+            ServicePolicy.nextMaintenanceAt(utc(2026, Calendar.SEPTEMBER, 6, 3, 30, second = 0, millis = 0))
+        )
         // Boundary is inclusive (timeInMillis <= now): 03:30:00.000 sharp
         // schedules the NEXT night, never an alarm at `now`.
         assertEquals(7, exactlyAt.get(Calendar.DAY_OF_MONTH))
@@ -517,7 +529,9 @@ class ServicePolicyTest {
 
     @Test
     fun `next maintenance just before 03_30 stays today`() {
-        val justBefore = gmtCalendar(ServicePolicy.nextMaintenanceAt(utc(2026, Calendar.SEPTEMBER, 6, 3, 29, second = 59, millis = 999)))
+        val justBefore = gmtCalendar(
+            ServicePolicy.nextMaintenanceAt(utc(2026, Calendar.SEPTEMBER, 6, 3, 29, second = 59, millis = 999))
+        )
         assertEquals(6, justBefore.get(Calendar.DAY_OF_MONTH))
         assertEquals(3, justBefore.get(Calendar.HOUR_OF_DAY))
         assertEquals(30, justBefore.get(Calendar.MINUTE))

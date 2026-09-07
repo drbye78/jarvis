@@ -1,7 +1,7 @@
 package com.jarvis.assistant.integration
 
-import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.cognitive.embed.GigaChatEmbedder
+import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.llm.GigaChatClient
 import com.jarvis.assistant.llm.TokenManager
 import com.jarvis.assistant.model.ChatRequest

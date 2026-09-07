@@ -114,15 +114,16 @@ style:
 
 formatting:
   active: true
+  autoCorrect: true
   ImportOrdering:
-    active: false # legacy layout variance; revisit with a dedicated pass
+    active: true # P5.1: formatting pass done, rules re-enabled
   MaximumLineLength:
-    active: false # covered by style.MaxLineLength at 140
+    active: false # covered by style.MaxLineLength at 140 (the formatting twin's 120 default ignores per-config override)
   Indentation:
-    active: false # legacy variance; a dedicated formatting pass will enable it
+    active: true # P5.1: re-enabled
   ArgumentListWrapping:
-    active: false
+    active: true # P5.1: re-enabled
   ParameterListWrapping:
-    active: false
+    active: true # P5.1: re-enabled
   Wrapping:
-    active: false
+    active: true # P5.1: re-enabled

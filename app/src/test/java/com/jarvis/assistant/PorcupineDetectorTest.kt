@@ -222,7 +222,11 @@ class PorcupineDetectorTest {
                 sherpaCustomKeyword = "",
                 sensitivity = 0.6f,
             ),
-            engineFactory = { req -> built.incrementAndGet(); builtWith.add(req.sensitivity); engine },
+            engineFactory = { req ->
+                built.incrementAndGet()
+                builtWith.add(req.sensitivity)
+                engine
+            },
             engineBuildDispatcher = Dispatchers.Unconfined,
         )
         assertEquals(1, built.get()) // initial build at 0.6f

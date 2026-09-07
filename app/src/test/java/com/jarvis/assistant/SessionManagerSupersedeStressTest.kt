@@ -1,9 +1,11 @@
 package com.jarvis.assistant
 
 import com.jarvis.assistant.audio.AudioPipeline
+import com.jarvis.assistant.cognitive.extract.FakeMessageDao
 import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.contracts.AudioSource
 import com.jarvis.assistant.contracts.Detection
+import com.jarvis.assistant.llm.LlmClient
 import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.model.ChatRequest
 import com.jarvis.assistant.model.LlmChunk
@@ -11,8 +13,6 @@ import com.jarvis.assistant.session.SessionEvent
 import com.jarvis.assistant.session.SessionManager
 import com.jarvis.assistant.session.SessionStateMachine
 import com.jarvis.assistant.session.SessionTransitions
-import com.jarvis.assistant.cognitive.extract.FakeMessageDao
-import com.jarvis.assistant.llm.LlmClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,10 +21,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -69,15 +68,15 @@ private class StormParkedPlayer : com.jarvis.assistant.speech.tts.TtsPlayer {
     override fun play(pcm: Flow<ByteArray>): kotlinx.coroutines.Deferred<Unit> =
         kotlinx.coroutines.CompletableDeferred()
 
-    override fun flush() {}
-    override fun release() {}
+    override fun flush() = Unit
+    override fun release() = Unit
 }
 
 /** A controllable audio source (identical shape to PumpAudioSource). */
 private class StormAudioSource : AudioSource {
-    override fun start() {}
+    override fun start() = Unit
     override fun read(): ShortArray = ShortArray(320)
-    override fun stop() {}
+    override fun stop() = Unit
 }
 
 /** The control-surface operations that race each other in the storm. */

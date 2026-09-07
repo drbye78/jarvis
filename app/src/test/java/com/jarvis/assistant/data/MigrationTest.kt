@@ -150,8 +150,14 @@ class MigrationTest {
                 !statement.contains("DROP TABLE"),
             )
             val touchesExisting = listOf(
-                "messages", "scheduled_alerts", "user_facts", "memory_meta",
-                "command_events", "habit_rules", "behavior_log", "session_summaries",
+                "messages",
+                "scheduled_alerts",
+                "user_facts",
+                "memory_meta",
+                "command_events",
+                "habit_rules",
+                "behavior_log",
+                "session_summaries",
             ).any { table -> statement.contains("`$table`") || statement.contains(" $table ") }
             assertTrue(
                 "migration must not reference pre-existing tables: $statement",

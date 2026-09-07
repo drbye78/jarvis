@@ -1,8 +1,8 @@
 package com.jarvis.assistant
 
 import com.jarvis.assistant.media.MediaAppInfo
-import com.jarvis.assistant.media.MediaGateway
 import com.jarvis.assistant.media.MediaControllerHandle
+import com.jarvis.assistant.media.MediaGateway
 import com.jarvis.assistant.media.MusicAppCatalog
 import com.jarvis.assistant.media.MusicPlaybackOrchestrator
 import com.jarvis.assistant.media.NowPlaying
@@ -79,8 +79,10 @@ class MusicToolsSchemaTest {
             gw,
             MusicAppCatalog({ listOf("ru.yandex.music" to "Яндекс Музыка") }),
             budgets = MusicPlaybackOrchestrator.Budgets(
-                verifyPollMs = 50, verifyTotalMs = 300,
-                coldStartPollMs = 50, coldStartTotalMs = 300,
+                verifyPollMs = 50,
+                verifyTotalMs = 300,
+                coldStartPollMs = 50,
+                coldStartTotalMs = 300,
                 legacyWaitTotalMs = 300,
             ),
         )

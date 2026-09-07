@@ -88,8 +88,10 @@ class SpeechFeedbackTest {
         gateway,
         MusicAppCatalog({ listOf("ru.yandex.music" to "Яндекс Музыка") }),
         budgets = MusicPlaybackOrchestrator.Budgets(
-            verifyPollMs = 50, verifyTotalMs = 300,
-            coldStartPollMs = 50, coldStartTotalMs = 300,
+            verifyPollMs = 50,
+            verifyTotalMs = 300,
+            coldStartPollMs = 50,
+            coldStartTotalMs = 300,
             legacyWaitTotalMs = 300,
         ),
         feedback = feedback,
@@ -160,7 +162,10 @@ class SpeechFeedbackTest {
         val adapter = object : AudioFocusAdapter {
             var requests = 0
             var abandons = 0
-            override fun requestDuckFocus(): Boolean { requests++; return true }
+            override fun requestDuckFocus(): Boolean {
+                requests++
+                return true
+            }
             override fun abandonFocus() { abandons++ }
         }
         val focus = AssistantAudioFocus(adapter)
@@ -188,7 +193,9 @@ class SpeechFeedbackTest {
         val tts = FakeTts()
         val fb = TtsSpeechFeedback(
             CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
-            tts, FakePlayer(), { "Mila" },
+            tts,
+            FakePlayer(),
+            { "Mila" },
         )
         fb.onCascadeStarted(predictedLong = false)
         assertEquals(emptyList<String>(), tts.spoken)
@@ -203,7 +210,10 @@ class SpeechFeedbackTest {
         })
         val fb = TtsSpeechFeedback(
             CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
-            tts, FakePlayer(), { "Mila" }, focus,
+            tts,
+            FakePlayer(),
+            { "Mila" },
+            focus,
         )
 
         fb.onCascadeStarted(predictedLong = true)
@@ -219,7 +229,9 @@ class SpeechFeedbackTest {
     fun `player exception is swallowed`() = runTest {
         val fb = TtsSpeechFeedback(
             CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
-            FakeTts(), FakePlayer().apply { playThrows = true }, { "Mila" },
+            FakeTts(),
+            FakePlayer().apply { playThrows = true },
+            { "Mila" },
         )
 
         fb.onCascadeStarted(predictedLong = true)

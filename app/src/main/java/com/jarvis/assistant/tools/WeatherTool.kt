@@ -7,10 +7,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -63,8 +63,10 @@ class OpenMeteoWeatherClient(
     override suspend fun getWeather(location: String): String = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(location.trim(), "UTF-8")
         val lang = languageTag.ifBlank { "ru" }
-        val geoUrl = ("$geoBaseUrl/v1/search" +
-            "?name=$encoded&count=5&language=$lang").toHttpUrl()
+        val geoUrl = (
+            "$geoBaseUrl/v1/search" +
+                "?name=$encoded&count=5&language=$lang"
+            ).toHttpUrl()
 
         val geoBody = httpGet(geoUrl.toString())
             ?: return@withContext JsonOut.error("Weather service unreachable")
@@ -90,10 +92,12 @@ class OpenMeteoWeatherClient(
         val displayName = first["name"]?.jsonPrimitive?.contentOrNull ?: location
         val country = first["country"]?.jsonPrimitive?.contentOrNull
 
-        val weatherUrl = ("$forecastBaseUrl/v1/forecast" +
-            "?latitude=$lat&longitude=$lon" +
-            "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m" +
-            "&timezone=auto").toHttpUrl()
+        val weatherUrl = (
+            "$forecastBaseUrl/v1/forecast" +
+                "?latitude=$lat&longitude=$lon" +
+                "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m" +
+                "&timezone=auto"
+            ).toHttpUrl()
 
         val weatherBody = httpGet(weatherUrl.toString())
             ?: return@withContext JsonOut.error("Weather service unreachable")

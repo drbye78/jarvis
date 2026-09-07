@@ -83,7 +83,10 @@ class AudioPipelineTest {
 
     @Test
     fun `producer exits cleanly with single log line when source reports closed`() = runBlocking {
-        val recording = RecordingTree().also { tree = it; Timber.plant(it) }
+        val recording = RecordingTree().also {
+            tree = it
+            Timber.plant(it)
+        }
         val source = FlakySource()
         val p = AudioPipeline(scope, source, preRollMs = 1_000)
 

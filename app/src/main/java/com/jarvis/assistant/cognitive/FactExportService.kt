@@ -1,9 +1,9 @@
 package com.jarvis.assistant.cognitive
 
+import com.jarvis.assistant.cognitive.data.EntityDao
 import com.jarvis.assistant.cognitive.data.MemoryMetaDao
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
 import com.jarvis.assistant.cognitive.data.UserFactDao
-import com.jarvis.assistant.cognitive.data.EntityDao
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
