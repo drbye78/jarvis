@@ -66,6 +66,43 @@ OpenAI-compatible endpoint).
 CI runs the same suite plus `assembleDebug` on every push/PR (see the badge
 above — includes the Git-LFS-tracked native assets).
 
+## Integration testing (live Sber services — local only)
+
+CI never talks to Sber and holds no secrets. Live smoke tests run **locally
+only** with your own credentials (owner decision #1, REMEDIATION_PLAN
+Phase 2): the credentials live in a gitignored file, never in the repo, the
+chat, or the APK — the app itself stores credentials only in the Android
+Keystore.
+
+```bash
+cp local.secrets.properties.example local.secrets.properties
+# fill in: Salute Speech (ASR+TTS) and GigaChat (LLM/embeddings) OAuth
+# client id/secret pairs — the same values the app asks for in Settings.
+./gradlew :app:integrationTest        # live smoke tests (skips with a logged reason if creds are absent)
+./gradlew :app:recordSaluteFixtures   # re-records the sanitized fixtures below
+```
+
+Environment variables (`JARVIS_SALUTE_CLIENT_ID`, …) are accepted as a
+fallback; the properties file wins. Values are never printed by Gradle or the
+tests.
+
+What the live tests do (tiny, quota-aware payloads):
+- **GigaChat**: OAuth fetch, a one-word `chatOnce` prompt capped at 16 tokens,
+  a short streaming pass, one embeddings call (1024-dim).
+- **Salute ASR**: one round trip on **synthetic silence** — asserts PROTOCOL
+  HEALTH only (stream opens, authenticates, closes cleanly); an empty
+  transcript is the expected outcome and is documented in the test.
+- **Salute TTS**: one synthesis round trip on a fixed probe phrase; asserts a
+  non-empty audio payload.
+
+`recordSaluteFixtures` re-captures the **sanitized** fixtures committed under
+`app/src/test/resources/recorded/` (same file names, clean diff on
+re-record): server responses only — no credentials or request headers, no
+timestamps, no user audio or text (the recorder sends silence / a fixed probe
+phrase). CI replays those fixtures through the in-process gRPC fakes
+(`SaluteFixtureReplayTest`), so the recorded wire shapes stay exercised
+without any secrets. See RUNBOOK "Integration testing" for troubleshooting.
+
 ## Upgrading from pre-release builds
 
 Installs on schema v1 (the old `alarms` table, never exported) upgrade

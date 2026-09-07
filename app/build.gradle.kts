@@ -1,4 +1,5 @@
 import java.util.Properties as LocalProperties
+import org.gradle.api.tasks.testing.logging.TestLogEvent
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -178,4 +179,51 @@ dependencies {
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.room.testing)
+}
+
+// ===== P2.1: live-service integration tier (REMEDIATION_PLAN Phase 2) ==========
+// Credentials live in a GITIGNORED `local.secrets.properties` at the repo root
+// (copy local.secrets.properties.example) or in JARVIS_* environment variables.
+// The build NEVER reads credential values. Both tasks below are ALWAYS
+// registered and self-skip at RUNTIME (configuration-cache safe: script
+// closures in onlyIf{} are not serializable — the previous onlyIf gate failed
+// under org.gradle.configuration-cache=true):
+//   - :app:integrationTest runs the integration tests, which self-skip via
+//     JUnit assumptions in integration/LiveSecrets.kt when creds are absent;
+//   - :app:recordSaluteFixtures' main() exits 0 with a logged skip message.
+// The normal gate (testDebugUnitTest + assembleDebug) never invokes these
+// tasks, so CI stays green by construction.
+
+afterEvaluate {
+    // AGP owns the unit-test tasks; they exist (and are configured) by now.
+    val unitTestTask = tasks.named("testDebugUnitTest", Test::class.java)
+
+    tasks.register<Test>("integrationTest") {
+        group = "verification"
+        description = "Live Sber service smoke tests (GigaChat + Salute ASR/TTS), local-only. " +
+            "Requires local.secrets.properties (see local.secrets.properties.example) or JARVIS_* env vars; " +
+            "tests skip with logged reasons when credentials are absent."
+        // Reuse the unit-test variant's compiled classes and runtime classpath;
+        // inheriting testDebugUnitTest's upstream dependencies runs the COMPILERS
+        // only, never the whole unit suite.
+        dependsOn(unitTestTask.map { it.dependsOn })
+        testClassesDirs = unitTestTask.get().testClassesDirs
+        classpath = unitTestTask.get().classpath
+        include("com/jarvis/assistant/integration/**")
+        testLogging {
+            events(TestLogEvent.PASSED, TestLogEvent.SKIPPED, TestLogEvent.FAILED)
+        }
+    }
+
+    tasks.register<JavaExec>("recordSaluteFixtures") {
+        group = "verification"
+        description = "Records SANITIZED Salute ASR/TTS fixtures from the live services into " +
+            "app/src/test/resources/recorded/ (local-only; requires credentials; main() exits 0 " +
+            "with a skip message when credentials are absent — no secrets, no user audio/text " +
+            "ever reaches the fixtures)."
+        dependsOn(unitTestTask.map { it.dependsOn })
+        classpath = unitTestTask.get().testClassesDirs + unitTestTask.get().classpath
+        mainClass.set("com.jarvis.assistant.integration.RecordSaluteFixturesKt")
+        args("$projectDir/src/test/resources/recorded")
+    }
 }

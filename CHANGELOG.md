@@ -6,6 +6,22 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — REMEDIATION_PLAN Phase 2: live-service integration tier (local-only) + recorded fixtures
+- **Local-only live smoke tests** (`./gradlew :app:integrationTest`): GigaChat
+  OAuth/chatOnce/streaming/embeddings; Salute ASR round trip on synthetic
+  silence (protocol health) and TTS round trip on a fixed probe phrase.
+  Credentials come from a gitignored `local.secrets.properties`
+  (`local.secrets.properties.example` committed) or `JARVIS_*` env vars;
+  values are never printed. Tests skip cleanly (JUnit assumptions) wherever
+  credentials are absent — CI is unaffected by construction.
+- **Recording pipeline** (`./gradlew :app:recordSaluteFixtures`): writes
+  SANITIZED fixtures (server responses only — no credentials, headers,
+  timestamps, or user audio/text) under `app/src/test/resources/recorded/`;
+  CI replays the committed fixtures through the in-process gRPC fakes
+  (`SaluteFixtureReplayTest`) so recorded wire shapes stay exercised without
+  any secrets. Committed seed fixtures are hand-written synthetic
+  placeholders until the owner records real ones locally.
+
 ### Fixed — Room v7: alarm snooze drift
 - **`MIGRATION_6_7`** adds an `anchorTimeMillis` column to `scheduled_alerts`
   (backfilled from each row's `triggerAtMillis`) so the next daily occurrence

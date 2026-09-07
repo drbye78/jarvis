@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "kind": "salute-tts",
+  "description": "SEED fixture (hand-written, recorded=false): chunk-sequence + clean completion for the fixed probe phrase, standing in until a real recording replaces it via ./gradlew :app:recordSaluteFixtures. The audio payload is a small synthetic 440 Hz PCM placeholder, NOT real service audio — the real recording carries the service's own voice speaking the probe phrase.",
+  "provenance": {
+    "recorded": false,
+    "syntheticInput": true,
+    "sanitization": "Hand-written synthetic content: no credentials, no request headers, no timestamps, no user audio/text."
+  },
+  "ttsRequest": {
+    "text": "Проверка связи.",
+    "voiceInput": "Mila",
+    "voiceWire": "May_24000",
+    "audioEncoding": "PCM_S16LE",
+    "language": "ru-RU",
+    "contentType": "TEXT"
+  },
+  "serverResponses": [
+    { "type": "chunk", "base64": "AABjBbQK4A/XFIcZ4R3VIVYlWCjSKrosCy6/LtUuTC4lLWYrEyk1JtUi/x7AGiYWQREhDNgGeAEU/L32hPF97LjnRuM135PbbdjN1bzTQdJi0SHRf9F70hHUPNb12DPc6t8O5JHoY+108rP3D/10AtEHEw0qEgIXjRu6H3sjxCaKKcIrZi1wLt0uqi7ZLW0saSrWJ7wkJSEdHbMY9RPzDr4JaQQF/6T5WPQ070nqp+Vf4X/dFNoq18rU/dLJ0THR" },
+    { "type": "chunk", "base64": "ONHe0SHT+9Ro11/a1d2/4RDmueqq79L0IfqD/+YEOQpqD2YUHRl/HX0hCSUYKJ4qlCzzLbUu2i5fLkctlStPKX0mKSNdHycblRa2EZsMVQf2AZL8OPf88fDsJOip44/f4tuw2ATW5tNe0nDRINFw0V7S5tME1rDY4tuP36njJOjw7PzxOPeS/PYBVQebDLYRlRYnG10fKSN9Jk8plStHLV8u2i61LvMtlCyeKhgoCSV9IX8dHRlmFGoPOQrmBIP/" },
+    { "type": "chunk", "base64": "IfrS9KrvueoQ5r/h1d1f2mjX+9Qh097RONEx0cnR/dLK1CrXFNp/3V/hp+VJ6jTvWPSk+QX/aQS+CfMO9ROzGB0dJSG8JNYnaSptLNktqi7dLnAuZi3CK4opxCZ7I7of" }
+  ]
+}

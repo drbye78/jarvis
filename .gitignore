@@ -7,6 +7,8 @@ app/build/
 # Local configuration (contains secrets + SDK path)
 local.properties
 secrets.properties
+# REMEDIATION_PLAN P2.1: live-service integration credentials (local only)
+local.secrets.properties
 
 # IDE
 .idea/

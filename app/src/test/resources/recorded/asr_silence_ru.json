@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "kind": "salute-asr",
+  "description": "SEED fixture (hand-written, recorded=false): a realistic partial→partial→final EOU sequence with synthetic RU transcript placeholders, standing in until a real recording replaces it via ./gradlew :app:recordSaluteFixtures. A real silence recording will carry an EMPTY final transcript (documented, expected).",
+  "provenance": {
+    "recorded": false,
+    "syntheticInput": true,
+    "sanitization": "Hand-written synthetic content: no credentials, no request headers, no timestamps, no user audio/text."
+  },
+  "asrRequest": {
+    "audioEncoding": "PCM_S16LE",
+    "sampleRate": 16000,
+    "language": "ru-RU",
+    "model": "general",
+    "enablePartialResults": true,
+    "noSpeechTimeoutSec": 7
+  },
+  "serverResponses": [
+    { "type": "transcription", "eou": false, "texts": ["при"] },
+    { "type": "transcription", "eou": false, "texts": ["привет"] },
+    { "type": "transcription", "eou": true, "texts": ["привет как дела"] }
+  ]
+}

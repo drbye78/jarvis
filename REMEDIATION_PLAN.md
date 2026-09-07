@@ -86,6 +86,13 @@ Follow-ups recorded from P0 execution:
 
 **Gate:** `./gradlew integrationTest` green locally; CI green with zero secrets; fixtures in tree.
 
+**Status: ✅ INFRASTRUCTURE COMPLETE (2026-09) — live runs await the owner's local credentials.**
+- P2.1: gitignored `local.secrets.properties` (names mirror `CredentialsStore` fields; env `JARVIS_*` fallback; `.gitignore` entry + committed `local.secrets.properties.example`). `:app:integrationTest` and `:app:recordSaluteFixtures` are ALWAYS registered but self-skip at RUNTIME — configuration-cache safe (script-closure `onlyIf` gates failed under `org.gradle.configuration-cache=true` and were removed): the live tests self-skip via JUnit assumptions in `integration/LiveSecrets.kt` (`Secrets.toString()` is redacted — values can never leak), the recorder `main()` exits 0 with a skip message. Reuses the unit-test variant's compiled classes + classpath (no new source set); CI unaffected by construction.
+- P2.2: `GigaChatLiveSmokeTest` (OAuth + cached re-fetch, tiny `chatOnce`, bounded `chatStream`, 1024-dim embeddings), `SaluteAsrLiveSmokeTest` (1 s synthetic-silence round trip asserting PROTOCOL HEALTH — open/authenticate/clean close; empty transcript documented as expected), `SaluteTtsLiveSmokeTest` (fixed probe phrase → non-empty audio payload). All Assumption-gated → skip cleanly without creds. **NOT executed in this environment (no credentials exist here)** — the owner runs `./gradlew :app:integrationTest` locally per README/RUNBOOK.
+- P2.3: `recordSaluteFixtures` writes SANITIZED fixtures (server responses only; no creds/headers/timestamps/user audio-text; synthetic silence + fixed probe phrase; errors reduced to status code + exception class) to `app/src/test/resources/recorded/` under stable names (`asr_silence_ru.json`, `tts_mila_probe.json`). **Seed fixtures committed now are hand-written, synthetic-but-realistic placeholders** (no creds to record here — documented in-file via `provenance.recorded=false`); the owner re-records with real responses locally. `SaluteFixtureReplayTest` (normal CI suite) replays every committed fixture through the Phase 1 fakes; `RecordedFixtureMappingTest` closes the record→replay mapping loop without creds. Decision note: real-response fixtures are safe to commit under this sanitization contract, but until a local recording exists the synthetic seeds stand in.
+- P2.4: README + RUNBOOK "Integration testing" sections (setup, runs, recorder, privacy note, troubleshooting) + CHANGELOG entry.
+- Gate: `:app:assembleDebug :app:testDebugUnitTest` green with zero credentials (live tier skips); both new tasks verified to skip with clear messages; `:app:detekt` green.
+
 ## Phase 3 — Correctness landmines
 
 | ID | Action | Files | Size |

@@ -193,6 +193,55 @@ adb shell settings get secure enabled_notification_listeners
 ./gradlew testDebugUnitTest
 ```
 
+## Integration testing (live services + recorded fixtures)
+
+CI is credential-free by construction: live tests run **locally only**, and CI
+replays **sanitized recorded fixtures** (REMEDIATION_PLAN Phase 2, owner
+decision #1).
+
+```bash
+# One-time setup
+cp local.secrets.properties.example local.secrets.properties
+# fill in the Salute + GigaChat OAuth client id/secret pairs (same values
+# the app asks for in Settings; scopes SALUTE_SPEECH_PERS / GIGACHAT_API_PERS)
+
+./gradlew :app:integrationTest        # live smoke tests (GigaChat + Salute ASR/TTS)
+./gradlew :app:recordSaluteFixtures   # re-record sanitized fixtures into app/src/test/resources/recorded/
+```
+
+Behavior without credentials:
+
+- `:app:testDebugUnitTest` (the CI gate) never touches the network — the live
+  tests skip through JUnit assumptions and the suite stays green.
+- `:app:integrationTest` / `:app:recordSaluteFixtures` print a skip reason
+  listing the MISSING KEY NAMES (values are never printed) and exit green.
+
+What gets recorded and the privacy note: only **server responses** land in a
+fixture — no credentials, no request headers, no timestamps. The recorder
+sends synthetic silence (ASR) and a fixed probe phrase (TTS), so no user
+audio or text can enter a fixture; ASR error entries are reduced to the gRPC
+status code and exception class name. Review the diff before committing.
+
+Common issues:
+
+- **`OAuth token request failed (HTTP 401)` during `integrationTest`** — wrong
+  client id/secret in `local.secrets.properties`, or the pair does not belong
+  to the listed scope (Salute pair for `jarvis.salute.*`, GigaChat pair for
+  `jarvis.gigachat.*`).
+- **Live tests skipped inside `integrationTest`** — only one service's
+  credentials are present; the other class's `@Before` assumption skipped it.
+  Provide all four keys to run everything.
+- **Embeddings smoke fails with HTTP 4xx** — the GigaChat account has no
+  embeddings entitlement (the app degrades to the lexical embedder; the live
+  smoke reports it honestly).
+- **Re-recorded fixtures diff heavily** — recordings are not deterministic
+  (transcripts/audio vary run to run); commit the fresh set as a whole. File
+  names are stable (`asr_silence_ru.json`, `tts_mila_probe.json`).
+- **CI replay test fails after a fixture change** — the committed fixture must
+  satisfy the sanitization contract (see
+  `app/src/test/java/com/jarvis/assistant/integration/SaluteFixtures.kt`):
+  server responses only, no timestamps, error entries carry status code +
+  exception class name.
 
 ## Echo cancellation (Phase A + Phase B)
 
