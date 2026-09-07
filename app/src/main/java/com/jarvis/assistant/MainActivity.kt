@@ -100,21 +100,34 @@ class MainActivity : AppCompatActivity() {
         }
 
         micButton.setOnClickListener {
-            val graph = GraphHolder.graph ?: return@setOnClickListener
+            // The graph may legitimately be absent here: the assistant is
+            // stopped, or still bootstrapping (the wake-word engine build
+            // takes a minute+ on Kirin-class devices, and the graph is
+            // rebuilt on every service restart). The button must respond
+            // EITHER WAY: the requested state is remembered in [micMuted]
+            // and applied as soon as a graph binds (see observeTranscript);
+            // a silent return here read as "the button is broken".
+            val graph = GraphHolder.graph
             micMuted = !micMuted
+            if (graph != null) {
+                graph.sessionManager.setMuted(micMuted)
+            }
             if (micMuted) {
-                graph.sessionManager.setMuted(true)
                 micButton.setIconResource(R.drawable.ic_mic_off)
                 micButton.setText(R.string.mic_unmute)
                 statusText.text = getString(R.string.state_muted)
             } else {
-                graph.sessionManager.setMuted(false)
                 micButton.setIconResource(R.drawable.ic_mic)
                 micButton.setText(R.string.mic_mute)
-                // F7: setMuted(false) restarts listening without a state
-                // transition (StateFlow does not re-emit IDLE), so the label
-                // would stay "Микрофон выключен" until the next wake word.
-                renderStatus()
+                if (graph != null) {
+                    // F7: setMuted(false) restarts listening without a state
+                    // transition (StateFlow does not re-emit IDLE), so the
+                    // label would stay "Микрофон выключен" until the next
+                    // wake word.
+                    renderStatus()
+                } else {
+                    statusText.text = getString(R.string.state_stopped)
+                }
             }
             voiceOrb.setState(currentState, micMuted)
         }
@@ -195,6 +208,10 @@ class MainActivity : AppCompatActivity() {
                     partialJob?.cancel()
                     activityJob?.cancel()
                     collectedGraph = graph
+                    // Apply the mute state requested while no graph was up:
+                    // a mute toggled during bootstrap/stopped must survive
+                    // the graph arriving (P5.3 mic-button fix).
+                    if (micMuted) graph.sessionManager.setMuted(true)
                     stateJob = launch {
                         graph.stateMachine.state.collectLatest { state ->
                             currentState = state
