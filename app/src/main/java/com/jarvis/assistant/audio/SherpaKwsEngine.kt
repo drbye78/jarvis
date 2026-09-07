@@ -155,10 +155,16 @@ class SherpaKwsEngine(
         modelingUnit = "bpe",
         numThreads = 4,
         provider = "xnnpack",
-        // modelType intentionally omitted: auto-detected from ONNX metadata.
-        // The bundled models are zipformer v1 — forcing "zipformer2" selects
-        // the wrong C++ class, producing incompatible state shapes that crash
-        // the Reshape node during the first process() call.
+        // modelType is intentionally omitted: the ONNX metadata carries
+        // model_type="zipformer2" and the C++ auto-detect dispatches correctly.
+        // (2026-09 crash post-mortem: the bundled int8 encoder was a broken
+        // third-party static-batch re-export — its /downsample/Reshape_1 baked
+        // a constant shape that never matched the runtime frame count, so the
+        // first process() aborted with Ort::Exception regardless of any
+        // modelType setting. Replaced with the official int8 encoder from
+        // sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01, whose Reshape
+        // shapes are computed dynamically. tokens/bpe/decoder/joiner were
+        // already byte-identical to that release.)
     )
 
     private fun fileModelConfig(dir: File, provider: String): OnlineModelConfig {

@@ -8,6 +8,19 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [0.2.1] — 2026-09
 
+### Fixed — wake-word engine crashed the process on first listen (device)
+- The bundled int8 KWS encoder was a broken static-batch re-export: its
+  `/downsample/Reshape_1` baked a constant shape that never matched the
+  runtime frame count, so the first `process()` aborted the whole process
+  with `Ort::Exception` (SIGABRT) — the app silently closed right after
+  "start listening" on the AGS6-W09 target device. Replaced with the official
+  int8 encoder from `sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01`
+  (dynamic shapes; tokens/bpe/decoder/joiner were already byte-identical).
+  Post-mortem documented in `SherpaKwsEngine.kt`.
+- Fixed the mic (mute) button doing nothing when the graph is down (stopped
+  or still bootstrapping): it now always responds, and a mute toggled while
+  no graph is up is applied when the graph binds.
+
 REMEDIATION_PLAN Phases 0–5: privacy hardening, doc-truth pass, failure-lane
 test suites, local-only live-service tier, correctness landmines, cognitive
 eval completion, formatting pass. See the entries below (released as 0.2.1;
