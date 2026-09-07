@@ -8,6 +8,7 @@
     <string name="channel_errors">Errors</string>
     <string name="channel_activation">Jarvis activation</string>
     <string name="channel_alarm">Alarms</string>
+    <string name="channel_alarm_hint_name">Timer precision</string>
 
     <!-- Android 10 activation prompt (post-boot / post-update) -->
     <string name="activation_notif_title">Jarvis is not running</string>
@@ -133,6 +134,10 @@
 
     <!-- Ringing -->
     <string name="alarm_notification_title">Alarm</string>
+    <!-- Exact-alarm degradation note (P3.1): shown once when Android 12+ denied
+         SCHEDULE_EXACT_ALARM and a timer was armed inexact. -->
+    <string name="exact_alarm_degrade_title">Timer precision limited</string>
+    <string name="exact_alarm_degrade_note">Exact alarm permission is disabled — timers may ring up to 10 minutes late. Allow “Alarms &amp; reminders” for Jarvis in system settings.</string>
     <string name="dismiss">Dismiss</string>
     <string name="snooze">Snooze for 10 minutes</string>
     <string name="snooze_label">Alarm repeat</string>

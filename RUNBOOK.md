@@ -169,6 +169,13 @@ The one-minute on-device check that re-enables it:
 - Alarms fire via `setAlarmClock` — check the system alarm indicator appears.
 - Do-not-disturb filters can silence alarms: check DND settings.
 - Alarms survive reboots (BootReceiver re-arms them from Room).
+- **Timers on Android 12+:** exact scheduling needs `SCHEDULE_EXACT_ALARM`
+  ("Alarms & reminders" in system settings; denied-by-default from Android 14
+  on fresh installs of sideloaded APKs). If it is revoked, `SystemAlertArmer`
+  degrades honestly: the timer arms as inexact `setWindow` (up to the 10-minute
+  window late) and posts a one-time low-importance notification ("Точность
+  таймеров ограничена") telling the user to grant the permission. Alarms, by
+  contrast, are never affected — `setAlarmClock` is exempt from the permission.
 
 ## Debugging
 

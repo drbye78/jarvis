@@ -8,6 +8,7 @@
     <string name="channel_errors">Ошибки</string>
     <string name="channel_activation">Активация Джарвис</string>
     <string name="channel_alarm">Будильники</string>
+    <string name="channel_alarm_hint_name">Точность таймеров</string>
 
     <!-- Android 10 activation prompt (post-boot / post-update) -->
     <string name="activation_notif_title">Джарвис не запущен</string>
@@ -134,6 +135,10 @@
 
     <!-- Ringing -->
     <string name="alarm_notification_title">Будильник</string>
+    <!-- Exact-alarm degradation note (P3.1): shown once when Android 12+ denied
+         SCHEDULE_EXACT_ALARM and a timer was armed inexact. -->
+    <string name="exact_alarm_degrade_title">Точность таймеров ограничена</string>
+    <string name="exact_alarm_degrade_note">Разрешение на точные будильники отключено — таймеры могут сработать с задержкой до 10 минут. Разрешите «Будильники и напоминания» в настройках системы.</string>
     <string name="dismiss">Отключить</string>
     <string name="snooze">Отложить на 10 минут</string>
     <string name="snooze_label">Повтор будильника</string>

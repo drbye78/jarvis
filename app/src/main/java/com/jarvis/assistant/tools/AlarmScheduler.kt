@@ -58,6 +58,49 @@ object AlarmTimes {
 }
 
 /**
+ * REMEDIATION_PLAN P3.1: pure decision logic for exact-alarm availability.
+ * NO Android imports: [sdkInt] and the `AlarmManager.canScheduleExactAlarms()`
+ * result (null = not queried, API < 31) come in as plain values so the
+ * degrade-vs-exact matrix is JVM-testable without Robolectric.
+ *
+ * SCHEDULE_EXACT_ALARM is declared in the manifest (normal permission:
+ * granted by default on API 29–30; on API 31+ it may be revoked in Settings).
+ * `setAlarmClock` (alarms) is exempt from the permission and always exact —
+ * only TIMER's `setExactAndAllowWhileIdle` can degrade.
+ */
+object ExactAlarmPolicy {
+
+    sealed interface TimerSchedule {
+        /** Permission available (declared+granted): exact, Doze-proof alarm path. */
+        data object ExactAllowWhileIdle : TimerSchedule
+        /**
+         * DENIED (API 31+, revoked in Settings) or unusable: honest inexact
+         * degradation — a bounded-latency `setWindow` window instead of the
+         * exact call, plus a user-visible one-time notification from the
+         * armer so the user can grant Alarms & reminders.
+         */
+        data object Inexact : TimerSchedule
+    }
+
+    /** Window granted to a degraded timer: keeps "in ~10 min" roughly honest. */
+    const val INEXACT_WINDOW_MS = 10L * 60 * 1000L
+
+    /**
+     * null [canScheduleExactAlarms] = API < 31 (the OS call does not exist);
+     * the manifest-declared normal permission is granted there, so exact.
+     */
+    fun timerSchedule(sdkInt: Int, canScheduleExactAlarms: Boolean?): TimerSchedule =
+        if (sdkInt >= 31 && canScheduleExactAlarms != true) TimerSchedule.Inexact
+        else TimerSchedule.ExactAllowWhileIdle
+
+    /** Separate low-importance lane: never competes with the alarm channel. */
+    const val DEGRADE_CHANNEL_ID = "jarvis_alarm_hint"
+
+    /** Fixed id for the one-time degrade note (distinct from any alert row id note). */
+    const val DEGRADE_NOTIFICATION_ID = 4
+}
+
+/**
  * Thin seam over [AlarmManager] so scheduling DECISIONS are unit-testable on
  * the JVM without instrumentation. Production implementation:
  * [SystemAlertArmer].
@@ -116,19 +159,81 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
             }
         val operation = fireOperation(id, kind, label)
         if (kind == ScheduledAlertEntity.KIND_TIMER) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
-                Timber.w("Exact alarm permission denied — arming timer %d as inexact", id)
-                am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, operation)
-            } else {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, operation)
+            when (ExactAlarmPolicy.timerSchedule(Build.VERSION.SDK_INT, exactAvailable(am))) {
+                ExactAlarmPolicy.TimerSchedule.ExactAllowWhileIdle ->
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, operation)
+                ExactAlarmPolicy.TimerSchedule.Inexact -> {
+                    // P3.1 honest degradation: bounded-latency inexact window
+                    // + a ONE-TIME user-visible notification (Timber alone
+                    // would hide the degraded precision from the user).
+                    Timber.w("Exact alarm permission denied — arming timer %d as inexact", id)
+                    am.setWindow(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAtMillis,
+                        ExactAlarmPolicy.INEXACT_WINDOW_MS,
+                        operation,
+                    )
+                    noteInexactTimerOnce()
+                }
             }
         } else {
             // setAlarmClock: the correct API for user-facing alarms — fires
-            // reliably through Doze and shows the system alarm-clock indicator.
+            // reliably through Doze, shows the system alarm-clock indicator
+            // and is exempt from SCHEDULE_EXACT_ALARM entirely.
             am.setAlarmClock(
                 AlarmManager.AlarmClockInfo(triggerAtMillis, showOperation(id, kind, label)),
                 operation,
             )
+        }
+    }
+
+    /**
+     * null on API < 31 (the method does not exist; normal permission is
+     * granted there). Catching NoSuchMethodError is not needed — the SDK
+     * guard keeps the call compiled-in only on API 31+ devices where the
+     * method is present.
+     */
+    private fun exactAvailable(am: AlarmManager): Boolean? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) am.canScheduleExactAlarms() else null
+
+    /**
+     * User-visible signal for the inexact degradation: once per armer
+     * instance (≈ once per service lifetime in production — the armer is
+     * graph-owned), NOT once per timer, so every timer does not spam a
+     * notification.
+     */
+    private var notedInexactTimer = false
+    private fun noteInexactTimerOnce() {
+        if (notedInexactTimer) return
+        notedInexactTimer = true
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        if (nm == null) {
+            Timber.e("NotificationManager unavailable — no exact-alarm degrade note posted")
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    ExactAlarmPolicy.DEGRADE_CHANNEL_ID,
+                    context.getString(R.string.channel_alarm_hint_name),
+                    NotificationManager.IMPORTANCE_LOW,
+                ),
+            )
+        }
+        // Odd OEM safety: the channel for a fixed low-importance lane can
+        // still vanish; a failed note must not break the arm() call.
+        try {
+            nm.notify(
+                ExactAlarmPolicy.DEGRADE_NOTIFICATION_ID,
+                NotificationCompat.Builder(context, ExactAlarmPolicy.DEGRADE_CHANNEL_ID)
+                    .setContentTitle(context.getString(R.string.exact_alarm_degrade_title))
+                    .setContentText(context.getString(R.string.exact_alarm_degrade_note))
+                    .setSmallIcon(R.drawable.ic_mic)
+                    .setAutoCancel(true)
+                    .build(),
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to post exact-alarm degrade note")
         }
     }
 
