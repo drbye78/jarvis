@@ -1,0 +1,19 @@
+{
+ "id": "023",
+ "kind": "self-fact",
+ "dialogue": [
+  {
+   "messageId": 34,
+   "text": "Я работаю тестировщиком"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"profession\", \"value\": \"тестировщик\", \"confidence\": 0.95, \"evidence\": \"работаю тестировщиком\", \"messageId\": 34}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "profession",
+   "value": "тестировщик"
+  }
+ ],
+ "forbiddenFacts": []
+}

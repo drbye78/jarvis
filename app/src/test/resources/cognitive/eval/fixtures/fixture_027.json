@@ -1,0 +1,19 @@
+{
+ "id": "027",
+ "kind": "third-party",
+ "dialogue": [
+  {
+   "messageId": 40,
+   "text": "Мой сын Серёжа учится в пятом классе"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"сын\", \"predicate\": \"school_grade\", \"value\": \"пятый класс\", \"confidence\": 0.9, \"evidence\": \"Серёжа учится в пятом классе\", \"messageId\": 40}]}",
+ "expectedFacts": [
+  {
+   "subject": "сын",
+   "predicate": "school_grade",
+   "value": "пятый класс"
+  }
+ ],
+ "forbiddenFacts": []
+}

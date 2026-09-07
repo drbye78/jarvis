@@ -1,0 +1,19 @@
+{
+ "id": "026",
+ "kind": "third-party",
+ "dialogue": [
+  {
+   "messageId": 39,
+   "text": "Моя жена Аня работает врачом"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"жена\", \"predicate\": \"profession\", \"value\": \"врач\", \"confidence\": 0.9, \"evidence\": \"Аня работает врачом\", \"messageId\": 39}]}",
+ "expectedFacts": [
+  {
+   "subject": "жена",
+   "predicate": "profession",
+   "value": "врач"
+  }
+ ],
+ "forbiddenFacts": []
+}

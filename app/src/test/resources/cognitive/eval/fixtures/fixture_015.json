@@ -1,0 +1,19 @@
+{
+ "id": "015",
+ "kind": "explicit",
+ "dialogue": [
+  {
+   "messageId": 26,
+   "text": "Джарвис, запомни, что я работаю в Яндексе"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"employer\", \"value\": \"Яндекс\", \"confidence\": 0.95, \"evidence\": \"работаю в Яндексе\", \"messageId\": 26}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "employer",
+   "value": "Яндекс"
+  }
+ ],
+ "forbiddenFacts": []
+}

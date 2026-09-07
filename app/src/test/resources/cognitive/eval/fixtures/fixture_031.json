@@ -1,0 +1,19 @@
+{
+ "id": "031",
+ "kind": "correction",
+ "dialogue": [
+  {
+   "messageId": 44,
+   "text": "Мой номер изменился: теперь 7-999-000-11-22"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"phone\", \"value\": \"7-999-000-11-22\", \"confidence\": 0.95, \"evidence\": \"теперь 7-999-000-11-22\", \"messageId\": 44}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "phone",
+   "value": "7-999-000-11-22"
+  }
+ ],
+ "forbiddenFacts": []
+}

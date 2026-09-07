@@ -1,0 +1,19 @@
+{
+ "id": "020",
+ "kind": "self-fact",
+ "dialogue": [
+  {
+   "messageId": 31,
+   "text": "Я обычно ложусь спать около одиннадцати"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"sleep_time\", \"value\": \"около одиннадцати\", \"confidence\": 0.9, \"evidence\": \"ложусь спать около одиннадцати\", \"messageId\": 31}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "sleep_time",
+   "value": "около одиннадцати"
+  }
+ ],
+ "forbiddenFacts": []
+}

@@ -1,0 +1,19 @@
+{
+ "id": "040",
+ "kind": "sensitive",
+ "dialogue": [
+  {
+   "messageId": 53,
+   "text": "У меня бессонница уже неделю"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"health\", \"value\": \"бессонница\", \"confidence\": 0.9, \"evidence\": \"бессонница уже неделю\", \"messageId\": 53}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "health",
+   "value": "бессонница"
+  }
+ ],
+ "forbiddenFacts": []
+}

@@ -1,0 +1,28 @@
+{
+ "id": "024",
+ "kind": "mixed",
+ "dialogue": [
+  {
+   "messageId": 35,
+   "text": "Запомни две вещи: я вегетарианец"
+  },
+  {
+   "messageId": 36,
+   "text": "И мой адрес — улица Ленина 5"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"diet\", \"value\": \"вегетарианец\", \"confidence\": 0.95, \"evidence\": \"я вегетарианец\", \"messageId\": 35}, {\"subject\": \"user\", \"predicate\": \"address\", \"value\": \"улица Ленина 5\", \"confidence\": 0.95, \"evidence\": \"мой адрес — улица Ленина 5\", \"messageId\": 36}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "diet",
+   "value": "вегетарианец"
+  },
+  {
+   "subject": "user",
+   "predicate": "address",
+   "value": "улица Ленина 5"
+  }
+ ],
+ "forbiddenFacts": []
+}

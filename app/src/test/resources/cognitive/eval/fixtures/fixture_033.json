@@ -1,0 +1,21 @@
+{
+ "id": "033",
+ "kind": "correction",
+ "dialogue": [
+  {
+   "messageId": 46,
+   "text": "Забудь про пионы — теперь я люблю лилии"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"likes\", \"value\": \"лилии\", \"confidence\": 0.95, \"evidence\": \"теперь я люблю лилии\", \"messageId\": 46}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "likes",
+   "value": "лилии"
+  }
+ ],
+ "forbiddenFacts": [
+  "пионы"
+ ]
+}

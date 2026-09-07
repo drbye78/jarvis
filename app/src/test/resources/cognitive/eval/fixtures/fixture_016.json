@@ -1,0 +1,19 @@
+{
+ "id": "016",
+ "kind": "explicit",
+ "dialogue": [
+  {
+   "messageId": 27,
+   "text": "Запомни: мой любимый писатель — Булгаков"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"favorite_writer\", \"value\": \"Булгаков\", \"confidence\": 0.95, \"evidence\": \"любимый писатель — Булгаков\", \"messageId\": 27}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "favorite_writer",
+   "value": "Булгаков"
+  }
+ ],
+ "forbiddenFacts": []
+}

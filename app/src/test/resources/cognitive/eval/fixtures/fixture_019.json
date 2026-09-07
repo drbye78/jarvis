@@ -1,0 +1,19 @@
+{
+ "id": "019",
+ "kind": "self-fact",
+ "dialogue": [
+  {
+   "messageId": 30,
+   "text": "Я коллекционирую виниловые пластинки"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"hobby\", \"value\": \"виниловые пластинки\", \"confidence\": 0.9, \"evidence\": \"коллекционирую виниловые пластинки\", \"messageId\": 30}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "hobby",
+   "value": "виниловые пластинки"
+  }
+ ],
+ "forbiddenFacts": []
+}

@@ -6,6 +6,21 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — REMEDIATION_PLAN Phase 4: extraction eval completed to the full 40-fixture set (§10.1)
+- Authored the remaining 26 RU dialogue fixtures (015–040): explicit remember,
+  self-facts, third parties (subject ≠ user), corrections, negations, noise
+  probes, sensitive, multi-turn — Appendix C format, self-contained recorded
+  responses, parse-valid through the real validator (evidence anchoring,
+  provenance). `ExtractionEvalTest` now pins **40** and the §10.1 gate
+  (precision ≥ 0.85 / recall ≥ 0.7 / zero hallucinations) **passes on the
+  full set**.
+- `memory.autoExtract` stays default OFF for now: the harness measures the
+  local validation pipeline against recorded responses; the default flip is
+  deferred until the §10.6 device-side measurements (owner, P4.2).
+- COGNITIVE_PLAN §10.2: documented the P4.3 upgrade path for the vector-recall
+  negative result (real-transcript corpus ≥ 200 pairs, held-out RRF re-tuning,
+  Kirin 710A latency budget) before `RetrievalGate.LOCAL_BRANCH_SHIPS` may flip.
+
 ### Added — REMEDIATION_PLAN Phase 2: live-service integration tier (local-only) + recorded fixtures
 - **Local-only live smoke tests** (`./gradlew :app:integrationTest`): GigaChat
   OAuth/chatOnce/streaming/embeddings; Salute ASR round trip on synthetic

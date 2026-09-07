@@ -1,0 +1,19 @@
+{
+ "id": "028",
+ "kind": "third-party",
+ "dialogue": [
+  {
+   "messageId": 41,
+   "text": "Мой коллега Дима занимается скалолазанием"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"коллега\", \"predicate\": \"hobby\", \"value\": \"скалолазание\", \"confidence\": 0.9, \"evidence\": \"Дима занимается скалолазанием\", \"messageId\": 41}]}",
+ "expectedFacts": [
+  {
+   "subject": "коллега",
+   "predicate": "hobby",
+   "value": "скалолазание"
+  }
+ ],
+ "forbiddenFacts": []
+}

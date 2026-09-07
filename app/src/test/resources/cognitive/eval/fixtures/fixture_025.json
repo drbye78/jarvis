@@ -1,0 +1,25 @@
+{
+ "id": "025",
+ "kind": "mixed",
+ "dialogue": [
+  {
+   "messageId": 37,
+   "text": "Меня зовут Олег"
+  },
+  {
+   "messageId": 38,
+   "text": "Поставь таймер на пять минут"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"name\", \"value\": \"Олег\", \"confidence\": 1.0, \"evidence\": \"Меня зовут Олег\", \"messageId\": 37}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "name",
+   "value": "Олег"
+  }
+ ],
+ "forbiddenFacts": [
+  "таймер"
+ ]
+}

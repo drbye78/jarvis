@@ -1,0 +1,15 @@
+{
+ "id": "037",
+ "kind": "noise",
+ "dialogue": [
+  {
+   "messageId": 50,
+   "text": "Какая сегодня погода?"
+  }
+ ],
+ "recordedResponse": "{\"facts\": []}",
+ "expectedFacts": [],
+ "forbiddenFacts": [
+  "погода"
+ ]
+}

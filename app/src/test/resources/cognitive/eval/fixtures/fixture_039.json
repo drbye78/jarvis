@@ -1,0 +1,15 @@
+{
+ "id": "039",
+ "kind": "noise",
+ "dialogue": [
+  {
+   "messageId": 52,
+   "text": "Открой Телеграм"
+  }
+ ],
+ "recordedResponse": "{\"facts\": []}",
+ "expectedFacts": [],
+ "forbiddenFacts": [
+  "телеграм"
+ ]
+}

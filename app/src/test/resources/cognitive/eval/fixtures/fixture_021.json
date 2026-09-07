@@ -1,0 +1,19 @@
+{
+ "id": "021",
+ "kind": "self-fact",
+ "dialogue": [
+  {
+   "messageId": 32,
+   "text": "Мой размер обуви — сорок второй"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"shoe_size\", \"value\": \"сорок второй\", \"confidence\": 0.9, \"evidence\": \"размер обуви — сорок второй\", \"messageId\": 32}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "shoe_size",
+   "value": "сорок второй"
+  }
+ ],
+ "forbiddenFacts": []
+}

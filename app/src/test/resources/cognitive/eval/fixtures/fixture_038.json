@@ -1,0 +1,15 @@
+{
+ "id": "038",
+ "kind": "noise",
+ "dialogue": [
+  {
+   "messageId": 51,
+   "text": "Поставь таймер на десять минут"
+  }
+ ],
+ "recordedResponse": "{\"facts\": []}",
+ "expectedFacts": [],
+ "forbiddenFacts": [
+  "таймер"
+ ]
+}

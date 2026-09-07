@@ -5,23 +5,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * COGNITIVE_PLAN §10.1: the extraction quality gate. Runs the starter
- * fixture set through the REAL validator + normalizer.
+ * COGNITIVE_PLAN §10.1: the extraction quality gate. Runs the FULL
+ * 40-fixture set (Appendix C) through the REAL validator + normalizer.
  *
  * Gate decision (recorded in RUNBOOK): `memory.autoExtract` stays DEFAULT
- * OFF until the full 40-fixture set (per Appendix C) passes precision ≥ 0.85
- * / recall ≥ 0.7 with zero hallucinations. The starter set below already
- * enforces the gate so a validator regression fails CI.
+ * OFF until the full 40-fixture set passes precision ≥ 0.85 / recall ≥ 0.7
+ * with zero hallucinations. The suite below enforces the gate so a
+ * validator regression fails CI; fixtures are expanded from real device
+ * transcripts over time (honest scope note in [ExtractionEvalHarness]).
  */
 class ExtractionEvalTest {
 
     private val harness = ExtractionEvalHarness()
 
     @Test
-    fun `starter fixture set passes the extraction gate`() {
+    fun `full fixture set passes the extraction gate`() {
         val fixtures = EvalFixtures.load()
         assertTrue("fixtures must be present on the test classpath", fixtures.isNotEmpty())
-        assertEquals(14, fixtures.size)
+        assertEquals(40, fixtures.size)
 
         val metrics = harness.evaluate(fixtures)
         assertTrue(

@@ -1,0 +1,19 @@
+{
+ "id": "035",
+ "kind": "negation",
+ "dialogue": [
+  {
+   "messageId": 48,
+   "text": "Мне больше не нравится бегать по утрам"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"dislikes\", \"value\": \"бегать по утрам\", \"confidence\": 0.9, \"evidence\": \"не нравится бегать по утрам\", \"messageId\": 48}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "dislikes",
+   "value": "бегать по утрам"
+  }
+ ],
+ "forbiddenFacts": []
+}

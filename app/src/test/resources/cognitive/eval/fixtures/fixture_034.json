@@ -1,0 +1,19 @@
+{
+ "id": "034",
+ "kind": "negation",
+ "dialogue": [
+  {
+   "messageId": 47,
+   "text": "Я не переношу лук в блюдах"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"dislikes\", \"value\": \"лук\", \"confidence\": 0.9, \"evidence\": \"не переношу лук в блюдах\", \"messageId\": 47}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "dislikes",
+   "value": "лук"
+  }
+ ],
+ "forbiddenFacts": []
+}

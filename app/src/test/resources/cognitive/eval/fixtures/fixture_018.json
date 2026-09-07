@@ -1,0 +1,19 @@
+{
+ "id": "018",
+ "kind": "explicit",
+ "dialogue": [
+  {
+   "messageId": 29,
+   "text": "Запомни, что мою маму зовут Люда"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"mother\", \"value\": \"Люда\", \"confidence\": 1.0, \"evidence\": \"мою маму зовут Люда\", \"messageId\": 29}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "mother",
+   "value": "Люда"
+  }
+ ],
+ "forbiddenFacts": []
+}

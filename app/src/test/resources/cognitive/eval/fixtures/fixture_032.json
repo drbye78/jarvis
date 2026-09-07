@@ -1,0 +1,21 @@
+{
+ "id": "032",
+ "kind": "correction",
+ "dialogue": [
+  {
+   "messageId": 45,
+   "text": "Я теперь на удалёнке, не в офисе"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"work_mode\", \"value\": \"удалённо\", \"confidence\": 0.9, \"evidence\": \"Я теперь на удалёнке\", \"messageId\": 45}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "work_mode",
+   "value": "удалённо"
+  }
+ ],
+ "forbiddenFacts": [
+  "офис"
+ ]
+}

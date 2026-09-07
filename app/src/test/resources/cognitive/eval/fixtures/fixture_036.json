@@ -1,0 +1,24 @@
+{
+ "id": "036",
+ "kind": "negation",
+ "dialogue": [
+  {
+   "messageId": 49,
+   "text": "У меня больше нет кошки, только собака"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"pets\", \"value\": \"собака\", \"confidence\": 0.9, \"evidence\": \"только собака\", \"messageId\": 49}, {\"subject\": \"user\", \"predicate\": \"dislikes\", \"value\": \"кошка\", \"confidence\": 0.85, \"evidence\": \"больше нет кошки\", \"messageId\": 49}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "pets",
+   "value": "собака"
+  },
+  {
+   "subject": "user",
+   "predicate": "dislikes",
+   "value": "кошка"
+  }
+ ],
+ "forbiddenFacts": []
+}

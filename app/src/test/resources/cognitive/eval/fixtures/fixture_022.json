@@ -1,0 +1,19 @@
+{
+ "id": "022",
+ "kind": "self-fact",
+ "dialogue": [
+  {
+   "messageId": 33,
+   "text": "Я живу в Самаре"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"city\", \"value\": \"Самара\", \"confidence\": 0.95, \"evidence\": \"живу в Самаре\", \"messageId\": 33}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "city",
+   "value": "Самара"
+  }
+ ],
+ "forbiddenFacts": []
+}

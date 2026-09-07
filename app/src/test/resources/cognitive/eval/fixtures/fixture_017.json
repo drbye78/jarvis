@@ -1,0 +1,19 @@
+{
+ "id": "017",
+ "kind": "explicit",
+ "dialogue": [
+  {
+   "messageId": 28,
+   "text": "Запиши, что мой ноутбук — MacBook Pro"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"device\", \"value\": \"MacBook Pro\", \"confidence\": 0.9, \"evidence\": \"мой ноутбук — MacBook Pro\", \"messageId\": 28}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "device",
+   "value": "MacBook Pro"
+  }
+ ],
+ "forbiddenFacts": []
+}

@@ -1,0 +1,19 @@
+{
+ "id": "029",
+ "kind": "third-party",
+ "dialogue": [
+  {
+   "messageId": 42,
+   "text": "Моя сестра Катя любит суши"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"сестра\", \"predicate\": \"likes\", \"value\": \"суши\", \"confidence\": 0.9, \"evidence\": \"Катя любит суши\", \"messageId\": 42}]}",
+ "expectedFacts": [
+  {
+   "subject": "сестра",
+   "predicate": "likes",
+   "value": "суши"
+  }
+ ],
+ "forbiddenFacts": []
+}

@@ -1,0 +1,21 @@
+{
+ "id": "030",
+ "kind": "correction",
+ "dialogue": [
+  {
+   "messageId": 43,
+   "text": "Я переехал — теперь живу в Казани"
+  }
+ ],
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"city\", \"value\": \"Казань\", \"confidence\": 0.95, \"evidence\": \"теперь живу в Казани\", \"messageId\": 43}]}",
+ "expectedFacts": [
+  {
+   "subject": "user",
+   "predicate": "city",
+   "value": "Казань"
+  }
+ ],
+ "forbiddenFacts": [
+  "Самара"
+ ]
+}
