@@ -149,6 +149,13 @@ Follow-ups recorded from P0 execution:
 
 ## Phase 6 — Final doc reconcile + re-audit
 
+**Status: ✅ COMPLETE (2026-09) — closure verified in-house** (the independent explorer lane could not run: the specialist-transport channel stayed down all session; every check below was executed directly instead).
+- Doc reconcile: `grep` sweep clean ("currently at v6" / "minSdk is 30" / "319 keys" — only this plan's own gate text); AGENTS.md test count → ~720; versionName 0.2.1 (versionCode 5); CHANGELOG has a [0.2.1] section; all six phase status blocks above are recorded.
+- Success criteria (top of this file): all 8 checked except the two device/credential-gated ones — `integrationTest` runs locally only (owner creds), and device-side measurements are P4.2 (open, owner).
+- Closure evidence: `./gradlew :app:detekt` → BUILD SUCCESSFUL (maxIssues 0); `./gradlew :app:assembleDebug :app:testDebugUnitTest` → BUILD SUCCESSFUL, ~724 tests, 0 failed (also verified with a full `--rerun` re-execution).
+- Residual risk carried forward: P4.2 device measurements; P5.3 addendum (wake-word failure-reason localization through the `SpeechPhrases` seam); the supersede-race fix relies on the stress test's 100 iterations — a heisenbug-class residual cannot be fully excluded.
+- Note: the by-design engine leak, real-time-budgeted tests, and the wedged-revive intentional leak were intentionally NOT "fixed" — they are correct engineering, documented in AGENTS.md.
+
 - Full docs-vs-code reconcile across all 7 docs (AGENTS, README, ARCHITECTURE, RUNBOOK, COGNITIVE_PLAN,
   FIXPLAN, CHANGELOG) + this file; update AGENTS.md test count.
 - Re-run the audit lanes (explorers) to verify closure; report residual risk.
