@@ -6,6 +6,8 @@ import com.jarvis.assistant.cognitive.data.HabitRuleDao
 import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 import java.util.Calendar
 import java.util.TimeZone
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * COGNITIVE_PLAN §8.2: mines [HabitRuleEntity] rows out of `command_events`.
@@ -28,28 +30,39 @@ class HabitDetector(
     private val ruleDao: HabitRuleDao,
     private val habitEligibleTools: Set<String>,
     private val nowMs: () -> Long = System::currentTimeMillis,
+    /**
+     * P4.4 (REMEDIATION_PLAN): serialization for EVERY rule-row write of
+     * this detector. The coordinator injects the SAME mutex its reject /
+     * accept / fire paths use (P0.8 `ruleWriteMutex`), so the nightly /
+     * ticker rule writes can no longer interleave a session-lane
+     * read-modify-write on the same row (same lost-update class as the
+     * reject race). Standalone constructions (tests) default to a private
+     * mutex. kotlinx Mutex is NOT reentrant — never nest the three write
+     * methods below into an outer `withLock` on the same instance.
+     */
+    private val ruleWriteMutex: Mutex = Mutex(),
 ) {
 
     /**
      * Recomputes rules from the trailing [lookbackDays] window.
      * @return number of rules created or updated (diagnostics only).
      */
-    suspend fun recompute(lookbackDays: Int = LOOKBACK_DAYS): Int {
-        if (habitEligibleTools.isEmpty()) return 0
+    suspend fun recompute(lookbackDays: Int = LOOKBACK_DAYS): Int = ruleWriteMutex.withLock {
+        if (habitEligibleTools.isEmpty()) return@withLock 0
         val since = nowMs() - lookbackDays * DAY_MS
         val events = try {
             eventDao.voiceOkSince(since, habitEligibleTools.toList())
         } catch (_: Exception) {
-            return 0 // telemetry unreadable — habits simply wait for the next run
+            return@withLock 0 // telemetry unreadable — habits simply wait for the next run
         }
-        if (events.isEmpty()) return 0
+        if (events.isEmpty()) return@withLock 0
 
         val clusters = cluster(events)
         var touched = 0
         for ((key, support) in clusters) {
             touched += upsertCluster(key, support)
         }
-        return touched
+        touched
     }
 
     /** Returns 1 when the cluster created or updated a rule, 0 otherwise. */

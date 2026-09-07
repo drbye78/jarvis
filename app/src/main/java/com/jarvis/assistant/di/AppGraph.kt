@@ -277,6 +277,8 @@ class AppGraph(
      */
     val cognitiveCoordinator: com.jarvis.assistant.cognitive.CognitiveCoordinator by lazy {
         com.jarvis.assistant.cognitive.CognitiveCoordinator(
+            deps = com.jarvis.assistant.cognitive.CognitiveDeps(
+
             factDao = database.userFactDao(),
             queueDao = database.extractionQueueDao(),
             metaDao = database.memoryMetaDao(),
@@ -316,8 +318,9 @@ class AppGraph(
             habitEligibleTools = config.habitEligibleTools,
             modelId = { provider.openAiModel },
             strings = com.jarvis.assistant.tools.AndroidToolStrings(appContext),
-            parentScope = scope,
             inTransaction = { block -> database.withTransaction { block() } },
+            ),
+            parentScope = scope,
         )
     }
 

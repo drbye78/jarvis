@@ -122,6 +122,12 @@ Follow-ups recorded from P0 execution:
 
 **Gate:** 40/40 fixtures committed, eval report updated, coordinator refactor green.
 
+**Status: ✅ COMPLETE except P4.2 (device-gated).** Full gate green ×2 after the refactor.
+- P4.1: 26 new fixtures authored (015–040; explicit/self-fact/third-party/correction/negation/noise/sensitive/mixed) — `ExtractionEvalTest` pins **40** and the §10.1 gate **passes** on the full set. Committed 71acbd1. `memory.autoExtract` stays default OFF pending P4.2 device validation (CHANGELOG documents this honestly).
+- P4.3: vector-recall upgrade path documented in COGNITIVE_PLAN §10.2 (real-transcript corpus ≥ 200 pairs with lexical recall@5 < 0.90, held-out RRF re-tuning with ≤ 2% lexical regression, Kirin 710A ≤ 250 ms) — `RetrievalGate.LOCAL_BRANCH_SHIPS` flips only when all three hold.
+- P4.4: `CognitiveDeps` (constructor param grouping), `FactExportService` (JSON export extracted), `embed/BenchmarkRunner` (benchmark orchestration extracted) — coordinator −218 LOC net; P0.8 `ruleWriteMutex` extended to ALL `HabitDetector` rule writes (injected shared mutex, non-reentrancy documented); 4 call sites (AppGraph + 3 test files) updated to the deps object.
+- P4.2: OPEN — requires the owner's target device (RSS / TTFT / overnight drain per §10.6).
+
 ## Phase 5 — Debt & hygiene (parallelizable, fixer-friendly)
 
 | ID | Action | Size |

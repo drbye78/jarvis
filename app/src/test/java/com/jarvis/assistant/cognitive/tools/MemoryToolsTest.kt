@@ -1,6 +1,7 @@
 package com.jarvis.assistant.cognitive.tools
 
 import com.jarvis.assistant.cognitive.CognitiveCoordinator
+import com.jarvis.assistant.cognitive.CognitiveDeps
 import com.jarvis.assistant.cognitive.extract.FakeExtractionQueueDao
 import com.jarvis.assistant.cognitive.extract.FakeMemoryMetaDao
 import com.jarvis.assistant.cognitive.extract.FakeMessageDao
@@ -39,6 +40,7 @@ class MemoryToolsTest {
     ): Pair<CognitiveCoordinator, FakeUserFactDao> {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val coordinator = CognitiveCoordinator(
+            deps = CognitiveDeps(
             factDao = factDao,
             queueDao = FakeExtractionQueueDao(),
             metaDao = FakeMemoryMetaDao(),
@@ -52,8 +54,9 @@ class MemoryToolsTest {
             cloudEnabled = cloudEnabled,
             sensitiveVisible = sensitiveVisible,
             strings = ToolStrings.Default,
-            parentScope = scope,
             nowMs = { 1_000L },
+            ),
+            parentScope = scope,
         )
         return coordinator to factDao
     }

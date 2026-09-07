@@ -85,6 +85,7 @@ class SemanticRecallTest {
         ) { floatArrayOf(0f, 1f) },
         cloudEngine: EmbeddingEngine? = null,
     ) = CognitiveCoordinator(
+        deps = CognitiveDeps(
         factDao = factDao,
         queueDao = FakeExtractionQueueDao(),
         metaDao = metaDao,
@@ -101,6 +102,7 @@ class SemanticRecallTest {
         embedderChoice = embedderChoice,
         localEmbedder = localEngine,
         cloudEmbedder = cloudEngine,
+        ),
         parentScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob()),
     )
 

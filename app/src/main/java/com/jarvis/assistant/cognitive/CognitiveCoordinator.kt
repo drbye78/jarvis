@@ -1,36 +1,26 @@
 package com.jarvis.assistant.cognitive
 
-import com.jarvis.assistant.cognitive.data.ExtractionQueueDao
-import com.jarvis.assistant.cognitive.data.ExtractionQueueEntity
-import com.jarvis.assistant.cognitive.data.MemoryMetaDao
-import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
-import com.jarvis.assistant.cognitive.data.UserFactDao
 import com.jarvis.assistant.cognitive.behavior.ArgFingerprints
 import com.jarvis.assistant.cognitive.behavior.BehaviorArbiter
-import com.jarvis.assistant.cognitive.behavior.DeviceSignals
 import com.jarvis.assistant.cognitive.behavior.HabitDetector
 import com.jarvis.assistant.cognitive.behavior.ProactivePresenter
-import com.jarvis.assistant.cognitive.behavior.ProactiveSpeaker
 import com.jarvis.assistant.cognitive.data.CommandEventEntity
-import com.jarvis.assistant.cognitive.data.EntityDao
+import com.jarvis.assistant.cognitive.data.ExtractionQueueEntity
 import com.jarvis.assistant.cognitive.data.FactEntityLinkEntity
-import com.jarvis.assistant.cognitive.data.FactVectorDao
 import com.jarvis.assistant.cognitive.data.HabitRuleEntity
-import com.jarvis.assistant.cognitive.data.NoopVectorDaos
+import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
 import com.jarvis.assistant.cognitive.extract.ExtractionContract
 import com.jarvis.assistant.cognitive.extract.ExtractionGate
 import com.jarvis.assistant.cognitive.extract.ExtractionQueueWorker
 import com.jarvis.assistant.cognitive.extract.FactNormalizer
 import com.jarvis.assistant.cognitive.extract.MemoryWriter
 import com.jarvis.assistant.cognitive.extract.Summarizer
+import com.jarvis.assistant.cognitive.embed.BenchmarkRunner
 import com.jarvis.assistant.cognitive.embed.EmbedderBenchmark
 import com.jarvis.assistant.cognitive.embed.EmbedderChoice
 import com.jarvis.assistant.cognitive.embed.EmbedderSelection
 import com.jarvis.assistant.cognitive.embed.EmbeddingEngine
 import com.jarvis.assistant.cognitive.embed.HybridRecall
-import com.jarvis.assistant.cognitive.embed.LexicalEmbedder
-import com.jarvis.assistant.cognitive.embed.RetrievalGate
-import com.jarvis.assistant.cognitive.embed.RetrievalProbes
 import com.jarvis.assistant.cognitive.embed.VectorBackfill
 import com.jarvis.assistant.cognitive.embed.VectorMath
 import com.jarvis.assistant.cognitive.entity.EntityIndex
@@ -47,11 +37,9 @@ import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 import com.jarvis.assistant.cognitive.recall.ScoredFact
 import com.jarvis.assistant.cognitive.tools.MemoryOutcome
 import com.jarvis.assistant.cognitive.tools.MemoryToolsFactory
-import com.jarvis.assistant.llm.LlmClient
 import com.jarvis.assistant.session.CognitiveTurnHooks
 import com.jarvis.assistant.session.TurnOrigin
 import com.jarvis.assistant.tools.ToolContract
-import com.jarvis.assistant.tools.ToolStrings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
@@ -61,7 +49,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -70,11 +57,6 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 import timber.log.Timber
 
 /**
@@ -100,60 +82,14 @@ import timber.log.Timber
 // here is composition + fire-and-forget orchestration over the child scope.
 @Suppress("LargeClass")
 class CognitiveCoordinator(
-    private val factDao: UserFactDao,
-    private val queueDao: ExtractionQueueDao,
-    private val metaDao: MemoryMetaDao,
-    private val llm: LlmClient,
-    private val messageDao: com.jarvis.assistant.data.MessageDao,
-    // Reactive settings (plan principle 5). MutableStateFlow in tests.
-    private val memoryEnabled: StateFlow<Boolean>,
-    private val autoExtractEnabled: StateFlow<Boolean>,
-    private val cloudEnabled: StateFlow<Boolean>,
-    private val sensitiveVisible: StateFlow<Boolean>,
-    // ---- COGNITIVE_PLAN Phase 2: behaviour layer (§8) -----------------------
-    private val eventDao: com.jarvis.assistant.cognitive.data.CommandEventDao = com.jarvis.assistant.cognitive.data.NoopBehaviorDaos,
-    private val ruleDao: com.jarvis.assistant.cognitive.data.HabitRuleDao = com.jarvis.assistant.cognitive.data.NoopBehaviorDaos,
-    private val behaviorLogDao: com.jarvis.assistant.cognitive.data.BehaviorLogDao = com.jarvis.assistant.cognitive.data.NoopBehaviorDaos,
-    private val summaryDao: com.jarvis.assistant.cognitive.data.SessionSummaryDao = com.jarvis.assistant.cognitive.data.NoopBehaviorDaos,
-    // ---- COGNITIVE_PLAN Phase 3: semantic recall (§11/§12.4-3/§12.4-4) -----
-    private val vectorDao: FactVectorDao = NoopVectorDaos,
-    private val entityDao: EntityDao = NoopVectorDaos,
-    /** §12.4-3 selector pref value (AUTO | CLOUD | LOCAL | OFF). Reactive. */
-    private val embedderChoice: StateFlow<String> = kotlinx.coroutines.flow.MutableStateFlow("AUTO"),
-    private val localEmbedder: EmbeddingEngine = LexicalEmbedder(),
-    /** Null = the cloud embeddings branch is not constructed. */
-    private val cloudEmbedder: EmbeddingEngine? = null,
-    /** §10.2 CI ship-or-reject fallback for AUTO ([RetrievalGate]). */
-    private val localShipsByCiGate: Boolean = RetrievalGate.LOCAL_BRANCH_SHIPS,
-    /** §12.4-1: proactive speech ships DEFAULT OFF. */
-    private val behaviorEnabled: StateFlow<Boolean> = kotlinx.coroutines.flow.MutableStateFlow(false),
-    private val behaviorQuietStart: StateFlow<Int> = kotlinx.coroutines.flow.MutableStateFlow(23),
-    private val behaviorQuietEnd: StateFlow<Int> = kotlinx.coroutines.flow.MutableStateFlow(8),
-    private val behaviorDailyQuota: StateFlow<Int> = kotlinx.coroutines.flow.MutableStateFlow(BehaviorArbiter.DEFAULT_DAILY_QUOTA),
-    /** Gates 2/4: DND/battery/media — Android-backed in production, static in tests. */
-    private val deviceSignals: DeviceSignals = DeviceSignals.Static,
-    /** Gate 3: session-state bridge (AppGraph maps the state machine into it). */
-    private val sessionIdle: StateFlow<Boolean> = kotlinx.coroutines.flow.MutableStateFlow(true),
-    /** Gate 5: presence proxy — the newest conversation row's timestamp. */
-    private val lastInteractionAt: suspend () -> Long? = { null },
-    /** §8.4 delivery seam (SessionManager::speakProactively in production). */
-    private val speaker: ProactiveSpeaker = ProactiveSpeaker { false },
-    /** §8.2: which tools may ever become habits (read-mostly + music only). */
-    private val habitEligibleTools: Set<String> = emptySet(),
-    /** Stamped on every summary (plan §10.1: re-run on model change). */
-    private val modelId: () -> String = { "unknown" },
-    /** Device-local hour for the quiet-hours gate; injectable for tests. */
-    private val hourOfDay: () -> Int = { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) },
-    private val strings: ToolStrings = ToolStrings.Default,
-    parentScope: CoroutineScope,
-    private val nowMs: () -> Long = System::currentTimeMillis,
     /**
-     * Transaction wrapper (AppGraph passes Room `withTransaction`); tests
-     * pass the identity. Keeps the coordinator free of the RoomDatabase
-     * type. NB: the default must INVOKE the block — `{ it }` would merely
-     * return it (the value is the block, not a thunk to call later).
+     * P4.4: the former ~35 constructor params, grouped into [CognitiveDeps]
+     * (pure mechanical regrouping — same objects, same defaults). The body
+     * keeps the original names via the alias block below, so no invariant
+     * comment moved because of the grouping.
      */
-    private val inTransaction: suspend (suspend () -> Unit) -> Unit = { block -> block() },
+    private val deps: CognitiveDeps,
+    parentScope: CoroutineScope,
 ) : CognitiveTurnHooks {
 
     /** Child scope: supervisor + own handler, per plan §4. */
@@ -166,6 +102,44 @@ class CognitiveCoordinator(
             } +
             CoroutineName("cognitive"),
     )
+
+    // P4.4: the former constructor params, carried by [deps] and aliased
+    // under their original names — the body and its invariant comments are
+    // untouched by the regrouping. Declared FIRST so the component
+    // initializers below keep evaluating in the original order.
+    private val factDao = deps.factDao
+    private val queueDao = deps.queueDao
+    private val metaDao = deps.metaDao
+    private val messageDao = deps.messageDao
+    private val llm = deps.llm
+    private val memoryEnabled = deps.memoryEnabled
+    private val autoExtractEnabled = deps.autoExtractEnabled
+    private val cloudEnabled = deps.cloudEnabled
+    private val sensitiveVisible = deps.sensitiveVisible
+    private val eventDao = deps.eventDao
+    private val ruleDao = deps.ruleDao
+    private val behaviorLogDao = deps.behaviorLogDao
+    private val summaryDao = deps.summaryDao
+    private val vectorDao = deps.vectorDao
+    private val entityDao = deps.entityDao
+    private val embedderChoice = deps.embedderChoice
+    private val localEmbedder = deps.localEmbedder
+    private val cloudEmbedder = deps.cloudEmbedder
+    private val localShipsByCiGate = deps.localShipsByCiGate
+    private val behaviorEnabled = deps.behaviorEnabled
+    private val behaviorQuietStart = deps.behaviorQuietStart
+    private val behaviorQuietEnd = deps.behaviorQuietEnd
+    private val behaviorDailyQuota = deps.behaviorDailyQuota
+    private val deviceSignals = deps.deviceSignals
+    private val sessionIdle = deps.sessionIdle
+    private val lastInteractionAt = deps.lastInteractionAt
+    private val speaker = deps.speaker
+    private val habitEligibleTools = deps.habitEligibleTools
+    private val modelId = deps.modelId
+    private val hourOfDay = deps.hourOfDay
+    private val strings = deps.strings
+    private val nowMs = deps.nowMs
+    private val inTransaction = deps.inTransaction
 
     private val ranker = FactRanker(nowMs)
     private val normalizer = FactNormalizer(nowMs = nowMs)
@@ -180,13 +154,49 @@ class CognitiveCoordinator(
         inTransaction = inTransaction,
     )
 
+    /** P4.4: §9.2 export (Inspector support) extracted; composition only. */
+    private val factExport = FactExportService(
+        factDao = factDao,
+        metaDao = metaDao,
+        entityDao = entityDao,
+        nowMs = nowMs,
+    )
+
+    /** P4.4: §11/§12.4-3 benchmark orchestration extracted; delegates. */
+    private val benchmarkRunner = BenchmarkRunner(
+        metaDao = metaDao,
+        localEmbedder = localEmbedder,
+        cloudEmbedder = cloudEmbedder,
+        nowMs = nowMs,
+    )
+
     // ---- Phase 2 behaviour layer (§8) ---------------------------------------
+
+    /**
+     * Serializes read-modify-write cycles on habit-rule rows (reject /
+     * accept counters, mute transitions, fire bookkeeping). The reject
+     * path is fire-and-forget per utterance: three rapid refusals launch
+     * three concurrent coroutines whose `byId` → `rejectCount + 1` →
+     * `update` cycles interleave on the Dispatchers.IO pool and LOSE
+     * increments — the 3-strikes mute then never happens (reproduced:
+     * 70/300 scenarios ended at rejectCount 1–2). A lock per cycle here
+     * is microseconds and only ever contended between these rare paths.
+     *
+     * P4.4: the SAME mutex is injected into [HabitDetector], whose rule
+     * writes (recompute / promoteProbationRules / unmuteExpired —
+     * nightly-ticker paths) were previously uncovered: they do
+     * read-modify-write cycles on the same rows this class writes from
+     * the reject/accept/fire paths. NOT reentrant — no method here calls
+     * a [HabitDetector] write from inside a `withLock` block.
+     */
+    private val ruleWriteMutex = Mutex()
 
     private val habitDetector = HabitDetector(
         eventDao = eventDao,
         ruleDao = ruleDao,
         habitEligibleTools = habitEligibleTools,
         nowMs = nowMs,
+        ruleWriteMutex = ruleWriteMutex,
     )
 
     private val summarizer = Summarizer(
@@ -690,19 +700,6 @@ class CognitiveCoordinator(
     // ------------------------------------------------------------------
 
     /**
-     * Serializes read-modify-write cycles on habit-rule rows (reject /
-     * accept counters, mute transitions, fire bookkeeping). The reject
-     * path is fire-and-forget per utterance: three rapid refusals launch
-     * three concurrent coroutines whose `byId` → `rejectCount + 1` →
-     * `update` cycles interleave on the Dispatchers.IO pool and LOSE
-     * increments — the 3-strikes mute then never happens (reproduced:
-     * 70/300 scenarios ended at rejectCount 1–2). A lock per cycle here
-     * is microseconds and only ever contended between these rare paths.
-     */
-    private val ruleWriteMutex = Mutex()
-
-
-    /**
      * §8.1: one executed tool call lands here (via the ToolRegistry
      * observer wired by AppGraph). Writes the `command_events` row (slot
      * fingerprint ONLY — never raw utterances), reinforces a suggestion the
@@ -784,79 +781,11 @@ class CognitiveCoordinator(
     // ------------------------------------------------------------------
 
     /**
-     * §11/§12.4-3: run the retrieval benchmark over the STATIC synthetic
-     * probe set ([RetrievalProbes] — never user facts, so the cloud branch
-     * needs no privacy dialog), write the winner to memory_meta, and return
-     * a structured result for the UI. The LOCAL branch always runs; the
-     * CLOUD branch first probes entitlement (a 4xx is an honest "not
-     * entitled", NOT a network failure to retry forever).
+     * §11/§12.4-3: the Settings-card benchmark — P4.4 extracted the
+     * orchestration into [BenchmarkRunner]; the coordinator stays the ONE
+     * entry point the app sees.
      */
-    suspend fun runRetrievalBenchmark(): BenchmarkOutcome {
-        val fixtures = RetrievalProbes.fixtures
-        val localReport = EmbedderBenchmark.evaluate(
-            fixtures,
-            EmbedderBenchmark.EngineAdapter { texts -> localEmbedder.embed(texts) },
-        )
-
-        var cloudReport: EmbedderBenchmark.EngineReport? = null
-        var entitlement: String? = null
-        val cloud = cloudEmbedder
-        if (cloud != null) {
-            when (val probe = cloud.checkEntitlement()) {
-                is EmbeddingEngine.Entitlement.Ok -> {
-                    entitlement = "ok"
-                    metaDao.putValue(MemoryMetaEntity.KEY_CLOUD_EMBED_ENTITLED, nowMs().toString())
-                    cloudReport = try {
-                        EmbedderBenchmark.evaluate(
-                            fixtures,
-                            EmbedderBenchmark.EngineAdapter { texts -> cloud.embed(texts) },
-                        )
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        Timber.w(e, "Cognitive: cloud benchmark failed after entitlement")
-                        null
-                    }
-                }
-                is EmbeddingEngine.Entitlement.Denied -> {
-                    entitlement = "denied:${probe.code}"
-                    metaDao.putValue(MemoryMetaEntity.KEY_CLOUD_EMBED_UNAVAILABLE, probe.code.toString())
-                }
-                is EmbeddingEngine.Entitlement.Transient -> entitlement = "transient"
-            }
-        }
-
-        // §10.2: winner = the best SHIPPING branch (≥ 15 % over baseline).
-        val winner = listOfNotNull(
-            EmbeddingEngine.LOCAL_ID.takeIf { localReport.ships() } to localReport,
-            cloudReport?.let { EmbeddingEngine.CLOUD_ID.takeIf { _ -> it.ships() } to it },
-        ).maxByOrNull { (_, report) -> report.hybridRecallAt5 }?.first
-        val stored = winner != null
-        if (winner != null) {
-            metaDao.putValue(MemoryMetaEntity.KEY_EMBEDDER_WINNER, winner)
-        }
-        Timber.i(
-            "Cognitive: benchmark done — local=[%s] cloud=[%s] winner=%s",
-            localReport,
-            cloudReport?.toString() ?: "n/a",
-            winner ?: "none",
-        )
-        return BenchmarkOutcome(
-            localReport = localReport.toString(),
-            cloudReport = cloudReport?.toString(),
-            winner = winner,
-            entitlement = entitlement,
-            winnerStored = stored,
-        )
-    }
-
-    data class BenchmarkOutcome(
-        val localReport: String,
-        val cloudReport: String?,
-        val winner: String?,
-        val entitlement: String?,
-        val winnerStored: Boolean,
-    )
+    suspend fun runRetrievalBenchmark(): BenchmarkRunner.BenchmarkOutcome = benchmarkRunner.run()
 
     /**
      * Settings seam: the engine the §12.4-3 selector resolves to RIGHT
@@ -1307,59 +1236,11 @@ class CognitiveCoordinator(
         entityDao.wipeAll()
     }
 
-    /** Export (plan §7 principle 7): every fact + meta, JSON. */
-    suspend fun exportJson(): JsonObject {
-        val facts = factDao.allFacts()
-        val meta = metaDao.all()
-        return buildJsonObject {
-            put("schemaRev", metaDao.get(MemoryMetaEntity.KEY_SCHEMA_REV) ?: SCHEMA_REV)
-            put("exportedAt", nowMs())
-            putJsonArray("facts") {
-                facts.forEach { fact ->
-                    add(
-                        buildJsonObject {
-                            put("factId", fact.factId)
-                            put("category", fact.category)
-                            put("subject", fact.subject)
-                            put("predicate", fact.predicate)
-                            put("value", fact.value)
-                            put("confidence", fact.confidence.toDouble())
-                            put("origin", fact.origin)
-                            put("status", fact.status)
-                            put("contested", fact.contested)
-                            put("sensitive", fact.sensitive)
-                            put("sourceMessageId", fact.sourceMessageId ?: -1)
-                            put("createdAt", fact.createdAt)
-                            put("updatedAt", fact.updatedAt)
-                        },
-                    )
-                }
-            }
-            // Phase 3 (§11): the derived entity index + vector-store
-            // provenance are part of the memory the user can inspect/export.
-            // Reads happen BEFORE the JSON builder (its lambdas are not
-            // suspend).
-            val entityLinks = entityDao.allLinks().groupBy { it.entityId }
-            val entities = entityDao.all()
-            putJsonArray("entities") {
-                entities.forEach { entity ->
-                    add(
-                        buildJsonObject {
-                            put("name", entity.name)
-                            put("kind", entity.kind)
-                            putJsonArray("factIds") {
-                                entityLinks[entity.id].orEmpty().forEach { add(JsonPrimitive(it.factId)) }
-                            }
-                        },
-                    )
-                }
-            }
-            put("vectorEngine", metaDao.get(MemoryMetaEntity.KEY_VECTORS_ENGINE) ?: "")
-            putJsonObject("meta") {
-                meta.forEach { put(it.key, it.value) }
-            }
-        }
-    }
+    /**
+     * Export (plan §7 principle 7): every fact + meta, JSON — P4.4
+     * extracted the serialization into [FactExportService].
+     */
+    suspend fun exportJson(): JsonObject = factExport.exportJson()
 
     /** Registers the LLM-callable memory tools (plan §6.4). */
     fun tools(): List<ToolContract> = MemoryToolsFactory(this).all()
@@ -1448,8 +1329,6 @@ class CognitiveCoordinator(
 
         /** Compaction over-fetch buffer. */
         const val BUFFER = 10
-
-        const val SCHEMA_REV = "6"
 
         private val json = Json { prettyPrint = false }
 
