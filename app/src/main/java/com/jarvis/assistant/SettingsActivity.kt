@@ -627,6 +627,14 @@ class SettingsActivity : AppCompatActivity() {
             scope = lifecycleScope,
         )
         attachCredentialWatchers()
+        // The fields were pre-filled from the store ABOVE the watchers'
+        // attachment point, so the population setText events never reached
+        // the controller — its inputs stayed blank and checkNow() (the
+        // button AND the create-time health check below) silently resolved
+        // to Idle with the status rows hidden. Feed the current values
+        // explicitly so the probe sees the SAVED pair.
+        credentialChecks.onSaluteInput(saluteId.text.toString(), saluteSecret.text.toString())
+        credentialChecks.onGigaChatInput(gigaChatId.text.toString(), gigaChatSecret.text.toString())
         lifecycleScope.launch {
             credentialChecks.states.collect { state ->
                 renderCheckStatus(

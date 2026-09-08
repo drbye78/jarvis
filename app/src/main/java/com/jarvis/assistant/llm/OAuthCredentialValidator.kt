@@ -1,6 +1,7 @@
 package com.jarvis.assistant.llm
 
 import com.jarvis.assistant.config.JarvisConfig
+import com.jarvis.assistant.util.withSberTrust
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -112,7 +113,10 @@ class OAuthCredentialValidator(
         const val READ_TIMEOUT_S = 10L
         const val CALL_TIMEOUT_S = 15L
 
-        /** One shared OkHttp instance for all probes (pools, dispatcher). */
-        val defaultClient: OkHttpClient by lazy { OkHttpClient() }
+        /** One shared OkHttp instance for all probes (pools, dispatcher).
+         *  Hardened with the Минцифры CA fallback — the Sber OAuth endpoint
+         *  chains to "Russian Trusted Sub CA", which the stock Android
+         *  trust store rejects (see [com.jarvis.assistant.util.SberTrust]). */
+        val defaultClient: OkHttpClient by lazy { OkHttpClient().withSberTrust() }
     }
 }

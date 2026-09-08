@@ -80,11 +80,23 @@ class AppGraph(
         // trickling data. It must ALWAYS exceed llmTimeoutMs, or it would
         // truncate legitimately slow streams.
         .callTimeout(120, TimeUnit.SECONDS)
+        // Sber endpoints (OAuth, GigaChat) chain to the Минцифры "Russian
+        // Trusted CA" hierarchy, absent from the stock Android trust store —
+        // without this every Sber-facing call dies with
+        // "Trust anchor for certification path not found" on API 29.
+        .sslSocketFactory(
+            com.jarvis.assistant.util.SberTrust.sslContext().socketFactory,
+            com.jarvis.assistant.util.SberTrust.compositeTrustManager(),
+        )
         .build()
 
     val saluteChannel: ManagedChannel = OkHttpChannelBuilder
         .forTarget(config.saluteGrpcEndpoint)
         .useTransportSecurity()
+        // gRPC's OkHttp transport takes the factory only: trust decisions
+        // flow through the SSLContext, which is built from the composite
+        // trust manager (system CAs first, Минцифры fallback).
+        .sslSocketFactory(com.jarvis.assistant.util.SberTrust.sslContext().socketFactory)
         .build()
 
     val database: AppDatabase = AppDatabase.getInstance(appContext)
