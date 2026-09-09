@@ -303,7 +303,15 @@ class SessionManager(
         _turnActivity.value = null
         // P3.2: routed through the lane — a failure's reset cannot interleave
         // out of order with a concurrent cancelAll/stopActiveTurn reset.
-        applyMachineEvent(SessionEvent.ErrorOccurred)
+        // Audit fix: the pre-check above can be raced by a concurrent seq bump
+        // (check-vs-apply gap), and a stale ErrorOccurred is a GLOBAL reset
+        // that would yank a fresh session's LISTENING back to IDLE — the
+        // apply-time guard closes that gap.
+        applyMachineEvent(SessionEvent.ErrorOccurred, validSeq = id)
+        // Audit fix: re-check before the error voice — it is a SEPARATE engine
+        // (system TTS) that player.flush() cannot touch, so a failure that was
+        // superseded in the gap must not speak into the new session.
+        if (id != null && id != sessionSeq.get()) return
         onErrorHandler(message)
     }
 
@@ -474,7 +482,12 @@ class SessionManager(
     fun stopActiveTurn() {
         val hadActive: Boolean
         synchronized(controlLock) {
-            hadActive = sessionJob != null
+            // Audit fix: a COMPLETED job left in the field is NOT an active
+            // turn — `sessionJob != null` was true after every clean turn,
+            // so a stop then bumped the seq pointlessly and applied a global
+            // Cancelled OVER an open follow-up window (whose collector kept
+            // running, able to start a session the user just stopped).
+            hadActive = sessionJob?.isActive == true
             if (hadActive) {
                 val bumped = sessionSeq.incrementAndGet()
                 sessionJob?.cancel()
@@ -487,6 +500,11 @@ class SessionManager(
                 // check on the caller's thread + launch left a gap where a
                 // concurrent startSession could bump the seq first).
                 applyMachineEvent(SessionEvent.Cancelled, validSeq = bumped)
+            } else if (windowJob != null) {
+                // No active turn, but the follow-up window is open: a stop
+                // still closes it (FollowUpWindowExpired → IDLE), the way
+                // cancelAll tears the window down.
+                closeFollowUpWindow(silent = false) // reentrant: controlLock is a monitor
             }
         }
     }
@@ -499,7 +517,7 @@ class SessionManager(
         // P3.2: validSeq guard moves INTO the lane — the seq can no longer
         // bump between the check above and the event applying.
         applyMachineEvent(SessionEvent.LlmDone, validSeq = id)
-        maybeOpenFollowUpWindow(spoke)
+        maybeOpenFollowUpWindow(spoke, id = id)
     }
 
     // ------------------------------------------------------------------
@@ -532,6 +550,10 @@ class SessionManager(
         if (text.isBlank()) return false
         synchronized(controlLock) {
             if (stateMachine.currentState() != AssistantState.IDLE) return false
+            // Audit fix: a muted assistant has a STOPPED pipeline — a proactive
+            // mini-session would speak into silence and force-open a follow-up
+            // window whose VAD collector can never legitimately fire. Refuse.
+            if (_muted.value) return false
             val id = sessionSeq.incrementAndGet()
             _partialTranscript.value = ""
             _turnActivity.value = null
@@ -588,13 +610,25 @@ class SessionManager(
                 applyMachineEvent(SessionEvent.ErrorOccurred, validSeq = id) // → IDLE
             }
             return
+        } catch (e: Exception) {
+            // Audit fix: TTS failures surface as e.g. gRPC
+            // StatusRuntimeException from done.await() — an uncaught one
+            // escaped the coroutine, wedging the machine in SPEAKING and
+            // leaving sessionIdleFlow stuck false. Mirror speakSentence's
+            // sibling pattern: funnel into the guarded ErrorOccurred.
+            Timber.w(e, "Proactive: synthesis/playback failure")
+            focus?.onTtsFlushed()
+            if (id == sessionSeq.get()) {
+                applyMachineEvent(SessionEvent.ErrorOccurred, validSeq = id) // → IDLE
+            }
+            return
         }
         if (id != sessionSeq.get()) return // superseded while speaking
         // P3.2: validSeq=id — SPEAKING → IDLE through the lane.
         applyMachineEvent(SessionEvent.LlmDone, validSeq = id) // SPEAKING → IDLE
         // The follow-up window is the accept/reject loop's entry — opened
-        // regardless of the standalone follow-up pref (see KDoc).
-        maybeOpenFollowUpWindow(spoke = true, forceOpen = true)
+        // regardless of the standalone follow-up pref (see KDOC).
+        maybeOpenFollowUpWindow(spoke = true, id = id, forceOpen = true)
     }
 
     // ------------------------------------------------------------------
@@ -611,13 +645,38 @@ class SessionManager(
         if (!enabled) closeFollowUpWindow(silent = false)
     }
 
-    private suspend fun maybeOpenFollowUpWindow(spoke: Boolean, forceOpen: Boolean = false) {
+    /**
+     * Open the follow-up window after a turn ended.
+     *
+     * Audit fix: the WHOLE open is guarded by the CURRENT seq — a stale
+     * turn's terminal interleaving with a fresh [startSession] previously
+     * applied [SessionEvent.FollowUpWindowOpened] unconditionally and
+     * launched a VAD collector that raced the live ASR (its onset fired
+     * [startSession] and cancelled the user's utterance) or wedged the
+     * machine in FOLLOW_UP_WINDOW.
+     *
+     * `internal` for the white-box seq-guard regression tests only.
+     *
+     * @param id the ending turn's session id; `null` = unguarded (never
+     *   used in production — both callers own a real id).
+     */
+    internal suspend fun maybeOpenFollowUpWindow(
+        spoke: Boolean,
+        id: Int? = null,
+        forceOpen: Boolean = false,
+    ) {
+        if (id != null && id != sessionSeq.get()) return
         if (!followUpEnabled && !forceOpen) return
         when (followUp.onTurnEnded(spoke, enabled = true)) {
             FollowUpWindowController.Effect.OpenWindow -> {
                 Timber.i("Follow-up window open")
-                applyMachineEvent(SessionEvent.FollowUpWindowOpened)
-                startFollowUpCollector()
+                // Apply-time seq guard: a supersede that lands between the
+                // check above and this apply drops the event.
+                applyMachineEvent(SessionEvent.FollowUpWindowOpened, validSeq = id)
+                // Remediation F2: the open's seq rides down to the collector
+                // so both the in-lock launch gate and the VAD-onset path can
+                // re-validate it against a concurrent barge-in.
+                startFollowUpCollector(validSeq = id)
             }
             FollowUpWindowController.Effect.StartFollowUpTurn,
             FollowUpWindowController.Effect.ExpireWindow -> Unit // not emitted here
@@ -632,9 +691,44 @@ class SessionManager(
      * Exits by CancellationException on ALL terminals (trigger / expiry /
      * supersede) — one catch, no dangling subscriber.
      */
-    private fun startFollowUpCollector() {
+    // The ThrowsCount suppression is deliberate (precedent: processLlm's
+    // complexity suppressions): the collector's terminal exits ARE distinct
+    // exceptions — superseded onset (F2 re-check), follow-up turn started,
+    // and window expiry — each carrying its own cancellation identity, and
+    // splitting them would scatter the terminal semantics.
+    @Suppress("ThrowsCount")
+    private fun startFollowUpCollector(validSeq: Int? = null) {
+        // Audit fix: the collector may only run when the open actually
+        // APPLIED — if the FollowUpWindowOpened event was dropped (stale seq)
+        // or rejected by the machine (a fresh session is LISTENING), a VAD
+        // collector here would race the live session's ASR lane. The state
+        // check rides with the launch on the same thread as the open above.
+        if (stateMachine.currentState() != AssistantState.FOLLOW_UP_WINDOW) {
+            Timber.i("Follow-up window open dropped — machine not in FOLLOW_UP_WINDOW")
+            return
+        }
         // #5: windowJob hand-off under the same lock as every other job field.
         synchronized(controlLock) {
+            // Remediation F2: the pre-lock state check is a cheap pre-filter —
+            // the AUTHORITATIVE gate is this in-lock re-check, atomic with the
+            // windowJob hand-off. A barge-in (startSession/cancelAll) that
+            // bumped the seq between the state check and here previously left
+            // a stale collector behind. Plain `get()` — no suspension in the
+            // monitor-guarded block.
+            if (validSeq != null && validSeq != sessionSeq.get()) {
+                Timber.i(
+                    "Follow-up window open dropped — superseded in flight (seq %d != %d)",
+                    validSeq,
+                    sessionSeq.get(),
+                )
+                return
+            }
+            if (stateMachine.currentState() != AssistantState.FOLLOW_UP_WINDOW) {
+                // Covers seq-less closers (setFollowUpWindow(false), stop
+                // with an open window) that raced this launch.
+                Timber.i("Follow-up window open dropped — machine left FOLLOW_UP_WINDOW in flight")
+                return
+            }
             windowJob?.cancel()
             followUpLeadIn = LEAD_IN_SLOTS
             followUpVad.reset()
@@ -656,6 +750,21 @@ class SessionManager(
                         } else {
                             followUpVad.process(frame)
                             if (followUpVad.onset) {
+                                // Remediation F2: re-validate AT ONSET — the
+                                // collector may still be draining its last
+                                // frames when a barge-in bumps the seq (the
+                                // windowJob.cancel() cancellation is async).
+                                // Firing startSession here would cancel the
+                                // user's live ASR utterance. An expired/superseded
+                                // machine state is equally disqualifying —
+                                // applyMachineEvent would reject the transition
+                                // but startSession would still fire.
+                                if ((validSeq != null && validSeq != sessionSeq.get()) ||
+                                    stateMachine.currentState() != AssistantState.FOLLOW_UP_WINDOW
+                                ) {
+                                    Timber.i("Follow-up onset dropped — window superseded or closed")
+                                    throw CancellationException("follow-up window superseded")
+                                }
                                 Timber.i("Follow-up speech detected — starting turn")
                                 applyMachineEvent(SessionEvent.FollowUpSpeechDetected)
                                 followUp.onVadActive()

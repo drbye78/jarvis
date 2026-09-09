@@ -20,3 +20,6 @@ captures/
 *.apk
 *.aab
 *.keystore
+
+# Deepwork session state (local only)
+.slim/deepwork/

@@ -21,12 +21,6 @@ data class PromptContext(
     /** The finalized user utterance; null for non-utterance passes. */
     val utterance: String?,
 
-    /** Hour of day (0–23) at SpeechCaptured, device timezone. */
-    val hour: Int,
-
-    /** Day of week (Calendar.DAY_OF_WEEK) at SpeechCaptured. */
-    val dayOfWeek: Int,
-
     /** True when this session was opened from the follow-up window. */
     val isFollowUp: Boolean,
 
@@ -48,8 +42,6 @@ data class PromptContext(
         /** Baseline context for tests and non-turn callers. */
         fun blank(utterance: String? = null): PromptContext = PromptContext(
             utterance = utterance,
-            hour = 12,
-            dayOfWeek = java.util.Calendar.MONDAY,
             isFollowUp = false,
         )
     }

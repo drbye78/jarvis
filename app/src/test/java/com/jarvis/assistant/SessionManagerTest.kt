@@ -60,12 +60,17 @@ class FakeAsrStream : AsrStream {
     override val events: SharedFlow<AsrEvent> = _events
     val sent = CopyOnWriteArrayList<ByteArray>()
 
+    /** Audit fix regression: transport cancel() count (leak detection). */
+    val cancelCount = java.util.concurrent.atomic.AtomicInteger(0)
+
     override fun send(pcm: ByteArray) {
         sent.add(pcm)
     }
 
     override fun finish() {}
-    override fun cancel() {}
+    override fun cancel() {
+        cancelCount.incrementAndGet()
+    }
 
     /** Waits until the manager's collector has subscribed to [events]. */
     suspend fun awaitEvents() {
@@ -251,6 +256,26 @@ class GatedPlayer : TtsPlayer {
 
     override fun flush() {}
     override fun release() {}
+}
+
+/**
+ * Audit fix regression fixture: like [GatedPlayer], but flush() has the REAL
+ * player's semantics — it cancels the current + queued plays (freeing the
+ * sentence jobs awaiting them, and with them the synthesis permits).
+ */
+class FlushCancellingPlayer : TtsPlayer {
+    val gates = CopyOnWriteArrayList<kotlinx.coroutines.CompletableDeferred<Unit>>()
+
+    override fun play(pcm: Flow<ByteArray>): Deferred<Unit> =
+        kotlinx.coroutines.CompletableDeferred<Unit>().also { gates.add(it) }
+
+    override fun flush() {
+        gates.forEach { it.cancel() }
+    }
+
+    override fun release() {
+        gates.clear()
+    }
 }
 
 /** Controllable audio source; silent frames flow through the real pipeline. */
@@ -885,6 +910,15 @@ class SessionManagerTest {
             stream2.emitPartial("пог")
             withTimeout(5_000) { while (h.manager.partialTranscript.value != "пог") delay(10) }
             stream2.emitFailed()
+            // The AsrFailed transition (LISTENING → IDLE) and the partial
+            // clear in reportFailure happen back-to-back in the turn
+            // coroutine — the state can be observed as IDLE a hair BEFORE
+            // the clear lands on another core (a pre-existing micro-race the
+            // full-suite load exposes). Poll for the CLEAR (the thing under
+            // test) and then assert the terminal state.
+            withTimeout(5_000) {
+                while (h.manager.partialTranscript.value.isNotEmpty()) delay(10)
+            }
             withTimeout(5_000) {
                 while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
             }
@@ -1508,6 +1542,430 @@ class SessionManagerProactiveTest {
         try {
             assertEquals(false, h.manager.speakProactively("   "))
             assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
+        } finally {
+            h.shutdown()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Audit-fix regression batch (session/turn lanes): seq-guard stale events,
+// mute-gated proactive lane, spoke-flag honesty, TTS timeout cancellation,
+// ASR transport teardown, follow-up-window open guards.
+// ---------------------------------------------------------------------------
+
+class SessionManagerAuditFixTest {
+
+    /**
+     * LLM that streams two sentences, pauses (so they enqueue and park on
+     * their player gates), then streams a THIRD sentence and fails the
+     * stream — the post-partial failure path (no retry allowed).
+     */
+    private class PartialThenFailingLlm : LlmClient {
+        override fun chatStream(request: ChatRequest): Flow<LlmChunk> = flow {
+            emit(LlmChunk.Text("Первое предложение."))
+            emit(LlmChunk.Text("Второе предложение."))
+            delay(300) // sentences 1–2 enqueue and park on their gates
+            emit(LlmChunk.Text("Третье предложение."))
+            throw java.io.IOException("mid-stream drop")
+        }
+    }
+
+    /** TTS whose synthesis flow always explodes (collected by the player). */
+    private class ExplodingTtsClient : TtsClient {
+        override fun synthesizeStream(text: String, voice: String): Flow<ByteArray> = flow {
+            throw java.io.IOException("synthesis exploded")
+        }
+    }
+
+    /**
+     * Mic fake with a speech toggle: silent until flipped, then continuous
+     * LOUD frames (EnergyVad onset territory) — drives the follow-up
+     * collector's VAD onset path deterministically.
+     */
+    private class ToggleableSpeechSource : AudioSource {
+        @Volatile var speech = false
+        override fun start() {
+            // lifecycle only — frames flow from the first read()
+        }
+
+        override fun stop() {
+            // lifecycle only — pipeline.release() ends the producer loop
+        }
+
+        override fun read(): ShortArray {
+            // Real-time pacing (20 ms frames): a busy-loop fake would starve
+            // the dispatcher and flake the collectors.
+            Thread.sleep(20)
+            val amp = if (speech) 3000 else 0
+            return ShortArray(320) { (if (it % 2 == 0) amp else -amp).toShort() }
+        }
+    }
+
+    /**
+     * Manager wired to [ToggleableSpeechSource] — the main [Harness] pins a
+     * silent source, but the F2 onset tests need VAD-onset-grade frames.
+     */
+    private class VadHarness(source: ToggleableSpeechSource) {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val pipeline = AudioPipeline(scope, source)
+        val stateMachine = SessionStateMachine()
+        val asr = FakeAsrClient()
+        val wake = FakeWakeWord()
+        val manager = SessionManager(
+            audioPipeline = pipeline,
+            wakeWordDetector = wake,
+            asrClient = asr,
+            llm = ScriptedLlm(mutableListOf()),
+            ttsClient = FakeTtsClient(),
+            player = FakePlayer(),
+            functionRouter = FakeTools(),
+            conversationManager = ConversationManager(FakeMessageDao(), maxMessages = 20),
+            stateMachine = stateMachine,
+            networkMonitor = FakeOnline(),
+            config = JarvisConfig(
+                maxUtteranceMs = Long.MAX_VALUE,
+                ttsSentenceTimeoutMs = 5_000,
+                ttsDrainTimeoutMs = 5_000,
+                llmTimeoutMs = 10_000,
+            ),
+            scope = scope,
+        )
+
+        fun shutdown() {
+            manager.cancelAll()
+            pipeline.release()
+            scope.cancel()
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // Fix 6: LLM failure after partial output must cancel + join the speech
+    // children BEFORE reportFailure's flush — a pending sentence (waiting on
+    // a synthesis permit) that survives the failure acquires the permit once
+    // the flush cancels the parked plays and enqueues a Play AFTER the flush,
+    // playing over the error voice.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `LLM failure after partial output cancels pending speech - nothing enqueues after the flush`() =
+        runBlocking {
+            val h = Harness(
+                ScriptedLlm(mutableListOf()),
+                llmOverride = PartialThenFailingLlm(),
+                playerOverride = FlushCancellingPlayer(),
+            )
+            val player = h.player as FlushCancellingPlayer
+            try {
+                var error: String? = null
+                h.manager.setOnError { error = it }
+                h.runTurn("расскажи что-нибудь")
+
+                // Sentences 1–2 parked on their gates (permits exhausted),
+                // sentence 3 waiting on a synthesis permit.
+                withTimeout(5_000) { while (player.gates.size < 2) delay(20) }
+                withTimeout(5_000) { while (error == null) delay(20) }
+
+                // The error funnel ran its flush. A pending sentence that
+                // survived it would acquire the freed permit now and enqueue
+                // a third Play — playing over the error voice.
+                delay(500) // settle: any (incorrect) post-flush enqueue lands here
+                assertEquals(
+                    "a pending sentence enqueued after the flush",
+                    2,
+                    player.gates.size,
+                )
+                withTimeout(5_000) {
+                    while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
+                }
+            } finally {
+                h.shutdown()
+            }
+        }
+
+    // ----------------------------------------------------------------------
+    // Fix 8: the spoke flag must reflect audio that actually reached
+    // playback — a turn whose every sentence failed must NOT open a
+    // follow-up window for audio the user never heard.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `a turn whose sentences all fail to play opens no follow-up window`() = runBlocking {
+        val h = Harness(
+            ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Привет."), LlmChunk.Done))),
+            ttsOverride = ExplodingTtsClient(),
+        )
+        try {
+            h.manager.setFollowUpWindow(enabled = true, windowMs = 8_000)
+            h.runTurn("привет")
+
+            // The turn ends (LlmDone → IDLE) with spoke=false: no window.
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
+            }
+            delay(1_500) // long enough for a would-be window to have opened
+            assertEquals(
+                "no follow-up window after a never-spoken turn",
+                AssistantState.IDLE,
+                h.stateMachine.currentState(),
+            )
+            assertEquals(0f, h.manager.followUpProgress.value, 0f)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // Fix 9: the per-sentence timeout must CANCEL the playback (stop the
+    // audio at the budget) instead of abandoning the deferred.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `TTS sentence timeout cancels the playback instead of abandoning it`() = runBlocking {
+        val player = GatedPlayer() // playback never completes on its own
+        val config = JarvisConfig(
+            maxUtteranceMs = Long.MAX_VALUE,
+            ttsSentenceTimeoutMs = 300, // short budget
+            ttsDrainTimeoutMs = 5_000,
+            llmTimeoutMs = 10_000,
+        )
+        val h = Harness(
+            ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Длинный ответ."), LlmChunk.Done))),
+            config = config,
+            playerOverride = player,
+        )
+        try {
+            h.runTurn("расскажи что-нибудь")
+            withTimeout(5_000) { while (player.gates.isEmpty()) delay(20) }
+
+            // At the budget the sentence's player deferred must be cancelled…
+            withTimeout(5_000) { while (!player.gates[0].isCancelled) delay(20) }
+            // …and the turn must still terminate cleanly.
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
+            }
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // Fix 4: a COMPLETED session job left in the field is not an active
+    // turn — stopActiveTurn must not bump the seq / apply a global Cancelled
+    // over an open follow-up window; it must CLOSE the window instead.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `stopActiveTurn after a cleanly finished turn closes the open follow-up window`() =
+        runBlocking {
+            val h = Harness(
+                ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Готово."), LlmChunk.Done))),
+            )
+            try {
+                h.manager.setFollowUpWindow(enabled = true, windowMs = 8_000)
+                h.runTurn("привет")
+                withTimeout(5_000) {
+                    while (h.stateMachine.currentState() != AssistantState.FOLLOW_UP_WINDOW) delay(20)
+                }
+
+                // The session job already COMPLETED — the old
+                // `sessionJob != null` check still counted it as active.
+                h.manager.stopActiveTurn()
+
+                // The window is properly closed (not Cancelled-over while the
+                // collector keeps running).
+                withTimeout(5_000) { while (h.manager.followUpProgress.value != 0f) delay(20) }
+                assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
+                delay(300) // a surviving collector would re-fire here
+                assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
+            } finally {
+                h.shutdown()
+            }
+        }
+
+    // ----------------------------------------------------------------------
+    // Fix 5: a muted assistant has a STOPPED pipeline — the proactive lane
+    // must refuse instead of speaking into silence and force-opening a
+    // follow-up window.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `speakProactively refuses while muted`() = runBlocking {
+        val suggestion = "Ты обычно слушаешь джаз в это время. Включить?"
+        val h = Harness(
+            ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Ок."), LlmChunk.Done))),
+        )
+        try {
+            h.pipeline.start()
+            h.manager.setMuted(true)
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
+            }
+
+            assertEquals(false, h.manager.speakProactively(suggestion))
+            delay(300) // any (incorrect) mini-session would have applied by now
+            assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
+            assertEquals("muted proactive must not synthesize", 0, (h.tts as FakeTtsClient).spoken.size)
+            assertEquals("muted proactive must not persist", 0, h.dao.rows.size)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // Fix 13: the ASR bidi transport must be cancelled on EVERY exit — a
+    // barge-in mid-utterance previously abandoned the RPC until its deadline.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `barge-in mid-utterance cancels the ASR transport`() = runBlocking {
+        val h = Harness(ScriptedLlm(mutableListOf()))
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) { while (h.asr.streams.isEmpty()) delay(20) }
+            val first = h.asr.streams.first()
+
+            h.manager.startSession() // barge-in while the user is mid-utterance
+            withTimeout(5_000) { while (h.asr.streams.size < 2) delay(20) }
+
+            withTimeout(5_000) {
+                while (first.cancelCount.get() == 0) delay(20)
+            }
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // Fix 1 (white-box): the follow-up open carries the apply-time seq guard,
+    // and the VAD collector bails unless the open actually applied.
+    // maybeOpenFollowUpWindow is internal precisely for these two tests.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `stale follow-up window open is fully dropped - no event no collector`() = runBlocking {
+        val h = Harness(ScriptedLlm(mutableListOf()))
+        try {
+            // id=999 never existed → stale by construction. Pre-fix this
+            // applied FollowUpWindowOpened (IDLE → FOLLOW_UP_WINDOW) and
+            // launched a live VAD collector from a phantom turn.
+            h.manager.maybeOpenFollowUpWindow(spoke = true, id = 999, forceOpen = true)
+            delay(300)
+            assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
+            assertEquals(0f, h.manager.followUpProgress.value, 0f)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `follow-up collector bails when the open did not apply - no VAD lane over a live session`() =
+        runBlocking {
+            val h = Harness(ScriptedLlm(mutableListOf()))
+            try {
+                h.manager.startSession() // fresh session owns the machine → LISTENING
+                withTimeout(5_000) {
+                    while (h.stateMachine.currentState() != AssistantState.LISTENING) delay(20)
+                }
+
+                // Current seq (the open's seq guard passes) but the machine
+                // REJECTS FollowUpWindowOpened from LISTENING — the collector
+                // must bail instead of racing the live ASR lane.
+                h.manager.maybeOpenFollowUpWindow(spoke = true, id = 1, forceOpen = true)
+                delay(300)
+                assertEquals(AssistantState.LISTENING, h.stateMachine.currentState())
+                assertEquals(
+                    "a VAD collector was launched over a live session",
+                    0f,
+                    h.manager.followUpProgress.value,
+                    0f,
+                )
+            } finally {
+                h.shutdown()
+            }
+        }
+
+    // ----------------------------------------------------------------------
+    // Remediation F2: the VAD-onset path re-validates the open's seq AND the
+    // machine state before firing startSession(fromFollowUp = true) — a
+    // collector still draining its last frames after a supersede/close must
+    // never start a session over the live ASR (or from IDLE).
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `ghost VAD onset after the window closed must not start a session`() = runBlocking {
+        val source = ToggleableSpeechSource()
+        val h = VadHarness(source)
+        try {
+            h.pipeline.start() // silent frames flow
+            // White-box open: current seq (0, no session yet), machine IDLE —
+            // the window and its collector launch legitimately.
+            h.manager.maybeOpenFollowUpWindow(spoke = true, id = 0, forceOpen = true)
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.FOLLOW_UP_WINDOW) delay(20)
+            }
+
+            // Close the window. NOTE: setFollowUpWindow(false) does NOT bump
+            // the seq — it exercises the onset re-check's STATE half. The
+            // collector's cancellation is ASYNC, so it may still be draining.
+            h.manager.setFollowUpWindow(enabled = false, windowMs = 5_000)
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
+            }
+
+            // Loud frames immediately after the close: a surviving ghost
+            // collector (pre-fix) onsets and fires startSession(fromFollowUp
+            // = true) FROM IDLE — a wake-word-free session the user never
+            // asked for. Post-fix the onset re-check drops it.
+            source.speech = true
+            delay(1_000) // several lead-in (200 ms) + onset windows
+
+            assertEquals(
+                "ghost follow-up turn started after the window closed",
+                0,
+                h.asr.streams.size,
+            )
+            assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
+            assertEquals(0f, h.manager.followUpProgress.value, 0f)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `barge-in racing the window open must not spawn a ghost follow-up turn`() = runBlocking {
+        val source = ToggleableSpeechSource().apply { speech = true }
+        val h = VadHarness(source)
+        try {
+            h.pipeline.start() // LOUD frames flow — onset within ~200 ms
+            // White-box open with the CURRENT seq: the window + collector are
+            // legitimate at this instant.
+            h.manager.maybeOpenFollowUpWindow(spoke = true, id = 0, forceOpen = true)
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.FOLLOW_UP_WINDOW) delay(20)
+            }
+
+            // Barge-in: bumps the seq (0 → 1) AND asynchronously cancels the
+            // collector — the exact interleaving the in-lock seq gate and the
+            // onset re-check exist for.
+            h.manager.startSession()
+            withTimeout(5_000) { while (h.asr.streams.isEmpty()) delay(20) }
+
+            // A ghost onset here would start a SECOND (follow-up) session
+            // over the live ASR utterance of the barge-in session.
+            delay(1_500) // several lead-in + onset windows
+            assertEquals(
+                "ghost follow-up session spawned over the live ASR",
+                1,
+                h.asr.streams.size,
+            )
+            assertEquals(AssistantState.LISTENING, h.stateMachine.currentState())
+            // NOTE: followUpProgress is deliberately NOT asserted here —
+            // startSession tears the windowJob down but never resets the orb
+            // (a pre-existing cosmetic gap owned by the window lifecycle, not
+            // the F2 seq re-check).
         } finally {
             h.shutdown()
         }

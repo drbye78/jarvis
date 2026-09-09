@@ -94,6 +94,13 @@ private class TurnRunnerHarness(
     ),
     toolsOverride: FakeTools? = null,
     playerOverride: TtsPlayer? = null,
+    /**
+     * Optional extra observer run INSIDE the turn coroutine on every state
+     * event (after the recording) — lets tests flip harness state at exact
+     * points of the turn timeline (e.g. supersede the session between
+     * phases) or launch stray session-scope children for drain tests.
+     */
+    val onStateEventExtra: (suspend (SessionEvent) -> Unit)? = null,
 ) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val dao = FakeMessageDao()
@@ -137,6 +144,7 @@ private class TurnRunnerHarness(
         onStateEvent = {
             events.add(it)
             stateMachine.onEvent(it)
+            onStateEventExtra?.invoke(it)
         },
         reportFailure = { id, msg ->
             failures.add(id to msg)
@@ -366,6 +374,11 @@ class TurnRunnerDirectTest {
             val (job, outcome) = h.launchTurn()
             h.deliverUtterance("тест")
             awaitCond { h.events.contains(SessionEvent.PlaybackStarted) }
+            // Wait until the sentence actually reached the player (the gate
+            // is created inside play()): per the audit fix the spoke flag is
+            // earned by audio reaching playback, so the stop must land AFTER
+            // that point for eligibility to survive the cancellation.
+            awaitCond { player.gates.isNotEmpty() }
             assertEquals(1, player.gates.size)
 
             job.cancel()
@@ -490,9 +503,14 @@ class TurnRunnerDirectTest {
                 job.join()
                 assertNull(outcome.await())
                 assertTrue(h.failures.isEmpty())
+                // Audit fix 8: the sentence TIMED OUT (gated playback never
+                // completed — with GatedPlayer no audio ever drains), so it
+                // is treated as never spoken: finish carries spoke=false and
+                // must not open a follow-up window. (The old flag was set at
+                // speakSentence entry and reported spoke=true here.)
                 assertEquals(
-                    "LLM timeout must not kill parked playback",
-                    listOf(1 to true),
+                    "LLM timeout must not kill parked playback; timed-out sentence is not spoken",
+                    listOf(1 to false),
                     h.finished.toList(),
                 )
                 // The sentence reached playback: it holds a player gate. Note
@@ -580,6 +598,106 @@ class TurnRunnerDirectTest {
                 listOf(1 to SpeechPhrases.Default.asrFailed),
                 h.failures.toList(),
             )
+        } finally {
+            h.shutdown()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Audit fixes 7 + 12: drain scope and NonCancellable write guards.
+// ---------------------------------------------------------------------------
+
+class TurnRunnerSentenceDrainTest {
+
+    /**
+     * Fix 7: the drain must join ONLY the tracked sentence jobs. A stray
+     * session-scope child (launched here from the state-event seam, exactly
+     * where a hook/cognitive child would live) must neither stall the drain
+     * nor be cancelled by it. The old `coroutineContext[Job]?.children`
+     * sweep joined it, parking the turn for the whole drain budget.
+     */
+    @Test
+    fun `drain joins only sentence jobs - a stray session child does not stall or die`() = runBlocking {
+        val llm = ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Готово."), LlmChunk.Done)))
+        var stray: kotlinx.coroutines.Job? = null
+        val harness = TurnRunnerHarness(
+            llm,
+            config = JarvisConfig(
+                maxUtteranceMs = Long.MAX_VALUE,
+                ttsSentenceTimeoutMs = 5_000,
+                ttsDrainTimeoutMs = 5_000,
+                llmTimeoutMs = 10_000,
+                llmRetryBackoffMs = 10,
+            ),
+            onStateEventExtra = { event ->
+                if (event == SessionEvent.LlmStarted && stray == null) {
+                    // Launch a child of the SESSION job (the runner's current
+                    // coroutine context) that hangs forever.
+                    stray = kotlinx.coroutines.CoroutineScope(
+                        kotlin.coroutines.coroutineContext
+                    ).launch { kotlinx.coroutines.awaitCancellation() }
+                }
+            },
+        )
+        try {
+            val startedAt = System.currentTimeMillis()
+            val (job, outcome) = harness.launchTurn()
+            harness.deliverUtterance("тест")
+
+            awaitCond { harness.finished.isNotEmpty() }
+            val elapsed = System.currentTimeMillis() - startedAt
+            // Do NOT job.join() — the stray child would hold the session job
+            // open by design; the finish callback is the turn's terminal.
+            assertNull(outcome.await())
+
+            assertTrue(
+                "drain must not wait for non-sentence children (took $elapsed ms, budget 5000)",
+                elapsed < 2_500,
+            )
+            assertEquals(listOf(1 to true), harness.finished.toList())
+            // The stray child is NOT the drain's business — it must survive.
+            assertTrue("drain cancelled a non-sentence child", stray!!.isActive)
+        } finally {
+            harness.shutdown()
+        }
+    }
+
+    /**
+     * Fix 12: the user/assistant history writes re-check the session id
+     * INSIDE the NonCancellable block. Here the session is superseded at the
+     * SpeechCaptured seam (before the user write) — neither the user row nor
+     * the assistant row may land.
+     */
+    @Test
+    fun `superseded session skips the user and assistant writes`() = runBlocking {
+        val llm = ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Готово."), LlmChunk.Done)))
+        var harness: TurnRunnerHarness? = null
+        val h = TurnRunnerHarness(
+            llm,
+            onStateEventExtra = { event ->
+                if (event == SessionEvent.SpeechCaptured) {
+                    // Supersede EXACTLY between the user-write's reachability
+                    // and the write itself: isCurrentSession flips to false
+                    // before the NonCancellable block runs.
+                    harness!!.superseded = true
+                }
+            },
+        )
+        harness = h
+        try {
+            val (job, outcome) = h.launchTurn()
+            h.deliverUtterance("тест")
+            job.join()
+            assertNull(outcome.await())
+
+            delay(200) // settle: any (incorrect) write would land here
+            assertEquals(
+                "superseded session must not write history",
+                0,
+                h.dao.rows.size,
+            )
+            assertTrue(h.failures.isEmpty())
         } finally {
             h.shutdown()
         }

@@ -53,8 +53,6 @@ class PromptComposerSnapshotTest {
         val baseline = TimeAwareSystemPrompt(nowMs = fixedClock)
         val context = PromptContext(
             utterance = "погода",
-            hour = 12,
-            dayOfWeek = Calendar.THURSDAY,
             isFollowUp = false,
             memory = { "" },
         )
@@ -66,8 +64,6 @@ class PromptComposerSnapshotTest {
         val composer = PromptComposer(nowMs = fixedClock)
         val context = PromptContext(
             utterance = "кто я",
-            hour = 12,
-            dayOfWeek = Calendar.THURSDAY,
             isFollowUp = false,
             memory = { memoryBlock },
         )
@@ -86,8 +82,6 @@ class PromptComposerSnapshotTest {
         val baseline = TimeAwareSystemPrompt(nowMs = fixedClock)
         val context = PromptContext(
             utterance = "погода",
-            hour = 12,
-            dayOfWeek = Calendar.THURSDAY,
             isFollowUp = false,
             memory = { throw IllegalStateException("db exploded") },
         )
@@ -99,8 +93,6 @@ class PromptComposerSnapshotTest {
         val composer = PromptComposer(nowMs = fixedClock)
         val context = PromptContext(
             utterance = null,
-            hour = 12,
-            dayOfWeek = Calendar.THURSDAY,
             isFollowUp = false,
             memory = { memoryBlock },
         )
@@ -113,8 +105,6 @@ class PromptComposerSnapshotTest {
         val composer = PromptComposer(nowMs = fixedClock)
         val context = PromptContext(
             utterance = "кто я",
-            hour = 12,
-            dayOfWeek = Calendar.THURSDAY,
             isFollowUp = false,
             memory = { memoryBlock },
         )
