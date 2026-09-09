@@ -18,17 +18,25 @@ OpenAI-compatible endpoint).
 - Gradle wrapper included: `./gradlew`
 
 ## Setup
-1. (Build only) Set `sdk.dir` in `local.properties` (or use `ANDROID_HOME`):
+1. **Pull the Git LFS assets after cloning** (mandatory): the Sherpa-ONNX AAR
+   (`app/libs/sherpa-onnx.aar`) and the bundled wake-word model
+   (`app/src/main/assets/sherpa_kws/*`) are LFS-tracked, and CI fails on
+   unreferenced assets > 1 MB — a fresh clone contains only LFS pointer files
+   until you run:
+   ```bash
+   git lfs pull
+   ```
+2. (Build only) Set `sdk.dir` in `local.properties` (or use `ANDROID_HOME`):
    ```properties
    sdk.dir=/path/to/Android/Sdk
    ```
    No provider secrets belong in `local.properties` — see step 3.
-2. Build and install:
+3. Build and install:
    ```bash
    ./gradlew assembleDebug
    adb install app/build/outputs/apk/debug/app-debug.apk
    ```
-3. **Enter provider credentials in-app.** On first launch, open **Settings**
+4. **Enter provider credentials in-app.** On first launch, open **Settings**
    (gear button) and enter your own:
    - **Picovoice access key** (wake word)
    - **Sber Salute** client ID + secret (ASR/TTS)
@@ -43,7 +51,7 @@ OpenAI-compatible endpoint).
    The UI ships in Russian and English (full `values-en`), and the runtime
    spoken phrases follow the locale too (see RUNBOOK for the honest
    English-voice caveat).
-4. **Wake word — two engines (hybrid).** In Settings → Wake word you choose
+5. **Wake word — two engines (hybrid).** In Settings → Wake word you choose
     the engine:
     - **Sherpa-ONNX (recommended, no account):** a fully on-device wake word
       using the bundled `gigaspeech` model that detects «Jarvis» — or any
@@ -56,7 +64,7 @@ OpenAI-compatible endpoint).
     Switching engines and the sensitivity slider apply live while the assistant
     is running. Custom Sherpa wake words are supported — the app extracts
     models, BPE-tokenizes keywords, and loads via `newFromFile`.
-5. Launch Jarvis and follow the onboarding screen.
+6. Launch Jarvis and follow the onboarding screen.
 
 ## Running tests
 ```bash

@@ -28,6 +28,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import timber.log.Timber
 
 /**
  * P1.3 — direct suite for [SaluteSpeechTts] over the in-process gRPC transport
@@ -248,5 +249,76 @@ class SaluteSpeechTtsTest {
             "barge-in must abort the in-flight RPC",
             fakeTts.awaitClientCancelled(),
         )
+    }
+
+    // ------------------------------------------------------------------
+    // Defensive PCM-rate cross-check (audit fix: the SynthesisRequest proto
+    // carries no sample-rate field — the rate follows the VOICE's pool id,
+    // e.g. May_24000; the playback chain assumes 24 kHz).
+    // ------------------------------------------------------------------
+
+    private class RateTree : Timber.Tree() {
+        val lines = java.util.Collections.synchronizedList(mutableListOf<Pair<Int, String>>())
+        override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
+            lines.add(priority to message)
+        }
+    }
+
+    @Test
+    fun `pcm rate mismatch is logged once and content-free`() = runBlocking {
+        enqueueToken("tok-1")
+        val tree = RateTree()
+        Timber.plant(tree)
+        try {
+            val tts = newTts()
+            val flow = tts.synthesizeStream("речь", voice = "Mila")
+            val chunksJob = async { withTimeout(15_000) { flow.toList() } }
+            fakeTts.awaitRequest()
+
+            // 1_600 bytes = 800 samples over 0.05 s → implied 16 kHz ≠ 24 kHz.
+            fakeTts.emitChunk(ByteArray(1_600), audioDurationSeconds = 0.05)
+            deliveryPause()
+            // A second mismatching chunk must NOT log again (once per stream).
+            fakeTts.emitChunk(ByteArray(1_600), audioDurationSeconds = 0.10)
+            deliveryPause()
+            fakeTts.completeStream()
+            chunksJob.await()
+
+            val mismatches = tree.lines.filter { it.second.contains("TTS PCM rate mismatch") }
+            assertEquals("mismatch must be logged exactly once per stream", 1, mismatches.size)
+            // Content-free: the voice id must not reach WARN+ logs.
+            assertTrue(
+                "voice id must not appear in the rate warning",
+                mismatches.none { it.second.contains("May_24000") },
+            )
+        } finally {
+            Timber.uproot(tree)
+        }
+    }
+
+    @Test
+    fun `pcm rate consistent with 24 kHz logs nothing`() = runBlocking {
+        enqueueToken("tok-1")
+        val tree = RateTree()
+        Timber.plant(tree)
+        try {
+            val tts = newTts()
+            val flow = tts.synthesizeStream("речь", voice = "Mila")
+            val chunksJob = async { withTimeout(15_000) { flow.toList() } }
+            fakeTts.awaitRequest()
+
+            // 2_400 bytes = 1_200 samples over 0.05 s → implied 24 kHz. ✓
+            fakeTts.emitChunk(ByteArray(2_400), audioDurationSeconds = 0.05)
+            deliveryPause()
+            fakeTts.completeStream()
+            chunksJob.await()
+
+            assertTrue(
+                "no rate warning expected, got ${tree.lines}",
+                tree.lines.none { it.second.contains("TTS PCM rate mismatch") },
+            )
+        } finally {
+            Timber.uproot(tree)
+        }
     }
 }

@@ -168,6 +168,14 @@ class AudioPipeline(
                             sharedFlowDropCount = 0
                         }
                     }
+                } else {
+                    // Empty frame (source had no data yet — AudioRecord.read
+                    // returning 0, an honest non-error). A bare `continue`
+                    // here hot-spins the producer loop when a driver keeps
+                    // returning zero-length reads: park one frame interval
+                    // (~20 ms) so the loop paces itself without counting the
+                    // read as a failure.
+                    delay(FRAME_MS)
                 }
             } catch (e: CancellationException) {
                 throw e

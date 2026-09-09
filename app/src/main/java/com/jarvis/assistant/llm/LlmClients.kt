@@ -55,7 +55,7 @@ abstract class SseLlmClient(
         var call: Call? = null
 
         // Blocking producer runs in a child coroutine so awaitClose stays reachable.
-        val producer = launch(Dispatchers.IO) {
+        launch(Dispatchers.IO) {
             var acc = mutableMapOf<Int, ToolCallAccumulator>()
             var toolCallsFinalized = false
 
@@ -131,6 +131,16 @@ abstract class SseLlmClient(
                         parsed.text?.takeIf { it.isNotEmpty() }?.let { send(LlmChunk.Text(it)) }
 
                         for (d in parsed.toolDeltas) {
+                            // Defensive re-arm (finalize-latch edge): after a
+                            // finish_reason the latch is set and the acc reset;
+                            // a provider that streams a SECOND tool-call round
+                            // in one stream (non-standard but observed in the
+                            // wild) would otherwise never emit its
+                            // FunctionCallComplete set. New deltas re-arm the
+                            // latch so the next finish_reason/[DONE] finalizes
+                            // the fresh round; the common single-round case is
+                            // unchanged (no deltas between the two events).
+                            toolCallsFinalized = false
                             val a = acc.getOrPut(d.index) { ToolCallAccumulator(d.index) }
                             if (d.id != null) a.id = d.id
                             if (d.name != null) a.name = d.name

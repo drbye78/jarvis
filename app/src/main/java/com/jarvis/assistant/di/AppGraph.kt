@@ -170,10 +170,42 @@ class AppGraph(
     /** 24 kHz TTS → 16 kHz far-end resampler for the own-TTS electrical tap. */
     private val ttsResampler = LinearResampler(24_000, 16_000)
 
+    companion object {
+        /**
+         * Far-end reference frame size fed to the canceller: one drain slot
+         * (20 ms @ 16 kHz = 320 samples), matching [AudioPipeline.FRAME_MS].
+         */
+        const val FAR_END_SLOT_SAMPLES = 320
+
+        /**
+         * Pure splitter (fix: TTS tap burst truncation) — cuts a resampled
+         * far-end chunk into ≤ [FAR_END_SLOT_SAMPLES]-sample frames. A single
+         * [com.jarvis.assistant.audio.aec.FarEndMixer.onFrame] larger than the
+         * mixer's whole per-lane queue cap (12 slots = 3840 samples ≈ 240 ms)
+         * was dropped ENTIRELY by the overflow drop: every TTS chunk longer
+         * than 240 ms self-truncated, leaving a visible far-end reference gap
+         * (`droppedFarEndFrames` under `AecDiag`). Frame-sized pushes turn a
+         * burst into bounded, oldest-first drops instead. Internal for tests.
+         */
+        internal fun chunkIntoSlotFrames(samples: ShortArray): List<ShortArray> {
+            if (samples.isEmpty()) return emptyList()
+            val frames = ArrayList<ShortArray>((samples.size + FAR_END_SLOT_SAMPLES - 1) / FAR_END_SLOT_SAMPLES)
+            var offset = 0
+            while (offset < samples.size) {
+                val len = minOf(FAR_END_SLOT_SAMPLES, samples.size - offset)
+                frames.add(samples.copyOfRange(offset, offset + len))
+                offset += len
+            }
+            return frames
+        }
+    }
+
     /**
      * Own-TTS far-end tap: every PCM chunk the player writes to the speaker
-     * is resampled and pushed onto the canceller's far-end grid. Runs on the
-     * player's actor thread; the FarEndMixer is synchronized.
+     * is resampled and pushed onto the canceller's far-end grid in
+     * slot-sized frames (see [chunkIntoSlotFrames] for why the split is
+     * required). Runs on the player's actor thread; the FarEndMixer is
+     * synchronized.
      */
     private fun ttsFarEndTap(pcm: ByteArray) {
         val canceller = echoCanceller ?: return
@@ -182,8 +214,8 @@ class AppGraph(
             (((pcm[2 * i].toInt() and 0xFF) or (pcm[2 * i + 1].toInt() shl 8))).toShort()
         }
         val resampled = ttsResampler.process(shorts)
-        if (resampled.isNotEmpty()) {
-            canceller.onFarEndFrame(NlmsEchoCanceller.LANE_TTS, resampled)
+        for (frame in chunkIntoSlotFrames(resampled)) {
+            canceller.onFarEndFrame(NlmsEchoCanceller.LANE_TTS, frame)
         }
     }
 

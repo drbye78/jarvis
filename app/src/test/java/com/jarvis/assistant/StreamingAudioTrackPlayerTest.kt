@@ -20,6 +20,8 @@ import org.junit.Test
 import timber.log.Timber
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -196,6 +198,99 @@ class StreamingAudioTrackPlayerTest {
         assertTrue(failedWithin(done))
         awaitUntil { adapter.count("release") >= 1 } // actor processed the command
         assertEquals("hardware released exactly once", 1, adapter.count("release"))
+    }
+
+    @Test
+    fun `flush racing a just-started sentence still stops it`() = runBlocking {
+        // Flush-window regression: between the actor's `launch` and the
+        // `currentPlay = play` assignment, flush() could neither see nor
+        // cancel the in-flight job, and «стоп» failed to stop the current
+        // sentence. The per-chunk generation check closes the window: after
+        // flush() bumps the generation, the very NEXT chunk aborts. Each
+        // sentence is paced (~1 ms per chunk → ~2 s if never flushed) so the
+        // back-to-back flush always lands mid-flight; a sentence that
+        // escaped the flush would write ALL of its 2_000 chunks.
+        val adapter = FakeAdapter() // instant writes
+        val p = player(adapter)
+
+        fun pacedSentence(): Flow<ByteArray> = flow {
+            repeat(2_000) {
+                emit(ByteArray(4))
+                delay(1)
+            }
+        }
+
+        repeat(30) {
+            val done = p.play(pacedSentence())
+            p.flush() // immediately — races the currentPlay registration
+            withTimeout(5_000) { done.join() }
+            assertTrue(
+                "flushed sentence must settle exceptionally",
+                done.isCancelled || failedWithin(done, timeoutMs = 1_000),
+            )
+        }
+
+        assertTrue(
+            "flushed sentences must abort near-immediately, totalWrites=${adapter.totalWrites()}",
+            adapter.totalWrites() < 30 * 50,
+        )
+
+        // The player still works normally after the storm.
+        val fresh = p.play(pcm(chunkSize = 100, chunks = 2))
+        withTimeout(5_000) { fresh.await() }
+        p.release()
+    }
+
+    @Test
+    fun `caller cancellation of the play deferred stops the AudioTrack writes`() = runBlocking {
+        // F1 regression: the returned deferred was a pure completion signal —
+        // cancelling it (the session lane's sentence timeout `done.cancel()`)
+        // did NOT stop the inner writer job, so a timed-out sentence kept
+        // playing while the machine had already gone IDLE (the TTS tail
+        // played into the open follow-up window where VAD can fire on it).
+        //
+        // Deterministic harness: the FIRST write parks on a latch held by
+        // the test; the caller cancels the deferred while that write is in
+        // flight; the latch releases. The corrected player must complete
+        // exactly ONE write (the in-flight one) — a leaked writer would add
+        // thousands (the flow has 5_000 chunks).
+        val writes = AtomicInteger()
+        val firstWriteStarted = CountDownLatch(1)
+        val releaseWrites = CountDownLatch(1)
+        val adapter = object : AudioTrackAdapter {
+            override fun write(audioData: ByteArray, offsetInBytes: Int, sizeInBytes: Int): Int {
+                writes.incrementAndGet()
+                firstWriteStarted.countDown()
+                releaseWrites.await(5, TimeUnit.SECONDS)
+                return sizeInBytes
+            }
+            override fun play() = Unit
+            override fun pause() = Unit
+            override fun flush() = Unit
+            override fun stop() = Unit
+            override fun release() = Unit
+        }
+        val p = StreamingAudioTrackPlayer(scope, adapter = adapter)
+
+        val done = p.play(flow { repeat(5_000) { emit(ByteArray(8)) } })
+        assertTrue("writer must reach the first write", firstWriteStarted.await(5, TimeUnit.SECONDS))
+
+        done.cancel(kotlinx.coroutines.CancellationException("sentence timeout"))
+        releaseWrites.countDown()
+
+        withTimeout(5_000) { done.join() }
+        delay(200) // settle: a leaked writer would add thousands of writes here
+        assertEquals(
+            "caller cancellation must stop the AudioTrack writes",
+            1,
+            writes.get(),
+        )
+        assertTrue("deferred must settle as cancelled", done.isCancelled)
+
+        // The player still works normally afterwards.
+        val fresh = p.play(pcm(chunkSize = 100, chunks = 2))
+        withTimeout(5_000) { fresh.await() }
+        p.release()
     }
 
     private class RecordingTree : Timber.Tree() {

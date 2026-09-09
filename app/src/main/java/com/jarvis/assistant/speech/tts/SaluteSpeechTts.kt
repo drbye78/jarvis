@@ -34,12 +34,37 @@ import java.util.concurrent.TimeUnit
  *   until the server finished on its own.
  * - A gRPC deadline ([deadlineMs]) caps each sentence, so a hung synthesis
  *   can no longer wedge a session in SPEAKING forever.
+ *
+ * SAMPLE-RATE CONSTRAINT (audit fix, honest documentation): the
+ * `SynthesisRequest` proto carries NO sample-rate field (see
+ * `app/src/main/proto/synthesis.proto` — text/encoding/language/content_type/
+ * voice only), so the PCM output rate is pinned by the VOICE, not the
+ * request. The whole playback chain assumes 24 kHz ([contracts.AudioSpec.TTS]:
+ * AudioTrack writes, and the AEC far-end tap's 24 kHz → 16 kHz resampler).
+ * Known-good voices encode the rate in their pool ID (`May_24000`); a
+ * FREE-TEXT voice ID naming a different rate (e.g. an `*_8000` pool voice)
+ * would synthesize at that rate and play at the wrong pitch. The Settings
+ * free-text entry point is validated only by the «Проверить голос» probe —
+ * as a defensive net, [synthesizeStream] cross-checks the server-reported
+ * `audio_duration` against the received byte count and logs a content-free
+ * warning when the implied rate is not ~24 kHz (detection only — the audio
+ * itself cannot be re-pitched meaningfully after the fact).
  */
 class SaluteSpeechTts(
     private val tokenManager: TokenManager,
     private val channel: ManagedChannel,
     private val deadlineMs: Long = 20_000,
 ) : TtsClient {
+
+    private companion object {
+        /**
+         * The PCM sample rate every downstream consumer assumes
+         * ([com.jarvis.assistant.contracts.AudioSpec.TTS]). Tolerance 10% —
+         * `audio_duration` is server-rounded, so a small deviation is noise.
+         */
+        const val EXPECTED_PCM_SAMPLE_RATE = 24_000
+        const val RATE_TOLERANCE = 0.10
+    }
 
     override fun synthesizeStream(text: String, voice: String): Flow<ByteArray> = channelFlow {
         val cancellableContext = Context.current().withCancellation()
@@ -90,13 +115,45 @@ class SaluteSpeechTts(
                 // "downstream cancel" test pins.
                 val childJobs = ArrayList<Job>()
 
+                // Defensive rate check state (per synthesis stream; the async
+                // stub delivers observer callbacks serially on one thread).
+                var receivedBytes = 0L
+                var rateWarned = false
+
                 val responseObserver = object : StreamObserver<SynthesisResponse> {
                     override fun onNext(value: SynthesisResponse) {
                         val bytes = value.data.toByteArray()
                         // N5: bridge the gRPC callback (non-suspend) to the
                         // channelFlow producer scope. send() suspends on
                         // backpressure so audio chunks are never silently dropped.
-                        if (bytes.isNotEmpty()) childJobs += this@channelFlow.launch { this@channelFlow.send(bytes) }
+                        if (bytes.isNotEmpty()) {
+                            receivedBytes += bytes.size
+                            // Rate cross-check (see the class KDoc): the proto
+                            // cannot pin the PCM rate, so validate the voice's
+                            // actual output against the 24 kHz the player and
+                            // AEC tap assume. Content-free log (no voice id).
+                            if (!rateWarned && value.hasAudioDuration()) {
+                                val durationSec = value.audioDuration.seconds +
+                                    value.audioDuration.nanos / 1e9
+                                if (durationSec > 0) {
+                                    val impliedRate =
+                                        (receivedBytes / 2) / durationSec
+                                    val deviation =
+                                        kotlin.math.abs(impliedRate - EXPECTED_PCM_SAMPLE_RATE)
+                                    if (deviation > EXPECTED_PCM_SAMPLE_RATE * RATE_TOLERANCE) {
+                                        rateWarned = true
+                                        Timber.w(
+                                            "TTS PCM rate mismatch: implied %.0f Hz vs expected %d Hz — " +
+                                                "the selected voice synthesizes at a different rate; " +
+                                                "playback pitch will be wrong (pick a 24 kHz voice)",
+                                            impliedRate,
+                                            EXPECTED_PCM_SAMPLE_RATE,
+                                        )
+                                    }
+                                }
+                            }
+                            childJobs += this@channelFlow.launch { this@channelFlow.send(bytes) }
+                        }
                     }
 
                     override fun onError(t: Throwable) {

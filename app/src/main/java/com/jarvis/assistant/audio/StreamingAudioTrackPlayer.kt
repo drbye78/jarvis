@@ -186,7 +186,20 @@ class StreamingAudioTrackPlayer(
         }
         val play = launch {
             try {
-                job.flow.collect { chunk -> writeChunk(chunk) }
+                job.flow.collect { chunk ->
+                    // Flush-window fix: between `launch` (above) and the
+                    // `currentPlay = play` assignment a flush() could not see
+                    // — and therefore could not cancel — this job (the tiny
+                    // window where «стоп» failed to stop the current
+                    // sentence). cancel-then-start ordering alone cannot close
+                    // it (the flush may land before the assignment), so the
+                    // per-chunk generation check does: once flush() bumps the
+                    // generation, the very NEXT chunk aborts the sentence.
+                    if (job.generation != generation) {
+                        throw CancellationException("sentence flushed (generation mismatch)")
+                    }
+                    writeChunk(chunk)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -196,6 +209,21 @@ class StreamingAudioTrackPlayer(
         }
         currentPlay = play
         currentDone = job.done
+        // F1 (caller-cancellation propagation): `done` used to be a pure
+        // completion signal — a caller cancelling it (the session lane's
+        // sentence-timeout `done.cancel()`) flipped the deferred WITHOUT
+        // stopping the actual AudioTrack writes: the inner writer job kept
+        // playing a timed-out sentence while the machine had already gone
+        // IDLE (the TTS tail played into the open follow-up window).
+        // Registered AFTER `currentPlay = play`; the flush()/release()
+        // paths are unaffected (they cancel `play` directly and bump the
+        // generation — the handler only fires on caller cancellation of the
+        // deferred (non-null cause), and is a no-op once the job has
+        // finished). A deferred already cancelled at registration fires the
+        // handler immediately with its cause.
+        job.done.invokeOnCompletion { cause ->
+            if (cause != null) play.cancel()
+        }
         try {
             play.join()
         } catch (_: CancellationException) {

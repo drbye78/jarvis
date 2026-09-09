@@ -251,13 +251,27 @@ class FakeSaluteTtsService : SynthesisSmartSpeechGrpc.SmartSpeechImplBase() {
     }
 
     fun emitChunk(bytes: ByteArray) {
+        emitChunk(bytes, audioDurationSeconds = null)
+    }
+
+    /**
+     * Emit a chunk with an optional server-reported [audioDurationSeconds]
+     * (the `SynthesisResponse.audio_duration` field) — the rate cross-check
+     * tests in SaluteSpeechTtsTest script mismatched rates through this.
+     */
+    fun emitChunk(bytes: ByteArray, audioDurationSeconds: Double?) {
         val observer = synchronized(lock) { responseObserver }
         checkNotNull(observer) { "no Synthesize call received yet" }
-        observer.onNext(
-            SynthesisResponse.newBuilder()
-                .setData(com.google.protobuf.ByteString.copyFrom(bytes))
-                .build(),
-        )
+        val builder = SynthesisResponse.newBuilder()
+            .setData(com.google.protobuf.ByteString.copyFrom(bytes))
+        if (audioDurationSeconds != null) {
+            val seconds = audioDurationSeconds.toLong()
+            val nanos = (((audioDurationSeconds - seconds) * 1_000_000_000).toLong()).toInt()
+            builder.setAudioDuration(
+                com.google.protobuf.Duration.newBuilder().setSeconds(seconds).setNanos(nanos),
+            )
+        }
+        observer.onNext(builder.build())
     }
 
     fun emitError(status: Status) {

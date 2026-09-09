@@ -141,4 +141,58 @@ class SseLlmClientTest {
         assertEquals(401, (error4xx as com.jarvis.assistant.llm.LlmHttpException).code)
         assertFalse(error4xx.isTransient)
     }
+
+    @Test
+    fun `finish_reason followed by DONE finalizes tool calls exactly once`() = runBlocking {
+        // The common single-round shape: tool deltas, then finish_reason,
+        // then [DONE]. The finalize latch must dedupe — exactly ONE
+        // FunctionCallComplete set.
+        server.enqueue(
+            MockResponse().setBody(
+                "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\"," +
+                    "\"function\":{\"name\":\"toolA\",\"arguments\":\"{\\\"a\\\":1}\"}}]}}]}\n\n" +
+                    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n" +
+                    "data: [DONE]\n\n"
+            )
+        )
+        val llm = clientWith(CloseCountingInterceptor())
+
+        val chunks = llm.chatStream(request()).toList()
+
+        val completes = chunks.filterIsInstance<LlmChunk.FunctionCallComplete>()
+        assertEquals(1, completes.size)
+        assertEquals("toolA", completes.single().call.function.name)
+        assertEquals("{\"a\":1}", completes.single().call.function.arguments)
+        assertTrue(chunks.last() is LlmChunk.Done)
+    }
+
+    @Test
+    fun `second tool-call round in one stream still finalizes`() = runBlocking {
+        // Finalize-latch regression: the latch used to be permanent, so a
+        // provider streaming a SECOND tool-call round in one stream (after a
+        // first finish_reason) never emitted its FunctionCallComplete set.
+        // New tool deltas re-arm the latch; the next finish_reason/[DONE]
+        // finalizes the fresh round.
+        server.enqueue(
+            MockResponse().setBody(
+                "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\"," +
+                    "\"function\":{\"name\":\"toolA\",\"arguments\":\"{}\"}}]}," +
+                    "\"finish_reason\":\"tool_calls\"}]}\n\n" +
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_2\"," +
+                    "\"function\":{\"name\":\"toolB\",\"arguments\":\"{\\\"x\\\":1}\"}}]}," +
+                    "\"finish_reason\":\"tool_calls\"}]}\n\n" +
+                    "data: [DONE]\n\n"
+            )
+        )
+        val llm = clientWith(CloseCountingInterceptor())
+
+        val chunks = llm.chatStream(request()).toList()
+
+        val completes = chunks.filterIsInstance<LlmChunk.FunctionCallComplete>()
+        assertEquals("both rounds must finalize", 2, completes.size)
+        assertEquals("toolA", completes[0].call.function.name)
+        assertEquals("toolB", completes[1].call.function.name)
+        assertEquals("{\"x\":1}", completes[1].call.function.arguments)
+        assertTrue(chunks.last() is LlmChunk.Done)
+    }
 }

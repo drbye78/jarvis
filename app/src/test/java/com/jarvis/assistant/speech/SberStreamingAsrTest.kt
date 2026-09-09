@@ -310,4 +310,60 @@ class SberStreamingAsrTest {
         val clientError = fakeAsr.awaitClientError()
         assertNotNull("cancel must abort the server-side stream", clientError)
     }
+
+    @Test
+    fun `send after server completion is a no-op - no frames pushed into the dead RPC`() = runBlocking {
+        // Feed-after-death regression: onError/onCompleted now close the
+        // feeder gate. Server half-close (no client finish()) is the
+        // observable variant: the client's send direction is still OPEN at
+        // the transport level, so WITHOUT the fix a send() after
+        // onCompleted was delivered to the dead call's listener; with the
+        // fix it must be dropped before the observer is touched.
+        enqueueToken("tok-1")
+        val asr = newAsr()
+        val stream = asr.open()
+        try {
+            fakeAsr.completeStream() // server half-closes without EOU
+            awaitEvent(stream.events, timeoutMs = 5_000) { it is AsrEvent.Failed }
+
+            stream.send(ByteArray(16))
+            stream.send(ByteArray(16))
+            stream.send(ByteArray(16))
+
+            assertEquals(
+                "no audio chunk may reach the server after its half-close",
+                0,
+                fakeAsr.receivedRequests().count { it.hasAudioChunk() },
+            )
+        } finally {
+            stream.cancel()
+        }
+    }
+
+    @Test
+    fun `final EOU followed by server completion does not emit a spurious Failed`() = runBlocking {
+        // Terminal-gate regression: onCompleted used to emit Failed
+        // unconditionally — a spurious failure event AFTER a Final had
+        // already been delivered.
+        enqueueToken("tok-1")
+        val asr = newAsr()
+        val stream = asr.open()
+        try {
+            val eventsJob = async { collectEvents(stream.events, count = 1) }
+            yield()
+            fakeAsr.emitFinal("готово")
+            assertEquals(AsrEvent.Final("готово"), eventsJob.await().single())
+
+            // The server closes its side AFTER the EOU (normal lifecycle).
+            fakeAsr.completeStream()
+
+            // No Failed may follow the Final within a bounded window.
+            val extra = withTimeoutOrNull(300) {
+                stream.events.first { it is AsrEvent.Failed }
+            }
+            assertNull("no Failed may follow the Final", extra)
+        } finally {
+            stream.cancel()
+        }
+    }
 }

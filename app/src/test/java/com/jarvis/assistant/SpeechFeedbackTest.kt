@@ -18,8 +18,11 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.job
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -241,6 +244,61 @@ class SpeechFeedbackTest {
         }
         // Reached here without an unhandled exception crashing the test.
         assertTrue(true)
+    }
+
+    @Test
+    fun `cancellation propagates after focus cleanup - A8 pattern`() = runBlocking {
+        // A8 regression: the CancellationException used to be SWALLOWED after
+        // the focus cleanup, breaking structured concurrency (the child kept
+        // running after scope.cancel() as if nothing happened). The cleanup
+        // must still run, but the child must end CANCELLED.
+        val flushed = CompletableDeferred<Unit>()
+        val adapter = object : AudioFocusAdapter {
+            override fun requestDuckFocus() = true
+            override fun abandonFocus() { flushed.complete(Unit) }
+        }
+        val focus = AssistantAudioFocus(adapter)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val player = object : TtsPlayer {
+            val parked = CompletableDeferred<Unit>()
+            override fun play(pcm: Flow<ByteArray>): CompletableDeferred<Unit> = parked
+            override fun flush() = Unit
+            override fun release() = Unit
+        }
+        val fb = TtsSpeechFeedback(
+            scope,
+            FakeTts(),
+            player,
+            { "Mila" },
+            focus,
+        )
+
+        // Unconfined: the speak child runs inline up to the parked await.
+        fb.onCascadeStarted(predictedLong = true)
+
+        val parentJob = scope.coroutineContext.job
+        val child = withTimeout(2_000) {
+            var found: kotlinx.coroutines.Job? = null
+            while (found == null) {
+                kotlinx.coroutines.delay(1)
+                found = parentJob.children.firstOrNull()
+            }
+            found
+        }
+
+        // Barge-in: the awaited sentence deferred settles with cancellation —
+        // the CE must propagate through speak()'s catch (after cleanup), so
+        // the child ends CANCELLED (a swallowed CE would end it NORMALLY).
+        player.parked.completeExceptionally(kotlinx.coroutines.CancellationException("flushed"))
+        child.join()
+        assertTrue(
+            "the speak child must end CANCELLED — swallowing the CancellationException breaks structured concurrency",
+            child.isCancelled,
+        )
+        // Cleanup ran BEFORE the rethrow.
+        assertTrue("focus cleanup must still run on the cancellation path", flushed.isCompleted)
+        assertEquals(AssistantFocusState.IDLE, focus.state)
+        scope.cancel()
     }
 
     // ------------------------------------------------------------------

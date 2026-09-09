@@ -74,8 +74,13 @@ class TtsSpeechFeedback(
                     focus?.onTtsSentenceFinished()
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
-                // Barge-in flush killed the phrase mid-flight — fine.
+                // A8 pattern (same as AppGraph.speakVoiceSample): the phrase
+                // was killed mid-flight (barge-in flush) — cleanup, then
+                // RETHROW. Swallowing cancellation here broke structured
+                // concurrency: this child coroutine kept running after
+                // scope.cancel() as if nothing happened.
                 focus?.onTtsFlushed()
+                throw e
             } catch (t: Throwable) {
                 Timber.w(t, "SpeechFeedback phrase failed (best-effort, ignored)")
                 focus?.onTtsFlushed()

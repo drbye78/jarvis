@@ -190,6 +190,42 @@ class AudioPipelineTest {
         p.release()
         collector.cancel()
     }
+
+    @Test
+    fun `empty frames neither count as failures nor reset the failure streak`() = runBlocking {
+        // Empty-frame pacing regression (HAL-failure audit fix): an
+        // empty read is "no data yet" — it must NOT be counted as a
+        // failure (that would give up on a healthy-but-silent source) and
+        // must NOT reset the consecutive-failure streak (that would mask a
+        // failing source behind silence). It also parks the loop one frame
+        // interval instead of hot-spinning.
+        val source = EmptyThenFailingSource()
+        val p = AudioPipeline(scope, source, preRollMs = 1_000)
+
+        p.start()
+        // 60 empty reads precede the failures: if any empty RESET the
+        // streak, the give-up would need 50 failures AFTER the empties and
+        // the read count would overshoot 125; if empties COUNTED as
+        // failures, give-up would fire before the real failures started.
+        awaitUntil(timeoutMs = 20_000) { p.hasGivenUp() && !p.isRunning() }
+
+        assertTrue(
+            "give-up must be driven by the ~50 real failures only, reads=${source.reads.get()}",
+            source.reads.get() in 105..125,
+        )
+        p.release()
+    }
+}
+
+/** Returns 60 empty frames (honest "no data yet"), then fails with a read error forever. */
+private class EmptyThenFailingSource : AudioSource {
+    val reads = AtomicInteger()
+    override fun start() = Unit
+    override fun stop() = Unit
+    override fun read(): ShortArray {
+        val n = reads.incrementAndGet()
+        return if (n <= 60) ShortArray(0) else throw java.io.IOException("read error code -x")
+    }
 }
 
 /** Fails with a non-lifecycle error until flipped healthy (give-up path). */

@@ -158,7 +158,12 @@ class HybridWakeWordDetector(
          */
         const val RELEASE_ENGINE_LOCK_MS = 1_500L
     }
-    private var engine: WakeWordEngine? = null
+
+    // @Volatile (teardown-race defense-in-depth, audit): the actor now reads
+    // these fields ONLY under [processMutex], and every writer mutates them
+    // under the same mutex — but the volatile marker also makes a stray
+    // unsynchronized read see a publication, never a half-constructed engine.
+    @Volatile private var engine: WakeWordEngine? = null
     private var actorJob: Job? = null
 
     // ------------------------------------------------------------------
@@ -176,7 +181,9 @@ class HybridWakeWordDetector(
     @Volatile private var stopLaneEnabled = false
 
     @Volatile private var stopLaneBuildInFlight = false
-    private var stopEngine: WakeWordEngine? = null
+
+    /** Same @Volatile rationale as [engine] (teardown-race defense-in-depth). */
+    @Volatile private var stopEngine: WakeWordEngine? = null
 
     /** Test seam (COGNITIVE_PLAN 0.3): expose the lane for regression assertions. */
     internal fun stopLaneForTest(): WakeWordEngine? = stopEngine
@@ -244,40 +251,65 @@ class HybridWakeWordDetector(
         // Swap (or drop) the engine atomically. NonCancellable so a cancelled
         // scope still releases a built-but-unpublishable engine instead of
         // leaking it (M2).
+        //
+        // Bounded publish (audit): the processMutex acquisition here used to
+        // be unbounded — a native process() wedged past the release() join
+        // budget keeps holding the mutex, and a Settings-driven reconfigure
+        // (sensitivity drag, engine switch) then hung FOREVER. The wait now
+        // carries the same deadline as release()'s teardown; on timeout the
+        // swap is skipped and the freshly built engine is dropped — the OLD
+        // engine keeps serving (degraded honestly, logged) instead of the
+        // reconfigure caller blocking forever.
+        var publishTimedOut = false
         val published = withContext(NonCancellable) {
             reconfigureMutex.withLock {
-                processMutex.withLock {
-                    if (_state.value == DetectorState.Released) {
-                        false
-                    } else {
-                        val old = engine
-                        engine = built
-                        currentReq = req
-                        _state.value = DetectorState.Ready
-                        // DEFECT 1: release the displaced engine so a reconfigure /
-                        // sensitivity change never orphans a native engine.
-                        runCatching { old?.release() }
-                        // FIXPLAN B stop-lane housekeeping for the NEW request:
-                        // - the new primary covers stop (Sherpa with stop phrase)
-                        //   or stop is disabled → the dedicated lane is dead weight;
-                        // - otherwise allow a fresh lazy build for the new request.
-                        val primaryCoversStop = built.phrases.any { it.isStop }
-                        val lane = stopEngine
-                        if (lane != null && (primaryCoversStop || !req.stopPhraseEnabled)) {
-                            stopEngine = null
-                            runCatching { lane.release() }
+                val acquired = withTimeoutOrNull(RELEASE_ENGINE_LOCK_MS) {
+                    processMutex.lock()
+                    try {
+                        if (_state.value == DetectorState.Released) {
+                            false
+                        } else {
+                            val old = engine
+                            engine = built
+                            currentReq = req
+                            _state.value = DetectorState.Ready
+                            // DEFECT 1: release the displaced engine so a reconfigure /
+                            // sensitivity change never orphans a native engine.
+                            runCatching { old?.release() }
+                            // FIXPLAN B stop-lane housekeeping for the NEW request:
+                            // - the new primary covers stop (Sherpa with stop phrase)
+                            //   or stop is disabled → the dedicated lane is dead weight;
+                            // - otherwise allow a fresh lazy build for the new request.
+                            val primaryCoversStop = built.phrases.any { it.isStop }
+                            val lane = stopEngine
+                            if (lane != null && (primaryCoversStop || !req.stopPhraseEnabled)) {
+                                stopEngine = null
+                                runCatching { lane.release() }
+                            }
+                            // COGNITIVE_PLAN 0.3: the flag is NO LONGER reset here —
+                            // a lane build genuinely in flight owns it, and the tail
+                            // re-arm below re-evaluates the need after publish.
+                            true
                         }
-                        // COGNITIVE_PLAN 0.3: the flag is NO LONGER reset here —
-                        // a lane build genuinely in flight owns it, and the tail
-                        // re-arm below re-evaluates the need after publish.
-                        true
+                    } finally {
+                        processMutex.unlock()
                     }
                 }
+                if (acquired == null) {
+                    publishTimedOut = true
+                    Timber.e(
+                        "Wake-word publish skipped: processMutex still busy after %d ms " +
+                            "(wedged native process?) — %s",
+                        RELEASE_ENGINE_LOCK_MS,
+                        if (engine == null) "nothing was ever published" else "keeping the current engine",
+                    )
+                }
+                acquired ?: false
             }
         }
 
         if (!published) {
-            runCatching { built.release() }
+            onPublishFailed(built, publishTimedOut)
             return
         }
 
@@ -297,6 +329,34 @@ class HybridWakeWordDetector(
         // Without this re-arm the lane is never built and voice stop dies
         // silently until the next state change (the re-audit's rebuild race).
         if (stopLaneEnabled) armStopLaneIfNeeded()
+    }
+
+    /**
+     * F-A: post-publish-failure handling, shared by the Released-rejection
+     * and the publish-timeout paths. Drops the unpublishable engine (M2),
+     * and — when a publish TIMEOUT left the detector with NO engine while
+     * still [DetectorState.Bootstrapping] (the initial build) — mirrors
+     * the build-failure branch: the detector used to stay deaf while
+     * reporting "still starting", so the session layer's Failed-check
+     * never fired and no [Detection.DetectorError] was surfaced.
+     * An existing engine keeps the "keep old engine serving" behavior.
+     *
+     * Internal for tests: the engine==null + Bootstrapping + mutex-timeout
+     * combination is unreachable through the public API (every long-term
+     * [processMutex] holder — the frame actor — only exists after a
+     * successful publish), so the regression test drives this production
+     * handler directly with the initial build parked mid-flight.
+     */
+    internal fun onPublishFailed(built: WakeWordEngine?, timedOut: Boolean) {
+        runCatching { built?.release() }
+        if (timedOut && engine == null && _state.value == DetectorState.Bootstrapping) {
+            val reason =
+                "Wake-word engine publish timed out after ${RELEASE_ENGINE_LOCK_MS} ms " +
+                    "(processMutex busy during the initial build) — wake word disabled"
+            _state.value = DetectorState.Failed(reason)
+            // Belt and suspenders: also surface through the event flow.
+            detectionsFlow.tryEmit(Detection.DetectorError(reason))
+        }
     }
 
     /**
@@ -401,21 +461,43 @@ class HybridWakeWordDetector(
             }
         }
         withContext(NonCancellable) {
-            processMutex.withLock {
-                if (_state.value != DetectorState.Released && built != null) {
-                    val primaryCoversStop = engine?.phrases?.any { it.isStop } == true
-                    if (primaryCoversStop || !stopLaneEnabled || !currentReq.stopPhraseEnabled) {
-                        runCatching { built.release() } // redundant lane — drop it
+            // Bounded publish (same audit as buildAndSwap): a wedged native
+            // process() must not hang the lane's publish step forever. On
+            // timeout the freshly built lane is dropped — voice stop stays off
+            // this round; the flag reset below keeps future re-arms possible.
+            val published = withTimeoutOrNull(RELEASE_ENGINE_LOCK_MS) {
+                processMutex.lock()
+                try {
+                    if (_state.value != DetectorState.Released && built != null) {
+                        val primaryCoversStop = engine?.phrases?.any { it.isStop } == true
+                        if (primaryCoversStop || !stopLaneEnabled || !currentReq.stopPhraseEnabled) {
+                            runCatching { built.release() } // redundant lane — drop it
+                        } else {
+                            val old = stopEngine
+                            stopEngine = built
+                            if (old != null && old !== built) runCatching { old.release() }
+                        }
                     } else {
-                        val old = stopEngine
-                        stopEngine = built
-                        if (old != null && old !== built) runCatching { old.release() }
+                        runCatching { built?.release() } // released mid-build → drop the orphan (M2)
                     }
-                } else {
-                    runCatching { built?.release() } // released mid-build → drop the orphan (M2)
+                    true
+                } finally {
+                    processMutex.unlock()
                 }
-                stopLaneBuildInFlight = false
             }
+            if (published == null) {
+                runCatching { built?.release() }
+                Timber.e(
+                    "Stop lane publish skipped: processMutex still busy after %d ms " +
+                        "(wedged native process?) — voice stop stays off this round",
+                    RELEASE_ENGINE_LOCK_MS,
+                )
+            }
+            // Reset in EVERY path (timeout included) or the lane could never
+            // be armed again. The flag is @Volatile and only ever transitions
+            // true→false here; a concurrent re-arm launching a new build is
+            // serialized downstream by processMutex itself.
+            stopLaneBuildInFlight = false
         }
     }
 
@@ -438,37 +520,48 @@ class HybridWakeWordDetector(
                 accumulator.append(frame)
                 var chunk = accumulator.take()
                 while (chunk != null) {
-                    val current = engine
-                    val result = processMutex.withLock {
-                        current?.process(chunk) ?: -1
+                    // Teardown-race fix (use-after-free): engine + phrases are
+                    // read INSIDE processMutex and the captured value drives
+                    // BOTH the result and the emission routing. The old code
+                    // read the `engine` field OUTSIDE the lock (non-volatile,
+                    // stale-prone) and used that stale reference inside the
+                    // lock — a teardown/release holding the mutex could free
+                    // the native engine between the two reads, and the actor
+                    // then called process() on freed memory (SIGSEGV) during
+                    // sensitivity drags / reconfigureWakeWord with audio
+                    // flowing. Capturing under the lock keeps the engine and
+                    // its phrase list mutually consistent.
+                    //
+                    // Match outcome: (matched phrase or null, index) — the
+                    // index distinguishes "no match" (-1) from "index outside
+                    // the phrase list" (a keywords-file line the engine was
+                    // not told about: logged, never invented into a wake word).
+                    val (match, index) = processMutex.withLock {
+                        val current = engine ?: return@withLock null to -1
+                        val idx = current.process(chunk)
+                        if (idx >= 0) current.phrases.getOrNull(idx) to idx else null to idx
                     }
-                    if (result >= 0 && current != null) {
-                        val phrase = current.phrases.getOrNull(result)
-                        when {
-                            phrase == null -> {
-                                // Index outside the phrase list: a keywords-file
-                                // line the engine was not told about. Ignore —
-                                // never invent a wake word from it.
-                                Timber.w("Engine reported unknown phrase index %d", result)
-                            }
+                    when {
+                        index >= 0 && match == null ->
+                            Timber.w("Engine reported unknown phrase index %d", index)
 
-                            phrase.isStop -> detectionsFlow.emit(Detection.StopPhrase(phrase.id))
-                            else -> detectionsFlow.emit(Detection.WakeWord)
-                        }
+                        match != null && match.isStop ->
+                            detectionsFlow.emit(Detection.StopPhrase(match.id))
+
+                        match != null -> detectionsFlow.emit(Detection.WakeWord)
                     }
                     // Dedicated stop lane (Porcupine primary): fed only while
                     // the session layer arms it, under the same mutex that
-                    // protects native teardown.
+                    // protects native teardown — same captured-under-lock rule
+                    // as the primary engine above (lane + its phrases).
                     if (stopLaneEnabled) {
-                        val lane = stopEngine
-                        if (lane != null) {
-                            val laneResult = processMutex.withLock { lane.process(chunk) }
-                            if (laneResult >= 0) {
-                                val phrase = lane.phrases.getOrNull(laneResult)
-                                if (phrase != null) {
-                                    detectionsFlow.emit(Detection.StopPhrase(phrase.id))
-                                }
-                            }
+                        val laneMatch: WakeWordEngine.Phrase? = processMutex.withLock {
+                            val lane = stopEngine ?: return@withLock null
+                            val idx = lane.process(chunk)
+                            if (idx >= 0) lane.phrases.getOrNull(idx) else null
+                        }
+                        if (laneMatch != null) {
+                            detectionsFlow.emit(Detection.StopPhrase(laneMatch.id))
                         }
                     }
                     chunk = accumulator.take()

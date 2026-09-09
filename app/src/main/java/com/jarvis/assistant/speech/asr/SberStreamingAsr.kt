@@ -69,6 +69,25 @@ class SberStreamingAsr(
         private val cancellableContext = Context.current().withCancellation()
         private val closed = AtomicBoolean(false)
 
+        /**
+         * Feed-after-death fix: set by [onError]/[onCompleted] so the feeder
+         * stops pushing frames (~50/s) into a dead RPC until the async error
+         * propagates. finish()/cancel() set it too; a `Final` deliberately
+         * does NOT — the RPC is still alive after EOU and [send] must keep
+         * working until the caller half-closes (pinned by the direct suite).
+         */
+        private val terminalEmitted = AtomicBoolean(false)
+
+        /**
+         * Terminal sink for the OBSERVER flow: emits [event] at most once, so
+         * a spurious `Failed` can never follow a `Final` (previously only the
+         * caller's complete()/cancel() idempotence neutralized it).
+         */
+        private fun emitTerminal(event: AsrEvent) {
+            if (terminalEmitted.getAndSet(true)) return
+            _events.tryEmit(event)
+        }
+
         @Volatile private var requestObserver: StreamObserver<RecognitionRequest>? = null
 
         fun start() {
@@ -91,11 +110,14 @@ class SberStreamingAsr(
                     val t = value.transcription
                     val text = t.resultsList.joinToString(" ") { it.text }.trim()
                     if (t.eou) {
+                        // Terminal for the OBSERVER flow (a Final ends the
+                        // utterance; the send() gate stays open until the
+                        // caller half-closes — see [emitTerminal]).
                         if (text.isNotBlank()) {
-                            _events.tryEmit(AsrEvent.Final(text))
+                            emitTerminal(AsrEvent.Final(text))
                         } else {
                             // EOU with no speech (e.g. NO_SPEECH_TIMEOUT).
-                            _events.tryEmit(AsrEvent.Final(""))
+                            emitTerminal(AsrEvent.Final(""))
                         }
                     } else if (text.isNotBlank()) {
                         _events.tryEmit(AsrEvent.Partial(text))
@@ -107,14 +129,20 @@ class SberStreamingAsr(
                         ?: (t as? io.grpc.StatusRuntimeException)?.status?.code?.toString()
                         ?: t.message
                     Timber.e(t, "ASR stream error ($cause)")
-                    _events.tryEmit(AsrEvent.Failed(t))
+                    // Feed-after-death fix: shut the feeder gate BEFORE the
+                    // terminal event — send() must stop feeding the dead RPC.
+                    closed.set(true)
+                    emitTerminal(AsrEvent.Failed(t))
                 }
 
                 override fun onCompleted() {
                     // Server closed without EOU: treat as final empty if we
                     // never emitted anything; otherwise the session's hard
-                    // cap resolves it.
-                    _events.tryEmit(
+                    // cap resolves it. Feed-after-death fix applies here too,
+                    // and the terminal gate guarantees a `Failed` is never
+                    // emitted after a `Final` already went out.
+                    closed.set(true)
+                    emitTerminal(
                         AsrEvent.Failed(
                             RuntimeException("ASR stream completed without end-of-utterance")
                         )

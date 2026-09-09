@@ -64,7 +64,7 @@ D9EUUn4YaeLaS8AjSF/h7UkjOibNc4qVDiPP+rkehFWM66PVnP1Msh93tc+taIfC
 EYVMxjh8zNbFuoc7fzvvrFILLe7ifvEIUqSVIC/AzplM/Jxw7buXFeGP1qVCBEHq
 391d/9RAfaZ12zkwFsl+IKwE/OZxW8AHa9i1p4GO0YSNuczzEm4=
 -----END CERTIFICATE-----
-""".trimIndent()
+    """.trimIndent()
 
     private val RUSSIAN_SUB_PEM = """
 -----BEGIN CERTIFICATE-----
@@ -108,7 +108,7 @@ E8gMNurM+kV8PT8LNIM+4Zs+LKEV8nqRWBaxkIVJGekkVKO8xDBOG/aN62AZKHOe
 GcyIdu7yNMMRihGVZCYr8rYiJoKiOzDqOkPkLOPdhtVlgnhowzHDxMHND/E2WA5p
 ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
 -----END CERTIFICATE-----
-""".trimIndent()
+    """.trimIndent()
 
     /** Trust manager validating against ONLY the bundled Минцифры CAs. */
     fun russianTrustManager(): X509TrustManager {
@@ -146,7 +146,7 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
             override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
                 try {
                     system.checkClientTrusted(chain, authType)
-                } catch (e: CertificateException) {
+                } catch (_: CertificateException) {
                     russian.checkClientTrusted(chain, authType)
                 }
             }
@@ -154,15 +154,8 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
             override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
                 try {
                     system.checkServerTrusted(chain, authType)
-                } catch (e: CertificateException) {
-                    // TEMP DIAGNOSTIC (removed after the TLS fix is verified)
-                    android.util.Log.i("SberTrust", "system rejected: ${e.message}; trying Минцифры fallback (anchors=${russian.acceptedIssuers.size})")
-                    try {
-                        russian.checkServerTrusted(chain, authType)
-                    } catch (e2: CertificateException) {
-                        android.util.Log.i("SberTrust", "russian fallback ALSO rejected: ${e2.message}")
-                        throw e2
-                    }
+                } catch (_: CertificateException) {
+                    russian.checkServerTrusted(chain, authType)
                 }
             }
 

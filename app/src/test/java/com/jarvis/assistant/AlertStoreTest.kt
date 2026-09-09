@@ -19,6 +19,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import timber.log.Timber
 
 /**
  * P4 unified alert store (PLAN.md §3.3): DAO round-trip semantics, boot
@@ -347,5 +348,120 @@ class AlertStoreTest {
         val expectedNext = 5_000L + ALERT_DAY_MS
         assertEquals(expectedNext, h.dao.byId(id)!!.triggerAtMillis)
         assertEquals(expectedNext, h.armer.armed.getValue(id).triggerAtMillis)
+    }
+
+    // ---- Lying-switch regression: setEnabled on expired one-shots -------------
+
+    @Test
+    fun `setEnabled true on an expired one-shot ALARM rolls forward from the anchor and arms`() = runBlocking {
+        // Expired one-shot clock alarm (fired on day 1, disabled by onFired);
+        // the user re-enables it. The row must NEVER claim armed while
+        // nothing is scheduled: the wall-clock time rolls forward from the
+        // anchor to the next future occurrence BEFORE enabled=1 persists.
+        val h = AlertHarness(nowMillis = 6_000L)
+        val id = h.dao.insert(
+            makeAlarm(trigger = 5_000L, repeatDaily = false, enabled = false),
+        ).toInt()
+
+        h.scheduler.setEnabled(id, true)
+
+        val row = h.dao.byId(id)!!
+        val expectedNext = 5_000L + ALERT_DAY_MS // anchor (5_000) + one day
+        assertTrue("row must be enabled", row.enabled)
+        assertEquals("trigger must roll forward from the anchor", expectedNext, row.triggerAtMillis)
+        val arm = h.armer.armed.getValue(id)
+        assertEquals(expectedNext, arm.triggerAtMillis)
+        assertEquals(ScheduledAlertEntity.KIND_ALARM, arm.kind)
+    }
+
+    @Test
+    fun `setEnabled true on an expired one-shot TIMER persists disabled and arms nothing`() = runBlocking {
+        // A timer has no meaningful recurrence — re-enabling an expired one
+        // must not leave enabled=1 with nothing armed.
+        val h = AlertHarness(nowMillis = 6_000L)
+        val id = h.dao.insert(makeTimer("чай", trigger = 5_000L, enabled = false)).toInt()
+
+        h.scheduler.setEnabled(id, true)
+
+        assertFalse("expired timer must stay honestly disabled", h.dao.byId(id)!!.enabled)
+        assertNull("expired timer must not be armed", h.armer.armed[id])
+    }
+
+    @Test
+    fun `setEnabled true on a future one-shot keeps the stored trigger and arms`() = runBlocking {
+        val h = AlertHarness(nowMillis = 1_000L)
+        val id = h.dao.insert(makeAlarm(trigger = 9_000L, repeatDaily = false)).toInt()
+
+        h.scheduler.setEnabled(id, true)
+
+        val row = h.dao.byId(id)!!
+        assertTrue(row.enabled)
+        assertEquals(9_000L, row.triggerAtMillis)
+        assertEquals(9_000L, h.armer.armed.getValue(id).triggerAtMillis)
+    }
+
+    @Test
+    fun `setEnabled false disarms and persists disabled`() = runBlocking {
+        val h = AlertHarness(nowMillis = 1_000L)
+        val id = h.dao.insert(makeAlarm(trigger = 9_000L, repeatDaily = true)).toInt()
+
+        h.scheduler.setEnabled(id, false)
+
+        assertFalse(h.dao.byId(id)!!.enabled)
+        assertNull(h.armer.armed[id])
+        assertTrue(h.armer.cancelled.contains(id))
+    }
+}
+
+/**
+ * Content-logging precedent extension (P3.4, mirrors SpeechContentLoggingTest):
+ * user-set alarm labels are content — they may be logged at DEBUG ONLY. The
+ * schedule() INFO line used to carry the label inside single quotes, a shape
+ * LogScrubber cannot catch (rule 1 needs a `label:` key; rule 2 deliberately
+ * skips single-quoted spans), so it persisted to the release file log.
+ */
+class AlarmContentLoggingTest {
+
+    private class CapturingTree : Timber.Tree() {
+        val entries = mutableListOf<Pair<Int, String>>()
+        override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
+            synchronized(entries) { entries.add(priority to message) }
+        }
+    }
+
+    private companion object {
+        const val PRI_DEBUG = 3
+        const val PRI_INFO = 4
+    }
+
+    @Test
+    fun `alarm label is logged at DEBUG only - INFO line stays content-free`() = runBlocking {
+        val tree = CapturingTree()
+        Timber.uprootAll()
+        Timber.plant(tree)
+        try {
+            val h = AlertHarness(nowMillis = 10_000L)
+            // makeAlarm's label ("подъём") is the user-set content sentinel.
+            h.scheduler.schedule(makeAlarm(trigger = 20_000L))
+
+            val entries = synchronized(tree.entries) { tree.entries.toList() }
+
+            val label = "подъём"
+            assertTrue(
+                "an INFO+ line carried the alarm label: " +
+                    entries.filter { it.first >= PRI_INFO && it.second.contains(label) },
+                entries.none { it.first >= PRI_INFO && it.second.contains(label) },
+            )
+            assertTrue(
+                "no DEBUG entry carries the label — the downgrade must keep a DEBUG carrier",
+                entries.any { it.first == PRI_DEBUG && it.second.contains(label) },
+            )
+            assertTrue(
+                "an INFO line with the content-free kind+id must still exist",
+                entries.any { it.first >= PRI_INFO && it.second.contains("kind=ALARM") },
+            )
+        } finally {
+            Timber.uprootAll()
+        }
     }
 }

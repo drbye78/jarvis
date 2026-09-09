@@ -283,7 +283,12 @@ class AndroidAlarmScheduler(
         val id = dao.insert(alert).toInt()
         val stored = alert.copy(id = id)
         armer.arm(id, stored.triggerAtMillis, stored.kind, stored.label)
-        Timber.i("Alert scheduled: %s '%s' at %d (id=%d)", stored.kind, stored.label, stored.triggerAtMillis, id)
+        // Content-logging rule (AGENTS.md): user-set labels are DEBUG-only —
+        // FileLoggingTree persists every INFO+ line, and LogScrubber cannot
+        // catch this shape (rule 1 needs a `label:` key; rule 2 deliberately
+        // skips single-quoted spans). The INFO line stays content-free.
+        Timber.i("Alert scheduled: kind=%s id=%d at %d", stored.kind, stored.id, stored.triggerAtMillis)
+        Timber.d("Alert scheduled label: %s", stored.label)
         return stored
     }
 
@@ -320,18 +325,46 @@ class AndroidAlarmScheduler(
         dao.delete(id)
     }
 
-    /** UI enable/disable toggle: re-arm on enable, disarm on disable. */
+    /**
+     * UI enable/disable toggle: re-arm on enable, disarm on disable.
+     *
+     * Lying-switch fix: `enabled=1` used to be persisted BEFORE the trigger
+     * was computed, so re-enabling an expired one-shot left a row claiming
+     * armed while nothing was scheduled (UI switch ON, nothing ever rings).
+     * Now the trigger is computed first:
+     * - an expired KIND_ALARM one-shot rolls its wall-clock time forward from
+     *   [ScheduledAlertEntity.anchorTimeMillis] to the next future occurrence;
+     * - an expired KIND_TIMER has no meaningful recurrence — the row is
+     *   honestly persisted as DISABLED instead.
+     * The DB row must never claim armed while nothing is armed.
+     */
     suspend fun setEnabled(id: Int, enabled: Boolean) {
         val alert = dao.byId(id) ?: return
-        dao.setEnabled(id, enabled)
         if (!enabled) {
+            dao.setEnabled(id, false)
             armer.cancel(id, alert.kind)
             return
         }
-        val trigger = nextTriggerFor(alert, now()) ?: return // expired one-shot stays disarmed
+        // Compute the trigger BEFORE persisting enabled=true.
+        val trigger = nextTriggerFor(alert, now())
+        if (trigger == null) {
+            // Expired one-shot.
+            if (alert.kind == ScheduledAlertEntity.KIND_ALARM) {
+                // Clock alarm: roll forward from the original wall-clock anchor.
+                val next = AlarmTimes.nextDailyOccurrence(alert.anchorTimeMillis, now())
+                dao.update(alert.copy(triggerAtMillis = next))
+                dao.setEnabled(id, true)
+                armer.arm(id, next, alert.kind, alert.label)
+            } else {
+                // Timer: nothing sensible to arm — keep the row disabled.
+                dao.setEnabled(id, false)
+            }
+            return
+        }
         if (trigger != alert.triggerAtMillis) {
             dao.update(alert.copy(triggerAtMillis = trigger))
         }
+        dao.setEnabled(id, true)
         armer.arm(id, trigger, alert.kind, alert.label)
     }
 
@@ -438,7 +471,15 @@ class AlarmReceiver : BroadcastReceiver() {
                     putExtra(EXTRA_ALERT_ID, alertId)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
-                context.startActivity(service)
+                // Honest degradation (API 29+): a background activity launch
+                // is silently BLOCKED when no launch window exists — the FSI
+                // notification above is the guaranteed path, so this is
+                // best-effort and must never crash the receiver.
+                runCatching { context.startActivity(service) }
+                    .onFailure {
+                        // Content-free: the exception class name only.
+                        Timber.d("Ringing activity fast path blocked: %s", it.javaClass.simpleName)
+                    }
             }
 
             ACTION_SNOOZE -> {
