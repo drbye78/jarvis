@@ -96,6 +96,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var credentialChecks: CredentialCheckController
 
     private lateinit var wakeWordGroup: RadioGroup
+    private lateinit var wakeCustomBundledRadio: android.widget.RadioButton
     private lateinit var sherpaKeywordInput: com.google.android.material.textfield.TextInputEditText
     private lateinit var sherpaKeywordStatus: TextView
     private lateinit var voiceStopSwitch: com.google.android.material.switchmaterial.SwitchMaterial
@@ -152,6 +153,7 @@ class SettingsActivity : AppCompatActivity() {
         saluteCheckStatus = findViewById(R.id.saluteCheckStatus)
         gigaChatCheckStatus = findViewById(R.id.gigaChatCheckStatus)
         wakeWordGroup = findViewById(R.id.wakeWordGroup)
+        wakeCustomBundledRadio = findViewById(R.id.wakeCustomBundled)
         sherpaKeywordInput = findViewById(R.id.sherpaKeywordInput)
         sherpaKeywordStatus = findViewById(R.id.sherpaKeywordStatus)
         voiceStopSwitch = findViewById(R.id.voiceStopSwitch)
@@ -175,10 +177,19 @@ class SettingsActivity : AppCompatActivity() {
         gigaChatId.setText(CredentialsStore.get().gigaChatClientId)
         gigaChatSecret.setText(CredentialsStore.get().gigaChatClientSecret)
 
-        // Pre-select the current wake-word model.
+        // Pre-select the current wake-word model. An imported .ppn writes
+        // `custom_user`, which has NO radio of its own — it is represented by
+        // the custom radio. The old restore only knew builtin/custom_bundled,
+        // so an imported word restored onto the CUSTOM_BUNDLED radio and was
+        // silently disabled by the next toggle (imported-word fix).
         wakeWordGroup.check(
-            if (appPrefs.wakeWordModel == "builtin") R.id.wakeBuiltin else R.id.wakeCustomBundled,
+            if (WakeWordModelUi.isBuiltinRadio(appPrefs.wakeWordModel)) {
+                R.id.wakeBuiltin
+            } else {
+                R.id.wakeCustomBundled
+            },
         )
+        renderCustomWakeCaption()
 
         // Pre-set the sensitivity slider.
         sensitivityBar.max = 100
@@ -272,6 +283,13 @@ class SettingsActivity : AppCompatActivity() {
                 startActivityForResult(intent, CAPTURE_REQUEST)
             }
         }
+        // Capture-switch drift fix: initialize from the LIVE capture state —
+        // the layout default lies after activity recreation (a capture that
+        // was already running showed OFF while the lane fed the canceller).
+        // Graph may be absent (service stopped): the honest default is "not
+        // capturing". Set BEFORE the listener attach — a programmatic
+        // isChecked=false here must not stop a running lane.
+        aecCaptureSwitch.isChecked = GraphHolder.graph?.playbackCapture?.running == true
         aecCaptureSwitch.setOnCheckedChangeListener { _, checked ->
             if (!checked) GraphHolder.graph?.playbackCapture?.stop()
             // Enabling alone does nothing: the Grant button runs the consent.
@@ -354,35 +372,33 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         backfillButton.setOnClickListener {
-            val graph = GraphHolder.graph
-            if (graph == null) {
-                Toast.makeText(this, R.string.voice_service_not_running, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            AlertDialog.Builder(this)
-                .setTitle(R.string.settings_memory_backfill_confirm_title)
-                .setMessage(R.string.settings_memory_backfill_confirm_text)
-                .setPositiveButton(R.string.settings_memory_backfill) { _, _ ->
-                    lifecycleScope.launch {
-                        val enqueued = kotlin.runCatching {
-                            graph.cognitiveCoordinator.backfillRecent()
-                        }.getOrDefault(-1)
-                        when {
-                            enqueued == -1 -> {
-                                backfillButton.isEnabled = false
-                                backfillStatus.setText(R.string.settings_memory_backfill_done)
-                            }
-                            enqueued == 0 -> backfillStatus.setText(R.string.settings_memory_backfill_none)
-                            else -> {
-                                backfillButton.isEnabled = false
-                                backfillStatus.text =
-                                    getString(R.string.settings_memory_backfill_started, enqueued)
+            lifecycleScope.launch {
+                val graph = awaitAssistantGraph() ?: return@launch
+                AlertDialog.Builder(this@SettingsActivity)
+                    .setTitle(R.string.settings_memory_backfill_confirm_title)
+                    .setMessage(R.string.settings_memory_backfill_confirm_text)
+                    .setPositiveButton(R.string.settings_memory_backfill) { _, _ ->
+                        lifecycleScope.launch {
+                            val enqueued = kotlin.runCatching {
+                                graph.cognitiveCoordinator.backfillRecent()
+                            }.getOrDefault(-1)
+                            when {
+                                enqueued == -1 -> {
+                                    backfillButton.isEnabled = false
+                                    backfillStatus.setText(R.string.settings_memory_backfill_done)
+                                }
+                                enqueued == 0 -> backfillStatus.setText(R.string.settings_memory_backfill_none)
+                                else -> {
+                                    backfillButton.isEnabled = false
+                                    backfillStatus.text =
+                                        getString(R.string.settings_memory_backfill_started, enqueued)
+                                }
                             }
                         }
                     }
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
         }
 
         // ------------------------------------------------------------------
@@ -475,11 +491,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         lifecycleScope.launch {
-            val graph = GraphHolder.graph
-            if (graph == null) {
-                embedderStatus.setText(R.string.voice_service_not_running)
-                return@launch
-            }
+            val graph = awaitAssistantGraph() ?: return@launch
             // Provenance line: benchmark verdict + stored vector count.
             val metaDao = graph.database.memoryMetaDao()
             val winner = runCatching { metaDao.get(MemoryMetaEntity.KEY_EMBEDDER_WINNER) }.getOrNull()
@@ -513,8 +525,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<Button>(R.id.semanticBenchmarkButton).setOnClickListener {
             benchmarkResult.setText(R.string.settings_semantic_benchmark_running)
             lifecycleScope.launch {
-                val graph = GraphHolder.graph
-                if (graph == null) {
+                val graph = awaitAssistantGraph() ?: run {
                     benchmarkResult.setText(R.string.voice_service_not_running)
                     return@launch
                 }
@@ -537,8 +548,7 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.semanticVectorsButton).setOnClickListener {
             lifecycleScope.launch {
-                val graph = GraphHolder.graph
-                if (graph == null) {
+                val graph = awaitAssistantGraph() ?: run {
                     vectorsStatus.setText(R.string.voice_service_not_running)
                     return@launch
                 }
@@ -601,16 +611,26 @@ class SettingsActivity : AppCompatActivity() {
                 persistCustomVoice()
             }
         }
-        // Persist the custom ID as it is typed (blank keeps the previous
-        // value; the test button falls back to Mila when blank).
-        voiceCustomId.addTextChangedListener(
-            textWatcher { if (voiceGroup.checkedRadioButtonId == R.id.voiceCustom) persistCustomVoice() }
-        )
-        findViewById<Button>(R.id.voiceTestButton).setOnClickListener {
-            val graph = GraphHolder.graph
-            if (graph == null) {
-                Toast.makeText(this, R.string.voice_service_not_running, Toast.LENGTH_SHORT).show()
+        // Persist the custom ID on IME-done / focus loss — NOT per keystroke:
+        // the running assistant resolves the voice PER SENTENCE from prefs,
+        // so typing «Bianca» used to make it try «B», «Bi», «Bia»… (same
+        // commit pattern as the Sherpa keyword field).
+        voiceCustomId.setOnEditorActionListener { _, action, _ ->
+            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                persistCustomVoice()
+                true
             } else {
+                false
+            }
+        }
+        voiceCustomId.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) persistCustomVoice()
+        }
+        findViewById<Button>(R.id.voiceTestButton).setOnClickListener {
+            lifecycleScope.launch {
+                // Await-then-proceed: a bootstrap in progress no longer reads
+                // as "service not running" — the await returns the live graph.
+                val graph = awaitAssistantGraph() ?: return@launch
                 graph.speakVoiceSample(selectedVoice())
             }
         }
@@ -664,10 +684,14 @@ class SettingsActivity : AppCompatActivity() {
             saveCredentials()
         }
 
-        // B) Wake word selection (built-in "Jarvis" or bundled custom model).
+        // B) Wake word selection (built-in "Jarvis" or a custom model —
+        // bundled keywords OR an imported .ppn: the mapping keeps an import,
+        // so re-checking the custom radio cannot silently downgrade it).
         wakeWordGroup.setOnCheckedChangeListener { _, checkedId ->
-            val modelId = if (checkedId == R.id.wakeCustomBundled) "custom_bundled" else "builtin"
-            callbacks.onWakeWordSelected(modelId)
+            val customSelected = checkedId == R.id.wakeCustomBundled
+            callbacks.onWakeWordSelected(
+                WakeWordModelUi.modelForSelection(customSelected, appPrefs.customWakeWordPath),
+            )
         }
 
         // B) Load a custom .ppn from the device.
@@ -824,6 +848,19 @@ class SettingsActivity : AppCompatActivity() {
         sensitivityValue.text = getString(R.string.sensitivity_value, value)
     }
 
+    /**
+     * Imported-word fix: when a user .ppn is loaded, the custom radio's
+     * caption names the imported file, so the single custom radio honestly
+     * represents BOTH custom flavors (bundled / imported).
+     */
+    private fun renderCustomWakeCaption() {
+        val importedPath = appPrefs.customWakeWordPath.trim()
+        if (importedPath.isNotEmpty()) {
+            wakeCustomBundledRadio.text =
+                getString(R.string.wake_word_custom_user_imported, java.io.File(importedPath).name)
+        }
+    }
+
     /** SOFTWARE hint only matters in software mode. */
     private fun applyAecVisibility(mode: String) {
         aecSoftwareHint.visibility = if (mode == "software") View.VISIBLE else View.GONE
@@ -854,6 +891,50 @@ class SettingsActivity : AppCompatActivity() {
         val isSherpa = engine == "sherpa"
         porcupineBlock.visibility = if (isSherpa) View.GONE else View.VISIBLE
         sherpaBlock.visibility = if (isSherpa) View.VISIBLE else View.GONE
+    }
+
+    // ------------------------------------------------------------------
+    // Graph-ready gating: during the ~1-min bootstrap GraphHolder.graph is
+    // null, and these handlers used to toast «Запустите ассистента» and read
+    // as broken while the service was in fact STARTING. A bounded await
+    // distinguishes "bootstrapping" (new honest toast) from "stopped" (the
+    // existing not-running message).
+    // ------------------------------------------------------------------
+
+    /**
+     * Awaits the live graph (bounded); toasts the honest state and returns
+     * null when the service is stopped or still starting.
+     */
+    private suspend fun awaitAssistantGraph(): com.jarvis.assistant.di.AppGraph? {
+        val service = GraphHolder.service
+        return when (
+            val outcome = com.jarvis.assistant.di.awaitGraphReady(
+                graphNow = GraphHolder.graph,
+                ready = service?.graphReady,
+                serviceAlive = service != null,
+                timeoutMs = GRAPH_READY_TIMEOUT_MS,
+            )
+        ) {
+            is com.jarvis.assistant.di.GraphReadyOutcome.Ready -> {
+                // The service can die while we were awaiting; re-validate so a
+                // completed-but-shutdown deferred is never mistaken for a live graph.
+                val stillAlive = GraphHolder.service != null && GraphHolder.graph === outcome.graph
+                if (stillAlive) {
+                    outcome.graph
+                } else {
+                    Toast.makeText(this, R.string.voice_service_not_running, Toast.LENGTH_SHORT).show()
+                    null
+                }
+            }
+            com.jarvis.assistant.di.GraphReadyOutcome.Bootstrapping -> {
+                Toast.makeText(this, R.string.service_bootstrapping_toast, Toast.LENGTH_SHORT).show()
+                null
+            }
+            com.jarvis.assistant.di.GraphReadyOutcome.Stopped -> {
+                Toast.makeText(this, R.string.voice_service_not_running, Toast.LENGTH_SHORT).show()
+                null
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1108,5 +1189,12 @@ class SettingsActivity : AppCompatActivity() {
     private companion object {
         const val PPN_REQUEST = 1002
         const val CAPTURE_REQUEST = 1003
+
+        /**
+         * Bounded wait for the graph bootstrap (~1 min worst case on
+         * Kirin-class devices). 45 s keeps the await shorter than the user's
+         * patience while comfortably covering a normal build.
+         */
+        const val GRAPH_READY_TIMEOUT_MS = 45_000L
     }
 }

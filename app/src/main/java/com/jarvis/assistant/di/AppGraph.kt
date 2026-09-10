@@ -288,6 +288,12 @@ class AppGraph(
         toolStrings = com.jarvis.assistant.tools.AndroidToolStrings(appContext),
         // A6: weather geocoding answers in the device language.
         weatherLanguageTag = java.util.Locale.getDefault().language.ifBlank { "ru" },
+        // DI fix: ONE alarm scheduler, wired here through the graph (the
+        // router no longer reaches AppDatabase.getInstance directly).
+        alarmScheduler = com.jarvis.assistant.tools.AndroidAlarmScheduler(
+            database.alarmDao(),
+            com.jarvis.assistant.tools.SystemAlertArmer(appContext),
+        ),
         // 0.7: ONE AppPrefs instance graph-wide (the router built its own).
         appPrefs = appPrefs,
         // COGNITIVE_PLAN 1.5: remember_fact / recall_facts / forget_fact.

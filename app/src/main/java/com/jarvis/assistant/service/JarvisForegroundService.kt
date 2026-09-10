@@ -20,7 +20,6 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.speech.tts.TextToSpeech
 import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -40,7 +39,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.util.Locale
 
 /**
  * Foreground service owning the entire voice pipeline.
@@ -91,22 +89,30 @@ class JarvisForegroundService : Service() {
 
     /**
      * Completes when the [AppGraph] is fully constructed and started.
-     * Other components (UI, power receiver) can [await][CompletableDeferred.await]
-     * this before accessing the graph to avoid null-pointer races during the
-     * bootstrapping phase.
+     * Other components (UI, Settings handlers via [com.jarvis.assistant.di.awaitGraphReady])
+     * can [await][CompletableDeferred.await] this before accessing the graph
+     * to avoid null-pointer races during the bootstrapping phase.
+     *
+     * RESETTABLE: each bootstrap attempt swaps in a fresh deferred. The old
+     * read-only val stayed completed-exceptionally forever after one failed
+     * init, so even a successful watchdog retry could never signal readiness
+     * again (the dangling-signal fix). Awaiters re-read this property at
+     * every call — never cache the deferred across a bootstrap attempt.
      */
-    val graphReady = CompletableDeferred<AppGraph>()
+    @Volatile var graphReady: CompletableDeferred<AppGraph> = CompletableDeferred()
+        private set
 
     private lateinit var wakeLock: PowerManager.WakeLock
     private lateinit var wifiLock: WifiManager.WifiLock
 
     /**
-     * Error voice. Nullable + created on first SPEAK (F10): the old
-     * `by lazy` field was CONSTRUCTED by onDestroy's shutdown() when no
-     * error was ever spoken — spinning up a whole TTS engine just to tear
-     * it down on the main thread during service destruction.
+     * Error voice. The [ErrorVoiceSpeaker] owns the system TTS engine and is
+     * constructed on first SPEAK (F10) — a `by lazy` field here would be
+     * CONSTRUCTED by onDestroy's release() when no error was ever spoken,
+     * spinning up a whole TTS engine just to tear it down on the main thread
+     * during service destruction.
      */
-    @Volatile private var errorTts: TextToSpeech? = null
+    private val errorVoice: ErrorVoiceSpeaker by lazy { ErrorVoiceSpeaker(this) }
 
     private var wasMusicPlaying = false
 
@@ -466,6 +472,9 @@ class JarvisForegroundService : Service() {
 
         // Show bootstrapping notification immediately (main thread, fast).
         bootstrapping = true
+        // Resettable readiness: a fresh deferred per attempt so a failed init
+        // cannot poison every later await (see the graphReady KDoc).
+        graphReady = CompletableDeferred()
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         nm?.notify(NOTIFICATION_ID, buildBootstrapNotification())
 
@@ -485,7 +494,7 @@ class JarvisForegroundService : Service() {
                         openAiBaseUrl = prefs.openAiBaseUrl,
                         openAiModel = prefs.openAiModel,
                     ),
-                    onSessionError = { msg -> speakError(msg) },
+                    onSessionError = { msg -> errorVoice.speak(msg) },
                 ).also { it.start() }
 
                 // F1 (zombie-graph race): graph construction is long and
@@ -515,7 +524,22 @@ class JarvisForegroundService : Service() {
                 // Live state -> notification text + ducking.
                 built.scope.launch {
                     built.stateMachine.state.collect { state ->
-                        postStateNotification(stateLabel(state))
+                        postStateNotification(notificationLabel(built, state))
+                    }
+                }
+                // Deaf-engine fix: a Failed detector leaves the state machine
+                // in IDLE, so the state collector alone would keep posting
+                // «Ожидание» while NO wake word can fire. Watch the detector
+                // state directly and surface the failure honestly.
+                built.scope.launch {
+                    built.wakeWordDetector.state.collect { st ->
+                        if (st is com.jarvis.assistant.contracts.DetectorState.Failed) {
+                            postStateNotification(getString(R.string.state_wake_error))
+                        } else {
+                            // Failed→Ready recovery: re-post the normal label now
+                            // instead of waiting for the next state-machine emission.
+                            postStateNotification(notificationLabel(built, built.stateMachine.state.value))
+                        }
                     }
                 }
                 built.scope.launch {
@@ -551,7 +575,7 @@ class JarvisForegroundService : Service() {
                 graphReady.completeExceptionally(e)
                 // Return notification to idle so the user sees a recoverable state.
                 nm?.notify(NOTIFICATION_ID, buildStateNotification(getString(R.string.state_idle)))
-                speakError(getString(R.string.tts_init_failed))
+                errorVoice.speak(getString(R.string.tts_init_failed))
             }
         }
     }
@@ -631,6 +655,20 @@ class JarvisForegroundService : Service() {
         AssistantState.SPEAKING -> getString(R.string.state_speaking)
         AssistantState.FOLLOW_UP_WINDOW -> getString(R.string.state_follow_up)
     }
+
+    /**
+     * Deaf-engine fix: the notification text must not regress to a listening
+     * label while the wake-word engine is Failed — every state (re)emission
+     * re-checks the detector before the label is picked.
+     */
+    private fun notificationLabel(graph: AppGraph, state: AssistantState): String =
+        if (graph.wakeWordDetector.state.value
+            is com.jarvis.assistant.contracts.DetectorState.Failed
+        ) {
+            getString(R.string.state_wake_error)
+        } else {
+            stateLabel(state)
+        }
 
     private fun buildStateNotification(text: String): Notification {
         val contentIntent = PendingIntent.getActivity(
@@ -773,19 +811,6 @@ class JarvisForegroundService : Service() {
     }
 
     // ------------------------------------------------------------------
-    // Error voice
-    // ------------------------------------------------------------------
-
-    private fun speakError(message: String) {
-        Timber.e("Voice error: %s", message)
-        runCatching {
-            val tts = errorTts ?: TextToSpeech(this) { }.also { errorTts = it }
-            tts.language = Locale.getDefault()
-            tts.speak(message, TextToSpeech.QUEUE_FLUSH, null, null)
-        }
-    }
-
-    // ------------------------------------------------------------------
     // Watchdog
     // ------------------------------------------------------------------
 
@@ -880,8 +905,7 @@ class JarvisForegroundService : Service() {
         initialized = false
         bootstrapping = false
         releaseLocks()
-        runCatching { errorTts?.shutdown() }
-        errorTts = null
+        errorVoice.release()
         super.onDestroy()
     }
 

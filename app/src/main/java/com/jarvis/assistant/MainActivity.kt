@@ -11,6 +11,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
+import com.jarvis.assistant.contracts.DetectorState
 import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.data.ConversationManager
 import com.jarvis.assistant.di.GraphHolder
@@ -45,8 +46,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var partialText: TextView
     private lateinit var voiceOrb: VoiceOrbView
     private lateinit var transcript: RecyclerView
-
-    private var micMuted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -90,47 +89,37 @@ class MainActivity : AppCompatActivity() {
         }
 
         toggleButton.setOnClickListener {
-            if (GraphHolder.isRunning) {
-                JarvisForegroundService.explicitStop(this)
-                statusText.text = getString(R.string.state_stopped)
-            } else {
-                JarvisForegroundService.explicitStart(this)
+            when {
+                GraphHolder.isRunning -> {
+                    JarvisForegroundService.explicitStop(this)
+                    statusText.text = getString(R.string.state_stopped)
+                }
+                // Dead service (e.g. after a failed init): NEVER route through
+                // explicitStop — it writes prefs.userStopped=true, which would
+                // silently suppress the watchdog revive for a service that is
+                // not even running the pipeline (stop-on-dead fix).
+                GraphHolder.service == null -> JarvisForegroundService.explicitStart(this)
+                // Bootstrapping: no-op — the disabled toggle label already
+                // says the assistant is starting up.
             }
             refreshServiceState()
         }
 
         micButton.setOnClickListener {
-            // The graph may legitimately be absent here: the assistant is
-            // stopped, or still bootstrapping (the wake-word engine build
-            // takes a minute+ on Kirin-class devices, and the graph is
-            // rebuilt on every service restart). The button must respond
-            // EITHER WAY: the requested state is remembered in [micMuted]
-            // and applied as soon as a graph binds (see observeTranscript);
-            // a silent return here read as "the button is broken".
-            val graph = GraphHolder.graph
-            micMuted = !micMuted
-            if (graph != null) {
-                graph.sessionManager.setMuted(micMuted)
-            }
-            if (micMuted) {
-                micButton.setIconResource(R.drawable.ic_mic_off)
-                micButton.setText(R.string.mic_unmute)
-                statusText.text = getString(R.string.state_muted)
-            } else {
-                micButton.setIconResource(R.drawable.ic_mic)
-                micButton.setText(R.string.mic_mute)
-                if (graph != null) {
-                    // F7: setMuted(false) restarts listening without a state
-                    // transition (StateFlow does not re-emit IDLE), so the
-                    // label would stay "Микрофон выключен" until the next
-                    // wake word.
-                    renderStatus()
-                } else {
-                    statusText.text = getString(R.string.state_stopped)
-                }
-            }
-            voiceOrb.setState(currentState, micMuted)
+            // Mute-drift fix: the SOURCE OF TRUTH is the live graph mute
+            // state, collected below — the click only flips it. The old
+            // local shadow var desynced on activity recreation (mute +
+            // rotate left the orb claiming LISTENING while the pipeline was
+            // stopped and the first press a no-op). With no graph there is
+            // no pipeline to mute; the button is disabled (see the poll
+            // loop) and this branch is a race-guard no-op.
+            val graph = GraphHolder.graph ?: return@setOnClickListener
+            graph.sessionManager.setMuted(!graph.muteState.value)
         }
+
+        // Honest default: no graph is bound yet (stopped or bootstrapping);
+        // the poll loop enables the button as soon as one binds.
+        micButton.isEnabled = false
 
         observeTranscript()
 
@@ -177,12 +166,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshServiceState() {
-        if (GraphHolder.isRunning) {
-            toggleButton.setText(R.string.stop)
-            toggleButton.setIconResource(R.drawable.ic_power)
-        } else {
-            toggleButton.setText(R.string.start)
-            toggleButton.setIconResource(R.drawable.ic_power)
+        when {
+            GraphHolder.isRunning -> {
+                toggleButton.isEnabled = true
+                toggleButton.setText(R.string.stop)
+                toggleButton.setIconResource(R.drawable.ic_power)
+            }
+            // Service attached but no graph yet: the ~1-min bootstrap is in
+            // progress (or the last attempt failed and the watchdog is
+            // retrying) — neither «Запустить» nor «Остановить» is truthful
+            // there; show the bootstrapping label, disabled (graph-ready fix).
+            GraphHolder.service != null -> {
+                toggleButton.isEnabled = false
+                toggleButton.setText(R.string.state_bootstrapping)
+                toggleButton.setIconResource(R.drawable.ic_power)
+            }
+            else -> {
+                toggleButton.isEnabled = true
+                toggleButton.setText(R.string.start)
+                toggleButton.setIconResource(R.drawable.ic_power)
+            }
         }
     }
 
@@ -201,21 +204,32 @@ class MainActivity : AppCompatActivity() {
             var partialJob: kotlinx.coroutines.Job? = null
             var progressJob: kotlinx.coroutines.Job? = null
             var activityJob: kotlinx.coroutines.Job? = null
+            var muteJob: kotlinx.coroutines.Job? = null
+            var deafJob: kotlinx.coroutines.Job? = null
             while (isActive) {
+                // Stop-on-dead fix: the toggle must track the REAL service
+                // state every poll tick, not only onResume/click — after an
+                // init failure it used to keep reading «Остановить» and a tap
+                // wrote userStopped for a dead service.
+                refreshServiceState()
                 val graph = GraphHolder.graph
                 if (graph != null && graph !== collectedGraph) {
                     stateJob?.cancel()
                     partialJob?.cancel()
                     activityJob?.cancel()
+                    muteJob?.cancel()
+                    deafJob?.cancel()
                     collectedGraph = graph
-                    // Apply the mute state requested while no graph was up:
-                    // a mute toggled during bootstrap/stopped must survive
-                    // the graph arriving (P5.3 mic-button fix).
-                    if (micMuted) graph.sessionManager.setMuted(true)
+                    micButton.isEnabled = true
+                    // Deaf-engine fix: seed from the detector's synchronous
+                    // state so a failure that happened before this bind is
+                    // visible immediately, then keep collecting (a reconfigure
+                    // can recover the engine later — the flag must clear too).
+                    deaf = graph.wakeWordDetector.state.value is DetectorState.Failed
                     stateJob = launch {
                         graph.stateMachine.state.collectLatest { state ->
                             currentState = state
-                            voiceOrb.setState(state, micMuted)
+                            voiceOrb.setState(state, micMuted, deaf)
                             renderStatus()
                         }
                     }
@@ -239,6 +253,26 @@ class MainActivity : AppCompatActivity() {
                             voiceOrb.setFollowUpProgress(fraction)
                         }
                     }
+                    // Mute-drift fix: the graph's mute state is the single
+                    // source of truth — collected, never shadowed locally.
+                    muteJob = launch {
+                        graph.muteState.collect { muted ->
+                            micMuted = muted
+                            renderMicButton(muted)
+                            voiceOrb.setState(currentState, muted, deaf)
+                            renderStatus()
+                        }
+                    }
+                    deafJob = launch {
+                        graph.wakeWordDetector.state.collect { st ->
+                            val failed = st is DetectorState.Failed
+                            if (failed != deaf) {
+                                deaf = failed
+                                voiceOrb.setState(currentState, micMuted, deaf)
+                                renderStatus()
+                            }
+                        }
+                    }
                 } else if (graph == null) {
                     if (collectedGraph != null) {
                         // Service stopped: reset the orb to idle-gray so the
@@ -246,11 +280,40 @@ class MainActivity : AppCompatActivity() {
                         collectedGraph = null
                         currentState = null
                         currentActivity = null
-                        voiceOrb.setState(null, micMuted)
+                        deaf = false
+                        micMuted = false
+                        micButton.isEnabled = false
+                        renderMicButton(muted = false)
+                        voiceOrb.setState(null, muted = false, deaf = false)
                     }
                 }
                 delay(SERVICE_STATE_POLL_MS)
             }
+        }
+    }
+
+    /**
+     * Mute-drift fix: mirrored ONLY from the [AppGraph.muteState] collector —
+     * the click handler flips the graph state; this field just caches the
+     * collected value for rendering. There is no second writer, so activity
+     * recreation can no longer desync the button from the pipeline.
+     */
+    private var micMuted = false
+
+    /**
+     * Deaf-engine fix: true while the wake-word detector reports
+     * [DetectorState.Failed] — no wake word can fire, so the UI must never
+     * claim «Джарвис слушает…».
+     */
+    private var deaf = false
+
+    private fun renderMicButton(muted: Boolean) {
+        if (muted) {
+            micButton.setIconResource(R.drawable.ic_mic_off)
+            micButton.setText(R.string.mic_unmute)
+        } else {
+            micButton.setIconResource(R.drawable.ic_mic)
+            micButton.setText(R.string.mic_mute)
         }
     }
 
@@ -266,6 +329,12 @@ class MainActivity : AppCompatActivity() {
      * and the activity collectors so either change re-renders consistently.
      */
     private fun renderStatus() {
+        if (deaf) {
+            // Deaf-engine fix: never claim «Джарвис слушает…» while no wake
+            // word can fire — show the honest failure hint instead.
+            statusText.text = getString(R.string.state_wake_error_full)
+            return
+        }
         if (micMuted) return // the muted label owns the pill until unmute
         val state = currentState ?: return
         val activity = currentActivity

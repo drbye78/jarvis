@@ -266,17 +266,16 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
  * All mutations go through here; the ringing activity, BootReceiver and the
  * voice tools delegate instead of doing their own intent math.
  *
- * Construction: tests use the primary constructor with fakes; production
- * call sites use `AndroidAlarmScheduler(context, dao)` (kept as a secondary
- * constructor because FunctionRouter — another lane's file — calls it).
+ * Construction: the primary constructor takes the DAO + an [AlertArmer]
+ * (tests use fakes); production call sites pass a [SystemAlertArmer]. The
+ * old convenience secondary constructor is gone — wiring belongs to the
+ * composition root, not to convenience shims.
  */
 class AndroidAlarmScheduler(
     private val dao: AlertDao,
     private val armer: AlertArmer,
     private val now: () -> Long = { System.currentTimeMillis() },
 ) {
-
-    constructor(context: Context, dao: AlertDao) : this(dao, SystemAlertArmer(context))
 
     /** Persists a new alert and arms it. The generated row id IS the request code. */
     suspend fun schedule(alert: ScheduledAlertEntity): ScheduledAlertEntity {

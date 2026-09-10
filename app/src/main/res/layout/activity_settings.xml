@@ -530,22 +530,26 @@
                             android:visibility="gone"
                             style="@style/TextAppearance.Jarvis.Hint" />
 
-                        <!-- FIXPLAN B: voice stop while the assistant speaks. -->
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/voiceStopSwitch"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:text="@string/voice_stop_toggle" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:text="@string/voice_stop_hint"
-                            style="@style/TextAppearance.Jarvis.Hint" />
-
                     </LinearLayout>
+
+                    <!-- FIXPLAN B: voice stop while the assistant speaks.
+                         Lives OUTSIDE the engine-conditional blocks: the
+                         pref drives WakeWordRequest.stopPhraseEnabled for
+                         BOTH engines, so the switch must be visible whether
+                         Porcupine or Sherpa-ONNX is selected. -->
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/voiceStopSwitch"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/voice_stop_toggle" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/voice_stop_hint"
+                        style="@style/TextAppearance.Jarvis.Hint" />
 
                     <TextView
                         android:layout_width="match_parent"
@@ -727,6 +731,7 @@
                             android:id="@+id/voiceCustomId"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:imeOptions="actionDone"
                             android:inputType="text"
                             android:maxLines="1" />
                     </com.google.android.material.textfield.TextInputLayout>

@@ -48,13 +48,14 @@ class FunctionRouter(
             Long
         ) -> Unit
     )? = null,
+    /**
+     * DI fix: the alarm scheduler is injected by the composition root
+     * ([com.jarvis.assistant.di.AppGraph]) — the router used to build it via
+     * `AppDatabase.getInstance` directly, bypassing the graph for wiring.
+     */
+    private val alarmScheduler: AndroidAlarmScheduler,
 ) : ToolExecutor {
     private val appContext = context.applicationContext
-
-    private val alarmScheduler = AndroidAlarmScheduler(
-        appContext,
-        com.jarvis.assistant.data.AppDatabase.getInstance(appContext).alarmDao(),
-    )
 
     // Preferred default music player from Settings («Музыка» card): a package
     // name, or null for "auto" (Яндекс Музыка first). Read lazily on every

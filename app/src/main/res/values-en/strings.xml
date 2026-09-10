@@ -25,6 +25,9 @@
     <string name="state_speaking_full">Speaking…</string>
     <string name="state_muted">Microphone is off</string>
     <string name="state_stopped">Assistant stopped</string>
+    <string name="state_wake_error">Wake word error</string>
+    <string name="state_wake_error_full">Wake word error — microphone unavailable</string>
+    <string name="service_bootstrapping_toast">The assistant is starting up — try again in a minute</string>
 
     <!-- Main -->
     <string name="start">Start</string>
@@ -108,6 +111,7 @@
     <string name="wake_word_section">Wake word</string>
     <string name="wake_word_builtin">Jarvis (built-in)</string>
     <string name="wake_word_custom_bundled">Custom (bundled)</string>
+    <string name="wake_word_custom_user_imported">Imported model (.ppn): %1$s</string>
     <string name="load_custom_wake_word">Load custom wake word…</string>
     <string name="sensitivity">Sensitivity</string>
 
@@ -353,6 +357,7 @@
     <string name="settings_memory_wipe_confirm_title">Forget everything?</string>
     <string name="settings_memory_wipe_confirm_text">All memories, the extraction queue and memory bookkeeping will be deleted from the device. Chat history is not touched. This cannot be undone.</string>
     <string name="settings_memory_wipe_done">Memory wiped</string>
+    <string name="memory_service_not_running">Assistant not running — action unavailable</string>
     <string name="settings_memory_export">Export memory (JSON)</string>
     <string name="settings_memory_export_none">Memory is empty — nothing to export</string>
     <string name="settings_memory_empty">Nothing memorized yet. Say "remember that…" — and the assistant will remember.</string>

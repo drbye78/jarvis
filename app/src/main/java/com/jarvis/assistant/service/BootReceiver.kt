@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.tools.AndroidAlarmScheduler
+import com.jarvis.assistant.tools.SystemAlertArmer
 import com.jarvis.assistant.util.AppPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -50,7 +51,7 @@ class BootReceiver : BroadcastReceiver() {
         scope.launch {
             try {
                 val dao = AppDatabase.getInstance(context).alarmDao()
-                AndroidAlarmScheduler(context, dao).rescheduleAllOnBoot()
+                AndroidAlarmScheduler(dao, SystemAlertArmer(context)).rescheduleAllOnBoot()
             } finally {
                 pending.finish()
                 scope.cancel()

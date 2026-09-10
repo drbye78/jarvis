@@ -6,6 +6,14 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Changed — Phase 1 follow-through
+- **A timed-out TTS sentence is now treated as NEVER SPOKEN**: when a
+  sentence's synthesis deadline fires, the follow-up window no longer opens
+  for it — the window exists so the user can keep talking after something
+  they HEARD, and a sentence that never made it out of the speaker must not
+  open one (the assistant previously sat in a "keep talking" state after a
+  silently failed reply).
+
 ## [0.2.1] — 2026-09
 
 ### Fixed — wake-word engine crashed the process on first listen (device)

@@ -69,8 +69,20 @@ class MemoryInspectorActivity : AppCompatActivity() {
         adapter = FactAdapter(
             onDelete = { factId ->
                 lifecycleScope.launch {
-                    coordinator?.forgetById(factId)
-                    Toast.makeText(this@MemoryInspectorActivity, R.string.memory_item_deleted, Toast.LENGTH_SHORT).show()
+                    // Dead-service honesty: a null coordinator (service died
+                    // after onCreate) must NOT toast «удалено» while nothing
+                    // happened.
+                    val coord = coordinator
+                    if (coord == null) {
+                        toastServiceNotRunning()
+                    } else {
+                        coord.forgetById(factId)
+                        Toast.makeText(
+                            this@MemoryInspectorActivity,
+                            R.string.memory_item_deleted,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
                 }
             },
             markFor = ::markFor,
@@ -117,12 +129,19 @@ class MemoryInspectorActivity : AppCompatActivity() {
                 .setMessage(R.string.settings_memory_wipe_confirm_text)
                 .setPositiveButton(R.string.settings_memory_wipe) { _, _ ->
                     lifecycleScope.launch {
-                        coordinator?.wipeAll()
-                        Toast.makeText(
-                            this@MemoryInspectorActivity,
-                            R.string.settings_memory_wipe_done,
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        // Dead-service honesty: no coordinator → no wipe, and
+                        // no false «Память очищена» toast.
+                        val coord = coordinator
+                        if (coord == null) {
+                            toastServiceNotRunning()
+                        } else {
+                            coord.wipeAll()
+                            Toast.makeText(
+                                this@MemoryInspectorActivity,
+                                R.string.settings_memory_wipe_done,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                 }
                 .setNegativeButton(android.R.string.cancel, null)
@@ -131,7 +150,13 @@ class MemoryInspectorActivity : AppCompatActivity() {
 
         exportButton.setOnClickListener {
             lifecycleScope.launch {
-                val json = coordinator?.exportJson() ?: return@launch
+                // Dead-service honesty: a null coordinator used to silently
+                // return@launch (button seemed broken) — report it.
+                val coord = coordinator ?: run {
+                    toastServiceNotRunning()
+                    return@launch
+                }
+                val json = coord.exportJson()
                 val count = (json["facts"] as? kotlinx.serialization.json.JsonArray)?.size ?: 0
                 if (count == 0) {
                     Toast.makeText(
@@ -144,6 +169,11 @@ class MemoryInspectorActivity : AppCompatActivity() {
                 exportLauncher.launch("jarvis-memory.json")
             }
         }
+    }
+
+    /** The one honest message when the assistant service is gone. */
+    private fun toastServiceNotRunning() {
+        Toast.makeText(this, R.string.memory_service_not_running, Toast.LENGTH_SHORT).show()
     }
 
     /** §12.4-2: sensitive facts are rendered MARKED, always. */
@@ -170,7 +200,11 @@ class MemoryInspectorActivity : AppCompatActivity() {
     private fun exportTo(uri: android.net.Uri) {
         lifecycleScope.launch {
             try {
-                val json = coordinator?.exportJson() ?: return@launch
+                val coord = coordinator ?: run {
+                    toastServiceNotRunning()
+                    return@launch
+                }
+                val json = coord.exportJson()
                 contentResolver.openOutputStream(uri)?.use { stream ->
                     stream.write(prettyJson(json).toByteArray(Charsets.UTF_8))
                 }

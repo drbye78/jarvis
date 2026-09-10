@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.data.ScheduledAlertEntity
 import com.jarvis.assistant.tools.AndroidAlarmScheduler
+import com.jarvis.assistant.tools.SystemAlertArmer
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -60,14 +61,14 @@ class AlarmsActivity : AppCompatActivity() {
     private fun toggle(alarm: ScheduledAlertEntity, enabled: Boolean) {
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@AlarmsActivity).alarmDao()
-            AndroidAlarmScheduler(this@AlarmsActivity, dao).setEnabled(alarm.id, enabled)
+            AndroidAlarmScheduler(dao, SystemAlertArmer(this@AlarmsActivity)).setEnabled(alarm.id, enabled)
         }
     }
 
     private fun delete(alarm: ScheduledAlertEntity) {
         lifecycleScope.launch {
             val dao = AppDatabase.getInstance(this@AlarmsActivity).alarmDao()
-            AndroidAlarmScheduler(this@AlarmsActivity, dao).cancel(alarm.id)
+            AndroidAlarmScheduler(dao, SystemAlertArmer(this@AlarmsActivity)).cancel(alarm.id)
         }
     }
 
@@ -84,7 +85,7 @@ class AlarmsActivity : AppCompatActivity() {
                     val label = input.text.toString().ifBlank { getString(R.string.default_alarm_label) }
                     lifecycleScope.launch {
                         val dao = AppDatabase.getInstance(this@AlarmsActivity).alarmDao()
-                        AndroidAlarmScheduler(this@AlarmsActivity, dao)
+                        AndroidAlarmScheduler(dao, SystemAlertArmer(this@AlarmsActivity))
                             .schedule(label, hour, minute, repeatDaily = true)
                     }
                 }

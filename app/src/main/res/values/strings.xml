@@ -26,6 +26,9 @@
     <string name="state_muted">Микрофон выключен</string>
     <string name="state_stopped">Ассистент остановлен</string>
     <string name="state_bootstrapping">Запуск…</string>
+    <string name="state_wake_error">Ошибка wake word</string>
+    <string name="state_wake_error_full">Ошибка wake word — микрофон недоступен</string>
+    <string name="service_bootstrapping_toast">Ассистент запускается — попробуйте через минуту</string>
 
     <!-- Main -->
     <string name="start">Запустить</string>
@@ -109,6 +112,7 @@
     <string name="wake_word_section">Ключевое слово</string>
     <string name="wake_word_builtin">Jarvis (встроенный)</string>
     <string name="wake_word_custom_bundled">Custom (bundled)</string>
+    <string name="wake_word_custom_user_imported">Своя модель (.ppn): %1$s</string>
     <string name="load_custom_wake_word">Загрузить свой wake word…</string>
     <string name="sensitivity">Чувствительность</string>
 
@@ -352,6 +356,7 @@
     <string name="settings_memory_wipe_confirm_title">Забыть всё?</string>
     <string name="settings_memory_wipe_confirm_text">Все воспоминания, очередь разбора и служебные данные памяти будут удалены с устройства. История переписки не трогается. Отменить это нельзя.</string>
     <string name="settings_memory_wipe_done">Память очищена</string>
+    <string name="memory_service_not_running">Ассистент не запущен — действие недоступно</string>
     <string name="settings_memory_export">Экспорт памяти (JSON)</string>
     <string name="settings_memory_export_none">Память пуста — нечего экспортировать</string>
     <string name="settings_memory_empty">Пока ничего не запомнено. Скажите «запомни, что…» — и ассистент запомнит.</string>

@@ -24,6 +24,8 @@ import kotlin.math.min
  *  FOLLOW_UP       — listening-tinted ripples + a shrinking countdown arc
  *                    (remaining window time, driven by setFollowUpProgress)
  *  MUTED           — flat, gray, motionless (microphone is off)
+ *  DEAF            — static error-tinted ring (wake-word engine failed:
+ *                    no detection is possible, never reads as "listening")
  *
  * Contract: [setState] may be called from anywhere (it only mutates fields
  * and restarts animators on the UI thread — callers are the activity's
@@ -37,7 +39,7 @@ class VoiceOrbView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     /** Displayed state; derived from [AssistantState] + the muted flag. */
-    enum class OrbState { IDLE, LISTENING, THINKING, SPEAKING, FOLLOW_UP, MUTED }
+    enum class OrbState { IDLE, LISTENING, THINKING, SPEAKING, FOLLOW_UP, MUTED, DEAF }
 
     /** Remaining follow-up window fraction (0..1); drives the countdown arc. */
     private var followUpProgress = 0f
@@ -59,6 +61,7 @@ class VoiceOrbView @JvmOverloads constructor(
     private var thinkingColor = 0
     private var speakingColor = 0
     private var mutedColor = 0
+    private var deafColor = 0
 
     private var breatheAnimator: ValueAnimator? = null
     private var rippleAnimator: ValueAnimator? = null
@@ -75,11 +78,17 @@ class VoiceOrbView @JvmOverloads constructor(
         thinkingColor = ContextCompat.getColor(context, R.color.jarvis_status_thinking)
         speakingColor = ContextCompat.getColor(context, R.color.jarvis_status_speaking)
         mutedColor = ContextCompat.getColor(context, R.color.jarvis_status_idle)
+        deafColor = ContextCompat.getColor(context, R.color.jarvis_error)
     }
 
-    /** Map a session-machine state + mute flag onto the orb's visual state. */
-    fun setState(state: AssistantState?, muted: Boolean) {
+    /**
+     * Map a session-machine state + mute flag onto the orb's visual state.
+     * [deaf] (wake-word engine failed — nothing can hear) takes precedence:
+     * the orb must never look like it is listening when it cannot hear.
+     */
+    fun setState(state: AssistantState?, muted: Boolean, deaf: Boolean = false) {
         val next = when {
+            deaf -> OrbState.DEAF
             muted -> OrbState.MUTED
             state == null -> OrbState.IDLE
             else -> when (state) {
@@ -117,6 +126,7 @@ class VoiceOrbView @JvmOverloads constructor(
             // progress update, not per animator tick) tells them apart.
             OrbState.FOLLOW_UP -> rippleAnimator = floatAnimator(2_400L) { ripplePhase = it }
             OrbState.MUTED -> Unit // motionless by design
+            OrbState.DEAF -> Unit // static by design — nothing "live" to show
         }
     }
 
@@ -191,6 +201,7 @@ class VoiceOrbView @JvmOverloads constructor(
             OrbState.SPEAKING -> drawSpeaking(canvas, cx, cy, core, ring)
             OrbState.FOLLOW_UP -> drawFollowUp(canvas, cx, cy, core, ring)
             OrbState.MUTED -> drawMuted(canvas, cx, cy, core, ring)
+            OrbState.DEAF -> drawDeaf(canvas, cx, cy, core, ring)
         }
     }
 
@@ -295,6 +306,18 @@ class VoiceOrbView @JvmOverloads constructor(
         corePaint.color = withAlpha(mutedColor, 0.4f)
         canvas.drawCircle(cx, cy, core, corePaint)
         ringPaint.color = withAlpha(mutedColor, 0.3f)
+        canvas.drawCircle(cx, cy, ring, ringPaint)
+    }
+
+    /**
+     * Deaf wake-word engine: a static error-tinted ring — no ripple, no
+     * breathing, nothing that reads as "listening" (the mic cannot hear).
+     * Distinct from MUTED (a user intent) and IDLE (waiting, alive).
+     */
+    private fun drawDeaf(canvas: Canvas, cx: Float, cy: Float, core: Float, ring: Float) {
+        corePaint.color = withAlpha(deafColor, 0.5f)
+        canvas.drawCircle(cx, cy, core, corePaint)
+        ringPaint.color = withAlpha(deafColor, 0.6f)
         canvas.drawCircle(cx, cy, ring, ringPaint)
     }
 

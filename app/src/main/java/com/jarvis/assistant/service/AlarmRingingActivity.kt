@@ -14,6 +14,7 @@ import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.tools.AlarmReceiver
 import com.jarvis.assistant.tools.AlarmRinger
 import com.jarvis.assistant.tools.AndroidAlarmScheduler
+import com.jarvis.assistant.tools.SystemAlertArmer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -76,7 +77,7 @@ class AlarmRingingActivity : Activity() {
     }
 
     private fun scheduler(): AndroidAlarmScheduler =
-        AndroidAlarmScheduler(this, AppDatabase.getInstance(this).alarmDao())
+        AndroidAlarmScheduler(AppDatabase.getInstance(this).alarmDao(), SystemAlertArmer(this))
 
     private fun stopRingingUi() {
         AlarmRinger.stop(this)
