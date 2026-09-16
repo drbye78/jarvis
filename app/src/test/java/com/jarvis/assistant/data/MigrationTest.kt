@@ -32,9 +32,10 @@ class MigrationTest {
             .flatMap { db -> (sequenceOf(db) + db.declaredClasses.asSequence()) }
         val stray = targets
             .flatMap { clazz ->
-                (clazz.declaredFields.asSequence().map { f -> "field ${clazz.simpleName}.${f.name}" to f.type } +
+                clazz.declaredFields.asSequence().map { f -> "field ${clazz.simpleName}.${f.name}" to f.type } +
                     clazz.declaredMethods.asSequence().map { m -> "method ${clazz.simpleName}.${m.name}" to m.returnType } +
-                    clazz.declaredConstructors.asSequence().flatMap { c -> c.parameterTypes.asSequence().map { p -> "ctor param ${clazz.simpleName}.${p.simpleName}" to p } })
+                    clazz.declaredConstructors.asSequence()
+                        .flatMap { c -> c.parameterTypes.asSequence().map { p -> "ctor param ${clazz.simpleName}.${p.simpleName}" to p } }
             }
             .filter { (_, type) -> Migration::class.java.isAssignableFrom(type) }
             .map { it.first }

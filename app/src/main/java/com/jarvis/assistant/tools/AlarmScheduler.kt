@@ -432,9 +432,11 @@ class AndroidAlarmScheduler(
      * - One-shot (timer or single alarm): disables the row.
      */
     suspend fun onFired(id: Int) {
-        when (val resolution = dao.applyFired(id, now()) { alert ->
-            AlarmTimes.nextDailyOccurrence(alert.anchorTimeMillis, now())
-        }) {
+        when (
+            val resolution = dao.applyFired(id, now()) { alert ->
+                AlarmTimes.nextDailyOccurrence(alert.anchorTimeMillis, now())
+            }
+        ) {
             FiredResolution.NoOp -> Unit // gone / disabled / already re-armed
             is FiredResolution.OneShotDisabled ->
                 armer.cancel(id, resolution.kind) // defensive cleanup of any stale operation

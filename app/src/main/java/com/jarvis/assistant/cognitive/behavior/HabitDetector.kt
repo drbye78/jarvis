@@ -7,9 +7,9 @@ import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import timber.log.Timber
 import java.util.Calendar
 import java.util.TimeZone
-import timber.log.Timber
 
 /**
  * COGNITIVE_PLAN §8.2: mines [HabitRuleEntity] rows out of `command_events`.

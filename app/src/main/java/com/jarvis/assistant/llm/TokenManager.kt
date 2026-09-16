@@ -169,7 +169,10 @@ class TokenManager(
                 // the dropped cause used to carry.
                 Timber.e(
                     "Token refresh rejected: HTTP %d for scope=%s, unparseable body (%d bytes, %s)",
-                    response.code, scope, raw.length, e.javaClass.name,
+                    response.code,
+                    scope,
+                    raw.length,
+                    e.javaClass.name,
                 )
                 throw parseFailure(
                     "OAuth response is not valid JSON (HTTP ${response.code}) for scope='$scope'",
@@ -208,7 +211,9 @@ class TokenManager(
                 Timber.w(
                     "OAuth expiry field unparseable (HTTP %d for scope=%s, %s) — " +
                         "using the conservative fallback window",
-                    response.code, scope, e.javaClass.name,
+                    response.code,
+                    scope,
+                    e.javaClass.name,
                 )
                 null to null
             }

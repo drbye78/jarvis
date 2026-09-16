@@ -77,7 +77,10 @@ class SpeechFeedbackTest {
             actions++
             return false
         }
-        override fun launchApp(app: MediaAppInfo): Boolean { actions++; return false }
+        override fun launchApp(app: MediaAppInfo): Boolean {
+            actions++
+            return false
+        }
     }
 
     private fun recorder() = object : SpeechFeedback {

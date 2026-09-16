@@ -101,7 +101,7 @@ class AudioRecordSource internal constructor(
             )
             if (record.state != android.media.AudioRecord.STATE_INITIALIZED) {
                 record.release()
-                throw IllegalStateException("AudioRecord failed to initialize")
+                error("AudioRecord failed to initialize")
             }
             val canceler = if (profile.attachHardwareAec) {
                 // AecProbe records the outcome (AecDiag + persisted for Settings).
@@ -128,7 +128,16 @@ class AudioRecordSource internal constructor(
     ) : CaptureHandle {
         override fun read(dest: ShortArray, offset: Int, length: Int): Int = record.read(dest, offset, length)
 
-        /** Releases the record and its effect. Never throws out of a teardown path. */
+        /**
+         * Releases the record and its effect. Never throws out of a teardown path.
+         *
+         * The generic catch is the contract: OEM `stop()`/`release()` can raise
+         * anything at all — including Errors like `UnsatisfiedLinkError` from a
+         * wedged native library — and a leaking throw here would abandon the
+         * engine (the exact resource class the bounded-release path exists to
+         * protect). Narrowing the catch would re-open that hole.
+         */
+        @Suppress("TooGenericExceptionCaught")
         override fun shutdown() {
             try {
                 record.stop()
@@ -143,6 +152,9 @@ class AudioRecordSource internal constructor(
             }
         }
 
+        // Same teardown contract as shutdown(): a throwing AEC release must not
+        // escape the finally block that depends on it.
+        @Suppress("TooGenericExceptionCaught")
         private fun handleCancelerRelease() {
             canceler?.let { c ->
                 try {

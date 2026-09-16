@@ -161,8 +161,10 @@ class TokenManagerTest {
         val message = error.message!!
         assertTrue(message.contains("not valid JSON"))
         assertTrue(message.contains("HTTP 200"))
-        assertTrue("cause TYPE must still travel inside the message: $message",
-            message.contains("JsonDecodingException"))
+        assertTrue(
+            "cause TYPE must still travel inside the message: $message",
+            message.contains("JsonDecodingException")
+        )
         assertFalse(message.contains("SUPER-SECRET"))
         assertFalse(message.contains("access_token"))
         assertFalse(message.contains("JSON input"))
@@ -294,7 +296,7 @@ class TokenManagerTest {
             OkHttpClient(),
             JarvisConfig(oauthEndpoint = server.url("/oauth").toString()),
             vault,
-    ) { _ -> "test-client" to "test-secret" }
+        ) { _ -> "test-client" to "test-secret" }
 
         assertEquals("t-no-expiry", tm.getGigaChatToken())
 

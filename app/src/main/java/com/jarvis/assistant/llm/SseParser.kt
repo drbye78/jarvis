@@ -101,7 +101,8 @@ object SseParser {
             // content-free, still diagnosable.
             Timber.w(
                 "SseParser: failed to parse chunk (%d chars, %s)",
-                data.length, e.javaClass.name,
+                data.length,
+                e.javaClass.name,
             )
             return null
         }

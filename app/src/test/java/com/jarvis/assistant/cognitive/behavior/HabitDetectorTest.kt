@@ -224,8 +224,10 @@ class HabitDetectorTest {
         Timber.plant(tree)
         try {
             val events = object : CommandEventDao by FakeCommandEventDao() {
-                override suspend fun voiceOkSince(since: Long, tools: List<String>):
-                    List<CommandEventEntity> = throw IllegalStateException("db down")
+                override suspend fun voiceOkSince(
+                    since: Long,
+                    tools: List<String>,
+                ): List<CommandEventEntity> = error("db down")
             }
             val rules = FakeHabitRuleDao()
             val touched = runBlocking {

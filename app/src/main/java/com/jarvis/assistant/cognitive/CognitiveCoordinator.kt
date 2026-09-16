@@ -468,6 +468,12 @@ class CognitiveCoordinator(
     // ------------------------------------------------------------------
 
     /** Starts the drain loop (idempotent). Called by the graph on start. */
+    // The 3 `throw e` statements are the mandatory CancellationException
+    // rethrows (AGENTS: cognitive coroutines catch only IO/serialization and
+    // ALWAYS rethrow CE) in two nested launch lambdas — detekt counts nested
+    // throws against this outer function. Merging the jobs to satisfy the
+    // count would couple the settings-watch to drain error handling.
+    @Suppress("ThrowsCount")
     fun startQueueLoop() {
         if (drainJob?.isActive == true) return
         // Settings flips wake the loop so toggles apply live (plan principle

@@ -78,6 +78,13 @@ potential-bugs:
   WrongEqualsTypeParameter:
     active: true
 
+empty-blocks:
+  active: true
+  EmptyFunctionBlock:
+    # An override with an empty body is the idiom for "intentional no-op"
+    # (test fakes, optional hooks). Non-override empty blocks still fail.
+    ignoreOverridden: true
+
 style:
   active: true
   ForbiddenMethodCall:
