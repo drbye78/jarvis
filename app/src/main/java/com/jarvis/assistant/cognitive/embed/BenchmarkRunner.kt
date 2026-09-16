@@ -15,12 +15,27 @@ import timber.log.Timber
  * entitled", NOT a network failure to retry forever).
  *
  * Nothing here runs on a timer: called explicitly from the Settings card.
+ *
+ * P1-C (audit §9.2): the CLOUD branch is gated on BOTH a constructed
+ * cloud engine AND the reactive `memory.cloudEnabled` switch. The provider
+ * is read at every [run] — never snapshotted at graph build (plan
+ * principle 5), mirroring [VectorBackfill]'s gate. With the flag OFF the
+ * branch is skipped before the entitlement probe: zero HTTP calls of any
+ * kind, and the outcome reports the honest `entitlement = "disabled"`
+ * state (vs `null` = engine not constructed).
  */
 class BenchmarkRunner(
     private val metaDao: MemoryMetaDao,
     private val localEmbedder: EmbeddingEngine,
     /** Null = the cloud embeddings branch is not constructed. */
     private val cloudEmbedder: EmbeddingEngine?,
+    /**
+     * Real cloud-egress gate (`memory.cloudEnabled`). NO default: every
+     * construction site must state where the flag comes from — fail-open
+     * defaults are how the §9.2 breach happened. Reactive read: the value
+     * is taken at call time, e.g. `{ flow.value }`.
+     */
+    private val cloudEnabled: () -> Boolean,
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
 
@@ -34,7 +49,14 @@ class BenchmarkRunner(
         var cloudReport: EmbedderBenchmark.EngineReport? = null
         var entitlement: String? = null
         val cloud = cloudEmbedder
-        if (cloud != null) {
+        if (cloud != null && !cloudEnabled()) {
+            // §9.2 hard privacy gate: flag OFF → no entitlement probe, no
+            // embed call — the whole cloud lane is skipped, not just the
+            // HTTP failure-tolerant part. The probes are synthetic fixtures,
+            // but they still egress, and the plan's privacy inventory binds
+            // every cloud class behind this switch.
+            entitlement = "disabled"
+        } else if (cloud != null) {
             when (val probe = cloud.checkEntitlement()) {
                 is EmbeddingEngine.Entitlement.Ok -> {
                     entitlement = "ok"
@@ -87,6 +109,11 @@ class BenchmarkRunner(
         val localReport: String,
         val cloudReport: String?,
         val winner: String?,
+        /**
+         * Cloud-lane verdict for the UI: null = engine not constructed,
+         * "disabled" = §9.2 switch off (skipped, zero calls), "ok" /
+         * "denied:<code>" / "transient" = the probe ran.
+         */
         val entitlement: String?,
         val winnerStored: Boolean,
     )

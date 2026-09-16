@@ -83,15 +83,18 @@ private class StormAudioSource : AudioSource {
 private enum class StormOp { CANCEL_ALL, STOP_ACTIVE_TURN, START_SESSION, SPEAK_PROACTIVELY }
 
 /**
- * REMEDIATION_PLAN P3.2: supersede event-ordering race stress test.
+ * REMEDIATION_PLAN P3.2 + P1-S: supersede event-ordering race stress test.
  *
  * Context: terminal state-machine events used to be `scope.launch`ed from
  * multiple caller threads, so their APPLication order across a concurrent
  * supersede depended on dispatcher dispatch order; the sessionSeq guard
  * narrowed but did not close the race (check on the caller thread, apply
- * after a dispatch hop). SessionManager now routes every machine event
- * through ONE FIFO lane drained by ONE consumer, with the seq/state guards
- * evaluated AT APPLY TIME. This test hammers that fix.
+ * after a dispatch hop). SessionManager now applies every machine event
+ * SYNCHRONOUSLY through one guarded seam ([SessionManager] applyMachineEvent)
+ * — the seq/state guard and the transition are one atomic step on the caller's
+ * thread, and (P1-S, locked decision 1) the seq a turn event is validated
+ * against is the EMITTING turn's, carried on the event. This test hammers that
+ * fix from the control surface.
  *
  * Each iteration: a real turn is started and parks inside the (hanging) LLM —
  * THINKING — then a pool of worker threads races
@@ -190,18 +193,18 @@ class SessionManagerSupersedeStressTest {
          * Bounded quiesce: global resets (each guarded at apply time) until
          * the machine is IDLE — AND STAYS IDLE for a quiet period.
          *
-         * Why the quiet period (found by diagnosis): the machine-event lane
-         * is FIFO — a legitimate current-session [SessionEvent.ProactiveSpeechStarted]
-         * (submitted by the coroutine [SessionManager.speakProactively]
-         * launches, so its submission lands in queue order AFTER the
-         * concurrent Cancelled submissions) can still be draining behind a
-         * Cancelled that already returned the machine to IDLE. A single
-         * IDLE snapshot races that backlog: the guard correctly PASSES the
-         * queued event (its session id is still current), it applies →
-         * SPEAKING 50 ms later. The state change is therefore not a bug —
-         * it is the consumer legitimately still draining. So: on any change
-         * during the quiet window, go back to the reset phase (whose bumped
-         * seq invalidates and drops the queued event) and re-settle.
+         * Why the quiet period (found by diagnosis): there is no event queue,
+         * but a control call can still hand off to a coroutine whose guarded
+         * apply runs LATER — [SessionManager.speakProactively] launches
+         * `runProactive`, and that coroutine applies a legitimate
+         * current-session [SessionEvent.ProactiveSpeechStarted] after the
+         * concurrent Cancelled calls have already returned. A single IDLE
+         * snapshot races that in-flight launch: the guard correctly PASSES the
+         * event (its session id is still current), it applies → SPEAKING
+         * ~50 ms later. The state change is therefore not a bug — it is a
+         * legitimately-current session starting after the snapshot. So: on any
+         * change during the quiet window, go back to the reset phase (whose
+         * bumped seq invalidates and drops that launch's event) and re-settle.
          */
         fun quiesce(): Boolean {
             val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(5_000)
@@ -215,7 +218,8 @@ class SessionManagerSupersedeStressTest {
                 Thread.sleep(20)
             }
             // Settle loop: the machine must hold IDLE for QUIET_MS with no
-            // recorded transition (lane drained). Any movement → re-reset.
+            // recorded transition (no in-flight proactive launch left). Any
+            // movement → re-reset.
             while (System.nanoTime() <= deadline) {
                 val before = machine.currentState()
                 val recordedLen = synchronized(recorded) { recorded.size }

@@ -110,6 +110,20 @@ private class TurnRunnerHarness(
     val stateMachine = SessionStateMachine()
 
     val events = CopyOnWriteArrayList<SessionEvent>()
+
+    /**
+     * P1-S #1: the SESSION SEQ each event was emitted with (parallel to
+     * [events]). A turn's emissions must all carry the id [runTurn] got —
+     * never the manager's "current" seq at apply time.
+     */
+    val eventSeqs = CopyOnWriteArrayList<Int>()
+
+    /**
+     * P1-S #1 (extended): the session id stamped on each [setPartial] call,
+     * parallel to [partials] — same rule, different wire (shared UI state
+     * instead of the machine).
+     */
+    val partialSeqs = CopyOnWriteArrayList<Int>()
     val failures = CopyOnWriteArrayList<Pair<Int?, String>>()
     val finished = CopyOnWriteArrayList<Pair<Int, Boolean>>()
     val partials = CopyOnWriteArrayList<String>()
@@ -141,10 +155,15 @@ private class TurnRunnerHarness(
         // terminal) and LlmDone (finish). Rejected transitions would throw
         // inside onEvent? No — the machine logs and keeps state, so the
         // explicit state assertions below are the legality check.
-        onStateEvent = {
-            events.add(it)
-            stateMachine.onEvent(it)
-            onStateEventExtra?.invoke(it)
+        onStateEvent = { turnEvent ->
+            // P1-S #1: TurnRunner now hands over a TurnEvent (event + the seq
+            // of the turn that emitted it). The harness keeps recording the
+            // bare event so every existing assertion is unchanged, and mirrors
+            // the manager's wiring by driving the machine with the event only.
+            events.add(turnEvent.event)
+            eventSeqs.add(turnEvent.sessionSeq)
+            stateMachine.onEvent(turnEvent.event)
+            onStateEventExtra?.invoke(turnEvent.event)
         },
         reportFailure = { id, msg ->
             failures.add(id to msg)
@@ -156,7 +175,13 @@ private class TurnRunnerHarness(
                 stateMachine.onEvent(SessionEvent.LlmDone)
             }
         },
-        setPartial = { partials.add(it) },
+        // P1-S #1 (extended): the partial writer is turn-id stamped too. The
+        // bare texts stay recorded for the existing transcript assertions;
+        // [partialSeqs] is the provenance side of the same wire.
+        setPartial = { id, text ->
+            partials.add(text)
+            partialSeqs.add(id)
+        },
         isCurrentSession = { !superseded && it == 1 },
     )
 
@@ -698,6 +723,48 @@ class TurnRunnerSentenceDrainTest {
                 h.dao.rows.size,
             )
             assertTrue(h.failures.isEmpty())
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    /**
+     * P1-S #1 (locked decision 1), EMITTER side: the id [runTurn] was GIVEN is
+     * stamped on every event the turn hands to the manager — including
+     * `PlaybackStarted`, which comes out of the nested [speakSentence] helper
+     * two frames under processLlm. Pre-fix there was no id on the wire at all:
+     * the manager's guard read its own current seq, so it compared the session
+     * with itself and could never fire.
+     *
+     * Deliberately launched with id 7 instead of harness.launchTurn()'s 1 (and
+     * with isCurrentSession() false for it), so a hardcoded stamp — or one
+     * re-read from the "current" session like the manager used to do — could
+     * not pass either.
+     */
+    @Test
+    fun `every event of a turn carries the id that turn was launched with`() = runBlocking {
+        val llm = ScriptedLlm(
+            mutableListOf(listOf(LlmChunk.Text("Привет!"), LlmChunk.Done)),
+        )
+        val h = TurnRunnerHarness(llm)
+        try {
+            val job = h.scope.launch { with(h.runner) { runTurn(7) } }
+            h.deliverUtterance("Привет, Джарвис")
+            awaitCond { h.finished.isNotEmpty() }
+            job.join()
+
+            assertTrue("the turn emitted no events at all", h.events.isNotEmpty())
+            assertEquals("one seq per emitted event", h.events.size, h.eventSeqs.size)
+            assertEquals(setOf(7), h.eventSeqs.toSet())
+            assertTrue(
+                "no PlaybackStarted means the speech lane never ran",
+                h.events.contains(SessionEvent.PlaybackStarted),
+            )
+            // The extended guard uses the SAME stamp on the shared-UI-state
+            // wires: the final's clearing setPartial must carry the turn's id,
+            // or the manager cannot tell a live clear from a stale one.
+            assertTrue("the turn published no partial at all", h.partialSeqs.isNotEmpty())
+            assertEquals(setOf(7), h.partialSeqs.toSet())
         } finally {
             h.shutdown()
         }

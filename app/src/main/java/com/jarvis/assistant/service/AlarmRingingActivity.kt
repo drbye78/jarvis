@@ -10,11 +10,11 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import com.jarvis.assistant.R
-import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.tools.AlarmReceiver
 import com.jarvis.assistant.tools.AlarmRinger
+import com.jarvis.assistant.tools.AlarmSchedulerProvider
 import com.jarvis.assistant.tools.AndroidAlarmScheduler
-import com.jarvis.assistant.tools.SystemAlertArmer
+import com.jarvis.assistant.util.NotificationIds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -76,8 +76,13 @@ class AlarmRingingActivity : Activity() {
         }
     }
 
-    private fun scheduler(): AndroidAlarmScheduler =
-        AndroidAlarmScheduler(AppDatabase.getInstance(this).alarmDao(), SystemAlertArmer(this))
+    /**
+     * The SHARED process scheduler ([AlarmSchedulerProvider]) — never built
+     * per call site: a fresh [com.jarvis.assistant.tools.SystemAlertArmer]
+     * per ringing instance would reset the one-shot exact-alarm degrade note
+     * and fork the arming state (audit P1-D / decision #10).
+     */
+    private fun scheduler(): AndroidAlarmScheduler = AlarmSchedulerProvider.get(applicationContext)
 
     private fun stopRingingUi() {
         AlarmRinger.stop(this)
@@ -85,9 +90,12 @@ class AlarmRingingActivity : Activity() {
     }
 
     private fun postRingingNotification(label: String, alertId: Int) {
-        // Same identity the AlarmReceiver used (audit #20: per-alert id, so
-        // re-posting here UPDATES this alert's notification instead of
-        // another alert's, and the cancel below hits the same one).
+        // Same identity the AlarmReceiver used (audit #20): the per-alert,
+        // BANDED notification id (decision #3), so re-posting here UPDATES
+        // this alert's notification instead of another alert's (or a service
+        // notification's!), and the cancel below hits the same one. The
+        // full-screen PendingIntent request code stays the raw row id —
+        // parity with the AlarmManager request code in SystemAlertArmer.
         val notificationId = AlarmReceiver.ringingNotificationId(alertId)
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         if (nm == null) {
@@ -105,10 +113,18 @@ class AlarmRingingActivity : Activity() {
         }
         val fullScreen = PendingIntent.getActivity(
             this,
-            notificationId,
+            NotificationIds.ringingRequestCode(alertId),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // Lockscreen privacy: the label is user content — VISIBILITY_PRIVATE
+        // + a generic publicVersion keeps it off the locked screen (audit P1-D).
+        val publicVersion = NotificationCompat.Builder(this, "jarvis_alarm")
+            .setContentTitle(getString(R.string.alarm_notification_title))
+            .setContentText(getString(R.string.alarm_public_text))
+            .setSmallIcon(R.drawable.ic_mic)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .build()
         val notification = NotificationCompat.Builder(this, "jarvis_alarm")
             .setContentTitle(getString(R.string.alarm_notification_title))
             .setContentText(label)
@@ -116,6 +132,8 @@ class AlarmRingingActivity : Activity() {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setFullScreenIntent(fullScreen, true)
             .setOngoing(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicVersion)
             .build()
         nm.notify(notificationId, notification)
     }

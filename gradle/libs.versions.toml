@@ -13,7 +13,6 @@ porcupine = "3.0.0"
 detekt = "1.23.8"
 coreKtx = "1.12.0"
 lifecycle = "2.7.0"
-kotlinBom = "2.2.0"
 junit = "4.13.2"
 androidxTestJunit = "1.1.5"
 androidxTestRunner = "1.5.2"
@@ -27,7 +26,9 @@ recyclerview = "1.3.2"
 media = "1.7.0"
 
 [libraries]
-kotlin-bom = { module = "org.jetbrains.kotlin:kotlin-bom", version.ref = "kotlinBom" }
+# BOM tracks the compiler version on purpose (audit P1-B#5): the old
+# kotlinBom=2.2.0 entry pinned the stdlib below the 2.2.21 compiler.
+kotlin-bom = { module = "org.jetbrains.kotlin:kotlin-bom", version.ref = "kotlin" }
 core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }

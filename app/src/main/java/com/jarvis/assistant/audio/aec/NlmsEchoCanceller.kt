@@ -1,5 +1,7 @@
 package com.jarvis.assistant.audio.aec
 
+import timber.log.Timber
+
 /**
  * Built-in software echo canceller: normalized-LMS adaptive filter with
  * cross-correlation bulk-delay alignment and a conservative residual
@@ -128,8 +130,48 @@ class NlmsEchoCanceller(
             droppedFarEndFrames = mixer.droppedFrames,
         )
 
+    /**
+     * Irregular-length mic frames normalized instead of rejected (P1-S #7).
+     * Lifetime total; content-free, so it is safe at WARN.
+     */
+    @Volatile
+    var irregularFrameCount: Long = 0L
+        private set
+
+    /**
+     * Fits [micFrame] to exactly [frameSamples]: short reads are zero-padded
+     * at the tail, oversized reads truncated. Exact-size frames are returned
+     * UNCHANGED (same instance) — the hot path and the bit-exact bypass must
+     * not pay a copy.
+     */
+    private fun normalizeFrame(micFrame: ShortArray): ShortArray {
+        if (micFrame.size == frameSamples) return micFrame
+        val count = ++irregularFrameCount
+        if (count == 1L || count % IRREGULAR_FRAME_LOG_STRIDE == 0L) {
+            Timber.tag("AecDiag").w(
+                "mic frame of %d sample(s) normalized to %d (%d irregular frame(s) so far) — " +
+                    "the capture HAL is not delivering exact 20 ms frames",
+                micFrame.size,
+                frameSamples,
+                count,
+            )
+        }
+        return ShortArray(frameSamples).also { normalized ->
+            micFrame.copyInto(normalized, 0, 0, minOf(micFrame.size, frameSamples))
+        }
+    }
+
     override fun process(micFrame: ShortArray): ShortArray {
-        require(micFrame.size == frameSamples) { "expected $frameSamples-sample frames, got ${micFrame.size}" }
+        // P1-S #7 (audit 2026-09-16): an irregular frame used to `require`
+        // here and throw IllegalArgumentException. AudioPipeline catches every
+        // Exception from process() as a producer FAILURE (attempt counting →
+        // 50 in a row = give up + deaf until the 15-min watchdog), so one
+        // short HAL read could silence the assistant. A short frame is not a
+        // cancellation failure — pad it with silence (the echo path simply
+        // advances less than a full slot) and truncate the oversized one,
+        // COUNTED for diagnostics instead of thrown. Exact-size frames keep
+        // their identity, so the bit-exact bypass path below is unchanged.
+        val mic = normalizeFrame(micFrame)
 
         // 1) Advance the far-end grid by one slot.
         val farSlot = mixer.drainSlot()
@@ -147,17 +189,17 @@ class NlmsEchoCanceller(
         // 2) Bypass: far-end silent long enough — pass through bit-exact.
         if (farEndSilentSlots > BYPASS_SLOTS) {
             adaptingFlag = false
-            return micFrame
+            return mic
         }
 
         // 3) Periodic delay re-estimation during far-end activity.
         if (farActive && slotsSinceEstimate >= ESTIMATE_INTERVAL_SLOTS) {
             slotsSinceEstimate = 0
-            maybeReestimateDelay(micFrame)
+            maybeReestimateDelay(mic)
         }
 
         // 4) NLMS over the frame.
-        val d = FloatArray(frameSamples) { micFrame[it] / 32768f }
+        val d = FloatArray(frameSamples) { mic[it] / 32768f }
         val out = FloatArray(frameSamples)
         var frameMicPower = 0.0
         var frameErrPower = 0.0
@@ -380,6 +422,9 @@ class NlmsEchoCanceller(
         private const val DIVERGE_FACTOR = 2.5
         private const val DIVERGE_SLOTS = 25
         private const val REALIGN_RESET_STRIDE = 64 // 4 ms
+
+        /** Re-log normalized (irregular-length) mic frames every Nth one. */
+        private const val IRREGULAR_FRAME_LOG_STRIDE = 50L
         private const val MIN_GATE = 0.15
         private const val GATE_ALPHA = 0.35
 

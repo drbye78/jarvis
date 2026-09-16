@@ -92,7 +92,17 @@ object SseParser {
             // Audit #28: a silently swallowed parse failure made LLM response
             // corruption undiagnosable — log it (bounded length, never the raw
             // body: it can echo token-adjacent material to the file log).
-            Timber.w(e, "SseParser: failed to parse chunk (%d chars)", data.length)
+            //
+            // Audit P1-X #1 (same rule as TokenManager.parseFailure): the
+            // throwable is deliberately NOT passed to Timber. Serialization /
+            // IllegalArgumentException messages QUOTE the offending input, and
+            // FileLoggingTree persists WARN+ stack traces — LogScrubber has no
+            // pattern for JSON fragments. The cause TYPE stays in the message:
+            // content-free, still diagnosable.
+            Timber.w(
+                "SseParser: failed to parse chunk (%d chars, %s)",
+                data.length, e.javaClass.name,
+            )
             return null
         }
 

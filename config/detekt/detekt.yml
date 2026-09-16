@@ -114,7 +114,11 @@ style:
 
 formatting:
   active: true
-  autoCorrect: true
+  # audit P1-B#1 / decision 5: corrections are NOT applied in place any more
+  # (was `autoCorrect: true`, which made the CI gate rewrite files and pass).
+  # Formatting violations now fail `:app:detekt`; clear a backlog with a
+  # temporary local flip in app/build.gradle.kts, then revert it.
+  autoCorrect: false
   ImportOrdering:
     active: true # P5.1: formatting pass done, rules re-enabled
   MaximumLineLength:

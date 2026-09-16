@@ -29,6 +29,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Real engine wrapping the native Porcupine object. */
 private class PorcupineWakeWordEngine(
@@ -180,7 +181,16 @@ class HybridWakeWordDetector(
     // ------------------------------------------------------------------
     @Volatile private var stopLaneEnabled = false
 
-    @Volatile private var stopLaneBuildInFlight = false
+    /**
+     * P1-S #6 (audit 2026-09-16): the arm guard is a check-then-SET pair
+     * reached from the settings pref, the state collector and the tail of
+     * every swap — on different threads. A @Volatile boolean let two callers
+     * both pass the check and launch two `buildStopLane()` coroutines, each
+     * loading a KWS model (the swap tail also re-arms after a concurrent
+     * toggle reset the flag, so the double build was reachable in practice).
+     * CAS makes "only one build in flight" a single atomic act.
+     */
+    private val stopLaneBuildInFlight = AtomicBoolean(false)
 
     /** Same @Volatile rationale as [engine] (teardown-race defense-in-depth). */
     @Volatile private var stopEngine: WakeWordEngine? = null
@@ -425,13 +435,15 @@ class HybridWakeWordDetector(
      * closes the arm-vs-swap race for both callers.
      */
     private fun armStopLaneIfNeeded() {
-        if (stopLaneBuildInFlight) return
+        if (stopLaneBuildInFlight.get()) return
         if (stopEngine != null) return // lane already live (feed gate decides use)
         if (_state.value == DetectorState.Released) return
         if (engine?.phrases?.any { it.isStop } == true) return // primary covers it
         if (!currentReq.stopPhraseEnabled) return
         if (stopLaneFactory == null && realContext == null) return // unsupported (JVM tests)
-        stopLaneBuildInFlight = true
+        // P1-S #6: claim the build atomically — the guards above narrow the
+        // window, this closes it.
+        if (!stopLaneBuildInFlight.compareAndSet(false, true)) return
         scope.launch { buildStopLane() }
     }
 
@@ -494,10 +506,9 @@ class HybridWakeWordDetector(
                 )
             }
             // Reset in EVERY path (timeout included) or the lane could never
-            // be armed again. The flag is @Volatile and only ever transitions
-            // true→false here; a concurrent re-arm launching a new build is
-            // serialized downstream by processMutex itself.
-            stopLaneBuildInFlight = false
+            // be armed again. Claims happen via CAS in [armStopLaneIfNeeded];
+            // this release is the single false-write, so no build can be lost.
+            stopLaneBuildInFlight.set(false)
         }
     }
 

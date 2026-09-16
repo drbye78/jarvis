@@ -36,6 +36,9 @@ import java.util.UUID
  * Exception messages carry status code + category ONLY. Raw OAuth response
  * bodies are never baked into exceptions: malformed responses can echo token
  * material, and these exceptions reach the rotating file log via Timber.
+ * Parse failures additionally carry NO exception cause (see [parseFailure]) —
+ * the serialization exception's own message quotes the response, so dropping
+ * the message while keeping the chain would leak anyway.
  *
  * @param context required only when [vaultOverride] is not supplied.
  * @param vaultOverride test seam: in-memory vault for JVM tests.
@@ -162,19 +165,53 @@ class TokenManager(
             val parsed = try {
                 json.parseToJsonElement(raw).jsonObject
             } catch (e: Exception) {
-                throw RuntimeException(
+                // Content-free diagnosis (length + status only) replaces what
+                // the dropped cause used to carry.
+                Timber.e(
+                    "Token refresh rejected: HTTP %d for scope=%s, unparseable body (%d bytes, %s)",
+                    response.code, scope, raw.length, e.javaClass.name,
+                )
+                throw parseFailure(
                     "OAuth response is not valid JSON (HTTP ${response.code}) for scope='$scope'",
-                    e
+                    e,
                 )
             }
 
-            val token = parsed["access_token"]?.jsonPrimitive?.content
-                ?: throw RuntimeException(
-                    "OAuth response missing 'access_token' (HTTP ${response.code}) for scope='$scope'"
+            // Every field read below can throw too: `jsonPrimitive` on a
+            // well-formed-but-wrongly-shaped body raises an
+            // IllegalArgumentException whose message QUOTES the offending
+            // element — the same leak as the parse failure one level up, so the
+            // whole extraction runs under the same sanitizer.
+            val token = try {
+                parsed["access_token"]?.jsonPrimitive?.content
+            } catch (e: Exception) {
+                Timber.e(
+                    "Token refresh rejected: HTTP %d for scope=%s, unexpected field shape (%s)",
+                    response.code, scope, e.javaClass.name,
                 )
+                throw parseFailure(
+                    "OAuth response has an unexpected 'access_token' type " +
+                        "(HTTP ${response.code}) for scope='$scope'",
+                    e,
+                )
+            } ?: throw RuntimeException(
+                "OAuth response missing 'access_token' (HTTP ${response.code}) for scope='$scope'"
+            )
 
-            val expiresIn = parsed["expires_in"]?.jsonPrimitive?.content?.toLongOrNull()
-            val expiresAt = parsed["expires_at"]?.jsonPrimitive?.content?.toLongOrNull()
+            val (expiresIn, expiresAt) = try {
+                (parsed["expires_in"]?.jsonPrimitive?.content?.toLongOrNull()) to
+                    (parsed["expires_at"]?.jsonPrimitive?.content?.toLongOrNull())
+            } catch (e: Exception) {
+                // A bogus expiry hint must not kill a perfectly good token:
+                // degrade to the conservative fallback window (audit #14)
+                // instead of rethrowing — and still never carry the cause.
+                Timber.w(
+                    "OAuth expiry field unparseable (HTTP %d for scope=%s, %s) — " +
+                        "using the conservative fallback window",
+                    response.code, scope, e.javaClass.name,
+                )
+                null to null
+            }
             val expiryMillis = when {
                 expiresAt != null -> expiresAt * 1000L // Sber returns epoch seconds
                 expiresIn != null -> System.currentTimeMillis() + expiresIn * 1000L
@@ -208,3 +245,22 @@ class TokenManager(
         const val FALLBACK_EXPIRY_MS = 5 * 60 * 1000L
     }
 }
+
+/**
+ * A provider-response parse failure, rethrown WITHOUT its cause (audit
+ * decision #11).
+ *
+ * The raw exception is what leaks: `kotlinx.serialization` messages quote the
+ * offending input (`… but was '{"access_token":"<real-token>…'`), and so does
+ * `jsonPrimitive`'s `IllegalArgumentException` (it quotes the element). This
+ * class of exception is logged up the stack with its chain attached
+ * (`TurnRunner`'s `Timber.e(e, …)` on a failed turn), and `FileLoggingTree`
+ * persists ERROR+ stack traces to the rotating log file — where
+ * [com.jarvis.assistant.util.LogScrubber] has no pattern for JSON fragments.
+ *
+ * So: `cause == null` (nothing to print), and the CAUSE TYPE travels inside the
+ * sanitized message instead — content-free, but still enough to tell
+ * "not JSON at all" apart from "wrong shape" when reading a support log.
+ */
+private fun parseFailure(message: String, cause: Throwable): RuntimeException =
+    RuntimeException("$message [cause type: ${cause.javaClass.name}]")

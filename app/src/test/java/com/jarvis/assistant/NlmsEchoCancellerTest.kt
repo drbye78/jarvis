@@ -7,6 +7,7 @@ import com.jarvis.assistant.audio.aec.NlmsEchoCanceller
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.PI
@@ -242,6 +243,44 @@ class NlmsEchoCancellerTest {
         }
         val relErr = sqrt(errEnergy / nearEnergy)
         assertTrue("near-end relative error $relErr too high", relErr < 0.35)
+    }
+
+    // ------------------------------------------------------------------
+    // P1-S #6(c) (audit 2026-09-16): short-but-positive AudioRecord reads
+    // used to hit `require(size == frameSamples)` and throw straight into
+    // the producer's failure counter (50 in a row = give-up = deaf). An
+    // irregular frame is PACING now: normalize, count, keep going.
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `short mic frame is zero-padded and counted, never rejected`() {
+        val c = NlmsEchoCanceller(tailMs = 32)
+        val short = ShortArray(300) { 100 }
+        val out = c.process(short)
+        assertEquals("frame must be normalized to the slot size", 320, out.size)
+        assertEquals("head preserved", 100.toShort(), out[0])
+        assertEquals("short tail is silence padding", 0.toShort(), out[319])
+        assertEquals("normalized frame is counted for diagnostics", 1L, c.irregularFrameCount)
+    }
+
+    @Test
+    fun `oversized mic frame is truncated and counted`() {
+        val c = NlmsEchoCanceller(tailMs = 32)
+        val out = c.process(ShortArray(400) { 7 })
+        assertEquals(320, out.size)
+        assertEquals("truncation keeps the leading samples", 7.toShort(), out[319])
+        assertEquals(1L, c.irregularFrameCount)
+    }
+
+    @Test
+    fun `exact-size frames keep identity and never touch the irregular counter`() {
+        val c = NlmsEchoCanceller(tailMs = 32)
+        // Far-end silent → bit-exact bypass: the SAME instance must come back
+        // (the hot path must not pay a copy for well-behaved HAL reads).
+        val exact = ShortArray(320) { 50 }
+        val passthrough = c.process(exact)
+        assertSame("exact frames pass through without normalization", exact, passthrough)
+        assertEquals(0L, c.irregularFrameCount)
     }
 
     @Test

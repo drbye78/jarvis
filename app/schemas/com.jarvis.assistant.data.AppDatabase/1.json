@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 6,
-    "identityHash": "f28b6db648ee22435387657beab94ebe",
+    "version": 1,
+    "identityHash": "5c64219debe1d86d4dc7efb362c8ab2d",
     "entities": [
       {
         "tableName": "messages",
@@ -57,7 +57,7 @@
       },
       {
         "tableName": "scheduled_alerts",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `kind` TEXT NOT NULL, `label` TEXT NOT NULL, `triggerAtMillis` INTEGER NOT NULL, `repeatDaily` INTEGER NOT NULL, `enabled` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `kind` TEXT NOT NULL, `label` TEXT NOT NULL, `triggerAtMillis` INTEGER NOT NULL, `anchorTimeMillis` INTEGER NOT NULL, `repeatDaily` INTEGER NOT NULL, `enabled` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -84,6 +84,12 @@
             "notNull": true
           },
           {
+            "fieldPath": "anchorTimeMillis",
+            "columnName": "anchorTimeMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
             "fieldPath": "repeatDaily",
             "columnName": "repeatDaily",
             "affinity": "INTEGER",
@@ -101,7 +107,20 @@
           "columnNames": [
             "id"
           ]
-        }
+        },
+        "indices": [
+          {
+            "name": "index_scheduled_alerts_kind_enabled_triggerAtMillis",
+            "unique": false,
+            "columnNames": [
+              "kind",
+              "enabled",
+              "triggerAtMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_scheduled_alerts_kind_enabled_triggerAtMillis` ON `${TABLE_NAME}` (`kind`, `enabled`, `triggerAtMillis`)"
+          }
+        ]
       },
       {
         "tableName": "user_facts",
@@ -885,7 +904,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f28b6db648ee22435387657beab94ebe')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5c64219debe1d86d4dc7efb362c8ab2d')"
     ]
   }
 }

@@ -90,9 +90,6 @@ private class BootFakeAlertDao : AlertDao {
 
     override suspend fun byId(id: Int): ScheduledAlertEntity? = rows[id]
 
-    override fun allLive(): Flow<List<ScheduledAlertEntity>> =
-        revision.map { rows.values.sortedBy { a -> a.triggerAtMillis } }
-
     override fun alarmsLive(): Flow<List<ScheduledAlertEntity>> =
         revision.map {
             rows.values.filter { a -> a.kind == ScheduledAlertEntity.KIND_ALARM }
@@ -101,9 +98,6 @@ private class BootFakeAlertDao : AlertDao {
 
     override suspend fun all(): List<ScheduledAlertEntity> =
         rows.values.sortedBy { a -> a.triggerAtMillis }
-
-    override suspend fun enabled(): List<ScheduledAlertEntity> =
-        rows.values.filter { it.enabled }
 
     override suspend fun delete(id: Int) {
         rows.remove(id)

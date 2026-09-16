@@ -7,8 +7,10 @@ import com.jarvis.assistant.contracts.WakeWordRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -197,6 +199,87 @@ class HybridWakeWordDetectorStopLaneTest {
             withTimeout(5_000) { while (laneReleases.get() == 0) delay(10) }
             assertNull("primary covers stop — the dedicated lane is dead weight", d.stopLaneForTest())
         } finally {
+            d.release()
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // P1-S #6 (audit 2026-09-16): the arm check-then-set race. The in-flight
+    // flag was a plain @Volatile boolean read-then-written by two callers
+    // (setStopLaneEnabled and the buildAndSwap tail), so both could pass the
+    // guard and build a second ~17 MB native model on weak devices. CAS-on-
+    // entry makes the claim exclusive; this test pins the build count.
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `double arm while a lane build is in flight spawns exactly one build`() = runBlocking {
+        val gate = CountDownLatch(1)
+        val laneBuilds = AtomicInteger()
+        val d = detector(
+            req("porcupine", true),
+            engineBuildDispatcher = Dispatchers.Default,
+            stopLaneFactory = {
+                laneBuilds.incrementAndGet()
+                gate.await(5, TimeUnit.SECONDS) // park inside the native build window
+                laneEngine()
+            },
+        )
+        try {
+            withTimeout(5_000) { while (d.state.value != DetectorState.Ready) delay(10) }
+            d.setStopLaneEnabled(true) // claims the build (CAS false→true), parks in the factory
+            withTimeout(5_000) { while (laneBuilds.get() == 0) delay(10) }
+
+            // Concurrent re-arms: every one must lose the CAS and do nothing.
+            val racers = (1..8).map { Thread { d.setStopLaneEnabled(true) } }
+            racers.forEach { it.start() }
+            racers.forEach { it.join(5_000) }
+
+            gate.countDown() // the single in-flight build completes + publishes
+            withTimeout(5_000) { while (d.stopLaneForTest() == null) delay(10) }
+            assertEquals("in-flight arm is exclusive — no second native model build", 1, laneBuilds.get())
+
+            // Post-publish re-arm: the live-lane guard must keep it a no-op too.
+            d.setStopLaneEnabled(false)
+            d.setStopLaneEnabled(true)
+            assertEquals("re-arming a live lane must not rebuild", 1, laneBuilds.get())
+        } finally {
+            gate.countDown()
+            d.release()
+        }
+    }
+
+    @Test
+    fun `arm racing a primary swap - the loser rebuild tail cannot double-build`() = runBlocking {
+        val gate = CountDownLatch(1)
+        val laneBuilds = AtomicInteger()
+        val d = detector(
+            req("porcupine", true),
+            engineBuildDispatcher = Dispatchers.Default,
+            stopLaneFactory = {
+                laneBuilds.incrementAndGet()
+                gate.await(5, TimeUnit.SECONDS)
+                laneEngine()
+            },
+        )
+        try {
+            withTimeout(5_000) { while (d.state.value != DetectorState.Ready) delay(10) }
+            d.setStopLaneEnabled(true)
+            withTimeout(5_000) { while (laneBuilds.get() == 0) delay(10) }
+
+            // The parked lane build holds the reconfigureMutex (its factory
+            // runs under NonCancellable + that mutex), so the swap must NOT be
+            // awaited inline — it would deadlock the test body.
+            val swapper = launch { d.reconfigure(req("porcupine", true)) }
+            delay(200) // let the swap park behind the in-flight lane build
+
+            gate.countDown() // lane build completes; the swap may proceed now
+            withTimeout(5_000) { while (!swapper.isCompleted) delay(10) }
+            withTimeout(5_000) { while (d.stopLaneForTest() == null) delay(10) }
+            // Whichever finishes second, the SECOND arm (the swap tail) must
+            // lose: either to the in-flight CAS or to the now-live lane.
+            assertEquals("the swap tail must not double-build the stop lane", 1, laneBuilds.get())
+        } finally {
+            gate.countDown()
             d.release()
         }
     }

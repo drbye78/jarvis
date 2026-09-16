@@ -12,6 +12,20 @@ import javax.xml.parsers.DocumentBuilderFactory
  * vice versa. A new key added to only one locale fails HERE, at the source,
  * instead of shipping a UI that lies about its language (the original
  * dead-EN-resources defect F6).
+ *
+ * Audit P1-B#6: the two group checks used to be hand-maintained allow-lists
+ * (`phrase_asr_open_failed`, `activity_tool_set_alarm`, …). An allow-list only
+ * proves that the keys it still remembers exist, so a new `phrase_*` or
+ * `activity_tool_*` key was never scanned — and the list itself rotted in
+ * silence. The groups are now DERIVED from the resource files by a prefix scan,
+ * which covers every present and future key.
+ *
+ * What a derived scan cannot notice is a group going EMPTY: renaming or deleting
+ * a whole vocabulary keeps both locales symmetric, so parity alone stays green.
+ * [CODE_REFERENCED_PREFIXES] closes that hole for the prefixes whose words are
+ * read from code. Individual keys are deliberately NOT listed — code reaches
+ * them through `R.string.*`, i.e. at compile time, which no resource test can
+ * outdate.
  */
 class ResourceParityTest {
 
@@ -46,46 +60,71 @@ class ResourceParityTest {
         return out
     }
 
+    /** Parsed once per test instance (JUnit builds a fresh instance per test). */
+    private val ru: Set<String> by lazy { keys("values") }
+    private val en: Set<String> by lazy { keys("values-en") }
+
+    /** `activity_tool_set_alarm` -> `activity`; a key without `_` groups alone. */
+    private fun prefixOf(key: String): String = key.substringBefore('_')
+
+    private fun Set<String>.byPrefix(): Map<String, Set<String>> =
+        groupBy { prefixOf(it) }.mapValues { (_, groupKeys) -> groupKeys.toSet() }
+
     @Test
     fun `RU and EN string keys are in parity`() {
-        val ru = keys("values")
-        val en = keys("values-en")
         val missingInEn = ru - en
         val missingInRu = en - ru
         assertEquals("keys missing in values-en: $missingInEn", 0, missingInEn.size)
         assertEquals("keys missing in values: $missingInRu", 0, missingInRu.size)
     }
 
+    /**
+     * Every leading `_`-separated segment defines a group and the groups must be
+     * identical in both locales. Strictly implied by the global parity assertion
+     * above — kept because it names the BROKEN GROUP instead of dumping the whole
+     * key set into the failure text, and because it is the check that survives the
+     * deletion of the hand-maintained lists.
+     */
     @Test
-    fun `runtime spoken phrase keys exist in both locales`() {
-        val ru = keys("values")
-        val en = keys("values-en")
-        listOf(
-            "phrase_asr_open_failed", "phrase_asr_failed", "phrase_turn_timeout",
-            "phrase_network_error", "phrase_generic_error", "phrase_too_many_tool_steps",
-            "phrase_llm_timeout", "phrase_llm_failed", "phrase_offline",
-            "phrase_wake_engine_error", "phrase_voice_sample",
-        ).forEach { key ->
-            assertTrue("missing RU key $key", key in ru)
-            assertTrue("missing EN key $key", key in en)
+    fun `every string key group exists in both locales`() {
+        val ruGroups = ru.byPrefix()
+        val enGroups = en.byPrefix()
+        val onlyInRu = ruGroups.keys - enGroups.keys
+        val onlyInEn = enGroups.keys - ruGroups.keys
+        assertEquals("group sets differ (only in RU: $onlyInRu, only in EN: $onlyInEn)", ruGroups.keys, enGroups.keys)
+        ruGroups.forEach { (prefix, ruKeys) ->
+            assertEquals("group '${prefix}_*' differs between locales", ruKeys, enGroups[prefix])
         }
     }
 
+    /**
+     * The replacement for both allow-lists, with no keys to maintain: the
+     * code-referenced vocabularies must be populated in BOTH locales and stay in
+     * lockstep. Adding a 12th `phrase_*` (or a new tool label) in both locales is
+     * covered automatically — the old `expected = setOf(...)` skipped it.
+     */
     @Test
-    fun `every tool activity label exists in both locales`() {
-        val ru = keys("values")
-        val en = keys("values-en")
-        val expected = setOf(
-            "activity_tool_unknown",
-            "activity_tool_set_alarm", "activity_tool_cancel_alarm", "activity_tool_list_alarms",
-            "activity_tool_set_timer", "activity_tool_cancel_timer", "activity_tool_get_weather",
-            "activity_tool_get_device_info", "activity_tool_set_brightness", "activity_tool_set_volume",
-            "activity_tool_set_wifi", "activity_tool_set_bluetooth", "activity_tool_set_dnd",
-            "activity_tool_lock_screen", "activity_tool_open_app", "activity_tool_play_music",
-            "activity_tool_control_playback", "activity_tool_get_now_playing",
-            "activity_tool_list_playlists", "activity_tool_search_library",
+    fun `code-referenced string groups are populated in both locales`() {
+        CODE_REFERENCED_PREFIXES.forEach { prefix ->
+            val marker = "${prefix}_"
+            val ruKeys = ru.filter { it.startsWith(marker) }.toSet()
+            val enKeys = en.filter { it.startsWith(marker) }.toSet()
+            assertTrue("no '$marker' keys left in values/strings.xml", ruKeys.isNotEmpty())
+            assertTrue("no '$marker' keys left in values-en/strings.xml", enKeys.isNotEmpty())
+            assertEquals("group '$marker' differs between locales", ruKeys, enKeys)
+        }
+    }
+
+    companion object {
+
+        /**
+         * Prefixes whose spoken/labelled vocabulary is resolved from resources:
+         * `session/SpeechPhrases` (+ `AndroidSpeechPhrases`) and
+         * `session/TurnActivity.toolRes`.
+         */
+        private val CODE_REFERENCED_PREFIXES = listOf(
+            "phrase",
+            "activity_tool",
         )
-        assertEquals(expected, expected.intersect(ru))
-        assertEquals(expected, expected.intersect(en))
     }
 }

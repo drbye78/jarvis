@@ -56,12 +56,18 @@ class ExtractionParser {
         val root = try {
             json.parseToJsonElement(extracted).jsonObject
         } catch (e: Exception) {
-            return Result.ParseError("invalid JSON: ${e.message}")
+            // P1-C (audit rule 11): kotlinx JSON messages quote the raw
+            // fragment they tripped on — that is fact content. The detail
+            // flows into the worker's WARN line, which FileLoggingTree
+            // persists, so only the exception CLASS may cross here.
+            return Result.ParseError("invalid JSON (${e.javaClass.simpleName})")
         }
         val factsArray = try {
             root["facts"]?.jsonArray
         } catch (e: Exception) {
-            Timber.w(e, "Cognitive: facts field is not an array")
+            // Same leak class: kotlinx names the offending element in the
+            // cast message — log the class, never the throwable.
+            Timber.w("Cognitive: facts field is not an array (%s)", e.javaClass.simpleName)
             null
         } ?: return Result.ParseError("missing facts array")
 

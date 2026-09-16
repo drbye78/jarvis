@@ -64,59 +64,63 @@ fun MemoryOutcome.spoken(strings: ToolStrings): String = when (this) {
 }
 
 /**
- * Structured JSON for the LLM: machine-readable outcome + spoken line.
+ * Structured JSON for the LLM: machine-readable outcome only.
  * Built with kotlinx.serialization so escaping is the library's problem,
  * never ours (the old hand-built StringBuilder version forgot to close a
  * string quote — exactly the class of bug a serializer eliminates).
+ *
+ * P1-C (audit LOW): the payload used to embed a `spoken` line rendered
+ * through [ToolStrings.Default] — hard-pinned Russian in production. No
+ * consumer ever read it back (grep: the key is written, never parsed; the
+ * only reader of this JSON is the LLM, which composes its own reply in the
+ * conversation's language), so a pinned-locale line could only pollute an
+ * EN dialogue. The rendering seam stays in [spoken] for the lanes that
+ * actually speak an outcome through the locale-correct [ToolStrings].
  */
-fun MemoryOutcome.toJson(): String {
-    val spokenValue = spoken(com.jarvis.assistant.tools.ToolStrings.Default)
-    return buildJsonObject {
-        when (this@toJson) {
-            is MemoryOutcome.Written -> {
-                put("outcome", "written")
-                put("value", value)
-            }
-            is MemoryOutcome.Merged -> {
-                put("outcome", "merged")
-                put("value", value)
-            }
-            is MemoryOutcome.NeedsClarification -> {
-                put("outcome", "needs_clarification")
-                put("existing", existing)
-                put("candidate", candidate)
-            }
-            is MemoryOutcome.Failed -> {
-                put("outcome", "failed")
-                put("detail", detail ?: "")
-            }
-            is MemoryOutcome.Disabled -> put("outcome", "disabled")
-            is MemoryOutcome.Recalled -> {
-                put("outcome", "recalled")
-                put(
-                    "facts",
-                    kotlinx.serialization.json.JsonArray(
-                        facts.map { JsonPrimitive(it) },
-                    )
-                )
-            }
-            is MemoryOutcome.RecallEmpty -> put("outcome", "empty")
-            is MemoryOutcome.ForgetCandidates -> {
-                put("outcome", "confirm_forget")
-                put(
-                    "candidates",
-                    kotlinx.serialization.json.JsonArray(
-                        candidates.map { JsonPrimitive(it) },
-                    )
-                )
-                put("confirmToken", confirmToken)
-            }
-            is MemoryOutcome.Forgotten -> {
-                put("outcome", "forgotten")
-                put("value", value)
-            }
-            is MemoryOutcome.NothingToForget -> put("outcome", "not_found")
+fun MemoryOutcome.toJson(): String = buildJsonObject {
+    when (this@toJson) {
+        is MemoryOutcome.Written -> {
+            put("outcome", "written")
+            put("value", value)
         }
-        put("spoken", spokenValue)
-    }.toString()
-}
+        is MemoryOutcome.Merged -> {
+            put("outcome", "merged")
+            put("value", value)
+        }
+        is MemoryOutcome.NeedsClarification -> {
+            put("outcome", "needs_clarification")
+            put("existing", existing)
+            put("candidate", candidate)
+        }
+        is MemoryOutcome.Failed -> {
+            put("outcome", "failed")
+            put("detail", detail ?: "")
+        }
+        is MemoryOutcome.Disabled -> put("outcome", "disabled")
+        is MemoryOutcome.Recalled -> {
+            put("outcome", "recalled")
+            put(
+                "facts",
+                kotlinx.serialization.json.JsonArray(
+                    facts.map { JsonPrimitive(it) },
+                )
+            )
+        }
+        is MemoryOutcome.RecallEmpty -> put("outcome", "empty")
+        is MemoryOutcome.ForgetCandidates -> {
+            put("outcome", "confirm_forget")
+            put(
+                "candidates",
+                kotlinx.serialization.json.JsonArray(
+                    candidates.map { JsonPrimitive(it) },
+                )
+            )
+            put("confirmToken", confirmToken)
+        }
+        is MemoryOutcome.Forgotten -> {
+            put("outcome", "forgotten")
+            put("value", value)
+        }
+        is MemoryOutcome.NothingToForget -> put("outcome", "not_found")
+    }
+}.toString()

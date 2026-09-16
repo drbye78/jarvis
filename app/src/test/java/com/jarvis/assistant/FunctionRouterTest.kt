@@ -40,10 +40,8 @@ class FunctionRouterTest {
         override suspend fun insert(alert: ScheduledAlertEntity): Long = 1L
         override suspend fun update(alert: ScheduledAlertEntity) {}
         override suspend fun byId(id: Int): ScheduledAlertEntity? = null
-        override fun allLive(): Flow<List<ScheduledAlertEntity>> = emptyFlow()
         override fun alarmsLive(): Flow<List<ScheduledAlertEntity>> = emptyFlow()
         override suspend fun all(): List<ScheduledAlertEntity> = emptyList()
-        override suspend fun enabled(): List<ScheduledAlertEntity> = emptyList()
         override suspend fun delete(id: Int) {}
         override suspend fun setEnabled(id: Int, enabled: Boolean) {}
     }

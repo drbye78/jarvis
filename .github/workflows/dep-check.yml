@@ -1,0 +1,101 @@
+name: dep-check
+
+# Audit P1-B#4 (decision 7): the root build.gradle.kts has configured OWASP
+# dependency-check (failBuildOnCVSS=7.0, :app releaseRuntimeClasspath only)
+# since it was added, but NOTHING ever invoked the task — a dead gate that
+# looked like supply-chain coverage. Kept, and wired here: weekly, and
+# NON-BLOCKING by decision — a slow NVD sync or an unfixable upstream CVE must
+# not turn the merge queue red. The HTML report artifact is the deliverable; the
+# CVSS-7 failure surfaces as a red (but ignored) step plus an annotation.
+
+on:
+  schedule:
+    # Monday 04:05 UTC — after the nightly emulator run, still off-peak.
+    - cron: '5 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dep-check
+  cancel-in-progress: false
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # Optional: without an API key the NVD feed sync hits the public rate
+      # limit (can take tens of minutes). Add the repo secret to speed it up;
+      # dependency-check also reads NVD_API_KEY from the environment.
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The analyzer's local NVD/CPE database lives in ~/.dependency-check.
+      # Caching it turns a 15+ minute cold sync into an incremental update;
+      # `autoUpdate = true` in the build script keeps the restored copy fresh.
+      # Keyed on the version catalog so a dependency change starts a new entry
+      # (while restore-keys still picks up the previous database).
+      - name: Cache the NVD database
+        uses: actions/cache@v4
+        with:
+          path: ~/.dependency-check
+          key: dependency-check-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'app/build.gradle.kts') }}
+          restore-keys: |
+            dependency-check-${{ runner.os }}-
+
+      # --no-configuration-cache: the dependency-check plugin keeps a Project
+      # reference inside its task action, which the (enabled) configuration cache
+      # cannot serialize. gradle.properties only warns, but the weekly job should
+      # not depend on that.
+      - name: OWASP dependency-check (:app releaseRuntimeClasspath)
+        continue-on-error: true
+        run: ./gradlew --no-daemon --no-configuration-cache dependencyCheckAggregate
+
+      - name: Summarise findings
+        if: always()
+        run: |
+          report=$(ls build/reports/dependency-check-report.json app/build/reports/dependency-check-report.json 2>/dev/null | head -1 || true)
+          if [ -z "$report" ]; then
+            echo "::warning::No dependency-check JSON report was produced (the analyzer probably failed — see the HTML artifact / run log)."
+            exit 0
+          fi
+          echo "Using $report"
+          python3 - "$report" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          deps = data.get("dependencies", [])
+          high = []
+          for dep in deps:
+              for v in dep.get("vulnerabilities", []):
+                  score = v.get("cvssv3", {}).get("score") or v.get("cvssV3", {}).get("score") or 0
+                  if score and float(score) >= 7.0:
+                      high.append((v.get("severity", "?"), score, dep.get("filePath", "?"), v.get("displayName", "?")))
+          print(f"Scanned {len(deps)} dependencies; {len(high)} finding(s) at CVSS >= 7.0")
+          for sev, score, path, name in sorted(high, key=lambda x: -float(x[1]))[:40]:
+              print(f"  {sev} {score}: {name} <- {path}")
+          if high:
+              print(f"::warning::{len(high)} high/critical CVE finding(s) — see the dep-check-report artifact")
+          PY
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dep-check-reports
+          path: |
+            build/reports/dependency-check-report.html
+            build/reports/dependency-check-report.json
+            app/build/reports/dependency-check-report.html
+            app/build/reports/dependency-check-report.json
+          retention-days: 30
+          if-no-files-found: warn

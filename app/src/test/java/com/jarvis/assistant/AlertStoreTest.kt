@@ -4,6 +4,7 @@ import com.jarvis.assistant.data.AlertDao
 import com.jarvis.assistant.data.ScheduledAlertEntity
 import com.jarvis.assistant.tools.AlertArmer
 import com.jarvis.assistant.tools.AlertListRenderer
+import com.jarvis.assistant.tools.AlarmSchedulerProvider
 import com.jarvis.assistant.tools.AndroidAlarmScheduler
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,9 +55,6 @@ private class FakeAlertDao : AlertDao {
 
     override suspend fun byId(id: Int): ScheduledAlertEntity? = rows[id]
 
-    override fun allLive(): Flow<List<ScheduledAlertEntity>> =
-        revision.map { rows.values.sortedBy { alert -> alert.triggerAtMillis } }
-
     override fun alarmsLive(): Flow<List<ScheduledAlertEntity>> =
         revision.map {
             rows.values.filter { alert -> alert.kind == ScheduledAlertEntity.KIND_ALARM }
@@ -65,9 +63,6 @@ private class FakeAlertDao : AlertDao {
 
     override suspend fun all(): List<ScheduledAlertEntity> =
         rows.values.sortedBy { alert -> alert.triggerAtMillis }
-
-    override suspend fun enabled(): List<ScheduledAlertEntity> =
-        rows.values.filter { it.enabled }
 
     override suspend fun delete(id: Int) {
         rows.remove(id)
@@ -151,7 +146,7 @@ class AlertStoreTest {
 
         dao.setEnabled(id, false)
         assertFalse(dao.byId(id)!!.enabled)
-        assertTrue(dao.enabled().isEmpty())
+        assertTrue(dao.all().none { row -> row.enabled })
 
         dao.delete(id)
         assertNull(dao.byId(id))
@@ -462,6 +457,201 @@ class AlarmContentLoggingTest {
             )
         } finally {
             Timber.uprootAll()
+        }
+    }
+}
+
+/**
+ * FIX #3 (P1-D): the @Transaction alert-state transitions must close the
+ * lost-update windows of the old read-modify-write sequences — a snooze
+ * racing onFired must not lose either write, and the value the scheduler
+ * ARMS must be exactly the value the transaction PERSISTED (never a
+ * pre-transaction snapshot). Run against the same in-memory [FakeAlertDao]
+ * that inherits the DAO's real default-method bodies; Room's serialization
+ * itself is device behavior, the sequencing/return-value contract is not.
+ */
+class AlertTransactionTest {
+
+    @Test
+    fun `applyFired reports the exact persisted trigger and keeps anchor untouched`() = runBlocking {
+        val dao = FakeAlertDao()
+        val id = dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
+
+        val resolution = dao.applyFired(id, nowMillis = 6_000L) { alert ->
+            alert.anchorTimeMillis + ALERT_DAY_MS
+        }
+
+        val row = dao.byId(id)!!
+        val daily = resolution as com.jarvis.assistant.data.FiredResolution.DailyRearmed
+        assertEquals("resolution carries the persisted trigger", row.triggerAtMillis, daily.triggerAtMillis)
+        assertEquals(5_000L + ALERT_DAY_MS, row.triggerAtMillis)
+        assertEquals("fired must not move the recurring anchor", 5_000L, row.anchorTimeMillis)
+    }
+
+    @Test
+    fun `applyFired is idempotent in-transaction - second pass is a NoOp on a future trigger`() = runBlocking {
+        val dao = FakeAlertDao()
+        val id = dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
+        dao.applyFired(id, 6_000L) { it.anchorTimeMillis + ALERT_DAY_MS }
+
+        val second = dao.applyFired(id, 6_000L) { it.anchorTimeMillis + ALERT_DAY_MS }
+
+        assertEquals(com.jarvis.assistant.data.FiredResolution.NoOp, second)
+        assertEquals(5_000L + ALERT_DAY_MS, dao.byId(id)!!.triggerAtMillis)
+    }
+
+    @Test
+    fun `applyFired on a one-shot disables in-transaction and reports the kind for cancel`() = runBlocking {
+        val dao = FakeAlertDao()
+        val id = dao.insert(makeTimer("яйца", trigger = 5_000L)).toInt()
+
+        val resolution = dao.applyFired(id, 6_000L) { it.anchorTimeMillis + ALERT_DAY_MS }
+
+        assertEquals(
+            com.jarvis.assistant.data.FiredResolution.OneShotDisabled(ScheduledAlertEntity.KIND_TIMER),
+            resolution,
+        )
+        assertFalse(dao.byId(id)!!.enabled)
+    }
+
+    @Test
+    fun `snooze racing onFired loses neither write - final row equals final arm in both orders`() = runBlocking {
+        // Order A: snooze commits first, then the fired pass runs.
+        val hA = AlertHarness(nowMillis = 6_000L)
+        val idA = hA.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
+        hA.scheduler.snooze(idA)
+        hA.scheduler.onFired(idA)
+        assertRowMatchesArm(hA, idA)
+
+        // Order B: the fired pass commits first, then the snooze.
+        val hB = AlertHarness(nowMillis = 6_000L)
+        val idB = hB.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
+        hB.scheduler.onFired(idB)
+        hB.scheduler.snooze(idB)
+        assertRowMatchesArm(hB, idB)
+
+        // Whichever transaction commits last fully defines the row AND the
+        // armer saw that same transaction result — no torn mix of "snoozed
+        // trigger in DB, next-day trigger armed" (the old lost update).
+    }
+
+    @Test
+    fun `onFired arms exactly what applyFired persisted even when the row changed underneath`() = runBlocking {
+        // The stale-snapshot guard: with the old byId→update→arm sequence a
+        // concurrent write could make the armed trigger differ from the row.
+        // Now the arm value is the transaction's own return. Assert equality
+        // directly across the DAO boundary for a daily roll.
+        val h = AlertHarness(nowMillis = 10_000L)
+        val id = h.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
+
+        h.scheduler.onFired(id)
+
+        val row = h.dao.byId(id)!!
+        val arm = h.armer.armed.getValue(id)
+        assertEquals(row.triggerAtMillis, arm.triggerAtMillis)
+        assertEquals(row.kind, arm.kind)
+        assertEquals(row.label, arm.label)
+    }
+
+    @Test
+    fun `applyEnable persists enabled=1 atomically with the rolled trigger`() = runBlocking {
+        val dao = FakeAlertDao()
+        val id = dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = false, enabled = false)).toInt()
+
+        val spec = dao.applyEnable(id) { alert -> alert.anchorTimeMillis + ALERT_DAY_MS }
+
+        val row = dao.byId(id)!!
+        assertEquals(spec!!.triggerAtMillis, row.triggerAtMillis)
+        assertTrue("enable must not be able to land before the trigger — one transaction", row.enabled)
+    }
+
+    @Test
+    fun `applyEnable on an expired timer persists disabled and returns null arm spec`() = runBlocking {
+        val dao = FakeAlertDao()
+        val id = dao.insert(makeTimer("чай", trigger = 5_000L, enabled = false)).toInt()
+
+        val spec = dao.applyEnable(id) { alert -> if (alert.triggerAtMillis > 6_000L) alert.triggerAtMillis else null }
+
+        assertNull(spec)
+        assertFalse(dao.byId(id)!!.enabled)
+    }
+
+    @Test
+    fun `applySnooze re-enables and returns the arm spec for exactly that trigger`() = runBlocking {
+        val dao = FakeAlertDao()
+        val id = dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true, enabled = false)).toInt()
+
+        val spec = dao.applySnooze(id, 66_000L)
+
+        val row = dao.byId(id)!!
+        assertEquals(66_000L, spec!!.triggerAtMillis)
+        assertEquals(66_000L, row.triggerAtMillis)
+        assertTrue(row.enabled)
+        assertEquals(5_000L, row.anchorTimeMillis) // snooze never moves the anchor
+    }
+
+    private suspend fun assertRowMatchesArm(h: AlertHarness, id: Int) {
+        val row = h.dao.byId(id)!!
+        val arm = h.armer.armed.getValue(id)
+        assertEquals(
+            "the armer must hold exactly what the DB row claims (no lying switch)",
+            row.triggerAtMillis,
+            arm.triggerAtMillis,
+        )
+    }
+}
+
+/**
+ * FIX #4 (P1-D): the alarms UI / ringing lanes must share ONE scheduler +
+ * armer instance. A per-call-site armer re-zeroed the one-shot degrade-note
+ * gate, so the «exact alarms denied» notification re-posted on every toggle.
+ * These tests pin the provider's identity contract (JVM — the real
+ * SystemAlertArmer construction needs a Context; the installed-instance path
+ * is context-free and is what AppGraph will use from P2).
+ */
+class AlarmSchedulerProviderTest {
+
+    @Test
+    fun `an installed graph-owned scheduler is returned verbatim - context never consulted`() {
+        try {
+            val shared = AndroidAlarmScheduler(FakeAlertDao(), FakeArmer(), { 0L })
+            AlarmSchedulerProvider.install(shared)
+
+            org.junit.Assert.assertSame(shared, AlarmSchedulerProvider.get(null))
+            org.junit.Assert.assertSame(shared, AlarmSchedulerProvider.installedOrNull)
+            org.junit.Assert.assertSame(
+                "repeated gets must not fork instances (single degrade gate)",
+                shared,
+                AlarmSchedulerProvider.get(null),
+            )
+        } finally {
+            AlarmSchedulerProvider.clearForTests()
+        }
+    }
+
+    @Test
+    fun `clearForTests drops the installed instance back to the unresolved state`() {
+        try {
+            AlarmSchedulerProvider.install(AndroidAlarmScheduler(FakeAlertDao(), FakeArmer(), { 0L }))
+            org.junit.Assert.assertNotNull(AlarmSchedulerProvider.installedOrNull)
+
+            AlarmSchedulerProvider.clearForTests()
+
+            org.junit.Assert.assertNull(AlarmSchedulerProvider.installedOrNull)
+        } finally {
+            AlarmSchedulerProvider.clearForTests()
+        }
+    }
+
+    @Test
+    fun `get without an installed instance or context fails fast instead of silently forking`() {
+        AlarmSchedulerProvider.clearForTests()
+        try {
+            AlarmSchedulerProvider.get(null)
+            org.junit.Assert.fail("expected IllegalArgumentException: a Context is required pre-P2-wiring")
+        } catch (expected: IllegalArgumentException) {
+            // Honest seam: building the fallback needs an app context; a
+            // silent second armer is exactly the bug this lane is fixing.
         }
     }
 }

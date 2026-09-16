@@ -1,0 +1,83 @@
+name: android-test
+
+# Audit P1-B#3 (decision 6): the six androidTest suites (BasicSmokeTest,
+# DatabaseSmokeTest, MigrationTest, NetworkMonitorTest, SherpaSmokeTest,
+# PlaybackCaptureFarEndSourceSmokeTest) had never been executed anywhere —
+# ci.yml runs only the JVM tier, so everything that needs a real framework
+# (Room on-device, AudioRecord/playback capture, the Sherpa native lib) was
+# unverified. Nightly + manual dispatch keeps the emulator cost off every push.
+
+on:
+  schedule:
+    # 03:20 UTC nightly — off-peak, before the European workday.
+    - cron: '20 3 * * *'
+  workflow_dispatch:
+    inputs:
+      api_level:
+        description: 'Emulator API level'
+        required: false
+        default: '34'
+
+# One nightly at a time; a manual run shares the group so they queue instead of
+# fighting over the same runner quota.
+concurrency:
+  group: android-test-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  instrumented:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      # LFS: the 47 MB Sherpa-ONNX AAR and the KWS assets must be real files,
+      # otherwise the release/debug packaging step dies on a truncated zip.
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # GitHub-hosted ubuntu-24.04 runners expose /dev/kvm but the job does not
+      # run as a member of the kvm group. Without this the emulator falls back
+      # to software emulation and never boots inside the timeout.
+      - name: Enable KVM group permissions
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      # Single device config (pragmatic, per the plan): one API-34 google_apis
+      # x86_64 image, headless, swiftshader. minSdk is 29, so an API-34 system
+      # image covers the supported range's upper end and Room 2.8.4 behaviour.
+      - name: Instrumented tests (connectedDebugAndroidTest)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ github.event.inputs.api_level || '34' }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable animations: true
+          force-avd-creation: false
+          emulator-options: -no-window -no-snapshot-save -noaudio -no-boot-anim -gpu swiftshader_indirect
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest
+
+      # The connected runner writes per-device XML/HTML results under
+      # app/build/outputs/androidTest-results/; on a red nightly that is the only
+      # triage material, so keep it even when the run fails.
+      - name: Upload instrumentation results (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-results
+          path: |
+            app/build/outputs/androidTest-results/
+            app/build/reports/androidTests/
+          retention-days: 14
+          if-no-files-found: warn

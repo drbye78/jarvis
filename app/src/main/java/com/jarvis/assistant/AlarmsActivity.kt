@@ -16,8 +16,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.data.ScheduledAlertEntity
-import com.jarvis.assistant.tools.AndroidAlarmScheduler
-import com.jarvis.assistant.tools.SystemAlertArmer
+import com.jarvis.assistant.tools.AlarmSchedulerProvider
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -26,6 +25,12 @@ import kotlinx.coroutines.launch
  * empty state, and a time-picker dialog for adding alarms. Replaces the
  * v2.x situation where alarms could only be created by voice and were
  * invisible.
+ *
+ * All mutations go through the SHARED process scheduler
+ * ([AlarmSchedulerProvider]) — building an `AndroidAlarmScheduler(dao,
+ * SystemAlertArmer(this))` per click (the old shape) rebuilt the armer every
+ * time, resetting its one-shot exact-alarm degrade note so it re-posted on
+ * every toggle (audit P1-D / decision #10).
  */
 class AlarmsActivity : AppCompatActivity() {
 
@@ -60,15 +65,13 @@ class AlarmsActivity : AppCompatActivity() {
 
     private fun toggle(alarm: ScheduledAlertEntity, enabled: Boolean) {
         lifecycleScope.launch {
-            val dao = AppDatabase.getInstance(this@AlarmsActivity).alarmDao()
-            AndroidAlarmScheduler(dao, SystemAlertArmer(this@AlarmsActivity)).setEnabled(alarm.id, enabled)
+            AlarmSchedulerProvider.get(applicationContext).setEnabled(alarm.id, enabled)
         }
     }
 
     private fun delete(alarm: ScheduledAlertEntity) {
         lifecycleScope.launch {
-            val dao = AppDatabase.getInstance(this@AlarmsActivity).alarmDao()
-            AndroidAlarmScheduler(dao, SystemAlertArmer(this@AlarmsActivity)).cancel(alarm.id)
+            AlarmSchedulerProvider.get(applicationContext).cancel(alarm.id)
         }
     }
 
@@ -84,8 +87,7 @@ class AlarmsActivity : AppCompatActivity() {
                 .setPositiveButton(R.string.ok) { _, _ ->
                     val label = input.text.toString().ifBlank { getString(R.string.default_alarm_label) }
                     lifecycleScope.launch {
-                        val dao = AppDatabase.getInstance(this@AlarmsActivity).alarmDao()
-                        AndroidAlarmScheduler(dao, SystemAlertArmer(this@AlarmsActivity))
+                        AlarmSchedulerProvider.get(applicationContext)
                             .schedule(label, hour, minute, repeatDaily = true)
                     }
                 }

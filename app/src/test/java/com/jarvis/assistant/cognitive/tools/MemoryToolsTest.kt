@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -153,7 +154,14 @@ class MemoryToolsTest {
             """{"value":"зовут Алексей","category":"name"}""",
         )
         assertEquals("written", jsonKey(written, "outcome"))
-        assertTrue(jsonKey(written, "spoken").isNotEmpty())
+        // P1-C fix 4: the payload is locale-neutral — a spoken string
+        // rendered through ToolStrings.Default leaked pinned Russian into
+        // every LLM pass. Structured fields carry the truth now.
+        assertFalse(
+            "no pinned-locale 'spoken' line may ride in the tool JSON",
+            Json.parseToJsonElement(written).jsonObject.containsKey("spoken"),
+        )
+        assertEquals("зовут Алексей", jsonKey(written, "value"))
 
         val recalled = tools["recall_facts"]!!.execute("""{"query":"имя"}""")
         assertEquals("recalled", jsonKey(recalled, "outcome"))
@@ -180,6 +188,23 @@ class MemoryToolsTest {
         // Empty DB renders empty without touching anything.
         dao.rows.clear()
         assertEquals("", c.gather("кто я такой"))
+    }
+
+    @Test
+    fun `the spoken seam renders through the injected locale, never a pinned one`() {
+        // P1-C fix 4 companion check: [spoken(strings)] is the rendering
+        // point for lanes that actually speak an outcome — it must honor
+        // the passed ToolStrings, not ToolStrings.Default.
+        val english = object : ToolStrings by ToolStrings.Default {
+            override fun memoryWritten(value: String) = "Saved: $value"
+        }
+        val outcome = MemoryOutcome.Written("call him Alexey")
+        assertEquals("Saved: call him Alexey", outcome.spoken(english))
+        // Default still renders RU (the shipped fallback).
+        assertTrue(
+            "Default renders the RU fallback",
+            outcome.spoken(ToolStrings.Default).startsWith("Запомнил"),
+        )
     }
 
     private fun jsonKey(json: String, key: String): String {

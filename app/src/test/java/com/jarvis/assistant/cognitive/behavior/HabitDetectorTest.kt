@@ -1,14 +1,17 @@
 package com.jarvis.assistant.cognitive.behavior
 
+import com.jarvis.assistant.cognitive.data.CommandEventDao
 import com.jarvis.assistant.cognitive.data.CommandEventEntity
 import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 import com.jarvis.assistant.cognitive.extract.FakeCommandEventDao
 import com.jarvis.assistant.cognitive.extract.FakeHabitRuleDao
 import com.jarvis.assistant.tools.ToolStrings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import timber.log.Timber
 
 /**
  * COGNITIVE_PLAN §8.2: mining, reinforcement states and the plan's seeded
@@ -174,6 +177,73 @@ class HabitDetectorTest {
         }
         HabitDetector(events, rules, eligible, nowMs = { now }).recompute()
         assertEquals(2, rules.rows.size)
+    }
+
+    // ---- P1-C (audit HIGH, A8): cancellation contract -------------------
+
+    /** WARN+-counting tree (numeric priors — no android.util.Log on JVM). */
+    private class CapturingTree : Timber.Tree() {
+        val lines = mutableListOf<Pair<Int, String>>()
+        override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
+            synchronized(lines) { if (priority >= 5) lines.add(priority to message) }
+        }
+    }
+
+    @Test
+    fun `recompute propagates cancellation instead of deferring silently`() {
+        val tree = CapturingTree()
+        Timber.uprootAll()
+        Timber.plant(tree)
+        try {
+            val events = object : CommandEventDao by FakeCommandEventDao() {
+                override suspend fun voiceOkSince(since: Long, tools: List<String>):
+                    List<CommandEventEntity> = throw CancellationException("shutdown")
+            }
+            val rules = FakeHabitRuleDao()
+            val error = runCatching {
+                runBlocking {
+                    HabitDetector(events, rules, eligible, nowMs = { day7At20() }).recompute()
+                }
+            }.exceptionOrNull()
+            // Old code: the CE was caught as "Exception" → WARN + return 0,
+            // masking shutdown as "telemetry unreadable".
+            assertTrue(
+                "cancellation must escape recompute (old code swallowed it)",
+                error is CancellationException,
+            )
+            assertEquals("a cancel is not a failure — no WARN/ERROR may be logged", 0, tree.lines.size)
+        } finally {
+            Timber.uprootAll()
+        }
+    }
+
+    @Test
+    fun `a genuine telemetry failure defers with a content-free WARN`() {
+        val tree = CapturingTree()
+        Timber.uprootAll()
+        Timber.plant(tree)
+        try {
+            val events = object : CommandEventDao by FakeCommandEventDao() {
+                override suspend fun voiceOkSince(since: Long, tools: List<String>):
+                    List<CommandEventEntity> = throw IllegalStateException("db down")
+            }
+            val rules = FakeHabitRuleDao()
+            val touched = runBlocking {
+                HabitDetector(events, rules, eligible, nowMs = { day7At20() }).recompute()
+            }
+            assertEquals("genuine failure defers the pass", 0, touched)
+            assertTrue(rules.rows.isEmpty())
+            assertEquals(1, tree.lines.size)
+            val (priority, message) = tree.lines.single()
+            assertEquals("Timber.w maps to WARN (5)", 5, priority)
+            assertTrue(
+                "the WARN must carry no event/tool content",
+                message.contains("habit telemetry read failed") &&
+                    !message.contains("playMusic") && !message.contains("q:"),
+            )
+        } finally {
+            Timber.uprootAll()
+        }
     }
 }
 

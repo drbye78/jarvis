@@ -46,10 +46,53 @@ jobs:
           done < <(find app/src/main/assets -type f -size +1M)
           exit $status
 
+      # Audit P1-B#7: a red suite used to be readable only through the console
+      # scrollback. Ship the JUnit XML + HTML reports as an artifact so the
+      # failure survives the run (uploaded only when something failed).
+      - name: Upload JVM test reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-reports
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+          retention-days: 14
+          if-no-files-found: warn
+
+  # Release build gate (audit P1-B#2, decision 6). Release has never been
+  # compiled by CI, which hid two real defects: the signing config used to
+  # carry EMPTY passwords (packaging could never succeed off the maintainer's
+  # machine), and R8/proguard keep rules were untested. Signing is now
+  # conditional, so this job builds the UNSIGNED release APK — the point is the
+  # minify/R8 pass and the keep rules, not a shippable artifact.
+  release-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble release APK (unsigned — validates R8 + proguard rules)
+        run: ./gradlew --no-daemon :app:assembleRelease
+
   # COGNITIVE_PLAN 0.6: static analysis gate. The checked-in baseline
   # (config/detekt/baseline.xml) absorbs legacy findings; any NEW violation
   # of the active ruleset (incl. ForbiddenMethodCall: println / android.util
   # .Log) fails the build.
+  #
+  # Audit P1-B#1 / decision 5: detekt ran with autoCorrect=true, so this job
+  # silently REWROTE fixable ktlint violations and went green — the gate was
+  # cosmetic. Corrections are off now (build script + detekt.yml); the residual
+  # `git diff --exit-code` below is the tripwire that catches any future drift
+  # back to an auto-fixing setup (or any task that touches tracked files).
   static-analysis:
     runs-on: ubuntu-latest
     steps:
@@ -64,3 +107,54 @@ jobs:
 
       - name: detekt (incl. ktlint formatting rules)
         run: ./gradlew --no-daemon :app:detekt
+
+      - name: Fail on any residual auto-fix drift
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::A build task modified tracked files — detekt must not auto-correct (decision 5). Commit the formatting or fix the config."
+            exit 1
+          fi
+
+      - name: Upload detekt reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: detekt-reports
+          path: app/build/reports/detekt/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # Audit P1-B#7: Android Lint (lintDebug) as a NON-blocking job — the existing
+  # `lint { disable += "ExpiredTargetSdkVersion" }` config has never been
+  # exercised in CI. continue-on-error keeps it advisory; the HTML/XML report
+  # artifact is the deliverable. Flip `continue-on-error` to false once the
+  # backlog is worth enforcing.
+  lint:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Android Lint (debug variant, non-blocking)
+        run: ./gradlew --no-daemon :app:lintDebug
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.xml
+            app/build/reports/lint-results*
+          retention-days: 14
+          if-no-files-found: warn

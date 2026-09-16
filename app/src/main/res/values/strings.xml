@@ -140,6 +140,9 @@
 
     <!-- Ringing -->
     <string name="alarm_notification_title">Будильник</string>
+    <!-- Public (lockscreen-visible) version of a VISIBILITY_PRIVATE ringing
+         notification: generic text only, never the user-set alarm label. -->
+    <string name="alarm_public_text">Будильник</string>
     <!-- Exact-alarm degradation note (P3.1): shown once when Android 12+ denied
          SCHEDULE_EXACT_ALARM and a timer was armed inexact. -->
     <string name="exact_alarm_degrade_title">Точность таймеров ограничена</string>

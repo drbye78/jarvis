@@ -167,6 +167,9 @@ class CognitiveCoordinator(
         metaDao = metaDao,
         localEmbedder = localEmbedder,
         cloudEmbedder = cloudEmbedder,
+        // P1-C §9.2: the real egress gate, read per run() — the same
+        // reactive pattern VectorBackfill uses (never a graph-build value).
+        cloudEnabled = { cloudEnabled.value },
         nowMs = nowMs,
     )
 
@@ -504,6 +507,8 @@ class CognitiveCoordinator(
                 } else {
                     val pending = try {
                         queueDao.pendingCount()
+                    } catch (e: CancellationException) {
+                        throw e // P1-C (A8): stop the loop, don't fake "idle"
                     } catch (e: Exception) {
                         Timber.w(e, "Cognitive: pendingCount failed")
                         0
@@ -852,6 +857,8 @@ class CognitiveCoordinator(
         val now = nowMs()
         val rules = try {
             ruleDao.candidateRules()
+        } catch (e: CancellationException) {
+            throw e // P1-C (A8): a cancelled pass is not a query failure
         } catch (e: Exception) {
             Timber.w(e, "Cognitive: rule query failed")
             return
@@ -1068,39 +1075,55 @@ class CognitiveCoordinator(
     // Maintenance (§9.1) — Phase 1 logic; the nightly alarm lands in 2.2.
     // ------------------------------------------------------------------
 
+    /**
+     * P1-C (audit): maintenance-step guard with the A8 cancellation
+     * contract. [runCatching] swallows [CancellationException] — a cancel
+     * mid-maintenance then produced a storm of spurious "step failed"
+     * ERROR lines (12 after the first) and the machine limped through the
+     * remaining steps. Here CE ALWAYS propagates (the run aborts at once),
+     * every genuine failure is logged (throwable attached; messages are
+     * content-free — FileLoggingTree persists WARN+ to disk) and still
+     * never skips the other steps (plan §9.1).
+     */
+    private suspend inline fun maintenanceStep(
+        name: String,
+        crossinline block: suspend () -> Unit,
+    ) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.e(e, "Cognitive: %s failed", name)
+        }
+    }
+
     suspend fun onMaintenance() {
         val now = nowMs()
         // Every step individually guarded (plan §9.1) so one failure cannot
         // skip the others.
-        runCatching { decayInactiveFacts(now) }
-            .onFailure { Timber.e(it, "Cognitive: decay step failed") }
-        runCatching { compactOverCap() }
-            .onFailure { Timber.e(it, "Cognitive: compaction step failed") }
-        runCatching { deleteExpiredSuperseded(now) }
-            .onFailure { Timber.e(it, "Cognitive: superseded-retention step failed") }
+        maintenanceStep("decay step") { decayInactiveFacts(now) }
+        maintenanceStep("compaction step") { compactOverCap() }
+        maintenanceStep("superseded-retention step") { deleteExpiredSuperseded(now) }
         // ---- Phase 2 steps (§8.2/§2.5/§5 compaction) ----
-        runCatching { habitDetector.recompute() }
-            .onFailure { Timber.e(it, "Cognitive: habit recompute failed") }
-        runCatching { habitDetector.promoteProbationRules(now) }
-            .onFailure { Timber.e(it, "Cognitive: habit promotion failed") }
-        runCatching { habitDetector.unmuteExpired(now) }
-            .onFailure { Timber.e(it, "Cognitive: habit unmute failed") }
-        runCatching { eventDao.deleteOlderThan(now - COMMAND_EVENT_RETENTION_MS) }
-            .onFailure { Timber.e(it, "Cognitive: command-event retention failed") }
-        runCatching { behaviorLogDao.deleteOlderThan(now - BEHAVIOR_LOG_RETENTION_MS) }
-            .onFailure { Timber.e(it, "Cognitive: behavior-log retention failed") }
-        runCatching { compactSummaries() }
-            .onFailure { Timber.e(it, "Cognitive: summary compaction failed") }
-        runCatching {
+        maintenanceStep("habit recompute") { habitDetector.recompute() }
+        maintenanceStep("habit promotion") { habitDetector.promoteProbationRules(now) }
+        maintenanceStep("habit unmute") { habitDetector.unmuteExpired(now) }
+        maintenanceStep("command-event retention") {
+            eventDao.deleteOlderThan(now - COMMAND_EVENT_RETENTION_MS)
+        }
+        maintenanceStep("behavior-log retention") {
+            behaviorLogDao.deleteOlderThan(now - BEHAVIOR_LOG_RETENTION_MS)
+        }
+        maintenanceStep("summary compaction") { compactSummaries() }
+        maintenanceStep("summarization step") {
             val made = summarizer.runBacklogAndDigest()
             if (made > 0) Timber.i("Cognitive: %d summary batch(es) produced", made)
-        }.onFailure { Timber.e(it, "Cognitive: summarization step failed") }
+        }
         // ---- Phase 3 steps (§11) ----
-        runCatching { vectorMaintenance() }
-            .onFailure { Timber.e(it, "Cognitive: vector maintenance failed") }
-        runCatching { deriveEntities() }
-            .onFailure { Timber.e(it, "Cognitive: entity derivation failed") }
-        runCatching {
+        maintenanceStep("vector maintenance") { vectorMaintenance() }
+        maintenanceStep("entity derivation") { deriveEntities() }
+        maintenanceStep("maintenance stamp") {
             metaDao.putValue(MemoryMetaEntity.KEY_LAST_MAINTENANCE_AT, now.toString())
         }
     }
@@ -1124,8 +1147,15 @@ class CognitiveCoordinator(
         if (stale.isNotEmpty()) vectorDao.deleteByFactIds(stale)
         val known = rows.mapTo(HashSet()) { it.factId }
         if (activeIds.any { it !in known }) {
-            runCatching { vectorBackfill.runFor(engine) }
-                .onFailure { Timber.w(it, "Cognitive: vector top-up failed (resumes next night)") }
+            // P1-C: same cancellation contract as maintenanceStep — a
+            // wedged top-up defers to tomorrow, a cancel propagates.
+            try {
+                vectorBackfill.runFor(engine)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Cognitive: vector top-up failed (resumes next night)")
+            }
         }
     }
 

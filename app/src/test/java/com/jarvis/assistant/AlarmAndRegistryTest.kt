@@ -7,6 +7,7 @@ import com.jarvis.assistant.tools.ToolContract
 import com.jarvis.assistant.tools.ToolRegistry
 import com.jarvis.assistant.tools.WeatherClient
 import com.jarvis.assistant.tools.WeatherTool
+import com.jarvis.assistant.util.NotificationIds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -24,16 +25,66 @@ import java.util.Calendar
 class AlarmTimesTest {
 
     @Test
-    fun `ringing notification identity is per-alert, non-negative and stable`() {
-        // Audit #20: the ringing notification id (and FSI request code) is the
-        // alert row id itself — distinct alerts must never share one, and the
-        // degenerate unknown-id (-1) must still be a legal notification id.
-        assertEquals(7, AlarmReceiver.ringingNotificationId(7))
-        assertEquals(0, AlarmReceiver.ringingNotificationId(-1))
-        assertEquals(0, AlarmReceiver.ringingNotificationId(0))
+    fun `ringing notification identity is per-alert, banded and stable`() {
+        // Audit #20 + remediation decision #3: the ringing notification id is
+        // the alert row id BANDED by ALARM_BAND_BASE — distinct alerts must
+        // never share one, and the degenerate unknown-id (-1) must still be a
+        // legal notification id (it lands on the band base).
+        assertEquals(10_007, AlarmReceiver.ringingNotificationId(7))
+        assertEquals(10_000, AlarmReceiver.ringingNotificationId(-1))
+        assertEquals(10_000, AlarmReceiver.ringingNotificationId(0))
         assertTrue(
             "distinct alerts must have distinct notification ids",
             AlarmReceiver.ringingNotificationId(3) != AlarmReceiver.ringingNotificationId(4),
+        )
+    }
+
+    @Test
+    fun `alarm notification band never intersects the assistant band`() {
+        // The Critical finding: raw row ids used to be notification ids, so
+        // alarm rows 1/2/3/4 silently overwrote the FGS state/permission/
+        // activation notifications and the exact-alarm degrade note. Cross-band
+        // disjointness is now structural: alarm ids live at >= 10_000.
+        val assistantIds = intArrayOf(
+            NotificationIds.FGS_STATE,
+            NotificationIds.FGS_PERMISSION,
+            NotificationIds.FGS_ACTIVATION,
+            NotificationIds.ALARM_DEGRADE,
+        )
+        assistantIds.forEach { id ->
+            assertTrue("assistant id $id must stay below the alarm band", id <= NotificationIds.ASSISTANT_BAND_LIMIT)
+            assertTrue("assistant id $id must stay below ALARM_BAND_BASE", id < NotificationIds.ALARM_BAND_BASE)
+        }
+        // Every legal row id — including the degenerate unknown (-1), 0 and
+        // every value that used to collide — maps into the alarm band and
+        // nowhere else.
+        val probeRowIds = intArrayOf(-1, 0, 1, 2, 3, 4, 5, 999, 4_242, 1_000_000)
+        probeRowIds.forEach { rowId ->
+            val notificationId = NotificationIds.ringingId(rowId)
+            assertTrue(
+                "row $rowId produced notification id $notificationId below the band base",
+                notificationId >= NotificationIds.ALARM_BAND_BASE,
+            )
+            assertTrue(
+                "row $rowId collided with the assistant band",
+                assistantIds.none { it == notificationId },
+            )
+        }
+        assertEquals(10_000, NotificationIds.ALARM_BAND_BASE)
+    }
+
+    @Test
+    fun `full-screen-intent request code stays the raw row id (parity with AlarmManager codes)`() {
+        // Decision #3: ONLY the notification id gains the band. The FSI
+        // PendingIntent request code must equal the AlarmManager request code
+        // (the row id itself) so arm/cancel/full-screen update exactly one
+        // alert's pending intents — parity by construction.
+        assertEquals(7, NotificationIds.ringingRequestCode(7))
+        assertEquals(0, NotificationIds.ringingRequestCode(-1))
+        assertEquals(1, NotificationIds.ringingRequestCode(1))
+        assertTrue(
+            "request code and notification id are different namespaces",
+            NotificationIds.ringingRequestCode(1) != NotificationIds.ringingId(1),
         )
     }
 

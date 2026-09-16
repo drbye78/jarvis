@@ -4,10 +4,12 @@ import com.jarvis.assistant.cognitive.data.CommandEventDao
 import com.jarvis.assistant.cognitive.data.CommandEventEntity
 import com.jarvis.assistant.cognitive.data.HabitRuleDao
 import com.jarvis.assistant.cognitive.data.HabitRuleEntity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.Calendar
 import java.util.TimeZone
+import timber.log.Timber
 
 /**
  * COGNITIVE_PLAN §8.2: mines [HabitRuleEntity] rows out of `command_events`.
@@ -52,8 +54,13 @@ class HabitDetector(
         val since = nowMs() - lookbackDays * DAY_MS
         val events = try {
             eventDao.voiceOkSince(since, habitEligibleTools.toList())
-        } catch (_: Exception) {
-            return@withLock 0 // telemetry unreadable — habits simply wait for the next run
+        } catch (e: CancellationException) {
+            throw e // P1-C (A8): a cancelled recompute is not "telemetry unreadable"
+        } catch (e: Exception) {
+            // telemetry unreadable — habits simply wait for the next run
+            // (content-free WARN: the DAO message can name tables, never facts)
+            Timber.w(e, "Cognitive: habit telemetry read failed — recompute defers")
+            return@withLock 0
         }
         if (events.isEmpty()) return@withLock 0
 

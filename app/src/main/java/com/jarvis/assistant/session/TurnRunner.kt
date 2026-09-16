@@ -42,13 +42,36 @@ import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 /**
+ * P1-S #1 (audit 2026-09-16, locked decision 1): a machine event together with
+ * the SESSION SEQ of the turn that EMITTED it.
+ *
+ * [TurnRunner] holds no session identity of its own, but it IS the only party
+ * that knows which turn produced an event. [SessionManager] cannot recover
+ * that later: reading `sessionSeq` at apply time is tautological — the value
+ * it reads is by definition the CURRENT seq, so a superseded turn's late
+ * event always passed the guard and stomped the fresh session's state
+ * (e.g. a draining turn's `PlaybackStarted` yanking a new session out of
+ * LISTENING). Carrying the emitter's id on the event is what makes the
+ * apply-time drop in [SessionManager.applyMachineEvent] real.
+ *
+ * Deliberately NOT part of [SessionEvent]: the machine's transition table is
+ * keyed on pure events and must stay provenance-free; the seq is a delivery
+ * envelope, validated before the event ever reaches the machine.
+ */
+data class TurnEvent(val sessionSeq: Int, val event: SessionEvent)
+
+/**
  * Per-turn execution engine extracted verbatim from [SessionManager] (P7).
  *
- * Holds NO session identity of its own — every terminal transition and
- * failure is routed back to [SessionManager] through the four injected
- * callbacks ([onStateEvent], [reportFailure], [finish], [setPartial]) so the
- * single source of truth (state machine, error funnel, partial transcript)
- * stays in [SessionManager].
+ * Holds NO session identity of its own — every terminal transition, failure
+ * and shared-UI-state write is routed back to [SessionManager] through the
+ * injected callbacks ([onStateEvent], [reportFailure], [finish], [setPartial],
+ * [onActivity]) so the single source of truth (state machine, error funnel,
+ * partial transcript, activity pill) stays in [SessionManager]. EVERY one of
+ * them is stamped with the emitting turn's id (P1-S #1, locked decision 1):
+ * each [onStateEvent] emission travels in a [TurnEvent], and the partial /
+ * activity writers take the id as their first argument, so a turn the user
+ * already superseded can never stomp the live session's state.
  *
  * [run] must be invoked from a [CoroutineScope] that is a CHILD of the session
  * job. It deliberately NEVER creates its own `CoroutineScope(...)` or wraps
@@ -65,10 +88,16 @@ class TurnRunner(
     private val functionRouter: ToolExecutor,
     private val conversationManager: ConversationManager,
     private val config: JarvisConfig,
-    private val onStateEvent: suspend (SessionEvent) -> Unit,
+    private val onStateEvent: suspend (TurnEvent) -> Unit,
     private val reportFailure: suspend (id: Int?, msg: String) -> Unit,
     private val finish: suspend (id: Int, spoke: Boolean) -> Unit,
-    private val setPartial: (String) -> Unit,
+    /**
+     * P1-S #1 (extended): the live partial writer is ALSO provenance-guarded —
+     * the id is the emitting turn's, so [SessionManager] can drop a stale
+     * turn's partial (including its final `""`) instead of letting it stomp the
+     * session the user actually owns now.
+     */
+    private val setPartial: (id: Int, text: String) -> Unit,
     private val isCurrentSession: (id: Int) -> Boolean,
     /** Runtime spoken phrases (i18n); defaults to the RU literals. */
     private val phrases: SpeechPhrases = SpeechPhrases.Default,
@@ -76,8 +105,10 @@ class TurnRunner(
     private val focus: com.jarvis.assistant.audio.AssistantAudioFocus? = null,
     /** G1: composed per-pass system prompt (identity + time + policies). */
     private val systemPrompt: SystemPromptProvider = TimeAwareSystemPrompt(),
-    /** G3: what the turn engine is doing while THINKING (status pill). */
-    private val onActivity: (TurnActivity?) -> Unit = {},
+    /** G3: what the turn engine is doing while THINKING (status pill).
+     * P1-S #1 (extended): carries the emitting turn's id, so a stale turn can
+     * neither set nor clear a live session's pill. */
+    private val onActivity: (id: Int, activity: TurnActivity?) -> Unit = { _, _ -> },
     /** Y6: TTS voice resolved per sentence so Settings changes apply live. */
     private val voiceSource: () -> String = { config.ttsVoice },
     /**
@@ -114,6 +145,15 @@ class TurnRunner(
         val sentenceJobs = java.util.concurrent.ConcurrentLinkedQueue<Job>()
     }
 
+    /**
+     * Execute one turn. [sessionId] is the session/turn seq this turn was
+     * launched with (P1-S #1, locked decision 1): it is the turn's identity
+     * for its whole life, stamped on EVERY event handed to [onStateEvent] and
+     * passed to [reportFailure]/[finish], so [SessionManager] can drop a
+     * straggler write from a turn the user already superseded. It is captured
+     * ONCE here — never re-read from the manager at emission time, which is
+     * what made the old guard a tautology.
+     */
     // The NestedBlockDepth suppression follows processLlm's precedent: the
     // function IS the turn skeleton (open ASR → collect → dispatch by
     // outcome), and the audit fix added the transport-teardown try/finally
@@ -122,12 +162,12 @@ class TurnRunner(
     suspend fun CoroutineScope.runTurn(sessionId: Int) {
         val turn = TurnState()
         try {
-            onStateEvent(SessionEvent.WakeWordOrBargeIn) // -> LISTENING
+            onStateEvent(TurnEvent(sessionId, SessionEvent.WakeWordOrBargeIn)) // -> LISTENING
 
             // 1) Open the streaming ASR session (with retries).
             val stream = openAsrWithRetry()
             if (stream == null) {
-                onStateEvent(SessionEvent.AsrFailed())
+                onStateEvent(TurnEvent(sessionId, SessionEvent.AsrFailed()))
                 // #18/#19: reportFailure IS the terminal for error turns
                 // (ErrorOccurred -> IDLE + error voice). A trailing finish()
                 // would emit LlmDone from IDLE — rejected by the machine
@@ -143,7 +183,7 @@ class TurnRunner(
             // barge-in/cancelAll mid-utterance abandoned the RPC until its
             // deadline. finally covers abort paths too.
             val outcome = try {
-                listenAndCollect(stream)
+                listenAndCollect(sessionId, stream)
             } finally {
                 runCatching { stream.cancel() }
             }
@@ -154,10 +194,10 @@ class TurnRunner(
                         // NoSpeech itself drives LISTENING -> IDLE; that is the
                         // single terminal for this turn (a follow-up finish()
                         // would emit a rejected LlmDone from IDLE).
-                        onStateEvent(SessionEvent.NoSpeech)
+                        onStateEvent(TurnEvent(sessionId, SessionEvent.NoSpeech))
                         return
                     }
-                    onStateEvent(SessionEvent.SpeechCaptured) // -> THINKING
+                    onStateEvent(TurnEvent(sessionId, SessionEvent.SpeechCaptured)) // -> THINKING
                     // P0.1 (REMEDIATION_PLAN): the utterance is user content —
                     // FileLoggingTree persists INFO+ to disk in release, so the
                     // raw text may appear only at DEBUG (AGENTS.md: no fact
@@ -189,11 +229,11 @@ class TurnRunner(
                 }
 
                 AsrOutcome.NoSpeech -> {
-                    onStateEvent(SessionEvent.NoSpeech)
+                    onStateEvent(TurnEvent(sessionId, SessionEvent.NoSpeech))
                 }
 
                 is AsrOutcome.Failed -> {
-                    onStateEvent(SessionEvent.AsrFailed(outcome.cause))
+                    onStateEvent(TurnEvent(sessionId, SessionEvent.AsrFailed(outcome.cause)))
                     // reportFailure is the terminal (see the ASR-open path).
                     reportFailure(sessionId, phrases.asrFailed)
                 }
@@ -292,18 +332,26 @@ class TurnRunner(
     /**
      * Pumps live mic audio into the ASR stream until the server reports
      * end-of-utterance (or the local hard cap fires).
+     *
+     * [id] is the turn's session seq (P1-S #1): every partial it publishes —
+     * including the final's clearing `""` — is stamped with it, so a collector
+     * still draining after a barge-in cannot overwrite the new session's live
+     * transcript.
      */
-    private suspend fun CoroutineScope.listenAndCollect(stream: AsrStream): AsrOutcome {
+    private suspend fun CoroutineScope.listenAndCollect(
+        id: Int,
+        stream: AsrStream,
+    ): AsrOutcome {
         val result = CompletableDeferred<AsrOutcome>()
 
         // Collector for ASR events.
         val eventCollector = launch {
             stream.events.collect { event ->
                 when (event) {
-                    is AsrEvent.Partial -> setPartial(event.text)
+                    is AsrEvent.Partial -> setPartial(id, event.text)
 
                     is AsrEvent.Final -> {
-                        setPartial("") // final replaces the partial
+                        setPartial(id, "") // final replaces the partial
                         result.complete(
                             if (event.text.isBlank()) {
                                 AsrOutcome.NoSpeech
@@ -428,7 +476,7 @@ class TurnRunner(
      */
     @Suppress("CyclomaticComplexMethod", "NestedBlockDepth")
     private suspend fun CoroutineScope.processLlm(id: Int, turn: TurnState, context: PromptContext) {
-        onStateEvent(SessionEvent.LlmStarted)
+        onStateEvent(TurnEvent(id, SessionEvent.LlmStarted))
         var pass = 0
 
         while (true) {
@@ -462,7 +510,7 @@ class TurnRunner(
 
             // G3: THINKING begins — the pill leaves the generic label only
             // when a finer-grained tool label takes over below.
-            onActivity(TurnActivity.Thinking)
+            onActivity(id, TurnActivity.Thinking)
 
             // G4: transient-failure retry. Safe ONLY while the stream emitted
             // nothing: a retried stream that had already produced chunks would
@@ -492,7 +540,9 @@ class TurnRunner(
                                         // LAUNCH time (before any of its code runs)
                                         // — the drain/cleanup joins exactly these.
                                         turn.sentenceJobs.add(
-                                            this@processLlm.launch { speakSentence(sentence, turn) }
+                                            this@processLlm.launch {
+                                                speakSentence(id, sentence, turn)
+                                            }
                                         )
                                     }
                                 }
@@ -512,7 +562,7 @@ class TurnRunner(
                                 LlmChunk.Done -> {
                                     sentenceBuffer.flushRemaining()?.let { rest ->
                                         turn.sentenceJobs.add(
-                                            this@processLlm.launch { speakSentence(rest, turn) }
+                                            this@processLlm.launch { speakSentence(id, rest, turn) }
                                         )
                                     }
                                     // Fallback for providers without Complete events.
@@ -579,7 +629,7 @@ class TurnRunner(
                 try {
                     for (call in pending) {
                         // G3: the pill shows WHAT is running while the user waits.
-                        onActivity(TurnActivity.ToolRunning(call.function.name))
+                        onActivity(id, TurnActivity.ToolRunning(call.function.name))
                         val toolResult = withContext(Dispatchers.IO) {
                             functionRouter.executeResult(call.function)
                         }
@@ -699,8 +749,8 @@ class TurnRunner(
      * synthesis stream for EVERY completed sentence up front. Playback itself
      * stays serialized by the player actor; this only caps the prefetch.
      */
-    private suspend fun CoroutineScope.speakSentence(text: String, turn: TurnState) {
-        onStateEvent(SessionEvent.PlaybackStarted) // -> SPEAKING
+    private suspend fun CoroutineScope.speakSentence(sessionId: Int, text: String, turn: TurnState) {
+        onStateEvent(TurnEvent(sessionId, SessionEvent.PlaybackStarted)) // -> SPEAKING
         ttsSynthPermits.withPermit {
             // Y6: resolve the voice per sentence — a Settings change applies
             // to the very next synthesis, no service restart.

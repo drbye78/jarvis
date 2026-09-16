@@ -10,8 +10,10 @@ import com.jarvis.assistant.tools.string
 /**
  * COGNITIVE_PLAN §6.4: the LLM-callable memory tool surface. All three route
  * through the coordinator (the single writer/reader of `user_facts`) and
- * return [MemoryOutcome] JSON — honest outcomes with a pre-rendered
- * `spoken` line (ToolStrings seam), never a bare "ok".
+ * return [MemoryOutcome] JSON — honest structured outcomes, never a bare
+ * "ok". The JSON carries NO pre-rendered spoken line (P1-C): the LLM composes
+ * the reply in the conversation's language; locale-correct user-facing
+ * wording, where needed, goes through [spoken] + [com.jarvis.assistant.tools.ToolStrings].
  *
  * Explicit writes bypass the extraction LLM entirely (plan §6.4): the tool
  * arguments ARE the fact, so there is nothing to hallucinate.

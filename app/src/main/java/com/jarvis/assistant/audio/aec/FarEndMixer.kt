@@ -25,7 +25,10 @@ import timber.log.Timber
  * canceller — the mixer only guarantees a common, non-drifting time base.
  *
  * Thread-safety: [onFrame] may be called from any lane's thread (TTS actor,
- * capture pump); [drainSlot] is producer-only.
+ * capture pump); [drainSlot] is producer-only. Every public method mutates
+ * shared lane state, so every one of them runs under the SINGLE [lock] monitor
+ * (P1-S #5 — `@Synchronized` on `this` was a second, unrelated monitor and
+ * bought nothing).
  */
 class FarEndMixer(
     private val slotSamples: Int = 320,
@@ -44,8 +47,18 @@ class FarEndMixer(
     private val lanes = LinkedHashMap<String, Lane>()
     private val lock = Any()
 
-    /** Number of slots where at least one lane delivered energy. */
-    var activeSlots: Long = 0L
+    /**
+     * Number of slots where at least one lane delivered energy.
+     *
+     * P1-S #5 (audit 2026-09-16): @Volatile for lock-free diagnostics, but
+     * every WRITE happens under [lock] — [lane] and [reset] used to be
+     * `@Synchronized` on `this` while [onFrame] / [drainSlot] used [lock], so
+     * a reset could interleave with the producer's read-modify-write of this
+     * counter (and two different monitors protected the same
+     * [lanes] / [Lane.pending] state — a real data race, not a style issue).
+     * ONE monitor now guards ALL mutable state.
+     */
+    @Volatile var activeSlots: Long = 0L
         private set
 
     /** Last slot's total far-end energy (sum of squares, int16 scale). */
@@ -64,9 +77,8 @@ class FarEndMixer(
     private var loggedDrops = 0L
 
     /** Ensure a far-end lane exists. Idempotent; not required before [onFrame]. */
-    @Synchronized
     fun lane(id: String) {
-        lanes.getOrPut(id) { Lane() }
+        synchronized(lock) { lanes.getOrPut(id) { Lane() } }
     }
 
     /**
@@ -143,23 +155,29 @@ class FarEndMixer(
             }
         }
         for (s in out) energy += (s * s).toDouble()
-        lastSlotEnergy = energy
-        if (energy > ACTIVE_ENERGY_FLOOR) activeSlots++
+        // P1-S #5: the diagnostic counters move back under [lock] so a
+        // concurrent [reset] cannot lose an increment (read-modify-write on a
+        // @Volatile is not atomic).
+        synchronized(lock) {
+            lastSlotEnergy = energy
+            if (energy > ACTIVE_ENERGY_FLOOR) activeSlots++
+        }
         return out
     }
 
     /** Drop all lane state (mode switch / reset). */
-    @Synchronized
     fun reset() {
-        for (lane in lanes.values) {
-            lane.pending.clear()
-            lane.pendingSamples = 0
-            lane.carry = null
-            lane.carryOffset = 0
-            lane.carryLen = 0
+        synchronized(lock) {
+            for (lane in lanes.values) {
+                lane.pending.clear()
+                lane.pendingSamples = 0
+                lane.carry = null
+                lane.carryOffset = 0
+                lane.carryLen = 0
+            }
+            activeSlots = 0
+            lastSlotEnergy = 0.0
         }
-        activeSlots = 0
-        lastSlotEnergy = 0.0
     }
 
     private companion object {

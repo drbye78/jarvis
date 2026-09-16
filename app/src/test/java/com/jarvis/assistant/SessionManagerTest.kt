@@ -15,8 +15,11 @@ import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.model.LlmChunk
 import com.jarvis.assistant.model.ToolCall
 import com.jarvis.assistant.model.ToolDefinition
+import com.jarvis.assistant.session.SessionEvent
 import com.jarvis.assistant.session.SessionManager
 import com.jarvis.assistant.session.SessionStateMachine
+import com.jarvis.assistant.session.TurnActivity
+import com.jarvis.assistant.session.TurnEvent
 import com.jarvis.assistant.speech.asr.AsrEvent
 import com.jarvis.assistant.speech.asr.AsrStream
 import com.jarvis.assistant.speech.asr.StreamingAsrClient
@@ -36,6 +39,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -44,8 +48,11 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import timber.log.Timber
 import java.util.concurrent.CopyOnWriteArrayList
 
 // ---------------------------------------------------------------------------
@@ -758,13 +765,11 @@ class SessionManagerTest {
             // The CURRENT session's failure still surfaces.
             h.manager.reportFailure(2, "сбой текущей сессии")
             assertEquals(1, errors)
-            // P3.2: the ErrorOccurred reset now travels through the FIFO
-            // machine-event lane (apply-time guards), so its application is
-            // asynchronous on the single consumer — wait for the drain rather
-            // than racing it (a bounded wait, per AGENTS.md).
-            withTimeout(5_000) {
-                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
-            }
+            // P1-S: the guard + the ErrorOccurred transition are ONE synchronous
+            // call on this thread (no event lane, no consumer, no launch hop),
+            // so the reset is observable the instant reportFailure returns —
+            // asserting it directly (rather than polling a supposedly async
+            // drain) is what pins that contract.
             assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
         } finally {
             h.shutdown()
@@ -785,14 +790,18 @@ class SessionManagerTest {
             // Cancellation alone emits nothing; cancelAll must explicitly and
             // safely bring the machine back to IDLE.
             h.manager.cancelAll()
-            // The Cancelled transition is scope-launched on Dispatchers.Default
-            // (and the cancelled turn's finish(LlmDone) races it from another
-            // pool thread) — a single yield() on the test thread cannot observe
-            // either. Poll with a budget, the file's own idiom for async states.
-            withTimeout(5_000) {
-                while (h.stateMachine.currentState() != AssistantState.IDLE) delay(20)
-            }
+            // P1-S: the seq bump happens INSIDE [controlLock] and the Cancelled
+            // apply is a synchronous call on this thread — no launch hop, no
+            // consumer queue. The dying turn's trailing finish() (LlmDone) now
+            // carries the superseded seq, so it is dropped and can neither
+            // precede nor undo this reset: IDLE holds, not merely arrives.
             assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
+            delay(300) // let the cancelled turn's teardown + trailing terminals run
+            assertEquals(
+                "a superseded turn's late terminal event moved the machine",
+                AssistantState.IDLE,
+                h.stateMachine.currentState(),
+            )
         } finally {
             h.shutdown()
         }
@@ -1514,6 +1523,16 @@ class SessionManagerProactiveTest {
             val h = Harness(
                 ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Ок."), LlmChunk.Done))),
             )
+            // The state PATH is what this test is really about: the proactive
+            // utterance must drain through the SAME terminal a normal turn uses
+            // (SPEAKING → IDLE) and only then open the window. A collector on
+            // the machine's flow makes that observable (P1-S #9: the assertion
+            // this replaces was `assertTrue(true)`).
+            val path = CopyOnWriteArrayList<AssistantState>()
+            val watcher = h.scope.launch {
+                h.stateMachine.state.collect { path.add(it) }
+            }
+            delay(50) // let the watcher subscribe before anything moves
             try {
                 assertTrue(h.manager.speakProactively(suggestion))
                 withTimeout(5_000) {
@@ -1527,9 +1546,50 @@ class SessionManagerProactiveTest {
                 }
                 assertEquals("proactive", h.dao.rows.last().name)
                 assertEquals(suggestion, h.dao.rows.last().content)
-                // …and the drain landed through the normal SPEAKING → IDLE edge.
-                assertTrue(true)
+                // …and the drain landed through the normal SPEAKING → IDLE edge
+                // (no SPEAKING → FOLLOW_UP_WINDOW shortcut, no window before the
+                // audio actually drained).
+                // P1-S (conflation fix): the terminal applies LlmDone (→ IDLE)
+                // and FollowUpWindowOpened (→ FOLLOW_UP_WINDOW) back-to-back
+                // with NO suspension between them, so a StateFlow collector may
+                // legitimately CONFLATE the intermediate IDLE (and under load
+                // even the SPEAKING leg) — an exact 4-element path list is not
+                // observable and hangs `while (path.size < 4)`. What the flow
+                // CAN honestly prove: every observed state rides the legal
+                // proactive path in order (a subsequence of it), the run starts
+                // from IDLE, and the window is the final observation. Reaching
+                // FOLLOW_UP_WINDOW AT ALL (asserted above via currentState())
+                // already pins the SPEAKING → IDLE leg: SessionTransitions has
+                // no SPEAKING → FOLLOW_UP_WINDOW edge, so any shortcut would
+                // have been rejected by the machine and the state wait above
+                // would have timed out instead.
+                withTimeout(5_000) {
+                    while (!path.contains(AssistantState.FOLLOW_UP_WINDOW)) delay(20)
+                }
+                val observed = path.toList()
+                assertEquals(
+                    "proactive path must start from IDLE",
+                    AssistantState.IDLE,
+                    observed.first(),
+                )
+                assertTrue(
+                    "observed states must ride the legal proactive path in order: $observed",
+                    observed.isSubsequenceOf(
+                        listOf(
+                            AssistantState.IDLE,
+                            AssistantState.SPEAKING,
+                            AssistantState.IDLE,
+                            AssistantState.FOLLOW_UP_WINDOW,
+                        ),
+                    ),
+                )
+                assertEquals(
+                    "the window must be observed exactly once, at the end: $observed",
+                    1,
+                    observed.count { it == AssistantState.FOLLOW_UP_WINDOW },
+                )
             } finally {
+                watcher.cancel()
                 h.shutdown()
             }
         }
@@ -1545,6 +1605,15 @@ class SessionManagerProactiveTest {
         } finally {
             h.shutdown()
         }
+    }
+
+    /** `this` is a subsequence of [superset] (order-preserving, gaps allowed). */
+    private fun <T> List<T>.isSubsequenceOf(superset: List<T>): Boolean {
+        var i = 0
+        for (candidate in superset) {
+            if (i < size && this[i] == candidate) i++
+        }
+        return i == size
     }
 }
 
@@ -1947,9 +2016,10 @@ class SessionManagerAuditFixTest {
                 while (h.stateMachine.currentState() != AssistantState.FOLLOW_UP_WINDOW) delay(20)
             }
 
-            // Barge-in: bumps the seq (0 → 1) AND asynchronously cancels the
-            // collector — the exact interleaving the in-lock seq gate and the
-            // onset re-check exist for.
+            // Barge-in: bumps the seq (0 → 1) and — under the same monitor —
+            // cancels the windowJob that parents the collector; the collector's
+            // own teardown coroutines then run. The exact interleaving the
+            // in-lock seq gate and the onset re-check exist for.
             h.manager.startSession()
             withTimeout(5_000) { while (h.asr.streams.isEmpty()) delay(20) }
 
@@ -1969,5 +2039,328 @@ class SessionManagerAuditFixTest {
         } finally {
             h.shutdown()
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// P1-S (audit 2026-09-16): event provenance + guarded terminal effects
+// ---------------------------------------------------------------------------
+
+/**
+ * Player that counts flush() calls — the observable for fix #2: a stale
+ * session's late failure must NOT flush the LIVE session's playback.
+ * Completes nothing (like [GatedPlayer]): a turn parked in the LLM is what
+ * these tests want, and flush-counting needs no real audio.
+ */
+class FlushCountingPlayer : TtsPlayer {
+    val flushes = java.util.concurrent.atomic.AtomicInteger(0)
+
+    override fun play(pcm: Flow<ByteArray>): Deferred<Unit> =
+        kotlinx.coroutines.CompletableDeferred<Unit>()
+
+    override fun flush() {
+        flushes.incrementAndGet()
+    }
+
+    override fun release() {}
+}
+
+/**
+ * White-box regressions for locked decision 1 (REMEDIATION/audit P1-S #1):
+ * every TurnRunner → SessionManager event carries the SEQ OF THE TURN that
+ * emitted it, and the manager validates it at apply time. Before the fix the
+ * guard read the manager's OWN current seq, so it was a tautology and any
+ * straggler event from a superseded turn moved the shared machine.
+ *
+ * [SessionManager.applyTurnEvent] is the exact seam production uses (the
+ * turnRunner wiring is a one-liner over it). A straggler cannot be forced
+ * end-to-end — a superseded turn's coroutine is cancelled and stops emitting —
+ * so these tests inject through the seam, which is the only honest way to
+ * prove the guard fires (precedent: maybeOpenFollowUpWindow's white-box
+ * seq-guard tests).
+ *
+ * The same provenance rule covers the two SHARED UI STATE wires
+ * ([SessionManager.publishPartial] / [SessionManager.publishActivity]): a
+ * draining turn may not rewrite — or blank — what the live session shows.
+ */
+class SessionEventProvenanceTest {
+
+    private suspend fun awaitState(h: Harness, expected: AssistantState) {
+        withTimeout(5_000) {
+            while (h.stateMachine.currentState() != expected) delay(10)
+        }
+    }
+
+    /** Open a session and wait until its ASR stream exists (index [streamIndex]). */
+    private suspend fun startSessionAndWaitStream(h: Harness, streamIndex: Int): FakeAsrStream {
+        h.manager.startSession()
+        withTimeout(5_000) {
+            while (h.asr.streams.size <= streamIndex) delay(20)
+        }
+        return h.asr.streams[streamIndex].also { it.awaitEvents() }
+    }
+
+    @Test
+    fun `stale turn events are dropped and never move the live machine`() = runBlocking {
+        val h = Harness(ScriptedLlm(mutableListOf()))
+        try {
+            // Two sessions: turn 1 is superseded by turn 2 (LISTENING), whose
+            // live partial transcript is the canary for "did the machine lane
+            // belong to me".
+            startSessionAndWaitStream(h, 0)
+            val live = startSessionAndWaitStream(h, 1)
+            awaitState(h, AssistantState.LISTENING)
+            live.emitPartial("живой текст")
+            withTimeout(5_000) {
+                while (h.manager.partialTranscript.value != "живой текст") delay(10)
+            }
+
+            // --- every one of these WOULD have applied before P1-S #1 ------
+            // LISTENING → THINKING
+            assertFalse(
+                "a superseded turn's SpeechCaptured must not be applied",
+                h.manager.applyTurnEvent(TurnEvent(1, SessionEvent.SpeechCaptured)),
+            )
+            assertEquals(AssistantState.LISTENING, h.stateMachine.currentState())
+            // LISTENING → IDLE (would also end the live session's window)
+            assertFalse(
+                "a superseded turn's NoSpeech must not be applied",
+                h.manager.applyTurnEvent(TurnEvent(1, SessionEvent.NoSpeech)),
+            )
+            assertEquals(AssistantState.LISTENING, h.stateMachine.currentState())
+            assertEquals("живой текст", h.manager.partialTranscript.value)
+
+            // --- positive controls: the SAME events with the live turn's id -
+            assertTrue(h.manager.applyTurnEvent(TurnEvent(2, SessionEvent.SpeechCaptured)))
+            awaitState(h, AssistantState.THINKING)
+            assertFalse(h.manager.applyTurnEvent(TurnEvent(1, SessionEvent.PlaybackStarted)))
+            assertEquals(AssistantState.THINKING, h.stateMachine.currentState())
+            assertTrue(h.manager.applyTurnEvent(TurnEvent(2, SessionEvent.PlaybackStarted)))
+            awaitState(h, AssistantState.SPEAKING)
+            assertFalse(h.manager.applyTurnEvent(TurnEvent(1, SessionEvent.LlmStarted)))
+            assertEquals(AssistantState.SPEAKING, h.stateMachine.currentState())
+            assertTrue(h.manager.applyTurnEvent(TurnEvent(2, SessionEvent.LlmStarted)))
+            awaitState(h, AssistantState.THINKING)
+            // The live partial is the manager's own state; dropped events and
+            // machine transitions must not touch it.
+            assertEquals("живой текст", h.manager.partialTranscript.value)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    /**
+     * P1-S #2: reportFailure's side effects (player flush, transcript and
+     * activity clears, error voice) belong to the session that OWNS the
+     * machine. A late failure from a superseded turn must leave a live
+     * THINKING turn's playback, status label and state alone.
+     */
+    @Test
+    fun `stale failure leaves the live session's playback transcript and label alone`() = runBlocking {
+        val player = FlushCountingPlayer()
+        val h = Harness(
+            ScriptedLlm(mutableListOf()),
+            llmOverride = HangingLlm(), // park both turns in THINKING
+            playerOverride = player,
+        )
+        try {
+            var errors = 0
+            h.manager.setOnError { errors++ }
+
+            // Turn 1 reaches THINKING, then the user barges in: turn 2 owns the
+            // machine (seq 2) and is THINKING with a live activity label.
+            startSessionAndWaitStream(h, 0).emitFinal("первый запрос")
+            awaitState(h, AssistantState.THINKING)
+            val live = startSessionAndWaitStream(h, 1)
+            live.emitFinal("второй запрос")
+            awaitState(h, AssistantState.THINKING)
+            withTimeout(5_000) {
+                while (h.manager.turnActivity.value == null) delay(10)
+            }
+            val flushesAtStaleCall = player.flushes.get()
+
+            h.manager.reportFailure(1, "поздний сбой") // stale id → fully dropped
+
+            assertEquals(
+                "a stale failure must not flush the live session's playback",
+                flushesAtStaleCall,
+                player.flushes.get(),
+            )
+            assertEquals(AssistantState.THINKING, h.stateMachine.currentState())
+            assertNotNull("a stale failure must not wipe the live activity label", h.manager.turnActivity.value)
+            assertEquals("a stale failure must not speak the error voice", 0, errors)
+
+            // Positive control: the SAME call with the live id is the machine's
+            // terminal — flush + clears + IDLE + error voice.
+            h.manager.reportFailure(2, "сбой живого сеанса")
+            assertEquals(flushesAtStaleCall + 1, player.flushes.get())
+            assertEquals(AssistantState.IDLE, h.stateMachine.currentState())
+            assertNull(h.manager.turnActivity.value)
+            assertEquals("", h.manager.partialTranscript.value)
+            assertEquals(1, errors)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    /**
+     * P1-S #1 must not regress FIXPLAN B's voice-stop contract: «стоп» in
+     * THINKING cancels the turn, goes IDLE, keeps the wake collector alive —
+     * and the superseded turn's later events are still provably inert.
+     */
+    @Test
+    fun `voice stop keeps its contract with the seq-stamped event shape`() = runBlocking {
+        val player = FlushCountingPlayer()
+        val h = Harness(
+            ScriptedLlm(mutableListOf()),
+            llmOverride = HangingLlm(),
+            playerOverride = player,
+        )
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            val first = startSessionAndWaitStream(h, 0)
+            first.emitFinal("долгий запрос")
+            awaitState(h, AssistantState.THINKING)
+            withTimeout(5_000) { while (h.manager.turnActivity.value == null) delay(10) }
+            val flushesBeforeStop = player.flushes.get()
+
+            h.wake.detections.emit(Detection.StopPhrase("стоп"))
+            awaitState(h, AssistantState.IDLE)
+            assertTrue(
+                "stop must flush the queued speech",
+                player.flushes.get() > flushesBeforeStop,
+            )
+            assertNull(h.manager.turnActivity.value)
+            assertTrue(
+                "voice stop must NOT disarm the wake collector (that is cancelAll) — " +
+                    "subscriptions=" + h.wake.detections.subscriptionCount.value,
+                h.wake.detections.subscriptionCount.value > 0,
+            )
+
+            // A NEW live session — seq 3, not 2: startSession made 1,
+            // stopActiveTurn's contract seq bump made 2, and the fresh
+            // startSession bumps AGAIN (supersede-first is unconditional).
+            val live = startSessionAndWaitStream(h, 1)
+            awaitState(h, AssistantState.LISTENING)
+            live.emitPartial("живой текст")
+            withTimeout(5_000) {
+                while (h.manager.partialTranscript.value != "живой текст") delay(10)
+            }
+            // Turn 1 is dead: its events stay inert even if they arrive now.
+            assertFalse(h.manager.applyTurnEvent(TurnEvent(1, SessionEvent.SpeechCaptured)))
+            assertFalse(h.manager.applyTurnEvent(TurnEvent(1, SessionEvent.NoSpeech)))
+            assertFalse(h.manager.applyTurnEvent(TurnEvent(1, SessionEvent.PlaybackStarted)))
+            // The stop bump's own seq (2) names no turn — equally inert.
+            assertFalse(h.manager.applyTurnEvent(TurnEvent(2, SessionEvent.SpeechCaptured)))
+            assertEquals(AssistantState.LISTENING, h.stateMachine.currentState())
+            assertEquals("живой текст", h.manager.partialTranscript.value)
+            assertTrue(h.manager.applyTurnEvent(TurnEvent(3, SessionEvent.SpeechCaptured)))
+            awaitState(h, AssistantState.THINKING)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    /**
+     * P1-S #4 (+8): the matched keyword is USER SPEECH CONTENT, so it may be
+     * logged at DEBUG only — FileLoggingTree persists INFO+ to disk in release
+     * (AGENTS.md). Pins the level, not just the current call site.
+     */
+    @Test
+    fun `stop-phrase keyword is logged at DEBUG never at INFO or above`() = runBlocking {
+        val captured = CopyOnWriteArrayList<Pair<Int, String>>()
+        val tree = object : Timber.Tree() {
+            override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
+                captured.add(priority to message)
+            }
+        }
+        Timber.plant(tree)
+        try {
+            val h = Harness(ScriptedLlm(mutableListOf()))
+            try {
+                h.manager.startListening()
+                h.wake.awaitSubscribed()
+                // IDLE/LISTENING: the gate passes the detection, the router
+                // ignores it — the one path that fires the keyword log without
+                // a live turn.
+                h.wake.detections.emit(Detection.StopPhrase("стоп"))
+                withTimeout(5_000) {
+                    while (captured.none { it.second.contains("стоп") }) delay(20)
+                }
+                val contentBearing = captured.filter { it.second.contains("стоп") }
+                assertTrue(
+                    "keyword content leaked into INFO+ (persisted to disk): " +
+                        contentBearing.filter { it.first >= PRI_INFO }.map { it.second },
+                    contentBearing.all { it.first <= PRI_DEBUG },
+                )
+            } finally {
+                h.shutdown()
+            }
+        } finally {
+            Timber.uproot(tree)
+        }
+    }
+
+    /**
+     * P1-S #1 EXTENDED (accepted decision): [SessionManager.publishPartial] and
+     * [SessionManager.publishActivity] used to be handed to TurnRunner UNGATED,
+     * so a draining turn could blank the live partial transcript (its final `""`
+     * is the worst case) or set/clear the live session's activity pill. Both
+     * take the turn id now — stale must be a COMPLETE no-op (return false, state
+     * untouched), and the live turn must still be able to write and clear.
+     */
+    @Test
+    fun `a superseded turn cannot rewrite or blank the live partial and pill`() = runBlocking {
+        val h = Harness(ScriptedLlm(mutableListOf()), llmOverride = HangingLlm())
+        try {
+            // Turn 2 owns the machine (LISTENING) with a live partial; turn 1 is
+            // superseded and dead.
+            startSessionAndWaitStream(h, 0)
+            val live = startSessionAndWaitStream(h, 1)
+            awaitState(h, AssistantState.LISTENING)
+            live.emitPartial("живой текст")
+            withTimeout(5_000) {
+                while (h.manager.partialTranscript.value != "живой текст") delay(10)
+            }
+
+            assertFalse(
+                "a stale turn's partial must not land",
+                h.manager.publishPartial(1, "чужой текст"),
+            )
+            assertFalse(
+                "a stale turn's CLEARING partial must not blank the live one",
+                h.manager.publishPartial(1, ""),
+            )
+            assertEquals("живой текст", h.manager.partialTranscript.value)
+            assertFalse(
+                "a stale turn must not label the live session",
+                h.manager.publishActivity(1, TurnActivity.Thinking),
+            )
+            assertNull(h.manager.turnActivity.value)
+
+            // Positive controls: the identical calls with the LIVE id land.
+            assertTrue(h.manager.publishPartial(2, "живой текст 2"))
+            assertEquals("живой текст 2", h.manager.partialTranscript.value)
+            assertTrue(h.manager.publishActivity(2, TurnActivity.Thinking))
+            assertEquals(TurnActivity.Thinking, h.manager.turnActivity.value)
+            assertTrue(h.manager.publishActivity(2, TurnActivity.ToolRunning("setAlarm")))
+            assertEquals(TurnActivity.ToolRunning("setAlarm"), h.manager.turnActivity.value)
+            assertTrue("the live turn must still be able to clear its own pill", h.manager.publishActivity(2, null))
+            assertNull(h.manager.turnActivity.value)
+
+            // And a stale CLEAR of a pill the live session just set is dropped.
+            assertTrue(h.manager.publishActivity(2, TurnActivity.Thinking))
+            assertFalse(h.manager.publishActivity(1, null))
+            assertEquals(TurnActivity.Thinking, h.manager.turnActivity.value)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    private companion object {
+        // android.util.Log priorities, inlined (unit tests stub the Log class).
+        const val PRI_DEBUG = 3
+        const val PRI_INFO = 4
     }
 }

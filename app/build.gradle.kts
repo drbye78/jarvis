@@ -27,28 +27,46 @@ android {
         // No backward compat below it is claimed or needed.
         minSdk = 29
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.2.1"
+        versionCode = 6
+        versionName = "0.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
 
-    signingConfigs {
-        create("release") {
-            storeFile = file(localProps.getProperty("RELEASE_STORE_FILE", "release.keystore"))
+    // Release signing is OPTIONAL (audit P1-B#2). The keystore exists only on the
+    // maintainer's machine; configuring it unconditionally produced a
+    // signing config with EMPTY passwords, so `:app:assembleRelease` could never
+    // package anywhere else. Now the config is created only when local.properties
+    // supplies a real, existing keystore plus all three secret fields; otherwise
+    // the release build is unsigned — R8/proguard still run, which is exactly what
+    // CI needs to validate the shrinker and the keep rules.
+    val releaseKeystoreFile = localProps.getProperty("RELEASE_STORE_FILE", "")
+        .takeIf { it.isNotBlank() }
+        ?.let { file(it) }
+        ?.takeIf { it.isFile }
+    val releaseSigningReady = releaseKeystoreFile != null &&
+        listOf("RELEASE_STORE_PASSWORD", "RELEASE_KEY_ALIAS", "RELEASE_KEY_PASSWORD")
+            .all { localProps.getProperty(it, "").isNotBlank() }
+
+    val releaseSigningConfig = if (releaseSigningReady) {
+        signingConfigs.create("release") {
+            storeFile = releaseKeystoreFile
             storePassword = localProps.getProperty("RELEASE_STORE_PASSWORD", "")
             keyAlias = localProps.getProperty("RELEASE_KEY_ALIAS", "")
             keyPassword = localProps.getProperty("RELEASE_KEY_PASSWORD", "")
         }
+    } else {
+        null
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
+            // Null in CI / on fresh clones → AGP emits app-release-unsigned.apk.
+            releaseSigningConfig?.let { signingConfig = it }
         }
     }
 
@@ -91,10 +109,18 @@ kotlin {
 // COGNITIVE_PLAN 0.6: static analysis. buildUponDefaultConfig + the focused
 // config/detekt/detekt.yml; the checked-in baseline absorbs legacy findings
 // so every NEW violation fails the build. detekt-formatting = ktlint rules.
+//
+// audit P1-B#1 / decision 5: autoCorrect MUST stay false. With it on, the CI
+// gate (`:app:detekt`) silently REWROTE fixable ktlint violations and passed —
+// a cosmetic gate that never reported the formatting debt it was supposed to
+// police. Corrections are now reported as failures; a one-off local pass
+// (flip true → run → flip back) is the documented way to clear a backlog.
+// config/detekt/detekt.yml's `formatting.autoCorrect` is false for the same
+// reason (rule-set level flag wins for the ktlint rules).
 detekt {
     buildUponDefaultConfig = true
     parallel = true
-    autoCorrect = true // P5.1: formatting rules re-enabled; ktlint fixes apply in place
+    autoCorrect = false
     config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
     baseline = file("$rootDir/config/detekt/baseline.xml")
 }

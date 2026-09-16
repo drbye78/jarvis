@@ -18,12 +18,44 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
 
 class TokenManagerTest {
 
     private lateinit var server: MockWebServer
+
+    /**
+     * Captures what the log lane would persist. `FileLoggingTree` writes the
+     * formatted message AND `Log.getStackTraceString(t)` of an attached
+     * throwable, so [rendered] rebuilds both halves — a leak in EITHER is a
+     * leak on disk.
+     */
+    private class CapturingTree : Timber.Tree() {
+        data class Line(val priority: Int, val message: String, val throwable: Throwable?)
+
+        val lines = mutableListOf<Line>()
+
+        override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
+            synchronized(lines) { lines.add(Line(priority, message, t)) }
+        }
+
+        /** Everything a reader of the log file would actually see. */
+        fun rendered(): String = buildString {
+            for (line in lines) {
+                append(line.priority).append(' ').append(line.message).append('\n')
+                var cause: Throwable? = line.throwable
+                while (cause != null) {
+                    append(cause.javaClass.name).append(": ").append(cause.message).append('\n')
+                    cause.stackTrace.forEach { append("    at ").append(it).append('\n') }
+                    cause = cause.cause
+                }
+            }
+        }
+    }
+
+    private val tree = CapturingTree()
 
     @Before
     fun setUp() {
@@ -33,6 +65,7 @@ class TokenManagerTest {
 
     @After
     fun tearDown() {
+        Timber.uprootAll()
         server.shutdown()
     }
 
@@ -42,6 +75,32 @@ class TokenManagerTest {
         JarvisConfig(oauthEndpoint = server.url("/oauth").toString()),
         vault,
     ) { _ -> "test-client" to "test-secret" }
+
+    /**
+     * The leak contract of audit decision #11, stated as a CHAIN property.
+     *
+     * On device (assertions off) the sanitized failure is rethrown with NO
+     * cause at all. In unit tests the JVM runs with -ea, which switches
+     * kotlinx-coroutines into debug mode: `withContext` then rethrows a
+     * stack-trace-recovery COPY whose cause is the original sanitized failure
+     * (`_COROUTINE._BOUNDARY` frames) — so `cause == null` is unsatisfiable
+     * in tests even though the device behavior is exact. The copy is harmless
+     * (same sanitized message); what must NEVER be reachable anywhere in the
+     * chain is the raw serialization exception, whose message quotes the
+     * response body. Every legitimate link is the sanitizer's own
+     * RuntimeException, so pinning the class of every link pins the property.
+     */
+    private fun assertSanitizedChain(error: Throwable) {
+        var link: Throwable? = error
+        while (link != null) {
+            assertTrue(
+                "chain link must be the sanitizer's own RuntimeException, " +
+                    "got ${link.javaClass.name}: ${link.message}",
+                link.javaClass == RuntimeException::class.java,
+            )
+            link = link.cause
+        }
+    }
 
     @Test
     fun `malformed oauth 200 body never leaks into exception message`() = runBlocking {
@@ -80,6 +139,106 @@ class TokenManagerTest {
         val message = error!!.message!!
         assertTrue(message.contains("HTTP 401"))
         assertFalse(message.contains("leak-me"))
+    }
+
+    /**
+     * Audit decision #11. `kotlinx.serialization` exception messages quote the
+     * input they tripped on — measured on the project's 1.8.1: a truncated body
+     * comes back as `JsonDecodingException: … JSON input:
+     * {"access_token":"Bearer sk-…` — so keeping the CAUSE while sanitizing the
+     * message leaks anyway (callers log turns with `Timber.e(e, …)` and
+     * FileLoggingTree persists it). The rethrow must therefore carry NO cause.
+     */
+    @Test
+    fun `truncated oauth body is rethrown without a cause at all`() = runBlocking {
+        val leaky = """{"access_token":"Bearer sk-SUPER-SECRET-MATERIAL", "expires_in":"""
+        server.enqueue(MockResponse().setResponseCode(200).setBody(leaky))
+
+        val error = runCatching { manager().getGigaChatToken() }.exceptionOrNull()
+
+        assertTrue("expected a RuntimeException", error is RuntimeException)
+        assertSanitizedChain(error!!)
+        val message = error.message!!
+        assertTrue(message.contains("not valid JSON"))
+        assertTrue(message.contains("HTTP 200"))
+        assertTrue("cause TYPE must still travel inside the message: $message",
+            message.contains("JsonDecodingException"))
+        assertFalse(message.contains("SUPER-SECRET"))
+        assertFalse(message.contains("access_token"))
+        assertFalse(message.contains("JSON input"))
+    }
+
+    @Test
+    fun `object-typed access_token is rejected without echoing the response`() = runBlocking {
+        // Well-formed JSON, wrong shape: `jsonPrimitive` raises here, and the
+        // same sanitizer has to cover it.
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"access_token":{"inner":"LEAKED-TOKEN-OBJECT"},"expires_in":3600}""")
+        )
+
+        val error = runCatching { manager().getGigaChatToken() }.exceptionOrNull()
+
+        assertSanitizedChain(error!!)
+        val message = error.message!!
+        assertTrue("unexpected message: $message", message.contains("unexpected 'access_token' type"))
+        assertTrue(message.contains("IllegalArgumentException"))
+        assertFalse(message.contains("LEAKED-TOKEN-OBJECT"))
+    }
+
+    @Test
+    fun `nothing reaching the log lane carries oauth response bytes`() = runBlocking {
+        Timber.uprootAll()
+        Timber.plant(tree)
+        val leaky = """{"access_token":"Bearer sk-SUPER-SECRET-MATERIAL", "expires_in":"""
+        server.enqueue(MockResponse().setResponseCode(200).setBody(leaky))
+        runCatching { manager().getGigaChatToken() }.exceptionOrNull()
+
+        val errors = tree.lines.filter { it.priority == 6 }
+        assertTrue("the rejection must be logged at ERROR", errors.isNotEmpty())
+        assertTrue(
+            "the log line keeps the diagnosis (status + length + cause class) without the body",
+            errors.any {
+                it.message.contains("HTTP 200") &&
+                    it.message.contains("unparseable body") &&
+                    it.message.contains("JsonDecodingException")
+            },
+        )
+        assertTrue(
+            "no throwable may ride along: its message embeds the response",
+            tree.lines.all { it.throwable == null },
+        )
+        val rendered = tree.rendered()
+        assertFalse("leaked into the persisted log:\n$rendered", rendered.contains("SUPER-SECRET"))
+        assertFalse(rendered.contains("expires_in"))
+    }
+
+    @Test
+    fun `an unparseable expiry shape degrades to the fallback window and stays clean`() = runBlocking {
+        Timber.uprootAll()
+        Timber.plant(tree)
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"access_token":"tok-shape","expires_in":{"leak":"LEAK-EXPIRY-7"}}""")
+        )
+        val vault = InMemoryVault()
+        val tm = manager(vault)
+
+        // A bad expiry hint must not kill a usable token (audit #14 behavior),
+        // and must not carry the offending element into message or log.
+        assertEquals("tok-shape", tm.getGigaChatToken())
+        val expiry = vault.getString(SecretVault.KEY_GIGACHAT_EXPIRY)!!.toLong()
+        val now = System.currentTimeMillis()
+        assertTrue(
+            "expected the conservative fallback window, got +${expiry - now} ms",
+            expiry in (now + 4 * 60 * 1000L)..(now + 6 * 60 * 1000L),
+        )
+        val rendered = tree.rendered()
+        assertFalse("leaked into the persisted log:\n$rendered", rendered.contains("LEAK-EXPIRY-7"))
+        assertTrue(
+            "the degradation must still be visible in the log",
+            tree.lines.any { it.priority == 5 && it.message.contains("fallback window") },
+        )
     }
 
     @Test
@@ -135,7 +294,7 @@ class TokenManagerTest {
             OkHttpClient(),
             JarvisConfig(oauthEndpoint = server.url("/oauth").toString()),
             vault,
-        ) { _ -> "test-client" to "test-secret" }
+    ) { _ -> "test-client" to "test-secret" }
 
         assertEquals("t-no-expiry", tm.getGigaChatToken())
 

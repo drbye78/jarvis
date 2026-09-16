@@ -1,6 +1,7 @@
 package com.jarvis.assistant
 
 import com.jarvis.assistant.audio.AudioPipeline
+import com.jarvis.assistant.audio.aec.NlmsEchoCanceller
 import com.jarvis.assistant.contracts.AudioSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -214,6 +215,53 @@ class AudioPipelineTest {
             source.reads.get() in 105..125,
         )
         p.release()
+    }
+
+    @Test
+    fun `short HAL reads are pacing, not producer failures`() = runBlocking {
+        // P1-S #6(c) (audit 2026-09-16): a short-but-positive AudioRecord read
+        // used to hit NlmsEchoCanceller's require(size == 320) and throw into
+        // the generic catch below — each short frame COUNTED as a producer
+        // failure (100 ms backoff each; 50 in a row = give up = deaf until
+        // the 15-min watchdog). A short read is now zero-padded in place:
+        // full-rate throughput, no failure count, a dedicated diagnostic
+        // counter instead.
+        val canceller = NlmsEchoCanceller(tailMs = 32)
+        val source = ShortReadSource()
+        val p = AudioPipeline(scope, source, preRollMs = 400, echoCanceller = canceller)
+
+        val received = AtomicInteger()
+        val collector = scope.launch {
+            p.frames.collect { f ->
+                if (f.size != 320) error("pipeline delivered a ${f.size}-sample frame")
+                received.incrementAndGet()
+            }
+        }
+        p.start()
+        // The OLD code could deliver ~1 frame per 100 ms of backoff; 100+
+        // frames inside the give-up window (≈5 s) with no failure counted
+        // proves short reads ride through as pacing.
+        awaitUntil(timeoutMs = 4_000) { received.get() >= 100 }
+        assertFalse("short reads must never drive the give-up counter", p.hasGivenUp())
+        assertTrue(p.isRunning())
+        assertTrue(
+            "normalized frames are counted for diagnostics",
+            canceller.irregularFrameCount >= 100L,
+        )
+
+        p.release()
+        collector.cancel()
+    }
+}
+
+/** Source whose HAL delivers short-but-positive frames (e.g. 300 of 320). */
+private class ShortReadSource : AudioSource {
+    val reads = AtomicInteger()
+    override fun start() = Unit
+    override fun stop() = Unit
+    override fun read(): ShortArray {
+        reads.incrementAndGet()
+        return ShortArray(300) { (it % 7 - 3).toShort() }
     }
 }
 

@@ -1,13 +1,21 @@
 package com.jarvis.assistant.util
 
 import okhttp3.OkHttpClient
+import java.net.Socket
+import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import java.security.SecureRandom
 import java.security.cert.CertificateException
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import javax.net.ssl.ExtendedSSLSession
+import javax.net.ssl.SNIServerName
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLEngine
+import javax.net.ssl.SSLSession
+import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509ExtendedTrustManager
 import javax.net.ssl.X509TrustManager
 
 /**
@@ -18,10 +26,22 @@ import javax.net.ssl.X509TrustManager
  * Sber-facing HTTPS/gRPC call fails with
  * `SSLHandshakeException: Trust anchor for certification path not found`.
  *
- * The composite trust manager below VALIDATES EVERYTHING: it tries the
- * system trust store first and falls back to the bundled Минцифры CAs only
- * when the system rejects the chain. No validation is ever skipped, and the
- * fallback accepts ONLY chains signed by the two bundled CAs.
+ * ## The bundled anchors are HOST-SCOPED (audit decision #4)
+ *
+ * [compositeTrustManager] — the one every client installs — is a
+ * [SberHostScopedTrustManager] wrapper: the Минцифры fallback is reachable
+ * ONLY for peers whose handshake host is `sber.ru` / `*.sber.ru` /
+ * `sberbank.ru` / `*.sberbank.ru`. Every other host (including the
+ * user-configurable base URL of [com.jarvis.assistant.llm.OpenAiCompatClient],
+ * which shares this OkHttp client) is validated STRICTLY against the platform
+ * trust store, so a Минцифry-issued cert is never a valid credential for an
+ * unrelated endpoint. No validation is ever skipped on any path, and a
+ * rejection propagates (no cross-branch fallback).
+ *
+ * Hostname↔certificate binding is untouched: JSSE endpoint identification /
+ * OkHttp's hostname verifier still match the peer certificate against the
+ * requested host; this class only decides WHICH anchor set may validate the
+ * chain.
  *
  * The certificates are the official ones published for public download at
  * https://gu-st.ru (Госуслуги / Минцифры), embedded verbatim so the code
@@ -29,6 +49,18 @@ import javax.net.ssl.X509TrustManager
  * the fresh files from the same page (the sub CA expires 2027-03).
  */
 object SberTrust {
+
+    /**
+     * Apex domains whose endpoints legitimately chain to the bundled
+     * Минцифры hierarchy. Covers every default Sber target in
+     * [com.jarvis.assistant.config.JarvisConfig]:
+     * `ngw.devices.sberbank.ru` (OAuth), `gigachat.devices.sberbank.ru`
+     * (GigaChat) and `smartspeech.sber.ru` (Salute Speech gRPC).
+     */
+    private val SBER_APEX_DOMAINS = listOf("sber.ru", "sberbank.ru")
+
+    /** `javax.net.ssl.SNIServerName.SNI_HOST_NAME` (the constant is absent from the API-34 stubs). */
+    private const val SNI_HOST_NAME_TYPE = 0
 
     private val RUSSIAN_ROOT_PEM = """
 -----BEGIN CERTIFICATE-----
@@ -135,11 +167,93 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
     }
 
     /**
-     * System CAs first, bundled Минцифры CAs as the fallback. Both rejections
-     * propagate as CertificateException — an untrusted chain is still an
-     * untrusted chain.
+     * Is [host] one of the Sber domains allowed to use the bundled Минцифры
+     * anchors? Matching is label-exact: `sber.ru` and `sberbank.ru` themselves
+     * plus any subdomain (`*.sber.ru`, `*.sberbank.ru`), case-insensitive,
+     * tolerant of a trailing root dot. Look-alikes are NOT matches
+     * (`notsber.ru`, `sber.ru.attacker.com`, `sberbank.ru.evil.net`), and an
+     * IP literal / null / blank host is never a Sber host.
      */
-    fun compositeTrustManager(): X509TrustManager {
+    fun isSberHost(host: String?): Boolean {
+        if (host.isNullOrBlank()) return false
+        val normalized = host.trim().trimEnd('.').lowercase()
+        if (normalized.isEmpty() || isIpLiteral(normalized)) return false
+        return SBER_APEX_DOMAINS.any { apex ->
+            normalized == apex || normalized.endsWith(".$apex")
+        }
+    }
+
+    /**
+     * Purely textual IPv4/IPv6 test — deliberately NOT
+     * `InetAddress.getByName(...)`: that would put a reverse-DNS lookup (or a
+     * blocking resolution) inside the TLS handshake path, and the policy for an
+     * unresolvable host is "non-Sber" anyway.
+     */
+    internal fun isIpLiteral(host: String): Boolean {
+        val bare = host.removeSurrounding("[")
+        if (bare.indexOf(':') >= 0) return true // IPv6 (also covers zone ids)
+        var groups = 1
+        for (ch in bare) {
+            when {
+                ch == '.' -> groups++
+                ch in '0'..'9' -> Unit
+                else -> return false
+            }
+        }
+        return groups == 4 // dotted quad
+    }
+
+    /**
+     * Peer host of an in-flight handshake, in order of trustworthiness:
+     * 1. the SNI server name the CLIENT requested — authoritative, and the only
+     *    reliable one on the socket path: measured on JDK 17 with OkHttp's shape
+     *    (`sslSocketFactory.createSocket()` + `connect(InetSocketAddress)` +
+     *    SNI in SSLParameters), `handshakeSession.peerHost` reports the NUMERIC
+     *    address while SNI carries the real host name;
+     * 2. `handshakeSession.peerHost`, but only when it is a DNS name;
+     * 3. the [SSLEngine] creation-time peer host;
+     * 4. null — which every caller treats as "host unknown ⇒ NON-Sber".
+     */
+    internal fun peerHostName(session: SSLSession?, enginePeerHost: String? = null): String? {
+        // Every accessor here is inside runCatching: OEM JSSE implementations
+        // (Conscrypt included) are entitled to throw IllegalStateException /
+        // UnsupportedOperationException from the extended session getters, and
+        // a throw from THIS helper would abort the handshake of every client
+        // that installs the wrapper. Degrading to the next signal — and
+        // ultimately to "host unknown ⇒ platform-only" — is always safer.
+        if (session is ExtendedSSLSession) {
+            val sni = runCatching {
+                session.requestedServerNames
+                    .orEmpty()
+                    .lastOrNull { it.type == SNI_HOST_NAME_TYPE }
+                    ?.let { name: SNIServerName ->
+                        String(name.encoded, StandardCharsets.US_ASCII).trim()
+                    }
+            }.getOrNull()
+            if (!sni.isNullOrBlank()) return sni
+        }
+        runCatching {
+            session?.peerHost?.takeIf { it.isNotBlank() && !isIpLiteral(it) }
+        }.getOrNull()?.let { return it }
+        return enginePeerHost?.takeIf { it.isNotBlank() && !isIpLiteral(it) }
+    }
+
+    /** [SSLEngine] handshake session, or null when the platform will not expose it. */
+    internal fun handshakeSessionOf(engine: SSLEngine?): SSLSession? =
+        engine?.let { runCatching { it.handshakeSession }.getOrNull() }
+
+    /** [SSLSocket] handshake session, or null for a plain socket / unavailable session. */
+    internal fun handshakeSessionOf(socket: Socket?): SSLSession? =
+        (socket as? SSLSocket)?.let { runCatching { it.handshakeSession }.getOrNull() }
+
+    /**
+     * UNscoped composite: system CAs first, bundled Минцифры CAs as the
+     * fallback, for EVERY host. This is the pre-decision-#4 shape and is far
+     * too permissive to install directly — it exists only as the Sber-host
+     * branch inside [compositeTrustManager]. Call sites that installed this
+     * globally are exactly the vulnerability the wrapper closes.
+     */
+    fun sberCompositeTrustManager(): X509TrustManager {
         val system = systemTrustManager()
         val russian = russianTrustManager()
         return object : X509TrustManager {
@@ -164,10 +278,123 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
         }
     }
 
+    /**
+     * The trust manager every Sber-facing client installs (AppGraph's shared
+     * OkHttp client, the gRPC SSLContext, [withSberTrust]).
+     *
+     * HOST-SCOPED (audit decision #4): the returned manager validates Sber
+     * hosts against [sberCompositeTrustManager] (system first, Минцифры
+     * fallback) and every other host strictly against the platform default
+     * trust manager. Signature and semantics-as-a-drop-in are unchanged from
+     * the pre-fix version, so existing wiring compiles and works untouched;
+     * only the trust ANCHOR SET is now narrowed per peer host.
+     */
+    fun compositeTrustManager(): X509TrustManager = SberHostScopedTrustManager(
+        sberAnchors = sberCompositeTrustManager(),
+        platformAnchors = systemTrustManager(),
+    )
+
     fun sslContext(): SSLContext =
         SSLContext.getInstance("TLS").apply {
+            // The wrapper is an X509ExtendedTrustManager, so JSSE hands it the
+            // live handshake (engine/socket) and the host scoping applies to
+            // raw-socket consumers too (the gRPC channel builds on this
+            // factory without being handed a trust manager).
             init(null, arrayOf(compositeTrustManager()), SecureRandom())
         }
+}
+
+/**
+ * Host-scoped routing in front of two anchor sets (audit decision #4).
+ *
+ * Routing table for `checkServerTrusted`:
+ *
+ * | peer host                                    | anchors used        |
+ * |----------------------------------------------|---------------------|
+ * | `sber.ru` / `*.sber.ru` / `sberbank.ru` / `*.sberbank.ru` | [sberAnchors] (system first + Минцифры fallback) |
+ * | any other DNS name                           | [platformAnchors] ONLY |
+ * | unknown / unresolvable / IP literal / no handshake context | [platformAnchors] ONLY |
+ *
+ * Rejections propagate from the selected branch and NOTHING else is tried:
+ * a Sber-host failure never falls back to platform-only "helpfully", and a
+ * non-Sber host is never offered the Минцифры anchors even when the platform
+ * store rejects the chain. The no-context overloads (and
+ * [checkServerTrusted] with neither engine nor socket) have no peer host to
+ * scope on, so by policy they take the platform-only branch — unknown host ⇒
+ * non-Sber.
+ */
+class SberHostScopedTrustManager(
+    private val sberAnchors: X509TrustManager,
+    private val platformAnchors: X509TrustManager,
+) : X509ExtendedTrustManager() {
+
+    private fun anchorsFor(host: String?): X509TrustManager =
+        if (SberTrust.isSberHost(host)) sberAnchors else platformAnchors
+
+    // --- server certificates (the only direction this app actually uses) ----
+
+    override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+        // No handshake, hence no peer host: unknown ⇒ NON-Sber.
+        platformAnchors.checkServerTrusted(chain, authType)
+    }
+
+    override fun checkServerTrusted(
+        chain: Array<X509Certificate>,
+        authType: String,
+        engine: SSLEngine?,
+    ) {
+        val host = SberTrust.peerHostName(
+            SberTrust.handshakeSessionOf(engine),
+            engine?.peerHost,
+        )
+        anchorsFor(host).checkServerTrusted(chain, authType)
+    }
+
+    override fun checkServerTrusted(
+        chain: Array<X509Certificate>,
+        authType: String,
+        socket: Socket?,
+    ) {
+        val host = SberTrust.peerHostName(SberTrust.handshakeSessionOf(socket))
+        anchorsFor(host).checkServerTrusted(chain, authType)
+    }
+
+    // --- client certificates: same scope, same policy ----------------------
+
+    override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
+        platformAnchors.checkClientTrusted(chain, authType)
+    }
+
+    override fun checkClientTrusted(
+        chain: Array<X509Certificate>,
+        authType: String,
+        engine: SSLEngine?,
+    ) {
+        val host = SberTrust.peerHostName(
+            SberTrust.handshakeSessionOf(engine),
+            engine?.peerHost,
+        )
+        anchorsFor(host).checkClientTrusted(chain, authType)
+    }
+
+    override fun checkClientTrusted(
+        chain: Array<X509Certificate>,
+        authType: String,
+        socket: Socket?,
+    ) {
+        val host = SberTrust.peerHostName(SberTrust.handshakeSessionOf(socket))
+        anchorsFor(host).checkClientTrusted(chain, authType)
+    }
+
+    /**
+     * Union of both anchor sets, deduplicated. Both branches' roots have to be
+     * listed: consumers (OkHttp's chain cleaner, gRPC) use this to order
+     * chains BEFORE any peer host is known, and a missing issuer there breaks
+     * path building for legitimately trusted hosts without ever weakening the
+     * per-host decision made above.
+     */
+    override fun getAcceptedIssuers(): Array<X509Certificate> =
+        (sberAnchors.acceptedIssuers + platformAnchors.acceptedIssuers).distinct().toTypedArray()
 }
 
 /** Harden any OkHttp client that talks to the Sber endpoints. */

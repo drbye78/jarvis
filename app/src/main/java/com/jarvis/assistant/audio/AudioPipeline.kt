@@ -225,6 +225,17 @@ class AudioPipeline(
         ensureProducer()
     }
 
+    /**
+     * Stops capture. [producerLock] serializes the job/lifecycle HAND-OFF
+     * against [start] and [release] — it deliberately does NOT and MUST NOT
+     * cover the producer's blocking `source.read()` (that would let a stalled
+     * HAL park a binder/main-thread caller).
+     *
+     * P1-S #4: read-vs-teardown safety is the SOURCE's job — [AudioRecordSource]
+     * counts in-flight native reads and defers the record release to the last
+     * one, so [AudioSource.stop] returns promptly without ever pulling the
+     * record out from under a reader.
+     */
     fun stop() {
         synchronized(producerLock) {
             if (!running) return

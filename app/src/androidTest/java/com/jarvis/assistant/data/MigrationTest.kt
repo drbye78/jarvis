@@ -1,27 +1,34 @@
 package com.jarvis.assistant.data
 
-import androidx.room.migration.Migration
 import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Verifies that the v2 → v3 migration preserves all user data.
+ * Room migration harness for the COLLAPSED pre-release schema (audit
+ * remediation decision #2).
  *
- * The v2 schema has `messages` and `scheduled_alerts` tables. v3 is schema-
- * identical; the migration is a no-op whose sole purpose is to prevent
- * `fallbackToDestructiveMigration()` from silently wiping the database.
+ * The old suite — v2→v3 no-op preservation, v3→v4 cognitive tables + FTS
+ * trigger sync, and the rest of the v1→v7 chain — was deleted together with
+ * the migrations themselves: there is nothing to migrate to or from. What
+ * remains (this file) is:
  *
- * This test:
- *  1. Creates a v2 database with sample rows in both tables.
- *  2. Runs migration to v3 via [AppDatabase.MIGRATION_2_3].
- *  3. Validates that every inserted row survived intact.
+ *  1. [currentSchema_v1_createsAndRoundTrips] — asserts the exported 1.json
+ *     actually creates a usable database: message + alert rows insert and
+ *     read back. This validates the schema export the build generates at
+ *     `app/schemas/com.jarvis.assistant.data.AppDatabase/1.json`.
+ *  2. A marked-up TEMPLATE (commented, at the bottom) for the FIRST real
+ *     migration 1→2, ready to uncomment + adapt when the schema is bumped —
+ *     it reuses the same [MigrationTestHelper] rule and insert helpers, so
+ *     the harness is genuinely reusable rather than re-derived then.
+ *
+ * A fresh-install DB from Room's own builder is additionally smoke-tested in
+ * [DatabaseSmokeTest]; this file is about the EXPORTED schema JSON.
  */
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
@@ -32,10 +39,10 @@ class MigrationTest {
     val helper = MigrationTestHelper(
         InstrumentationRegistry.getInstrumentation(),
         AppDatabase::class.java,
-        emptyList(),                 // no auto-migrations
+        emptyList(),                 // no migrations exist post-collapse
     )
 
-    // ----- helpers ----------------------------------------------------------
+    // ----- helpers (reused by the future 1→2 template) ----------------------
 
     private fun SupportSQLiteDatabase.insertMessage(
         role: String = "user",
@@ -64,16 +71,22 @@ class MigrationTest {
         return id
     }
 
+    /**
+     * `anchorTimeMillis` is a BASELINE column of the v1 schema (the old
+     * v6→v7 ALTER that added it to migrated installs is gone with the
+     * collapsed chain), so every raw insert must name it.
+     */
     private fun SupportSQLiteDatabase.insertAlert(
         kind: String = ScheduledAlertEntity.KIND_ALARM,
         label: String = "подъём",
         triggerAtMillis: Long = 1_700_000_000_000L,
+        anchorTimeMillis: Long = triggerAtMillis,
         repeatDaily: Boolean = false,
         enabled: Boolean = true,
     ): Int {
         execSQL(
-            "INSERT INTO scheduled_alerts (kind, label, triggerAtMillis, repeatDaily, enabled) " +
-                "VALUES ('$kind', '$label', $triggerAtMillis, ${if (repeatDaily) 1 else 0}, ${if (enabled) 1 else 0})",
+            "INSERT INTO scheduled_alerts (kind, label, triggerAtMillis, anchorTimeMillis, repeatDaily, enabled) " +
+                "VALUES ('$kind', '$label', $triggerAtMillis, $anchorTimeMillis, ${if (repeatDaily) 1 else 0}, ${if (enabled) 1 else 0})",
         )
         val cursor = query("SELECT last_insert_rowid()", emptyArray<Any?>())
         cursor.moveToFirst()
@@ -84,204 +97,86 @@ class MigrationTest {
 
     // ----- tests ------------------------------------------------------------
 
+    /**
+     * Create/open round-trip scaffold: the exported 1.json creates every
+     * table and the two core alert/message rows read back intact.
+     */
     @Test
-    fun migrate2To3_preservesMessagesAndAlerts() {
-        // 1. Create a v2 database with data.
-        var db = helper.createDatabase(TEST_DB_NAME, version = 2).apply {
-            insertMessage(role = "user", content = "Какая погода?")
-            insertMessage(role = "assistant", content = "Сегодня +15 °C")
-            insertAlert(kind = ScheduledAlertEntity.KIND_ALARM, label = "подъём", triggerAtMillis = 1_700_003_600_000L, repeatDaily = true)
-            insertAlert(kind = ScheduledAlertEntity.KIND_TIMER, label = "чай", triggerAtMillis = 1_700_000_300_000L)
-        }
-        db.close()
+    fun currentSchema_v1_createsAndRoundTrips() {
+        val db = helper.createDatabase(TEST_DB_NAME, version = 1)
+        db.insertMessage(role = "user", content = "Какая погода?")
+        db.insertMessage(role = "assistant", content = "Сегодня +15 °C", name = "get_weather")
+        db.insertAlert(kind = ScheduledAlertEntity.KIND_ALARM, label = "подъём", triggerAtMillis = 1_700_003_600_000L, repeatDaily = true)
+        db.insertAlert(kind = ScheduledAlertEntity.KIND_TIMER, label = "чай", triggerAtMillis = 1_700_000_300_000L)
 
-        // 2. Run the migration to v3.
-        db = helper.runMigrationsAndValidate(
-            TEST_DB_NAME,
-            version = 3,
-            validateDroppedTables = true,
-            AppDatabase.MIGRATION_2_3,
-        )
-
-        // 3. Verify messages survived.
-        val msgCursor = db.query("SELECT COUNT(*) FROM messages", emptyArray<Any?>())
+        val msgCursor = db.query("SELECT role, content FROM messages ORDER BY id ASC", emptyArray<Any?>())
+        assertEquals(2, countRows(db, "messages"))
         msgCursor.moveToFirst()
-        assertEquals("messages row count", 2, msgCursor.getInt(0))
+        assertEquals("user", msgCursor.getString(0))
+        assertEquals("Какая погода?", msgCursor.getString(1))
+        msgCursor.moveToNext()
+        assertEquals("assistant", msgCursor.getString(0))
         msgCursor.close()
 
-        // Verify message content round-trips.
-        val msgContent = db.query("SELECT role, content FROM messages ORDER BY id ASC", emptyArray<Any?>())
-        msgContent.moveToFirst()
-        assertEquals("user", msgContent.getString(0))
-        assertEquals("Какая погода?", msgContent.getString(1))
-        msgContent.moveToNext()
-        assertEquals("assistant", msgContent.getString(0))
-        assertEquals("Сегодня +15 °C", msgContent.getString(1))
-        msgContent.close()
-
-        // 4. Verify alerts survived.
-        val alertCursor = db.query("SELECT COUNT(*) FROM scheduled_alerts", emptyArray<Any?>())
+        assertEquals(2, countRows(db, "scheduled_alerts"))
+        val alertCursor = db.query("SELECT kind, label, anchorTimeMillis FROM scheduled_alerts ORDER BY id ASC", emptyArray<Any?>())
         alertCursor.moveToFirst()
-        assertEquals("scheduled_alerts row count", 2, alertCursor.getInt(0))
+        assertEquals(ScheduledAlertEntity.KIND_ALARM, alertCursor.getString(0))
+        assertEquals("подъём", alertCursor.getString(1))
+        assertEquals(1_700_003_600_000L, alertCursor.getLong(2))
         alertCursor.close()
 
-        val alertDetail = db.query("SELECT kind, label, repeatDaily FROM scheduled_alerts ORDER BY id ASC", emptyArray<Any?>())
-        alertDetail.moveToFirst()
-        assertEquals(ScheduledAlertEntity.KIND_ALARM, alertDetail.getString(0))
-        assertEquals("подъём", alertDetail.getString(1))
-        assertEquals(1, alertDetail.getInt(2))  // repeatDaily
-        alertDetail.moveToNext()
-        assertEquals(ScheduledAlertEntity.KIND_TIMER, alertDetail.getString(0))
-        assertEquals("чай", alertDetail.getString(1))
-        assertEquals(0, alertDetail.getInt(2))  // repeatDaily
-        alertDetail.close()
+        // The collapse must be complete: the cognitive tables are part of v1.
+        assertEquals(0, countRows(db, "user_facts"))
+        assertEquals(0, countRows(db, "command_events"))
+        assertEquals(0, countRows(db, "fact_vectors"))
 
         db.close()
     }
 
-    @Test
-    fun migration2To3_noOp_doesNotDropTables() {
-        // Even with no rows, the migration must not destroy the schema.
-        var db = helper.createDatabase(TEST_DB_NAME, version = 2)
-        db.close()
-
-        db = helper.runMigrationsAndValidate(
-            TEST_DB_NAME,
-            version = 3,
-            validateDroppedTables = true,   // would throw if any table was dropped
-            AppDatabase.MIGRATION_2_3,
-        )
-
-        // Both tables should still exist and be queryable.
-        val msgCursor = db.query("SELECT COUNT(*) FROM messages", emptyArray<Any?>())
-        msgCursor.moveToFirst()
-        assertEquals(0, msgCursor.getInt(0))
-        msgCursor.close()
-
-        val alertCursor = db.query("SELECT COUNT(*) FROM scheduled_alerts", emptyArray<Any?>())
-        alertCursor.moveToFirst()
-        assertEquals(0, alertCursor.getInt(0))
-        alertCursor.close()
-
-        db.close()
-    }
-
-    @Test
-    fun migration2To3_preservesFullMessageColumns() {
-        // Verify that nullable columns (name, toolCallsJson, toolCallId) survive.
-        var db = helper.createDatabase(TEST_DB_NAME, version = 2).apply {
-            insertMessage(
-                role = "assistant",
-                content = "Вызов инструмента",
-                name = "get_weather",
-                toolCallsJson = """[{"id":"call_1","function":{"name":"get_weather"}}]""",
-                toolCallId = "call_1",
-            )
-        }
-        db.close()
-
-        db = helper.runMigrationsAndValidate(
-            TEST_DB_NAME,
-            version = 3,
-            validateDroppedTables = true,
-            AppDatabase.MIGRATION_2_3,
-        )
-
-        val cursor = db.query("SELECT name, toolCallsJson, toolCallId FROM messages WHERE id = 1", emptyArray<Any?>())
+    private fun countRows(db: SupportSQLiteDatabase, table: String): Int {
+        val cursor = db.query("SELECT COUNT(*) FROM $table", emptyArray<Any?>())
         cursor.moveToFirst()
-        assertEquals("get_weather", cursor.getString(0))
-        assertTrue(cursor.getString(1).contains("get_weather"))
-        assertEquals("call_1", cursor.getString(2))
+        val count = cursor.getInt(0)
         cursor.close()
-
-        db.close()
-    }
-
-    // ------------------------------------------------------------------
-    // COGNITIVE_PLAN 1.1: v3 → v4 (memory core). The migration must create
-    // the four cognitive tables WITHOUT touching messages/scheduled_alerts,
-    // and the FTS index must be queryable + trigger-synced on migrated
-    // installs (Room only creates the sync triggers at fresh-install time).
-    // ------------------------------------------------------------------
-
-    @Test
-    fun migrate3To4_createsCognitiveTables_andPreservesExistingData() {
-        // 1. Create a v3 database with data in both pre-existing tables.
-        var db = helper.createDatabase(TEST_DB_NAME, version = 3).apply {
-            insertMessage(role = "user", content = "меня зовут Алексей")
-            insertAlert(kind = ScheduledAlertEntity.KIND_ALARM, label = "подъём", triggerAtMillis = 1_700_003_600_000L)
-        }
-        db.close()
-
-        // 2. Migrate to v4 with full schema validation against 4.json.
-        db = helper.runMigrationsAndValidate(
-            TEST_DB_NAME,
-            version = 4,
-            validateDroppedTables = true,
-            AppDatabase.MIGRATION_3_4,
-        )
-
-        // 3. Pre-existing rows survive untouched.
-        val msgCursor = db.query("SELECT content FROM messages", emptyArray<Any?>())
-        msgCursor.moveToFirst()
-        assertEquals("меня зовут Алексей", msgCursor.getString(0))
-        msgCursor.close()
-
-        val alertCursor = db.query("SELECT COUNT(*) FROM scheduled_alerts", emptyArray<Any?>())
-        alertCursor.moveToFirst()
-        assertEquals(1, alertCursor.getInt(0))
-        alertCursor.close()
-
-        // 4. The FTS index works on the migrated DB and is kept in sync by
-        // the triggers (insert → search → update → stale value gone).
-        db.execSQL(
-            "INSERT INTO user_facts (factId, category, subject, predicate, value, valueNormalized, " +
-                "searchText, confidence, origin, status, supersedesId, contested, sensitive, " +
-                "sourceMessageId, createdAt, updatedAt, lastConfirmedAt, lastRecalledAt, recallCount) " +
-                "VALUES ('f-1', 'PREFERENCE', 'user', 'likes', 'фильмы Тарковского', 'фильмы тарковского', " +
-                "'user фильм тарковск preference', 0.9, 'EXPLICIT', 'ACTIVE', NULL, 0, 0, NULL, 1, 1, 1, NULL, 0)",
-        )
-        val ftsCursor = db.query(
-            "SELECT value FROM user_facts JOIN fact_fts ON user_facts.rowId = fact_fts.rowid " +
-                "WHERE fact_fts MATCH 'тарковск*'",
-            emptyArray<Any?>(),
-        )
-        assertTrue("FTS match must hit on a migrated install", ftsCursor.moveToFirst())
-        assertEquals("фильмы Тарковского", ftsCursor.getString(0))
-        ftsCursor.close()
-
-        // Trigger sync check: delete the fact → the FTS row must disappear too.
-        db.execSQL("DELETE FROM user_facts WHERE factId = 'f-1'")
-        val ftsAfter = db.query("SELECT COUNT(*) FROM fact_fts WHERE fact_fts MATCH 'тарковск*'", emptyArray<Any?>())
-        ftsAfter.moveToFirst()
-        assertEquals("FTS sync trigger must keep the index consistent", 0, ftsAfter.getInt(0))
-        ftsAfter.close()
-
-        // Queue + meta tables are usable.
-        db.execSQL("INSERT INTO extraction_queue (messageId, attempt, state, batchId, createdAt, updatedAt) VALUES (1, 0, 'PENDING', NULL, 1, 1)")
-        val qCursor = db.query("SELECT state FROM extraction_queue WHERE messageId = 1", emptyArray<Any?>())
-        qCursor.moveToFirst()
-        assertEquals("PENDING", qCursor.getString(0))
-        qCursor.close()
-
-        db.execSQL("INSERT INTO memory_meta (`key`, value) VALUES ('schemaRev', '4')")
-        val metaCursor = db.query("SELECT value FROM memory_meta WHERE `key` = 'schemaRev'", emptyArray<Any?>())
-        metaCursor.moveToFirst()
-        assertEquals("4", metaCursor.getString(0))
-        metaCursor.close()
-
-        db.close()
-    }
-
-    @Test
-    fun migration3To4_noData_stillValidates() {
-        helper.createDatabase(TEST_DB_NAME, version = 3).close()
-        val db = helper.runMigrationsAndValidate(
-            TEST_DB_NAME,
-            version = 4,
-            validateDroppedTables = true,
-            AppDatabase.MIGRATION_3_4,
-        )
-        db.close()
+        return count
     }
 }
+
+/*
+ * =====================================================================================
+ * TODO(next-schema-bump) — TEMPLATE for the first REAL migration (decision #2: pre-1.0
+ * bumps before launch may stay destructive; this is the harness for the first bump that
+ * must preserve data, e.g. the planned cognitive 1→2). To use:
+ *
+ *   1. Bump @Database(version = 2), add the migration
+ *        val MIGRATION_1_2 = object : Migration(1, 2) {
+ *            override fun migrate(db: SupportSQLiteDatabase) { /* DDL here */ }
+ *        }
+ *      to AppDatabase and register it via addMigrations(MIGRATION_1_2).
+ *   2. Re-export schemas (the build regenerates app/schemas/…/2.json).
+ *   3. Uncomment + adapt this test — the MigrationTestHelper rule and the
+ *      insertMessage/insertAlert helpers above are already reusable:
+ *
+ * @Test
+ * fun migrate1To2_preservesData_andValidatesAgainstExportedSchema() {
+ *     var db = helper.createDatabase(TEST_DB_NAME, version = 1).apply {
+ *         insertMessage(content = "важно")
+ *         insertAlert(label = "подъём", repeatDaily = true)
+ *     }
+ *     db.close()
+ *
+ *     db = helper.runMigrationsAndValidate(
+ *         TEST_DB_NAME,
+ *         version = 2,
+ *         validateDroppedTables = true,   // throws if the migration silently drops a table
+ *         AppDatabase.MIGRATION_1_2,
+ *     )
+ *
+ *     assertEquals(1, countRows(db, "messages"))
+ *     assertEquals(1, countRows(db, "scheduled_alerts"))
+ *     // …assert the NEW columns/tables the migration introduced…
+ *     db.close()
+ * }
+ * =====================================================================================
+ */

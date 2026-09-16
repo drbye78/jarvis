@@ -68,11 +68,16 @@ class SpeechFeedbackTest {
     }
 
     private class Gw : MediaGateway {
+        /** Gateway actions attempted — proves a cascade actually ran. */
+        var actions = 0
         override fun hasNotificationListenerAccess() = true
         override fun activeControllers(): List<MediaControllerHandle> = emptyList()
-        override fun dispatchMediaKey(keyCode: Int) = Unit
-        override fun openAppSearch(app: MediaAppInfo, query: String) = false
-        override fun launchApp(app: MediaAppInfo) = false
+        override fun dispatchMediaKey(keyCode: Int) { actions++ }
+        override fun openAppSearch(app: MediaAppInfo, query: String): Boolean {
+            actions++
+            return false
+        }
+        override fun launchApp(app: MediaAppInfo): Boolean { actions++; return false }
     }
 
     private fun recorder() = object : SpeechFeedback {
@@ -230,20 +235,51 @@ class SpeechFeedbackTest {
 
     @Test
     fun `player exception is swallowed`() = runTest {
+        val tts = FakeTts()
+        val player = FakePlayer().apply { playThrows = true }
+        val adapter = object : AudioFocusAdapter {
+            var abandons = 0
+            override fun requestDuckFocus() = true
+            override fun abandonFocus() { abandons++ }
+        }
+        val focus = AssistantAudioFocus(adapter)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val fb = TtsSpeechFeedback(
-            CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
-            FakeTts(),
-            FakePlayer().apply { playThrows = true },
+            scope,
+            tts,
+            player,
             { "Mila" },
+            focus,
         )
 
         fb.onCascadeStarted(predictedLong = true)
 
-        withTimeout(2_000) {
-            kotlinx.coroutines.delay(50) // let the unconfined job run
-        }
-        // Reached here without an unhandled exception crashing the test.
-        assertTrue(true)
+        // The contract is THREE observables, not "the test did not crash":
+        // (a) the phrase was actually synthesized and play() really threw —
+        //     FakePlayer records only on success, so an EMPTY played list is
+        //     the proof the throw path ran (a silent no-op would pass (c)
+        //     without ever exercising it);
+        // (b) the duck that was taken for the phrase was released by the
+        //     catch (focus.onTtsFlushed) — an un-balanced duck would leave
+        //     other audio permanently attenuated;
+        // (c) the failure stayed inside the child: the scope is Unconfined, so
+        //     the launch ran to completion INSIDE onCascadeStarted() on this
+        //     very thread — an exception that escaped the catch would have
+        //     propagated into the test before any assertion below, and the
+        //     scope would be left cancelled.
+        assertEquals(
+            "play() must have been reached and thrown (a skipped play means the catch was never exercised)",
+            1,
+            tts.spoken.size,
+        )
+        assertEquals("the throwing player must not have recorded a play", 0, player.played.size)
+        assertEquals("the duck must be released on the failure path", 1, adapter.abandons)
+        assertEquals(AssistantFocusState.IDLE, focus.state)
+        assertTrue(
+            "the scope must survive a swallowed player exception (an escaped one tears it down)",
+            scope.coroutineContext.job.isActive,
+        )
+        scope.cancel()
     }
 
     @Test
@@ -306,10 +342,30 @@ class SpeechFeedbackTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `None implementation is silent and safe`() {
-        SpeechFeedback.None.onCascadeStarted(predictedLong = true)
-        SpeechFeedback.None.onLaunchingPlayer("X")
-        // No crash, no output — the contract of a no-op.
-        assertTrue(true)
+    fun `None implementation is silent and safe`() = runTest {
+        // The contract of a no-op is observable in two directions, and both
+        // are asserted here instead of "we got here":
+        //  1. it never throws, whatever it is handed (labels come from tool
+        //     payloads the orchestrator cannot vet);
+        //  2. it is a DROP-IN the real cascade tolerates end-to-end — a
+        //     feedback that silently swallowed the cascade, or that the
+        //     orchestrator could not call, would fail this.
+        val outcome = runCatching {
+            SpeechFeedback.None.onCascadeStarted(predictedLong = true)
+            SpeechFeedback.None.onCascadeStarted(predictedLong = false)
+            SpeechFeedback.None.onLaunchingPlayer("Яндекс Музыка")
+            // Same cascade as the recorder tests above, with None wired in.
+            val gw = Gw()
+            orchestrator(SpeechFeedback.None, gw).playSearchQuery("Bohemian Rhapsody", null)
+            gw.actions
+        }
+        assertTrue(
+            "SpeechFeedback.None must never throw, got: ${outcome.exceptionOrNull()}",
+            outcome.isSuccess,
+        )
+        assertTrue(
+            "the cascade must still have driven the gateway while feedback was None",
+            outcome.getOrDefault(0) > 0,
+        )
     }
 }
