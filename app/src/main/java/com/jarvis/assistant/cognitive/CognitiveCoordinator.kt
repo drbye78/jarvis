@@ -42,6 +42,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -73,7 +75,7 @@ import java.util.concurrent.atomic.AtomicLong
 // of the app sees". All pure logic lives in separate, unit-tested classes
 // (FactRanker, HabitDetector, BehaviorArbiter, Summarizer, …); what remains
 // here is composition + fire-and-forget orchestration over the child scope.
-@Suppress("LargeClass")
+@Suppress("LargeClass", "TooManyFunctions")
 class CognitiveCoordinator(
     /**
      * P4.4: the former ~35 constructor params, grouped into [CognitiveDeps]
@@ -874,6 +876,9 @@ class CognitiveCoordinator(
      * built with is maintained; no engine recorded → no-op.
      */
     private suspend fun vectorMaintenance() {
+        // N7 backstop: a cloud-off transition that happened while the app was
+        // killed (or before this watch existed) must still be purged.
+        if (!cloudEnabled.value) purgeCloudVectors()
         val engineId = metaDao.get(MemoryMetaEntity.KEY_VECTORS_ENGINE) ?: return
         val engine = when (engineId) {
             EmbeddingEngine.LOCAL_ID -> localEmbedder
@@ -895,6 +900,46 @@ class CognitiveCoordinator(
             } catch (e: Exception) {
                 Timber.w(e, "Cognitive: vector top-up failed (resumes next night)")
             }
+        }
+    }
+
+    /**
+     * N7: when the user turns `memory.cloudEnabled` OFF, every CLOUD vector
+     * space must be deleted. The read gate in RecallPipeline already refuses to
+     * *use* them, but the rows (embeddings of user facts) otherwise stay on
+     * disk indefinitely. Deletes every engine space that is not the on-device
+     * LOCAL engine — this also catches stale/renamed cloud ids. Content-free log.
+     */
+    private suspend fun purgeCloudVectors() {
+        val engineIds = vectorDao.distinctEngineIds().filter { it != EmbeddingEngine.LOCAL_ID }
+        if (engineIds.isEmpty()) return
+        var removed = 0
+        engineIds.forEach { id ->
+            removed += vectorDao.countForEngine(id)
+            vectorDao.deleteForEngine(id)
+        }
+        Timber.i("Cognitive: purged %d cloud vector space(s), %d row(s)", engineIds.size, removed)
+    }
+
+    /**
+     * N7: purge CLOUD vector spaces the moment `memory.cloudEnabled` flips
+     * false. The nightly `vectorMaintenance` backstop only runs overnight, so a
+     * user who disables cloud expects the data gone now, not tomorrow.
+     */
+    fun startCloudPurgeWatch() {
+        scope.launch(CoroutineName("cognitive-cloud-purge")) {
+            cloudEnabled
+                .drop(1) // skip StateFlow's initial emission; the backstop covers cold start
+                .filter { !it }
+                .collect {
+                    try {
+                        purgeCloudVectors()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Timber.w(e, "Cognitive: cloud vector purge failed")
+                    }
+                }
         }
     }
 

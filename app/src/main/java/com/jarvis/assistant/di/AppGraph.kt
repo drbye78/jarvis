@@ -640,6 +640,8 @@ class AppGraph(
             // COGNITIVE_PLAN 2.3: the behaviour ticker (no-op while the
             // §12.4-1 switch is OFF).
             cognitiveCoordinator.startBehaviorLoop()
+            // N7: purge cloud vector spaces the moment memory.cloudEnabled flips false.
+            cognitiveCoordinator.startCloudPurgeWatch()
         } catch (e: Exception) {
             shutdown() // N11: tear down anything we built before the throw
             throw e

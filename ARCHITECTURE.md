@@ -431,7 +431,7 @@ configured by `gigaChatEndpoint` / the OpenAI-compatible base URL).
 
 ## Tests
 
-JVM unit suite (985 tests, all green; runs in CI on every push/PR):
+JVM unit suite (987 tests, all green; runs in CI on every push/PR):
 wire DTOs (incl. non-null user content), SSE parser (incl. spec multi-line
 assembly), state machine, sentence splitter, conversation windowing (incl.
 char-budget trim), alarm

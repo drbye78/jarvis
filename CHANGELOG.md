@@ -6,6 +6,17 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Fixed — REMEDIATION_PLAN N7: CLOUD vectors are purged when the memory cloud toggle is turned off
+- **Privacy:** `memory.cloudEnabled=false` previously only *stopped reading* cloud
+  vectors — the embeddings of user facts stayed in Room forever. Turning the switch
+  off now deletes every CLOUD vector space: a reactive watcher
+  (`CognitiveCoordinator.startCloudPurgeWatch()`, wired in `AppGraph.start()`) purges
+  the moment the setting flips false, and the nightly `vectorMaintenance()` backstop
+  covers a disable that happened while the app was killed. Every engine space other
+  than the on-device `LOCAL_ID` is removed, so stale/renamed cloud ids are caught too.
+  The log line is content-free (space/row counts only). Covered by the new
+  `CloudVectorPurgeTest` (live flip + cold-start backstop).
+
 ### Changed — P1 hardening (data & privacy)
 - **Room: single destructive-upgrade schema at v2 (pre-1.0)**: the pre-release
   migration chain is deleted and upgrades go through
