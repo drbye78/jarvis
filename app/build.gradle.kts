@@ -224,11 +224,27 @@ dependencies {
 //     JUnit assumptions in integration/LiveSecrets.kt when creds are absent;
 //   - :app:recordSaluteFixtures' main() exits 0 with a logged skip message.
 // The normal gate (testDebugUnitTest + assembleDebug) never invokes these
-// tasks, so CI stays green by construction.
+// tasks, but it DOES share src/test with the live smoke classes, so it has to
+// exclude them explicitly — the classpath, not the task name, decides what the
+// gate runs. See the unitTestTask.configure call below.
 
 afterEvaluate {
     // AGP owns the unit-test tasks; they exist (and are configured) by now.
     val unitTestTask = tasks.named("testDebugUnitTest", Test::class.java)
+
+    // The live tier lives in src/test, so it is compiled into the gate's
+    // testClassesDirs and collected by testDebugUnitTest. integration/LiveSecrets
+    // self-skips only when creds are ABSENT; with creds present (a gitignored
+    // local.secrets.properties or JARVIS_* env vars) the live smoke tests ran
+    // inside the gate and failed on the owner's machine on billing errors,
+    // turning "green suite" into a red one that had nothing to do with the
+    // change at hand. Exclude them by their shared naming convention, which
+    // also keeps the offline RecordedFixtureMappingTest in the gate. The
+    // dedicated :app:integrationTest task (include() below) remains the only
+    // place the live tier runs.
+    unitTestTask.configure {
+        exclude("**/*LiveSmokeTest*")
+    }
 
     tasks.register<Test>("integrationTest") {
         group = "verification"

@@ -5,7 +5,7 @@ Compact ramp-up for agents. Every line is something easy to miss.
 ## Build & verify
 - Single Gradle module `:app` (root `settings.gradle.kts` includes only `:app`). Use the wrapper: `./gradlew ...`.
 - Build APK: `./gradlew :app:assembleDebug`
-- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~1001 tests; refresh this count when you add a batch)
+- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~995 tests; refresh this count when you add a batch). The live Sber tier is EXCLUDED from this task (`app/build.gradle.kts`, `**/*LiveSmokeTest*`) — it runs only via `:app:integrationTest` and self-skips without credentials.
 - Single test class: `./gradlew :app:testDebugUnitTest --tests "com.jarvis.assistant.PorcupineDetectorTest"`
 - **Gate before claiming done:** `./gradlew :app:assembleDebug :app:testDebugUnitTest`
 - Instrumentation tests (`androidTest`) need a device/emulator; the gate above does not.

@@ -431,7 +431,10 @@ configured by `gigaChatEndpoint` / the OpenAI-compatible base URL).
 
 ## Tests
 
-JVM unit suite (1001 tests, all green; runs in CI on every push/PR):
+JVM unit suite (995 tests, all green; runs in CI on every push/PR). The live
+Sber smoke tier (`integration/**/*LiveSmokeTest`) shares `src/test` but is
+excluded from the gate task and runs only through `:app:integrationTest`,
+which self-skips when credentials are absent:
 wire DTOs (incl. non-null user content), SSE parser (incl. spec multi-line
 assembly), state machine, sentence splitter, conversation windowing (incl.
 char-budget trim), alarm
