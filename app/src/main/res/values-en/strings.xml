@@ -92,7 +92,7 @@
     <string name="settings_saved">Provider credentials saved</string>
 
     <!-- Settings: upfront credential validation (mandatory = Salute + GigaChat) -->
-    <string name="credentials_hint">Salute and GigaChat are the mandatory keys — they are validated as you type. The Picovoice key is only needed for the Porcupine engine and is not validated.</string>
+    <string name="credentials_hint">Salute and GigaChat are the mandatory keys — they are validated as you type. Sber\'s console issues a single authorization key (base64) — paste it into the secret field and the app splits it into the ID and secret for you. The Picovoice key is only needed for the Porcupine engine and is not validated.</string>
     <string name="credentials_check_button">Check credentials</string>
     <string name="credentials_checking">Checking credentials…</string>
     <string name="credentials_ok">Credentials are valid</string>

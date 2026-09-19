@@ -93,7 +93,7 @@
     <string name="settings_saved">Данные провайдеров сохранены</string>
 
     <!-- Settings: upfront credential validation (mandatory = Salute + GigaChat) -->
-    <string name="credentials_hint">Salute и GigaChat — обязательные ключи, они проверяются сразу при вводе. Ключ Picovoice нужен только для движка Porcupine и не проверяется.</string>
+    <string name="credentials_hint">Salute и GigaChat — обязательные ключи, они проверяются сразу при вводе. В консоли Sber выдаётся один ключ авторизации (base64) — вставьте его в поле секрета, приложение разделит его на ID и секрет само. Ключ Picovoice нужен только для движка Porcupine и не проверяется.</string>
     <string name="credentials_check_button">Проверить ключи</string>
     <string name="credentials_checking">Проверяю ключи…</string>
     <string name="credentials_ok">Ключи верны</string>
