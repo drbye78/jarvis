@@ -86,7 +86,7 @@ class SettingsLayoutTest {
             val doc = documents(file)
             val includes = doc.getElementsByTagName("include")
             for (i in 0 until includes.length) {
-                val ref = includes.item(i).attributes?.getNamedItemNS(androidNs, "layout")?.nodeValue
+                val ref = includes.item(i).attributes?.getNamedItem("layout")?.nodeValue
                     ?: continue
                 val name = ref.removePrefix("@layout/")
                 visit(File(dir, "$name.xml"))
@@ -145,9 +145,10 @@ class SettingsLayoutTest {
         val unsized = mutableListOf<String>()
         for (i in 0 until includes.length) {
             val attrs = includes.item(i).attributes
-            val ref = attrs.getNamedItemNS(androidNs, "layout")?.nodeValue ?: continue
+            val ref = attrs.getNamedItem("layout")?.nodeValue ?: continue
             val name = ref.removePrefix("@layout/")
             refs += name
+            // Sizing overrides ARE namespaced (android:layout_width/height).
             val width = attrs.getNamedItemNS(androidNs, "layout_width")?.nodeValue
             val height = attrs.getNamedItemNS(androidNs, "layout_height")?.nodeValue
             if (width.isNullOrBlank() || height.isNullOrBlank()) unsized += name

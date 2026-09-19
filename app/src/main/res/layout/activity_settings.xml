@@ -53,7 +53,7 @@
 
             <!-- A0) LLM PROVIDER (GigaChat default, any OpenAI-compatible endpoint) -->
             <include
-                android:layout="@layout/settings_card_llm_provider"
+                layout="@layout/settings_card_llm_provider"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
@@ -62,7 +62,7 @@
 
             <!-- A1) MUSIC: preferred default player -->
             <include
-                android:layout="@layout/settings_card_music"
+                layout="@layout/settings_card_music"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
@@ -70,7 +70,7 @@
 
             <!-- A) PROVIDER CREDENTIALS -->
             <include
-                android:layout="@layout/settings_card_credentials"
+                layout="@layout/settings_card_credentials"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
@@ -78,28 +78,28 @@
 
             <!-- B) WAKE WORD -->
             <include
-                android:layout="@layout/settings_card_wake_word"
+                layout="@layout/settings_card_wake_word"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 />
 
             <!-- AEC: Phase A (hardware) + Phase B (software), opt-in -->
             <include
-                android:layout="@layout/settings_card_aec"
+                layout="@layout/settings_card_aec"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 />
 
             <!-- Voice: TTS voice selection (applies live, no restart) -->
             <include
-                android:layout="@layout/settings_card_voice"
+                layout="@layout/settings_card_voice"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 />
 
             <!-- Follow-up window: continue the dialogue without the wake word -->
             <include
-                android:layout="@layout/settings_card_followup"
+                layout="@layout/settings_card_followup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 />
@@ -107,7 +107,7 @@
             <!-- COGNITIVE_PLAN 1.8: the «Память» card — §12.4: every cognitive
                  default is the initial value of a user-visible switch. -->
             <include
-                android:layout="@layout/settings_card_memory"
+                layout="@layout/settings_card_memory"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 />
@@ -115,7 +115,7 @@
             <!-- COGNITIVE_PLAN 2.6: the behaviour card (§12.4-1: the proactive
                  layer ships DEFAULT OFF; quiet hours + quota are user-tunable). -->
             <include
-                android:layout="@layout/settings_card_behavior"
+                layout="@layout/settings_card_behavior"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
