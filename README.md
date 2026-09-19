@@ -1,8 +1,8 @@
-# Jarvis — Voice Assistant for Android 11 / HarmonyOS 2.0+
+# Jarvis — Voice Assistant for Android 10 / HarmonyOS 2.0+
 
 [![CI](https://github.com/drbye78/jarvis/actions/workflows/ci.yml/badge.svg)](https://github.com/drbye78/jarvis/actions/workflows/ci.yml)
 
-> **Status: in active development (pre-1.0).** Version `0.2.0`. APIs, behavior, and on-device storage may change between releases.
+> **Status: in active development (pre-1.0).** Version `0.2.2`. APIs, behavior, and on-device storage may change between releases.
 
 Always-listening voice assistant for Android 10+ (minSdk 29) / HarmonyOS 2.0+ devices.
 The default build targets Russian (wake word «Джарвис», ASR/TTS language, UI); the
@@ -113,10 +113,14 @@ without any secrets. See RUNBOOK "Integration testing" for troubleshooting.
 
 ## Upgrading from pre-release builds
 
-Installs on schema v1 (the old `alarms` table, never exported) upgrade
-destructively: alarms and chat history are wiped once, in exchange for a
-non-crashing upgrade. v2→v3 is a no-op migration (identical schemas); real
-schema migrations start at v3→v4 (cognitive memory). The DB is currently at v7.
+Installs on any older schema version upgrade destructively: pre-1.0 has no
+backward compatibility, so the database is wiped and recreated from the current
+entities on first open (alarms and chat history included) in exchange for a
+non-crashing upgrade. The schema is now **v2** — the single coordinated
+Phase-2 bump (data indices/PKs/FKs, cognitive decay anchors, alert clock
+domains plus the `ring_sessions` table). The real, data-preserving migration
+chain starts at **v2→v3** if and when the schema freezes; both `1.json` and
+`2.json` are exported.
 
 ## Building a signed release APK
 

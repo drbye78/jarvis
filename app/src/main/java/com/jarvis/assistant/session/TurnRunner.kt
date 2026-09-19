@@ -222,8 +222,11 @@ class TurnRunner(
                     }
 
                     // COGNITIVE_PLAN 1.6: one PromptContext per turn; the
-                    // memory gather starts NOW so its (≤40 ms) cost hides
-                    // inside the LLM call's time-to-first-token (§7.2).
+                    // memory gather starts NOW so its (≤40 ms) cost overlaps
+                    // the pre-LLM prompt assembly (§7.2). F11: it is NOT
+                    // hidden inside the LLM's time-to-first-token — TTFT
+                    // begins once the request is on the wire. The CPU phases
+                    // run on Dispatchers.Default (CognitiveDeps).
                     val promptContext = buildPromptContext(outcome.text)
                     processLlm(sessionId, turn, promptContext)
                 }
@@ -423,9 +426,13 @@ class TurnRunner(
     /**
      * COGNITIVE_PLAN 1.6: per-turn prompt context. Built ONCE per turn; the
      * memory provider is a deferred STARTED here (the moment ASR finalizes —
-     * plan §7.2) and awaited by the composer on first use, so its ≤40 ms
-     * cost hides inside the LLM call's time-to-first-token. The deferred is
-     * idempotent across the tool passes (one DB snapshot per turn).
+     * plan §7.2) and awaited by the composer on first use. F11 correction:
+     * its ≤40 ms cost overlaps the PRE-LLM prompt assembly (composer render +
+     * request build), NOT the server's time-to-first-token — TTFT starts once
+     * the request is on the wire, so local work can never hide inside it. The
+     * CPU phases run on `Dispatchers.Default` (see `CognitiveDeps
+     * .cpuDispatcher`). The deferred is idempotent across the tool passes
+     * (one DB snapshot per turn).
      */
     private fun CoroutineScope.buildPromptContext(utterance: String): PromptContext {
         val hooks = cognitive

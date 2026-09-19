@@ -47,7 +47,7 @@ class FunctionRouterTest {
     }
 
     private class NoopArmer : AlertArmer {
-        override fun arm(id: Int, triggerAtMillis: Long, kind: String, label: String) {}
+        override fun arm(alert: ScheduledAlertEntity) {}
         override fun cancel(id: Int, kind: String) {}
     }
 

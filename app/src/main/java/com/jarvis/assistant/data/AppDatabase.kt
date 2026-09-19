@@ -16,22 +16,23 @@ import com.jarvis.assistant.cognitive.data.SessionSummaryEntity
 import com.jarvis.assistant.cognitive.data.UserFactEntity
 
 /**
- * Version 1 — the collapsed pre-release chain (audit remediation decision #2).
+ * Version 2 — the single coordinated schema bump (REMEDIATION_PLAN Phase 2).
  *
- * The product is pre-1.0 and no backward compatibility is kept, so the old
- * v1→v7 chain (one destructive v1→v2 step, a no-op v2→v3, the cognitive
- * table-creating v3→v4/v4→v5/v5→v6, and the v6→v7 `anchorTimeMillis` fix)
- * has been COLLAPSED: this annotation now declares the FULL current schema at
- * version 1, and every `Migration` constant is gone. Installed databases from
- * old versioned builds are wiped on first open — accepted by the owner.
+ * The pre-release v1→v7 chain was previously collapsed into version 1 with the
+ * full current schema and every `Migration` constant gone. Version 2 is the
+ * first *deliberate* post-collapse bump and it lands the data, cognitive and
+ * alarms lane schema changes TOGETHER (indices/PKs/FKs, fact decay anchors,
+ * alert clock domains + `ring_sessions`) — see REMEDIATION_PLAN §2. It is
+ * still destructive: pre-1.0 has no backward compatibility, so installed
+ * databases from any older version are wiped on first open (accepted).
  *
  * Schema policy going forward (AGENTS.md cognitive conventions still apply):
- *  - pre-release bumps may keep `fallbackToDestructiveMigration()`;
- *  - the first REAL data-preserving migration (the planned 1→2 cognitive
- *    bump path) adds an `AutoMigration`/`Migration` here, exports
- *    `app/schemas/com.jarvis.assistant.data.AppDatabase/2.json`, and gets a
- *    migration test in `androidTest/.../data/MigrationTest.kt` (a scaffold +
- *    template for exactly that already exists there);
+ *  - pre-release bumps keep the destructive fallback declared below;
+ *  - the first REAL data-preserving migration (the schema-freeze promise)
+ *    moves from **2→3** onward: it adds an `AutoMigration`/`Migration` here,
+ *    exports `app/schemas/com.jarvis.assistant.data.AppDatabase/3.json`, and
+ *    gets a migration test in `androidTest/.../data/MigrationTest.kt` (a
+ *    scaffold + template for exactly that already exists there);
  *  - DOWNGRADE (APK rollback / sideload / QA build): wipes destructively
  *    instead of crashing with Room's "Can't downgrade…" IllegalStateException.
  *
@@ -43,6 +44,7 @@ import com.jarvis.assistant.cognitive.data.UserFactEntity
     entities = [
         MessageEntity::class,
         ScheduledAlertEntity::class,
+        RingSessionEntity::class,
         UserFactEntity::class,
         com.jarvis.assistant.cognitive.data.FactFtsEntity::class,
         ExtractionQueueEntity::class,
@@ -55,7 +57,7 @@ import com.jarvis.assistant.cognitive.data.UserFactEntity
         EntityRefEntity::class,
         FactEntityLinkEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -63,6 +65,9 @@ abstract class AppDatabase : RoomDatabase() {
 
     /** Unified alert store accessor; name kept for cross-lane call-site parity. */
     abstract fun alarmDao(): AlertDao
+
+    /** Durable, process-independent ring state (REMEDIATION_PLAN Phase 2). */
+    abstract fun ringSessionDao(): RingSessionDao
 
     /** COGNITIVE_PLAN 1.1: memory core accessors. */
     abstract fun userFactDao(): com.jarvis.assistant.cognitive.data.UserFactDao
@@ -96,12 +101,15 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "jarvis.db",
                 )
-                    // Pre-release schema (decision #2): any version mismatch
-                    // wipes and recreates from the current entities instead
-                    // of crashing — on upgrade AND on downgrade (B5 rollback
-                    // safety kept from the v7 chain).
-                    .fallbackToDestructiveMigration()
-                    .fallbackToDestructiveMigrationOnDowngrade(true)
+                    // Pre-release schema: any version mismatch wipes and
+                    // recreates from the current entities instead of crashing.
+                    // The boolean form drops EVERY table found via
+                    // `sqlite_master` (not only the declared entities) and,
+                    // unlike the deprecated no-arg overload, also covers
+                    // downgrade — so the separate
+                    // `fallbackToDestructiveMigrationOnDowngrade(true)` call
+                    // is gone (REMEDIATION_PLAN Phase 2).
+                    .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }
             }

@@ -7,6 +7,7 @@ import com.jarvis.assistant.media.MediaGateway
 import com.jarvis.assistant.media.MusicAppCatalog
 import com.jarvis.assistant.media.MusicPlaybackOrchestrator
 import com.jarvis.assistant.media.NowPlaying
+import com.jarvis.assistant.media.TransportAction
 import com.jarvis.assistant.tools.MusicTools
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -49,11 +50,12 @@ class TransportToolsTest {
         var speed: Float? = null
         var queueItemId: Long? = null
         var seekFails = false
+        var playFails = false
 
         override fun snapshot(): NowPlaying = np
         override fun capabilities(): MediaCapabilities = caps
         override fun playFromSearch(query: String): Boolean = true
-        override fun play(): Boolean = true
+        override fun play(): Boolean = !playFails
         override fun pause(): Boolean = true
         override fun skipToNext(): Boolean = true
         override fun skipToPrevious(): Boolean = true
@@ -178,6 +180,13 @@ class TransportToolsTest {
         )
     }
 
+    @Test
+    fun `like fails open while the rating style is unknown`() {
+        // M-3: an unpublished PlaybackState reports RATING_NONE; refusing LIKE
+        // on that basis rejected the command before dispatch.
+        assertTrue(MusicPlaybackOrchestrator.TransportPolicy.likeAllowed(MediaCapabilities.UNKNOWN))
+    }
+
     // ------------------------------------------------------------------
     // Capability-gated dispatch with honest refusals
     // ------------------------------------------------------------------
@@ -224,7 +233,10 @@ class TransportToolsTest {
     }
 
     @Test
-    fun `seek without the bit is an honest refusal`() = runTest {
+    fun `seek without the bit is dispatched with low confidence`() = runTest {
+        // M-3: an absent capability bit no longer refuses the action. Players
+        // under-report their masks; dispatch anyway and say honestly that the
+        // support claim is missing.
         val handle = TransportHandle(
             caps = MediaCapabilities.fromActionMask(
                 MediaCapabilities.ACTION_PLAY or MediaCapabilities.ACTION_PAUSE,
@@ -234,10 +246,35 @@ class TransportToolsTest {
             MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.SEEK, deltaMs = 10_000),
             null,
         )
+        assertEquals(MusicPlaybackOrchestrator.Status.DISPATCHED, out.status)
+        assertEquals(100_000L, handle.seekTarget) // 90 s + 10 s — actually dispatched
+        assertFalse(out.detail.contains("перемотку"))
+        assertTrue(out.detail.contains("подтверждения нет"))
+    }
+
+    @Test
+    fun `toggle accepts either play or play pause bit`() {
+        // M-7: TOGGLE dispatches play() or pause() depending on state, so a
+        // player advertising only PLAY_PAUSE must not be refused.
+        val required = MusicPlaybackOrchestrator.TransportPolicy.requiredActions(
+            MusicPlaybackOrchestrator.Action.TOGGLE,
+        )
+        assertTrue(required.contains(TransportAction.PLAY))
+        assertTrue(required.contains(TransportAction.PLAY_PAUSE))
+    }
+
+    @Test
+    fun `play propagates a false dispatch result instead of faking success`() = runTest {
+        // M-4: Action.PLAY used to hardcode `true`, so an IPC failure was
+        // reported as "Команда отправлена".
+        val handle = TransportHandle(caps = fullMask())
+        handle.playFails = true
+        val out = orchestrator(handle).control(
+            MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.PLAY),
+            null,
+        )
         assertEquals(MusicPlaybackOrchestrator.Status.ERROR, out.status)
-        assertEquals("unsupported", out.strategy)
-        assertTrue(out.detail.contains("перемотку"))
-        assertEquals(null, handle.seekTarget) // never dispatched
+        assertEquals("dispatch_failed", out.strategy)
     }
 
     @Test

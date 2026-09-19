@@ -17,7 +17,15 @@ sealed class FiredResolution {
     data class OneShotDisabled(val kind: String) : FiredResolution()
 
     /** Daily row rolled forward — arm exactly [triggerAtMillis]. */
-    data class DailyRearmed(val triggerAtMillis: Long, val kind: String, val label: String) : FiredResolution()
+    data class DailyRearmed(
+        val id: Int,
+        val triggerAtMillis: Long,
+        val kind: String,
+        val label: String,
+        val clockDomain: String = ClockDomain.RTC,
+        val anchorElapsedMillis: Long = 0L,
+        val armedElapsedMillis: Long = 0L,
+    ) : FiredResolution()
 
     /** Nothing to do: row gone, already disabled, or already re-armed (the idempotency guard ran inside the transaction). */
     object NoOp : FiredResolution()
@@ -27,9 +35,18 @@ sealed class FiredResolution {
  * What the caller must arm after [AlertDao.applyEnable]: the exact values the
  * transaction persisted, or null when nothing was armed-worthy (row gone, or
  * an expired one-shot honestly persisted as disabled — the "lying switch"
- * fix must stay honest under concurrency).
+ * fix must stay honest under concurrency). The clock fields are copied from
+ * the persisted row so the armer keeps the row's clock domain.
  */
-data class AlertArmSpec(val id: Int, val triggerAtMillis: Long, val kind: String, val label: String)
+data class AlertArmSpec(
+    val id: Int,
+    val triggerAtMillis: Long,
+    val kind: String,
+    val label: String,
+    val clockDomain: String = ClockDomain.RTC,
+    val anchorElapsedMillis: Long = 0L,
+    val armedElapsedMillis: Long = 0L,
+)
 
 /**
  * CRUD + ATOMIC state transitions for the unified `scheduled_alerts` store
@@ -95,15 +112,38 @@ interface AlertDao {
             return null
         }
         update(alert.copy(triggerAtMillis = trigger, enabled = true))
-        return AlertArmSpec(id, trigger, alert.kind, alert.label)
+        return AlertArmSpec(
+            id = id,
+            triggerAtMillis = trigger,
+            kind = alert.kind,
+            label = alert.label,
+            clockDomain = alert.clockDomain,
+            anchorElapsedMillis = alert.anchorElapsedMillis,
+            armedElapsedMillis = alert.armedElapsedMillis,
+        )
     }
 
     /**
-     * ATOMIC fired transition (idempotent, called from the ringing activity's
-     * onCreate). Guards (row gone / already disabled / daily already re-armed)
-     * run INSIDE the transaction next to the write, so two racing `onFired`
-     * passes or an `onFired` racing a snooze cannot interleave a torn state.
+     * ATOMIC fired transition (idempotent, called from the receiver's
+     * ring-begin BEFORE the ring is surfaced). Guards (row gone / already
+     * disabled / fire identity / daily already re-armed) run INSIDE the
+     * transaction next to the write, so two racing `onFired` passes or an
+     * `onFired` racing a snooze cannot interleave a torn state.
      *
+     * FIRE-IDENTITY GUARD (REMEDIATION_PLAN P3.2): the broadcast carries the
+     * trigger time the alarm was armed for. A NON-daily row is disabled ONLY
+     * when [ScheduledAlertEntity.triggerAtMillis] still equals
+     * [firedTriggerMillis]; otherwise it is a NoOp. This closes two races
+     * structurally instead of by ordering luck:
+     *  - the snooze race (T7): a snooze moved the trigger forward before this
+     *    pass ran, so the old fire must not disable the re-scheduled alert;
+     *  - the early-delivery drop (T10): a fire delivered for an earlier trigger
+     *    than the row now holds must not cancel the future occurrence.
+     * Daily rows keep the existing roll-forward behavior (their identity is the
+     * anchor, not one trigger).
+     *
+     * @param firedTriggerMillis the trigger time the delivered broadcast was
+     *        armed for ([com.jarvis.assistant.tools.AlarmReceiver.EXTRA_TRIGGER_AT]).
      * @param nowMillis the current time for the already-re-armed guard.
      * @param nextDailyTrigger caller-supplied roll-forward policy for a due
      *        repeat-daily row (pure function of the freshly-read entity).
@@ -111,19 +151,35 @@ interface AlertDao {
     @Transaction
     suspend fun applyFired(
         id: Int,
+        firedTriggerMillis: Long,
         nowMillis: Long,
         nextDailyTrigger: (ScheduledAlertEntity) -> Long,
     ): FiredResolution {
         val alert = byId(id) ?: return FiredResolution.NoOp
-        if (!alert.enabled) return FiredResolution.NoOp // handled by a previous onFired
-        if (!alert.repeatDaily) {
-            setEnabled(id, false)
-            return FiredResolution.OneShotDisabled(alert.kind)
+        val resolution = when {
+            !alert.enabled -> FiredResolution.NoOp // handled by a previous onFired
+            // Fire identity: a stale/snoozed/edited row must survive.
+            !alert.repeatDaily && alert.triggerAtMillis != firedTriggerMillis -> FiredResolution.NoOp
+            !alert.repeatDaily -> {
+                setEnabled(id, false)
+                FiredResolution.OneShotDisabled(alert.kind)
+            }
+            alert.triggerAtMillis > nowMillis -> FiredResolution.NoOp // already re-armed
+            else -> {
+                val next = nextDailyTrigger(alert)
+                update(alert.copy(triggerAtMillis = next))
+                FiredResolution.DailyRearmed(
+                    id = alert.id,
+                    triggerAtMillis = next,
+                    kind = alert.kind,
+                    label = alert.label,
+                    clockDomain = alert.clockDomain,
+                    anchorElapsedMillis = alert.anchorElapsedMillis,
+                    armedElapsedMillis = alert.armedElapsedMillis,
+                )
+            }
         }
-        if (alert.triggerAtMillis > nowMillis) return FiredResolution.NoOp // already re-armed
-        val next = nextDailyTrigger(alert)
-        update(alert.copy(triggerAtMillis = next))
-        return FiredResolution.DailyRearmed(next, alert.kind, alert.label)
+        return resolution
     }
 
     /**
@@ -137,6 +193,14 @@ interface AlertDao {
     suspend fun applySnooze(id: Int, triggerAtMillis: Long): AlertArmSpec? {
         val alert = byId(id) ?: return null
         update(alert.copy(triggerAtMillis = triggerAtMillis, enabled = true))
-        return AlertArmSpec(id, triggerAtMillis, alert.kind, alert.label)
+        return AlertArmSpec(
+            id = id,
+            triggerAtMillis = triggerAtMillis,
+            kind = alert.kind,
+            label = alert.label,
+            clockDomain = alert.clockDomain,
+            anchorElapsedMillis = alert.anchorElapsedMillis,
+            armedElapsedMillis = alert.armedElapsedMillis,
+        )
     }
 }

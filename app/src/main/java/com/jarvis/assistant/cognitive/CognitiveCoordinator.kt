@@ -10,16 +10,12 @@ import com.jarvis.assistant.cognitive.data.FactEntityLinkEntity
 import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
 import com.jarvis.assistant.cognitive.embed.BenchmarkRunner
-import com.jarvis.assistant.cognitive.embed.EmbedderBenchmark
-import com.jarvis.assistant.cognitive.embed.EmbedderChoice
-import com.jarvis.assistant.cognitive.embed.EmbedderSelection
 import com.jarvis.assistant.cognitive.embed.EmbeddingEngine
-import com.jarvis.assistant.cognitive.embed.HybridRecall
 import com.jarvis.assistant.cognitive.embed.VectorBackfill
-import com.jarvis.assistant.cognitive.embed.VectorMath
 import com.jarvis.assistant.cognitive.entity.EntityIndex
 import com.jarvis.assistant.cognitive.extract.ExtractionContract
 import com.jarvis.assistant.cognitive.extract.ExtractionGate
+import com.jarvis.assistant.cognitive.extract.ExtractionQueueLoop
 import com.jarvis.assistant.cognitive.extract.ExtractionQueueWorker
 import com.jarvis.assistant.cognitive.extract.FactNormalizer
 import com.jarvis.assistant.cognitive.extract.MemoryWriter
@@ -29,11 +25,8 @@ import com.jarvis.assistant.cognitive.model.FactSnapshot
 import com.jarvis.assistant.cognitive.model.FactStatus
 import com.jarvis.assistant.cognitive.model.ValidatedFact
 import com.jarvis.assistant.cognitive.prompt.FactPhrasing
-import com.jarvis.assistant.cognitive.prompt.MemorySectionData
-import com.jarvis.assistant.cognitive.prompt.MemorySectionRenderer
-import com.jarvis.assistant.cognitive.prompt.renderMemorySection
 import com.jarvis.assistant.cognitive.recall.FactRanker
-import com.jarvis.assistant.cognitive.recall.ScoredFact
+import com.jarvis.assistant.cognitive.recall.RecallPipeline
 import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 import com.jarvis.assistant.cognitive.tools.MemoryOutcome
 import com.jarvis.assistant.cognitive.tools.MemoryToolsFactory
@@ -44,20 +37,20 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import timber.log.Timber
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * COGNITIVE_PLAN §4: the ONE class the rest of the app sees. Owns the three
@@ -95,10 +88,10 @@ class CognitiveCoordinator(
     /** Child scope: supervisor + own handler, per plan §4. */
     val scope: CoroutineScope = CoroutineScope(
         SupervisorJob(parent = parentScope.coroutineContext[Job]) +
-            Dispatchers.IO +
+            deps.cognitiveDispatcher +
             CoroutineExceptionHandler { _, e ->
                 Timber.e(e, "Cognitive: uncaught exception on the cognitive scope")
-                degradedCounter++
+                degradedCounterAtomic.incrementAndGet()
             } +
             CoroutineName("cognitive"),
     )
@@ -140,6 +133,8 @@ class CognitiveCoordinator(
     private val strings = deps.strings
     private val nowMs = deps.nowMs
     private val inTransaction = deps.inTransaction
+    private val cpuDispatcher = deps.cpuDispatcher
+    private val elapsedNow = deps.elapsedNow
 
     private val ranker = FactRanker(nowMs)
     private val normalizer = FactNormalizer(nowMs = nowMs)
@@ -223,217 +218,54 @@ class CognitiveCoordinator(
         nowMs = nowMs,
     )
 
-    /** Wake signal for the drain loop (coalescing, never blocks the caller). */
-    private val wakeChannel = Channel<Unit>(
-        capacity = 1,
-        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    /** Observable degraded counter (plan §7.2); exposed for diagnostics. */
+    private val degradedCounterAtomic = AtomicLong()
+
+    val degradedCounter: Long get() = degradedCounterAtomic.get()
+
+    /**
+     * Reactive wake for the drain loop: any cognitive setting flip re-applies
+     * live (plan principle 5: config is consumed reactively, never snapshotted).
+     * The loop receives only "something changed" — it stays free of the
+     * settings vocabulary the coordinator owns.
+     */
+    private val settingsChanged: Flow<Unit> = combine(
+        memoryEnabled,
+        autoExtractEnabled,
+        cloudEnabled,
+        sensitiveVisible,
+        embedderChoice,
+    ) { _, _, _, _, _ -> Unit }
+
+    /** §7 read path (Phase 4 seam): ranking, engine resolution, rendering. */
+    private val recall = RecallPipeline(
+        deps = deps,
+        scope = scope,
+        onDegraded = { degradedCounterAtomic.incrementAndGet() },
     )
 
-    private var drainJob: Job? = null
-
-    /** Observable degraded counter (plan §7.2); exposed for diagnostics. */
-    @Volatile
-    var degradedCounter: Long = 0
-        private set
+    /** §6.2 drain loop (Phase 4 seam): batching, pacing, crash recovery. */
+    private val queueLoop = ExtractionQueueLoop(
+        scope = scope,
+        queueDao = queueDao,
+        worker = worker,
+        memoryEnabled = memoryEnabled,
+        autoExtractEnabled = autoExtractEnabled,
+        cloudEnabled = cloudEnabled,
+        nowMs = nowMs,
+        settingsChanged = settingsChanged,
+    )
 
     // ------------------------------------------------------------------
     // READ PATH (§7): gather ≤ 40 ms, never blocks the turn on failure.
     // ------------------------------------------------------------------
 
-    override suspend fun gather(utterance: String?): String = try {
-        withTimeout(GATHER_BUDGET_MS) { gatherInternal(utterance) }
-    } catch (e: TimeoutCancellationException) {
-        degradedCounter++
-        Timber.w("Cognitive: gather exceeded %d ms — rendering without memory", GATHER_BUDGET_MS)
-        ""
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        degradedCounter++
-        Timber.e(e, "Cognitive: gather failed — rendering without memory")
-        ""
-    }
-
-    private suspend fun gatherInternal(utterance: String?): String {
-        if (!memoryEnabled.value) return ""
-        val active = factDao.activeFacts()
-        if (active.isEmpty()) return ""
-
-        val visible = active.asSequence()
-            .filter { it.status == FactStatus.ACTIVE.name }
-            .filter { sensitiveVisible.value || !it.sensitive }
-            .map { it.toSnapshot() }
-            .toList()
-        if (visible.isEmpty()) return ""
-
-        // Lexical union: FTS hits get the plan's +0.3 boost (§7.2).
-        val ftsHits = lexicalHits(utterance)
-        var ranked = boostedList(
-            ranker.topFacts(visible, utterance, limit = GATHER_POOL, maxPerCategory = SPREAD_POOL),
-            ftsHits,
-            markLexical = true,
-        )
-        // §11 recall integration: a «кто мой начальник?» question maps onto
-        // the relation-predicate vocabulary and boosts the answering facts
-        // (same flat boost as an FTS hit — deterministic, no entity-table
-        // read on the hot path).
-        ranked = boostedList(ranked, EntityIndex.relationBoostFactIds(visible, utterance))
-        // §11 vector channel — LOCAL engine ONLY inside the gather budget
-        // (see [applyVectorChannel]).
-        ranked = applyVectorChannel(ranked, utterance, visible)
-
-        val finalRanked = ranked.take(RECALL_LIMIT)
-        if (finalRanked.isEmpty()) return ""
-        writeBehindRecallStats(finalRanked)
-
-        val data: MemorySectionData = renderMemorySection(finalRanked, degraded = false, strings)
-        return MemorySectionRenderer.render(data, strings)
-    }
-
-    private suspend fun lexicalHits(utterance: String?): Set<String> {
-        if (utterance.isNullOrBlank()) return emptySet()
-        val matchQuery = SearchTokenizer.matchQuery(utterance) ?: return emptySet()
-        return try {
-            factDao.searchActive(matchQuery).mapTo(HashSet()) { it.factId }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Timber.w(e, "Cognitive: FTS search failed — continuing without lexical boost")
-            emptySet()
-        }
-    }
-
     /**
-     * Flat +0.3 boost (the plan's lexical-hit weight, §7.2) for the given
-     * fact ids, then the deterministic re-sort. Shared by the FTS lane and
-     * the §11 relation-question lane.
+     * One gather per turn. The §7 read path itself (ranking, engine
+     * resolution, rendering, phase-budget degradation) is the [RecallPipeline]
+     * seam extracted in Phase 4; this remains the session-facing entry point.
      */
-    private fun boostedList(
-        list: List<ScoredFact>,
-        ids: Set<String>,
-        markLexical: Boolean = false,
-    ): List<ScoredFact> {
-        if (ids.isEmpty()) return list
-        return list
-            .map { scored ->
-                if (scored.fact.factId in ids) {
-                    scored.copy(
-                        score = scored.score + FactRanker.LEXICAL_HIT_BOOST,
-                        lexicalHit = scored.lexicalHit || markLexical,
-                    )
-                } else {
-                    scored
-                }
-            }
-            .sortedWith(compareByDescending<ScoredFact> { it.score }.thenBy { it.fact.factId })
-    }
-
-    /**
-     * §11 vector channel — LOCAL engine ONLY inside the gather budget: a
-     * cloud round-trip can never fit 40 ms (the CLOUD engine serves
-     * recall_facts and the benchmark instead; documented deviation, honest
-     * TTFT cost). Null engine (selector OFF / unproven AUTO) → the list
-     * passes through untouched, byte-path identical to Phase 2.
-     */
-    private suspend fun applyVectorChannel(
-        ranked: List<ScoredFact>,
-        utterance: String?,
-        visible: List<FactSnapshot>,
-    ): List<ScoredFact> {
-        if (utterance == null) return ranked
-        val engine = resolveActiveEngine() ?: return ranked
-        if (engine.kind != EmbeddingEngine.Kind.LOCAL) return ranked
-        val vectorHits = vectorTopFacts(utterance, engine, visible.mapTo(HashSet()) { it.factId })
-            ?: return ranked
-        val byId = ranked.associateBy { it.fact.factId }
-        val fused = HybridRecall.rrfFuse(scoredFactIds(ranked), vectorHits).mapNotNull { byId[it] }
-        return fused.ifEmpty { ranked }
-    }
-
-    // ------------------------------------------------------------------
-    // SEMANTIC RECALL (§11): engine resolution + the cosine channel.
-    // ------------------------------------------------------------------
-
-    /**
-     * §12.4-3: which engine is ACTIVE right now. Reads the selector flow
-     * AND the benchmark verdict (memory_meta) — both change live, so a
-     * Settings toggle or a fresh benchmark result applies from the very
-     * next turn (plan principle 5; the live-toggle regression test pins
-     * this).
-     */
-    private suspend fun resolveActiveEngine(): EmbeddingEngine? {
-        val choice = EmbedderChoice.fromPref(embedderChoice.value)
-        val winner = try {
-            metaDao.get(MemoryMetaEntity.KEY_EMBEDDER_WINNER)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null // no verdict recorded — AUTO falls back to the CI gate
-        }
-        val engineId = EmbedderSelection.resolve(
-            choice = choice,
-            benchmarkWinner = winner,
-            cloudUsable = cloudEmbedder != null,
-            localShipsByCiGate = localShipsByCiGate,
-        )
-        return engineById(engineId)
-    }
-
-    private fun engineById(engineId: String?): EmbeddingEngine? = when (engineId) {
-        EmbeddingEngine.LOCAL_ID -> localEmbedder
-        EmbeddingEngine.CLOUD_ID -> cloudEmbedder
-        else -> null
-    }
-
-    /**
-     * Cosine channel over stored vectors, filtered to the visible fact
-     * set. Returns null on any failure or absence — the lexical lane NEVER
-     * degrades because the vector lane hiccupped (§7.2 fail-quiet). CLOUD
-     * calls are additionally gated by the §9.2 egress switch.
-     */
-    private suspend fun vectorTopFacts(
-        utterance: String,
-        engine: EmbeddingEngine,
-        allowedFactIds: Set<String>,
-    ): List<String>? = try {
-        if (engine.kind == EmbeddingEngine.Kind.CLOUD && !cloudEnabled.value) {
-            null
-        } else {
-            val rows = vectorDao.forEngine(engine.engineId)
-            val candidates = rows.filter { it.factId in allowedFactIds && it.dim == engine.dim }
-            if (candidates.isEmpty()) {
-                null
-            } else {
-                val queryVec = engine.embed(listOf(utterance)).first()
-                VectorMath
-                    .topK(
-                        queryVec,
-                        candidates.map { it.factId to VectorMath.bytesToFloats(it.vec) },
-                        k = EmbedderBenchmark.VECTOR_CHANNEL_K,
-                    )
-                    .ifEmpty { null }
-            }
-        }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        Timber.w(e, "Cognitive: vector channel failed — continuing lexical-only")
-        null
-    }
-
-    /** Write-behind recall statistics (plan §7.2) — never on the hot path. */
-    private fun writeBehindRecallStats(ranked: List<ScoredFact>) {
-        val ids = ranked.map { it.fact.factId }
-        scope.launch {
-            try {
-                factDao.recordRecalls(ids, nowMs())
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Timber.w(e, "Cognitive: recall-stat write-behind failed")
-            }
-        }
-    }
+    override suspend fun gather(utterance: String?): String = recall.gather(utterance)
 
     // ------------------------------------------------------------------
     // WRITE PATH (§6): ingest → queue → batched cloud extraction.
@@ -453,7 +285,7 @@ class CognitiveCoordinator(
                 )
                 if (inserted != -1L) {
                     Timber.d("Cognitive: ingested message %d for extraction", messageId)
-                    wake()
+                    queueLoop.wake()
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -463,93 +295,11 @@ class CognitiveCoordinator(
         }
     }
 
-    // ------------------------------------------------------------------
-    // Queue loop: batching (≤3 / 90 s flush) + 30 s cloud backoff (§6.2).
-    // ------------------------------------------------------------------
-
-    /** Starts the drain loop (idempotent). Called by the graph on start. */
-    // The 3 `throw e` statements are the mandatory CancellationException
-    // rethrows (AGENTS: cognitive coroutines catch only IO/serialization and
-    // ALWAYS rethrow CE) in two nested launch lambdas — detekt counts nested
-    // throws against this outer function. Merging the jobs to satisfy the
-    // count would couple the settings-watch to drain error handling.
-    @Suppress("ThrowsCount")
-    fun startQueueLoop() {
-        if (drainJob?.isActive == true) return
-        // Settings flips wake the loop so toggles apply live (plan principle
-        // 5). The first combine emission is immediate — one harmless wake.
-        scope.launch(CoroutineName("cognitive-settings-watch")) {
-            kotlinx.coroutines.flow.combine(
-                memoryEnabled,
-                autoExtractEnabled,
-                cloudEnabled,
-                sensitiveVisible,
-                embedderChoice,
-            ) { _, _, _, _, _ -> Unit }.collect { wake() }
-        }
-        drainJob = scope.launch(CoroutineName("cognitive-drain")) {
-            // Crash recovery: RUNNING rows from a dead process → PENDING
-            // (plan §5 idempotency: work is exactly-once per message).
-            try {
-                queueDao.running().forEach {
-                    queueDao.updateState(
-                        it.messageId,
-                        ExtractionQueueEntity.STATE_PENDING,
-                        it.attempt,
-                        null,
-                        nowMs(),
-                    )
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Timber.w(e, "Cognitive: running-row recovery failed")
-            }
-
-            while (isActive) {
-                val cloudOn = memoryEnabled.value && autoExtractEnabled.value && cloudEnabled.value
-                if (!cloudOn) {
-                    withTimeoutOrNull(IDLE_WAIT_MS) { wakeChannel.receive() }
-                } else {
-                    val pending = try {
-                        queueDao.pendingCount()
-                    } catch (e: CancellationException) {
-                        throw e // P1-C (A8): stop the loop, don't fake "idle"
-                    } catch (e: Exception) {
-                        Timber.w(e, "Cognitive: pendingCount failed")
-                        0
-                    }
-                    when {
-                        pending == 0 ->
-                            withTimeoutOrNull(IDLE_WAIT_MS) { wakeChannel.receive() }
-
-                        else -> {
-                            // Flush after the idle window even with <
-                            // BATCH_SIZE (plan §6.2: "or flushes after 90 s
-                            // idle"); an ingest/settings wake returns early.
-                            if (pending < ExtractionQueueWorker.BATCH_SIZE) {
-                                withTimeoutOrNull(IDLE_FLUSH_MS) { wakeChannel.receive() }
-                            }
-                            try {
-                                worker.drainOnce()
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                Timber.e(e, "Cognitive: drain step failed")
-                            }
-                            if (worker.lastBatchTransportFailed) {
-                                kotlinx.coroutines.delay(ExtractionQueueWorker.CLOUD_BACKOFF_MS)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private fun wake() {
-        wakeChannel.trySend(Unit)
-    }
+    /**
+     * Starts the drain loop (idempotent, called by the graph on start). The
+     * §6.2 batching/pacing logic itself is the [ExtractionQueueLoop] seam.
+     */
+    fun startQueueLoop() = queueLoop.start()
 
     // ------------------------------------------------------------------
     // Synchronous tool surface (§6.4) — deterministic, honest outcomes.
@@ -596,8 +346,16 @@ class CognitiveCoordinator(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Timber.e(e, "Cognitive: rememberFact write failed")
-            MemoryOutcome.Failed(e.message)
+            // P1 review: e.message can QUOTE the fact row that broke the
+            // DAO/serializer — user memory content — and [detail] crosses into
+            // the LLM tool-result JSON AND the spoken user string
+            // (MemoryOutcome.spoken → memoryWriteFailed), while the throwable
+            // here would persist the trace to the rotating log (LogScrubber
+            // deliberately does not match `near '...'` quoted spans). Only the
+            // exception CLASS crosses; the stack stays DEBUG (not persisted).
+            Timber.e("Cognitive: rememberFact write failed (%s)", e.javaClass.name)
+            Timber.d(e, "Cognitive: rememberFact write failed detail")
+            MemoryOutcome.Failed("write failure (${e.javaClass.simpleName})")
         }
     }
 
@@ -614,12 +372,12 @@ class CognitiveCoordinator(
             val selected = if (query.isNullOrBlank()) {
                 ranker.topFacts(active, null)
             } else {
-                rankedForQuery(active, query)
+                recall.rankedForQuery(active, query)
             }
             if (selected.isEmpty()) {
                 MemoryOutcome.RecallEmpty
             } else {
-                writeBehindRecallStats(selected)
+                recall.writeBehindRecallStats(selected)
                 MemoryOutcome.Recalled(
                     selected.map { FactPhrasing.bullet(it.fact, strings).removePrefix("— ") },
                 )
@@ -627,8 +385,10 @@ class CognitiveCoordinator(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Timber.e(e, "Cognitive: recallFacts failed")
-            MemoryOutcome.Failed(e.message)
+            // Same sanitization contract as rememberFact (P1 review).
+            Timber.e("Cognitive: recallFacts failed (%s)", e.javaClass.name)
+            Timber.d(e, "Cognitive: recallFacts failure detail")
+            MemoryOutcome.Failed("query failure (${e.javaClass.simpleName})")
         }
     }
 
@@ -670,8 +430,10 @@ class CognitiveCoordinator(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Timber.e(e, "Cognitive: forgetFact failed")
-            MemoryOutcome.Failed(e.message)
+            // Same sanitization contract as rememberFact (P1 review).
+            Timber.e("Cognitive: forgetFact failed (%s)", e.javaClass.name)
+            Timber.d(e, "Cognitive: forgetFact failure detail")
+            MemoryOutcome.Failed("delete failure (${e.javaClass.simpleName})")
         }
     }
 
@@ -754,39 +516,6 @@ class CognitiveCoordinator(
         }
     }
 
-    private fun scoredFactIds(scoredList: List<ScoredFact>): List<String> =
-        scoredList.map { it.fact.factId }
-
-    /**
-     * The `recall_facts(query)` ranking: lexical lane → §11 relation
-     * boost → §11 vector channel. BOTH engines are allowed here: the tool
-     * path already tolerates tool latency (weather/music do I/O); CLOUD
-     * embeds the query via GigaChat, gated by the §9.2 egress switch.
-     */
-    private suspend fun rankedForQuery(
-        active: List<FactSnapshot>,
-        query: String,
-    ): List<ScoredFact> {
-        var scoredList = boostedList(
-            ranker.topFacts(active, query),
-            lexicalHits(query),
-            markLexical = true,
-        )
-        scoredList = boostedList(scoredList, EntityIndex.relationBoostFactIds(active, query))
-        val engine = resolveActiveEngine()
-        if (engine != null) {
-            val vectorHits = vectorTopFacts(query, engine, active.mapTo(HashSet()) { it.factId })
-            if (!vectorHits.isNullOrEmpty()) {
-                val byId = scoredList.associateBy { it.fact.factId }
-                val fused = HybridRecall
-                    .rrfFuse(scoredFactIds(scoredList), vectorHits)
-                    .mapNotNull { byId[it] }
-                if (fused.isNotEmpty()) scoredList = fused
-            }
-        }
-        return scoredList
-    }
-
     // ------------------------------------------------------------------
     // SEMANTIC RECALL — user-facing entries (§12.4-3/§12.4-4): the Settings
     // card calls these. All are opt-in; nothing here runs on a timer.
@@ -803,7 +532,7 @@ class CognitiveCoordinator(
      * Settings seam: the engine the §12.4-3 selector resolves to RIGHT
      * NOW (null = vectors off). The vectors action builds for THIS engine.
      */
-    suspend fun resolvedEngineId(): String? = resolveActiveEngine()?.engineId
+    suspend fun resolvedEngineId(): String? = recall.resolveActiveEngine()?.engineId
 
     /**
      * §12.4-4: start the opt-in vector build for [engineId] on the
@@ -813,7 +542,7 @@ class CognitiveCoordinator(
      * the CLOUD branch (fact values egress — §9.2).
      */
     fun startVectorBuild(engineId: String): Boolean {
-        val engine = engineById(engineId) ?: return false
+        val engine = recall.engineById(engineId) ?: return false
         if (vectorBackfill.progress.value?.running == true) return false
         scope.launch(CoroutineName("cognitive-vector-backfill")) {
             try {
@@ -847,7 +576,11 @@ class CognitiveCoordinator(
                         state = HabitRuleEntity.STATE_ACTIVE,
                     ),
                 )
-                Timber.i("Cognitive: habit accept for %s %s", tool, fingerprint)
+                // The fingerprint is a projection of user-set slot values
+                // (AGENTS.md content rule): INFO keeps the tool name only,
+                // the fingerprint rides DEBUG.
+                Timber.i("Cognitive: habit accept for %s", tool)
+                Timber.d("Cognitive: habit accept for %s %s", tool, fingerprint)
             }
         }
     }
@@ -1052,12 +785,12 @@ class CognitiveCoordinator(
     override suspend fun gatherSummary(utterance: String?, isFollowUp: Boolean): String = try {
         withTimeout(GATHER_BUDGET_MS) { summarizer.renderForPrompt() }
     } catch (e: TimeoutCancellationException) {
-        degradedCounter++
+        degradedCounterAtomic.incrementAndGet()
         ""
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        degradedCounter++
+        degradedCounterAtomic.incrementAndGet()
         Timber.e(e, "Cognitive: summary gather failed")
         ""
     }
@@ -1112,9 +845,9 @@ class CognitiveCoordinator(
         maintenanceStep("compaction step") { compactOverCap() }
         maintenanceStep("superseded-retention step") { deleteExpiredSuperseded(now) }
         // ---- Phase 2 steps (§8.2/§2.5/§5 compaction) ----
-        maintenanceStep("habit recompute") { habitDetector.recompute() }
-        maintenanceStep("habit promotion") { habitDetector.promoteProbationRules(now) }
-        maintenanceStep("habit unmute") { habitDetector.unmuteExpired(now) }
+        // F3: ONE acquisition of `ruleWriteMutex` for all three habit passes,
+        // so no session-lane reject/accept can land between them.
+        maintenanceStep("habit maintenance") { habitDetector.nightly(now) }
         maintenanceStep("command-event retention") {
             eventDao.deleteOlderThan(now - COMMAND_EVENT_RETENTION_MS)
         }
@@ -1217,10 +950,22 @@ class CognitiveCoordinator(
                 decayed++
                 if (target <= Maintenance.CONFIDENCE_FLOOR) {
                     factDao.updateStatus(fact.factId, FactStatus.ARCHIVED.name, now)
-                } else {
+                } else if (fact.decayAnchorAt == 0L) {
                     // Confidence only — updatedAt (ranking recency) and
                     // lastConfirmedAt (usage proof) must NOT be refreshed by
-                    // decay, or the decay clock would restart itself.
+                    // decay, or the decay clock would restart itself. Latch
+                    // the immutable anchor (pre-decay confidence + updatedAt)
+                    // in the SAME statement so the next pass recomputes from
+                    // the anchor instead of re-decaying this result.
+                    factDao.updateConfidenceAndAnchor(
+                        fact.factId,
+                        target,
+                        fact.confidence,
+                        fact.updatedAt,
+                    )
+                } else {
+                    // Already anchored: recompute against the stored anchor
+                    // (idempotent) without moving it.
                     factDao.updateConfidence(fact.factId, target)
                 }
             }
@@ -1290,12 +1035,20 @@ class CognitiveCoordinator(
      */
     suspend fun backfillRecent(limit: Int = ExtractionQueueWorker.BACKFILL_LIMIT): Int {
         val enqueued = worker.backfillRecent(limit)
-        if (enqueued > 0) wake()
+        if (enqueued > 0) queueLoop.wake()
         return enqueued
     }
 
     companion object {
-        /** Plan §7.2: hard gather budget (hidden inside LLM TTFT). */
+        /**
+         * Plan §7.2: hard prompt-block budget, used by [gatherSummary]. F11
+         * correction: this cost overlaps the caller's PRE-LLM prompt assembly
+         * (buildPromptContext → composer render), NOT the server's
+         * time-to-first-token — TTFT is measured after the request is on the
+         * wire, so it can never "hide" local ranking work. The fact-gather
+         * read path owns its own copy of this window plus the optional-phase
+         * budget (see RecallPipeline).
+         */
         const val GATHER_BUDGET_MS = 40L
 
         // ---- Phase 2 (§8/§5/§9.1) ----
@@ -1357,19 +1110,6 @@ class CognitiveCoordinator(
 
         /** §5 cap: DAILY summary rows. */
         const val SUMMARY_ROW_CAP = 365
-
-        /** Plan §6.2: idle flush window for a partial batch. */
-        const val IDLE_FLUSH_MS = 90_000L
-
-        /** Idle wait when there is nothing to do (woken by ingest/settings). */
-        const val IDLE_WAIT_MS = 600_000L
-
-        /** Candidate pool before the final take (FTS-merge headroom). */
-        const val GATHER_POOL = 8
-        const val SPREAD_POOL = 3
-
-        /** Plan §7.1: ≤5 facts in the prompt. */
-        const val RECALL_LIMIT = 5
 
         /** Compaction over-fetch buffer. */
         const val BUFFER = 10

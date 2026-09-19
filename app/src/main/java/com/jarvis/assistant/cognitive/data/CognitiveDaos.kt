@@ -47,9 +47,6 @@ interface ExtractionQueueDao {
     )
     suspend fun releaseBatch(batchId: String, now: Long)
 
-    @Query("DELETE FROM extraction_queue WHERE messageId = :messageId")
-    suspend fun delete(messageId: Long)
-
     /** «Забыть всё»: cancel queued work with the facts (plan §9.2). */
     @Query("DELETE FROM extraction_queue")
     suspend fun wipeAll()
@@ -67,6 +64,15 @@ interface MemoryMetaDao {
     suspend fun putValue(key: String, value: String) {
         put(MemoryMetaEntity(key, value))
     }
+
+    /**
+     * Drops a single stamp. Used by the cloud-entitlement bookkeeping
+     * (`KEY_CLOUD_EMBED_ENTITLED` / `KEY_CLOUD_EMBED_UNAVAILABLE`), whose two
+     * keys are MUTUALLY EXCLUSIVE: a fresh verdict must clear the opposite
+     * stamp, or the selector keeps reading a stale success after a revocation.
+     */
+    @Query("DELETE FROM memory_meta WHERE `key` = :key")
+    suspend fun delete(key: String)
 
     @Query("SELECT * FROM memory_meta")
     suspend fun all(): List<MemoryMetaEntity>

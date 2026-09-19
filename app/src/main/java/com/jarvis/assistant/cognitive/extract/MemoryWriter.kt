@@ -108,6 +108,11 @@ class MemoryWriter(
                         confidence = decision.mergedConfidence,
                         lastConfirmedAt = decision.now,
                         updatedAt = decision.now,
+                        // Re-affirmation re-anchors decay (mirror of
+                        // UserFactDao.confirmFact): the curve restarts from
+                        // the new confidence at the affirmation time.
+                        decayAnchorConfidence = decision.mergedConfidence,
+                        decayAnchorAt = decision.now,
                     )
                 }
             }

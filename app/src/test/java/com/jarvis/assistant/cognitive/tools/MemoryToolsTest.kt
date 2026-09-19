@@ -56,6 +56,17 @@ class MemoryToolsTest {
                 sensitiveVisible = sensitiveVisible,
                 strings = ToolStrings.Default,
                 nowMs = { 1_000L },
+                // F11: pin the CPU hop (same precedent as the wake-word
+                // engine's `engineBuildDispatcher = Dispatchers.Unconfined`) —
+                // otherwise `withContext(Dispatchers.Default)` lets the test
+                // scheduler advance virtual time and fire the 40 ms gather
+                // `withTimeout`, which discards the block under test.
+                cpuDispatcher = Dispatchers.Unconfined,
+                // Same reasoning for the coordinator's OWN scope: the read
+                // path fires `writeBehindRecallStats` on it, so on the
+                // production `Dispatchers.IO` a pending `recordRecalls` could
+                // re-insert a row cleared by a test and flake the read.
+                cognitiveDispatcher = Dispatchers.Unconfined,
             ),
             parentScope = scope,
         )

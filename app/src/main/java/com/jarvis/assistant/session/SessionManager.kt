@@ -132,16 +132,19 @@ class SessionManager(
     // With no gap, a supersede can no longer slip between "guard passed"
     // and "event applied": a superseded turn's late event (e.g. a draining
     // turn's PlaybackStarted) carries the OLD seq and is dropped here.
-    // Cross-thread concurrency is serialized by the state machine's own
-    // mutex; the guards make every stale write a no-op, so the machine can
-    // only ever record documented, current-session transitions.
+    // Cross-thread concurrency is serialized by [controlLock] — every seq
+    // bump and [applyMachineEvent] itself run under that monitor, so the
+    // guard-and-apply pair is atomic against a concurrent supersede. The
+    // guards make every stale write a no-op, so the machine can only ever
+    // record documented, current-session transitions.
     //
     // This deliberately replaces an earlier async FIFO-channel design: a
     // lane consumer made previously-synchronous transitions (startSession →
     // LISTENING) asynchronous and broke call-site and test contracts, while
     // synchronous guarded applies close the same race without that cost.
-    // Non-suspending by construction — safe inside [controlLock] guarded
-    // blocks (the monitor discipline of AGENTS.md is preserved).
+    // Non-suspending by construction — safe to nest inside callers that
+    // already hold [controlLock] ([Any] monitors are reentrant), preserving
+    // the monitor discipline of AGENTS.md.
     /**
      * Apply [event] to the machine with apply-time guards:
      * - [validSeq]: drop unless [sessionSeq] still equals it (stale-session
@@ -149,6 +152,10 @@ class SessionManager(
      * - [requireState]: drop unless the machine is currently in this state
      *   (the closeFollowUpWindow CONDITIONAL expired event — the state check
      *   must ride with the transition atomically).
+     *
+     * The seq read, the state read and [stateMachine.onEvent] all happen inside
+     * [controlLock], so a seq bump cannot land between the guard and the apply.
+     * No suspension occurs there (AGENTS.md monitor discipline).
      *
      * P1-S #2/#3: returns whether the event ACTUALLY reached the machine.
      * The guarded terminals (`reportFailure`, `finish`) run their side
@@ -159,7 +166,7 @@ class SessionManager(
         event: SessionEvent,
         validSeq: Int? = null,
         requireState: AssistantState? = null,
-    ): Boolean {
+    ): Boolean = synchronized(controlLock) {
         if (validSeq != null && validSeq != sessionSeq.get()) {
             Timber.w(
                 "Dropping stale machine event %s (seq guard: %d != %d)",
@@ -167,13 +174,13 @@ class SessionManager(
                 validSeq,
                 sessionSeq.get(),
             )
-            return false
+            return@synchronized false
         }
         if (requireState != null && stateMachine.currentState() != requireState) {
-            return false
+            return@synchronized false
         }
         stateMachine.onEvent(event)
-        return true
+        true
     }
 
     /**
@@ -346,11 +353,30 @@ class SessionManager(
         // [voiceStopEnabled] source is re-read per state change so the
         // Settings toggle applies without a restart.
         scope.launch {
-            stateMachine.state.collect { state ->
-                val active = state == AssistantState.THINKING || state == AssistantState.SPEAKING
-                wakeWordDetector.setStopLaneEnabled(active && voiceStopEnabled())
-            }
+            stateMachine.state.collect { state -> applyVoiceStopLane(state) }
         }
+    }
+
+    /**
+     * A5: re-arm the stop phrase lane for the CURRENT state.
+     *
+     * The state collector above only fires on a STATE CHANGE, so a Settings
+     * toggle flipped while the assistant is THINKING/SPEAKING left the lane
+     * in its previous arming state until the turn ended — turning voice stop
+     * ON mid-turn silently did nothing (and turning it OFF kept feeding the
+     * lane frames for the rest of the turn, where the routing pref-check was
+     * the only thing ignoring them). The explicit call sites (Settings toggle,
+     * which already rebuilds the engine for the same reason) call this so the
+     * pref applies immediately, with no new reactive flow — PrefsFlow
+     * deliberately does not carry the voice-stop pref (see its KDoc).
+     */
+    fun reapplyVoiceStopLane() {
+        applyVoiceStopLane(stateMachine.currentState())
+    }
+
+    private fun applyVoiceStopLane(state: AssistantState) {
+        val active = state == AssistantState.THINKING || state == AssistantState.SPEAKING
+        wakeWordDetector.setStopLaneEnabled(active && voiceStopEnabled())
     }
 
     fun setOnError(handler: suspend (String) -> Unit) {
@@ -786,6 +812,8 @@ class SessionManager(
     ) {
         if (id != null && id != sessionSeq.get()) return
         if (!followUpEnabled && !forceOpen) return
+        // A6: `onTurnEnded` returns ONLY `OpenWindow?`, so this match is
+        // exhaustive without the dead "not emitted here" branches.
         when (followUp.onTurnEnded(spoke, enabled = true)) {
             FollowUpWindowController.Effect.OpenWindow -> {
                 Timber.i("Follow-up window open")
@@ -797,8 +825,6 @@ class SessionManager(
                 // re-validate it against a concurrent barge-in.
                 startFollowUpCollector(validSeq = id)
             }
-            FollowUpWindowController.Effect.StartFollowUpTurn,
-            FollowUpWindowController.Effect.ExpireWindow -> Unit // not emitted here
             null -> Unit
         }
     }
@@ -885,19 +911,37 @@ class SessionManager(
                                     throw CancellationException("follow-up window superseded")
                                 }
                                 Timber.i("Follow-up speech detected — starting turn")
-                                applyMachineEvent(SessionEvent.FollowUpSpeechDetected)
-                                followUp.onVadActive()
-                                // COGNITIVE_PLAN 1.6: tag the turn origin.
-                                startSession(fromFollowUp = true) // cancels this collector via windowJob
+                                // A6: the controller's onset verdict IS the
+                                // gate — it returns StartFollowUpTurn only
+                                // while the window is OPEN (its own state is
+                                // independent of the machine's, so consuming
+                                // the effect before the transition is
+                                // order-free).
+                                when (followUp.onVadActive()) {
+                                    FollowUpWindowController.Effect.StartFollowUpTurn -> {
+                                        applyMachineEvent(SessionEvent.FollowUpSpeechDetected)
+                                        // COGNITIVE_PLAN 1.6: tag the turn origin.
+                                        startSession(fromFollowUp = true) // cancels this collector via windowJob
+                                    }
+                                    null -> Unit // window already closed — drop the onset
+                                }
                                 throw CancellationException("follow-up turn started")
                             }
                         }
                         _followUpProgress.value = followUp.remainingFraction()
-                        if (followUp.transition() != null) {
-                            Timber.i("Follow-up window expired")
-                            applyMachineEvent(SessionEvent.FollowUpWindowExpired, requireState = AssistantState.FOLLOW_UP_WINDOW)
-                            _followUpProgress.value = 0f
-                            throw CancellationException("follow-up window expired")
+                        // A6: the effect is the expiry verdict (emitted exactly
+                        // once, when the deadline passes) — consumed here.
+                        when (followUp.transition()) {
+                            FollowUpWindowController.Effect.ExpireWindow -> {
+                                Timber.i("Follow-up window expired")
+                                applyMachineEvent(
+                                    SessionEvent.FollowUpWindowExpired,
+                                    requireState = AssistantState.FOLLOW_UP_WINDOW,
+                                )
+                                _followUpProgress.value = 0f
+                                throw CancellationException("follow-up window expired")
+                            }
+                            null -> Unit
                         }
                     }
                 } catch (e: CancellationException) {

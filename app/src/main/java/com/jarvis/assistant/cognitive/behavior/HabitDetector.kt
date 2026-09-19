@@ -49,8 +49,28 @@ class HabitDetector(
      * Recomputes rules from the trailing [lookbackDays] window.
      * @return number of rules created or updated (diagnostics only).
      */
-    suspend fun recompute(lookbackDays: Int = LOOKBACK_DAYS): Int = ruleWriteMutex.withLock {
-        if (habitEligibleTools.isEmpty()) return@withLock 0
+    suspend fun recompute(lookbackDays: Int = LOOKBACK_DAYS): Int =
+        ruleWriteMutex.withLock { recomputeLocked(lookbackDays) }
+
+    /**
+     * The whole nightly rule pass under ONE lock acquisition.
+     *
+     * P4.4 (REMEDIATION_PLAN F3): taking the mutex once makes recompute →
+     * promote → unmute atomic with respect to the session lane's reject /
+     * accept / fire paths. Calling the three public wrappers back-to-back
+     * would be equally deadlock-free but would let a reject land BETWEEN the
+     * passes, so promotion could read a pre-reject row and promote a rule the
+     * user just pushed back on. kotlinx Mutex is NOT reentrant, so this calls
+     * the `*Locked` bodies directly — never the wrappers.
+     *
+     * @return total rules touched across the three passes (diagnostics only).
+     */
+    suspend fun nightly(now: Long = nowMs()): Int = ruleWriteMutex.withLock {
+        recomputeLocked(LOOKBACK_DAYS) + promoteProbationRulesLocked(now) + unmuteExpiredLocked(now)
+    }
+
+    private suspend fun recomputeLocked(lookbackDays: Int): Int {
+        if (habitEligibleTools.isEmpty()) return 0
         val since = nowMs() - lookbackDays * DAY_MS
         val events = try {
             eventDao.voiceOkSince(since, habitEligibleTools.toList())
@@ -60,16 +80,16 @@ class HabitDetector(
             // telemetry unreadable — habits simply wait for the next run
             // (content-free WARN: the DAO message can name tables, never facts)
             Timber.w(e, "Cognitive: habit telemetry read failed — recompute defers")
-            return@withLock 0
+            return 0
         }
-        if (events.isEmpty()) return@withLock 0
+        if (events.isEmpty()) return 0
 
         val clusters = cluster(events)
         var touched = 0
         for ((key, support) in clusters) {
             touched += upsertCluster(key, support)
         }
-        touched
+        return touched
     }
 
     /** Returns 1 when the cluster created or updated a rule, 0 otherwise. */
@@ -114,14 +134,21 @@ class HabitDetector(
      * successful suggestion cycle — an explicit accept, or a fired
      * suggestion that aged out (30 min) without a rejection.
      */
-    suspend fun promoteProbationRules(now: Long = nowMs()): Int {
+    suspend fun promoteProbationRules(now: Long = nowMs()): Int =
+        ruleWriteMutex.withLock { promoteProbationRulesLocked(now) }
+
+    private suspend fun promoteProbationRulesLocked(now: Long): Int {
         var promoted = 0
         for (rule in ruleDao.candidateRules()) {
-            if (rule.state != HabitRuleEntity.STATE_PROBATION) continue
-            val fired = rule.lastFiredAt != null
-            val accepted = rule.acceptCount > 0
-            val agedOutClean = fired && rule.lastFiredAt!! < now - CYCLE_GRACE_MS
-            if (accepted || agedOutClean) {
+            // F2 (REMEDIATION_PLAN): a rule the user has ALREADY pushed back on
+            // is never promoted by statistics. Aging out is only evidence of
+            // "not annoying" when nobody ever said no — otherwise a rejected
+            // suggestion gets promoted the first time the user ignores it, and
+            // the mute/retire ladder restarts from a state we just blessed.
+            val promotable = rule.state == HabitRuleEntity.STATE_PROBATION && rule.rejectCount == 0
+            val firedAt = rule.lastFiredAt
+            val agedOutClean = firedAt != null && firedAt < now - CYCLE_GRACE_MS
+            if (promotable && (rule.acceptCount > 0 || agedOutClean)) {
                 ruleDao.update(rule.copy(state = HabitRuleEntity.STATE_ACTIVE))
                 promoted++
             }
@@ -130,7 +157,10 @@ class HabitDetector(
     }
 
     /** MUTED rules whose 30-day sentence elapsed return to ACTIVE (§8.2). */
-    suspend fun unmuteExpired(now: Long = nowMs()): Int {
+    suspend fun unmuteExpired(now: Long = nowMs()): Int =
+        ruleWriteMutex.withLock { unmuteExpiredLocked(now) }
+
+    private suspend fun unmuteExpiredLocked(now: Long): Int {
         var unmuted = 0
         for (rule in ruleDao.all()) {
             val until = rule.mutedUntil

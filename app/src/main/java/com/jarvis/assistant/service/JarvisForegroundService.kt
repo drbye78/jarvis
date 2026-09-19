@@ -30,6 +30,7 @@ import com.jarvis.assistant.di.AppGraph
 import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.util.AppPrefs
+import com.jarvis.assistant.util.NotificationIds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -982,11 +983,16 @@ class JarvisForegroundService : Service() {
         const val ACTION_EXPLICIT_START = "com.jarvis.assistant.EXPLICIT_START"
         const val ACTION_WATCHDOG = "com.jarvis.assistant.WATCHDOG"
         const val ACTION_RUN_COGNITIVE_MAINTENANCE = "com.jarvis.assistant.RUN_COGNITIVE_MAINTENANCE"
-        const val NOTIFICATION_ID = 1
-        private const val NOTIFICATION_PERMISSION = 2
+
+        // P2 (audit decision #3 follow-through): the service-lane notification
+        // ids are the NotificationIds band constants themselves, not look-alike
+        // copies — the assistant band's single source of truth is now compile-
+        // time. (AlarmAndRegistryTest still pins cross-band disjointness.)
+        const val NOTIFICATION_ID = NotificationIds.FGS_STATE
+        private const val NOTIFICATION_PERMISSION = NotificationIds.FGS_PERMISSION
 
         /** "Tap to activate" prompt (Android 10 background-start policy). */
-        private const val ACTIVATION_NOTIFICATION_ID = 3
+        private const val ACTIVATION_NOTIFICATION_ID = NotificationIds.FGS_ACTIVATION
         private const val ACTIVATION_REQUEST_CODE = 1003
         private const val CHANNEL_ACTIVATION = "jarvis_activation"
 

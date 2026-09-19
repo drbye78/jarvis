@@ -131,6 +131,36 @@ class SummarizerTest {
     }
 
     @Test
+    fun `runBacklogAndDigest does not re-summarize the same failed span`() = runBlocking {
+        val meta = FakeMemoryMetaDao()
+        val messages = FakeMessageDao(
+            row(1, "user", "Привет", 100),
+            row(2, "assistant", "Привет!", 101),
+            row(3, "user", "Как дела?", 102),
+            row(4, "assistant", "Хорошо.", 103),
+            row(5, "user", "Отлично", 104),
+        )
+        val dao = FakeSessionSummaryDao()
+        // Fatal 4xx: withLlmRetry rethrows immediately, so each summarizeBatch
+        // attempt costs exactly one LLM call. The failed span never advances
+        // the cursor; before the fix the repeat loop re-summarized it
+        // MAX_BACKLOG_BATCHES times (6 calls) instead of stopping.
+        val llm = ScriptedLlm("ignored", failAttempts = Int.MAX_VALUE)
+        val s = Summarizer(
+            dao,
+            messages,
+            meta,
+            llm,
+            memoryEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
+            cloudEnabled = kotlinx.coroutines.flow.MutableStateFlow(true),
+            modelId = { "m1" },
+        )
+        val made = s.runBacklogAndDigest()
+        assertEquals(0, made)
+        assertEquals(1, llm.calls) // retry-storm proof: one attempt, not six
+    }
+
+    @Test
     fun `cloud or memory switch off means no summarization`() = runBlocking {
         val meta = FakeMemoryMetaDao()
         val messages = FakeMessageDao(row(1, "user", "Привет", 100))

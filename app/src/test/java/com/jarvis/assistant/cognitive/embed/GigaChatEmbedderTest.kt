@@ -93,6 +93,38 @@ class GigaChatEmbedderTest {
         assertTrue(transient.checkEntitlement() is EmbeddingEngine.Entitlement.Transient)
     }
 
+    /**
+     * F6 (REMEDIATION_PLAN): the probe's contract is "always a verdict". A 200
+     * reply that is structurally broken trips `require(...)` inside [embed] —
+     * an IllegalArgumentException, NOT an IOException. Pre-fix that escaped
+     * checkEntitlement and aborted the whole Settings benchmark with a crash
+     * instead of an honest "service problem".
+     */
+    @Test
+    fun `entitlement probe returns transient instead of throwing on a malformed 200`() = runBlocking {
+        // Valid JSON envelope, but the entry has no `embedding` array (IOException path).
+        val malformed = GigaChatEmbedder(
+            "e",
+            { _, _ -> Transport(200, """{"data":[{"index":0}]}""") },
+        )
+        assertTrue(malformed.checkEntitlement() is EmbeddingEngine.Entitlement.Transient)
+
+        // index out of range → require(...) → IllegalArgumentException: the
+        // exception class that used to escape checkEntitlement entirely.
+        val badIndex = GigaChatEmbedder(
+            "e",
+            { _, _ -> Transport(200, """{"data":[{"index":5,"embedding":[0.1]}]}""") },
+        )
+        assertTrue(badIndex.checkEntitlement() is EmbeddingEngine.Entitlement.Transient)
+
+        // Non-numeric vector entry → NumberFormatException (same escape class).
+        val nonNumeric = GigaChatEmbedder(
+            "e",
+            { _, _ -> Transport(200, """{"data":[{"index":0,"embedding":["abc"]}]}""") },
+        )
+        assertTrue(nonNumeric.checkEntitlement() is EmbeddingEngine.Entitlement.Transient)
+    }
+
     private fun Transport(code: Int, body: String?) = GigaChatEmbedder.TransportReply(code, body)
 
     @Test

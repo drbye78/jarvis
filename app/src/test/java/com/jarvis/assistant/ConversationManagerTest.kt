@@ -39,17 +39,13 @@ class FakeMessageDao : MessageDao {
     override fun recentDescLive(n: Int): kotlinx.coroutines.flow.Flow<List<MessageEntity>> =
         kotlinx.coroutines.flow.MutableStateFlow(rows.sortedByDescending { it.id }.take(n))
 
-    override suspend fun trimToIds(ids: Set<Long>) {
-        rows.removeAll { it.id !in ids }
-    }
-
     override suspend fun deleteAllExceptRecent(maxMessages: Int) {
         val toKeep = rows.sortedByDescending { it.id }.take(maxMessages).map { it.id }.toSet()
         rows.removeAll { it.id !in toKeep }
     }
 
-    override suspend fun inRange(fromInclusive: Long, toInclusive: Long): List<MessageEntity> =
-        rows.filter { it.id > fromInclusive && it.id <= toInclusive }.sortedBy { it.id }
+    override suspend fun inRange(afterId: Long, toInclusive: Long): List<MessageEntity> =
+        rows.filter { it.id > afterId && it.id <= toInclusive }.sortedBy { it.id }
 
     override suspend fun firstDoomedId(keep: Int): Long? =
         rows.map { it.id }.sortedDescending().getOrNull(keep)

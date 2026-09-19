@@ -58,8 +58,8 @@
 
         <ImageButton
             android:id="@+id/alarmDelete"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="@dimen/touch_target_min"
+            android:layout_height="@dimen/touch_target_min"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/delete"
             android:src="@drawable/ic_delete"

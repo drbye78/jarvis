@@ -16,11 +16,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
 import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.llm.CredentialCheck
 import com.jarvis.assistant.llm.CredentialCheckController
 import com.jarvis.assistant.llm.OAuthCredentialValidator
+import com.jarvis.assistant.ui.FieldErrorRenderer
+import com.jarvis.assistant.ui.FieldValidation
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.CredentialsStore
 import kotlinx.coroutines.Dispatchers
@@ -115,6 +118,13 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var porcupineBlock: View
     private lateinit var sherpaBlock: View
 
+    /**
+     * U7: the TextInputLayout wrapping each validated input, so a field error
+     * can be attached to the field that caused it instead of raised as a
+     * free-floating Toast.
+     */
+    private lateinit var fieldLayouts: Map<FieldValidation.Field, TextInputLayout>
+
     // AEC (Phase A + Phase B) card
     private lateinit var aecGroup: RadioGroup
     private lateinit var aecProbeRow: TextView
@@ -165,6 +175,15 @@ class SettingsActivity : AppCompatActivity() {
         openAiBaseUrl = findViewById(R.id.openAiBaseUrl)
         openAiModel = findViewById(R.id.openAiModel)
         openAiApiKey = findViewById(R.id.openAiApiKey)
+
+        fieldLayouts = mapOf(
+            FieldValidation.Field.OPENAI_BASE_URL to findViewById(R.id.openAiBaseUrlLayout),
+            FieldValidation.Field.OPENAI_API_KEY to findViewById(R.id.openAiApiKeyLayout),
+            FieldValidation.Field.SALUTE_ID to findViewById(R.id.saluteIdLayout),
+            FieldValidation.Field.SALUTE_SECRET to findViewById(R.id.saluteSecretLayout),
+            FieldValidation.Field.GIGACHAT_ID to findViewById(R.id.gigaChatIdLayout),
+            FieldValidation.Field.GIGACHAT_SECRET to findViewById(R.id.gigaChatSecretLayout),
+        )
 
         engineGroup = findViewById(R.id.engineGroup)
         porcupineBlock = findViewById(R.id.porcupineBlock)
@@ -816,10 +835,11 @@ class SettingsActivity : AppCompatActivity() {
         val url = openAiBaseUrl.text.toString().trim()
         val model = openAiModel.text.toString().trim()
         val key = openAiApiKey.text.toString().trim()
-        if (url.isEmpty()) {
-            Toast.makeText(this, R.string.error_base_url, Toast.LENGTH_SHORT).show()
-            return
-        }
+        // U7: refuse on the OFFENDING FIELD instead of a Toast. The Toast
+        // named no field and vanished on its own, so the user could not tell
+        // which of the three inputs was wrong.
+        renderFieldErrors(FieldValidation.validateLlmProvider(url, key))
+        if (url.isEmpty() || key.isEmpty()) return
         lifecycleScope.launch {
             callbacks.onSaveLlmProviderSettings(url, model, key)
             Toast.makeText(this@SettingsActivity, R.string.settings_saved, Toast.LENGTH_SHORT).show()
@@ -838,10 +858,26 @@ class SettingsActivity : AppCompatActivity() {
         val gId = gigaChatId.text.toString().trim()
         val gSec = gigaChatSecret.text.toString().trim()
 
+        // U7: a HALF-filled OAuth pair can never authenticate, and the error
+        // belongs on the missing half. A fully-empty pair is "not configured
+        // yet", not an error — saving stays local-first.
+        val errors = FieldValidation.validateCredentials(sId, sSec, gId, gSec)
+        renderFieldErrors(errors)
+        if (errors.isNotEmpty()) return
+
         lifecycleScope.launch {
             callbacks.onSaveCredentials(key, sId, sSec, gId, gSec)
             Toast.makeText(this@SettingsActivity, R.string.settings_saved, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /**
+     * U7: attach validation failures to their fields and clear the rest, so a
+     * corrected form stops showing the previous message. Success stays a
+     * Toast — it has no field to attach to.
+     */
+    private fun renderFieldErrors(errors: List<FieldValidation.FieldError>) {
+        FieldErrorRenderer.render(errors, fieldLayouts, this)
     }
 
     private fun updateSensitivityLabel(value: Float) {
@@ -1105,6 +1141,13 @@ class SettingsActivity : AppCompatActivity() {
             // session state collector only re-arms the LANE on the next state
             // change; without this rebuild, 3 of the 4 engine×toggle
             // combinations stayed stale until a restart.
+            //
+            // A5: the state collector fires on STATE CHANGE only, so re-arm the
+            // lane for the current state too — otherwise enabling voice stop
+            // while the assistant is THINKING/SPEAKING did nothing until the
+            // turn ended (the rebuild's own tail re-arm reads the flag this
+            // sets).
+            GraphHolder.graph?.sessionManager?.reapplyVoiceStopLane()
             lifecycleScope.launch(Dispatchers.Default) {
                 GraphHolder.graph?.reconfigureWakeWord()
             }

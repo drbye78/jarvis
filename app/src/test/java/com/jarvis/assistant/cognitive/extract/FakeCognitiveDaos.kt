@@ -67,12 +67,36 @@ class FakeUserFactDao : UserFactDao {
 
     override suspend fun confirmFact(factId: String, confidence: Float, confirmedAt: Long) {
         val row = byFactId(factId) ?: return
-        update(row.copy(confidence = confidence, lastConfirmedAt = confirmedAt, updatedAt = confirmedAt))
+        update(
+            row.copy(
+                confidence = confidence,
+                lastConfirmedAt = confirmedAt,
+                updatedAt = confirmedAt,
+                decayAnchorConfidence = confidence,
+                decayAnchorAt = confirmedAt,
+            ),
+        )
     }
 
     override suspend fun updateConfidence(factId: String, confidence: Float) {
         val row = byFactId(factId) ?: return
         update(row.copy(confidence = confidence))
+    }
+
+    override suspend fun updateConfidenceAndAnchor(
+        factId: String,
+        confidence: Float,
+        anchorConfidence: Float,
+        anchorAt: Long,
+    ) {
+        val row = byFactId(factId) ?: return
+        update(
+            row.copy(
+                confidence = confidence,
+                decayAnchorConfidence = anchorConfidence,
+                decayAnchorAt = anchorAt,
+            ),
+        )
     }
 
     override suspend fun updateStatus(factId: String, status: String, now: Long) {
@@ -148,10 +172,6 @@ class FakeExtractionQueueDao : ExtractionQueueDao {
         }
     }
 
-    override suspend fun delete(messageId: Long) {
-        rows.remove(messageId)
-    }
-
     override suspend fun wipeAll() = rows.clear()
 }
 
@@ -162,6 +182,10 @@ class FakeMemoryMetaDao : MemoryMetaDao {
 
     override suspend fun put(entity: MemoryMetaEntity) {
         values[entity.key] = entity.value
+    }
+
+    override suspend fun delete(key: String) {
+        values.remove(key)
     }
 
     override suspend fun all(): List<MemoryMetaEntity> =
@@ -201,17 +225,13 @@ class FakeMessageDao(vararg seed: MessageEntity) : MessageDao {
     override fun recentDescLive(n: Int): Flow<List<MessageEntity>> =
         MutableStateFlow(rows.values.sortedByDescending { it.id }.take(n))
 
-    override suspend fun trimToIds(ids: Set<Long>) {
-        rows.entries.removeAll { it.key !in ids }
-    }
-
     override suspend fun deleteAllExceptRecent(maxMessages: Int) {
         val keep = rows.keys.sortedDescending().take(maxMessages).toSet()
         rows.entries.removeAll { it.key !in keep }
     }
 
-    override suspend fun inRange(fromInclusive: Long, toInclusive: Long): List<MessageEntity> =
-        rows.values.filter { it.id > fromInclusive && it.id <= toInclusive }.sortedBy { it.id }
+    override suspend fun inRange(afterId: Long, toInclusive: Long): List<MessageEntity> =
+        rows.values.filter { it.id > afterId && it.id <= toInclusive }.sortedBy { it.id }
 
     override suspend fun firstDoomedId(keep: Int): Long? =
         rows.keys.sortedDescending().getOrNull(keep)
@@ -371,6 +391,9 @@ class FakeFactVectorDao : FactVectorDao {
     override suspend fun factIdsForEngine(engineId: String): List<String> =
         rows.values.filter { it.engineId == engineId }.map { it.factId }
 
+    override suspend fun distinctEngineIds(): List<String> =
+        rows.values.map { it.engineId }.distinct()
+
     override suspend fun deleteForEngine(engineId: String) {
         rows.entries.removeAll { it.value.engineId == engineId }
     }
@@ -436,10 +459,6 @@ class FakeEntityDao : EntityDao {
         links.filter { it.factId == factId }
 
     override suspend fun allLinks(): List<FactEntityLinkEntity> = links.toList()
-
-    override suspend fun deleteLinksByFactIds(factIds: List<String>) {
-        links.removeAll { it.factId in factIds }
-    }
 
     override suspend fun deleteOrphans(): Int {
         val linked = links.map { it.entityId }.toSet()

@@ -44,11 +44,12 @@ import org.junit.Test
  * behavior; a mid-stream refresh policy, if ever added, will update them.
  *
  * Production-code note: `SberStreamingAsr` extracts the error status via
- * `(t as? StatusException)?.status` — but the async stub delivers a
- * StatusRuntimeException, so the extracted log label degrades to the raw message.
- * The typed [AsrEvent.Failed] event itself is emitted correctly in every scenario
- * (asserted against the real exception type below); flagged to the remediation
- * report rather than "fixed" here.
+ * `(t as? StatusException)?.status` and falls back to
+ * `(t as? StatusRuntimeException)?.status` — the async stub delivers the
+ * latter, and the fallback keeps the log label a typed gRPC status code
+ * instead of degrading to the raw message. The typed [AsrEvent.Failed] event
+ * itself is emitted correctly in every scenario (asserted against the real
+ * exception type below).
  */
 class SberStreamingAsrTest {
 
@@ -335,6 +336,30 @@ class SberStreamingAsrTest {
                 0,
                 fakeAsr.receivedRequests().count { it.hasAudioChunk() },
             )
+        } finally {
+            stream.cancel()
+        }
+    }
+
+    @Test
+    fun `a late partial after the final does not replace the replayed terminal`() = runBlocking {
+        // S-3 regression: the flow keeps the last event in its replay cache
+        // (replay=1) for a subscriber that attaches after an instant terminal.
+        // A late non-EOU frame used to overwrite that cached Final with a
+        // Partial, so the late subscriber never learned the utterance ended.
+        enqueueToken("tok-1")
+        val asr = newAsr()
+        val stream = asr.open()
+        try {
+            val eventsJob = async { collectEvents(stream.events, count = 1) }
+            yield()
+            fakeAsr.emitFinal("привет")
+            assertEquals(AsrEvent.Final("привет"), eventsJob.await().single())
+
+            fakeAsr.emitPartial("привет ещё")
+
+            val late = withTimeoutOrNull(300) { stream.events.first { it is AsrEvent.Partial } }
+            assertNull("a late Partial must not be emitted after the terminal", late)
         } finally {
             stream.cancel()
         }

@@ -21,7 +21,14 @@ class FollowUpWindowController(
 ) {
     enum class ControllerState { IDLE, OPEN }
 
-    /** Commands the SessionManager must apply. */
+    /**
+     * Commands the SessionManager must apply.
+     *
+     * A6: each event returns ONLY the effect it can emit, typed as that
+     * variant. Every call site therefore matches exhaustively against
+     * `null` — previously they took the shared `Effect?` and had to carry
+     * branches for variants the event could never emit ("not emitted here").
+     */
     sealed interface Effect {
         /** Enter FOLLOW_UP_WINDOW state now; UI shows the countdown orb. */
         data object OpenWindow : Effect
@@ -59,7 +66,7 @@ class FollowUpWindowController(
      * caller's decision (config/prefs) — this controller assumes it was told
      * to run only when the feature is on.
      */
-    fun onTurnEnded(spoke: Boolean, enabled: Boolean): Effect? {
+    fun onTurnEnded(spoke: Boolean, enabled: Boolean): Effect.OpenWindow? {
         if (!enabled || !spoke) {
             state = ControllerState.IDLE
             return null
@@ -70,11 +77,18 @@ class FollowUpWindowController(
     }
 
     /**
-     * VAD onset observed. Only meaningful while OPEN — outside the window
-     * the VAD is idle (no collector running) so stray true values are ignored.
+     * VAD onset observed. Only meaningful while OPEN **and before the
+     * deadline** — outside the window the VAD is idle (no collector running)
+     * so stray true values are ignored.
+     *
+     * A6: the deadline check matters because the collector polls [transition]
+     * on a delay; an onset landing in the gap between the deadline and the
+     * next tick used to be accepted and started a follow-up turn after the
+     * window the user actually saw had already run out. Rejecting here lets
+     * the pending [Effect.ExpireWindow] do its job instead.
      */
-    fun onVadActive(): Effect? =
-        if (state == ControllerState.OPEN) {
+    fun onVadActive(): Effect.StartFollowUpTurn? =
+        if (state == ControllerState.OPEN && nowMs() < deadlineMs) {
             state = ControllerState.IDLE
             Effect.StartFollowUpTurn
         } else {
@@ -96,7 +110,7 @@ class FollowUpWindowController(
      * from the window collector loop). Emits [Effect.ExpireWindow] exactly
      * once when the deadline passes.
      */
-    fun transition(): Effect? {
+    fun transition(): Effect.ExpireWindow? {
         if (state == ControllerState.OPEN && nowMs() >= deadlineMs) {
             state = ControllerState.IDLE
             return Effect.ExpireWindow

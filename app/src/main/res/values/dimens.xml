@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shared dimensions.
+     Touch/height minimums follow the accessibility guidance (48dp) and
+     Material button metrics, so fixed pixel heights become minimums that a
+     large font scale can grow. The tablet reading-column cap lives here too
+     (values-sw600dp narrows it) — replacing the old runtime width math. -->
+<resources>
+    <!-- Minimum interactive touch target (Material / WCAG 2.5.8). -->
+    <dimen name="touch_target_min">48dp</dimen>
+
+    <!-- Prominent primary/secondary action height; a minimum, not a cap. -->
+    <dimen name="button_min_height">56dp</dimen>
+
+    <!-- Comfortable reading column. On a phone this is wider than any screen,
+         so it resolves to match_parent; values-sw600dp narrows it to the
+         tablet comfort zone. -->
+    <dimen name="home_column_width">2000dp</dimen>
+</resources>

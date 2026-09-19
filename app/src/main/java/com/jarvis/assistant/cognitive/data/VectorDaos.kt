@@ -29,6 +29,13 @@ interface FactVectorDao {
     @Query("SELECT factId FROM fact_vectors WHERE engineId = :engineId")
     suspend fun factIdsForEngine(engineId: String): List<String>
 
+    /**
+     * Engine spaces that own at least one vector. Needed to purge CLOUD
+     * vectors when `memory.cloudEnabled` flips false (REMEDIATION_PLAN N7).
+     */
+    @Query("SELECT DISTINCT engineId FROM fact_vectors")
+    suspend fun distinctEngineIds(): List<String>
+
     @Query("DELETE FROM fact_vectors WHERE engineId = :engineId")
     suspend fun deleteForEngine(engineId: String)
 
@@ -96,10 +103,6 @@ interface EntityDao {
     @Query("SELECT * FROM fact_entities")
     suspend fun allLinks(): List<FactEntityLinkEntity>
 
-    /** Link GC for deleted/superseded facts. */
-    @Query("DELETE FROM fact_entities WHERE factId IN (:factIds)")
-    suspend fun deleteLinksByFactIds(factIds: List<String>)
-
     /** Entities no fact mentions anymore (full re-derivation leftovers). */
     @Query("DELETE FROM entities WHERE id NOT IN (SELECT DISTINCT entityId FROM fact_entities)")
     suspend fun deleteOrphans(): Int
@@ -122,6 +125,7 @@ object NoopVectorDaos : FactVectorDao, EntityDao {
     override suspend fun forEngine(engineId: String): List<FactVectorEntity> = emptyList()
     override suspend fun countForEngine(engineId: String): Int = 0
     override suspend fun factIdsForEngine(engineId: String): List<String> = emptyList()
+    override suspend fun distinctEngineIds(): List<String> = emptyList()
     override suspend fun deleteForEngine(engineId: String) = Unit
     override suspend fun deleteByFactIds(factIds: List<String>) = Unit
     // wipeAll: one override satisfies both identical declarations.
@@ -134,7 +138,6 @@ object NoopVectorDaos : FactVectorDao, EntityDao {
     override suspend fun insertLink(link: FactEntityLinkEntity) = Unit
     override suspend fun linksForFact(factId: String): List<FactEntityLinkEntity> = emptyList()
     override suspend fun allLinks(): List<FactEntityLinkEntity> = emptyList()
-    override suspend fun deleteLinksByFactIds(factIds: List<String>) = Unit
     override suspend fun deleteOrphans(): Int = 0
     override suspend fun wipeLinks() = Unit
 

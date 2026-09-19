@@ -1,6 +1,7 @@
 package com.jarvis.assistant
 
 import com.jarvis.assistant.data.AlertDao
+import com.jarvis.assistant.data.ClockDomain
 import com.jarvis.assistant.data.ScheduledAlertEntity
 import com.jarvis.assistant.tools.AlarmRingerPolicy
 import com.jarvis.assistant.tools.AlertArmer
@@ -113,13 +114,21 @@ private class BootFakeAlertDao : AlertDao {
 
 /** Recording armer fake keyed by request code; cancel removes the arm. */
 private class BootRecordingArmer : AlertArmer {
-    data class Armed(val id: Int, val triggerAtMillis: Long, val kind: String, val label: String)
+    data class Armed(val alert: ScheduledAlertEntity) {
+        val id: Int get() = alert.id
+        val triggerAtMillis: Long get() = alert.triggerAtMillis
+        val kind: String get() = alert.kind
+        val label: String get() = alert.label
+        val clockDomain: String get() = alert.clockDomain
+        val anchorElapsedMillis: Long get() = alert.anchorElapsedMillis
+        val armedElapsedMillis: Long get() = alert.armedElapsedMillis
+    }
 
     val armed = LinkedHashMap<Int, Armed>()
     val cancelled = mutableListOf<Int>()
 
-    override fun arm(id: Int, triggerAtMillis: Long, kind: String, label: String) {
-        armed[id] = Armed(id, triggerAtMillis, kind, label)
+    override fun arm(alert: ScheduledAlertEntity) {
+        armed[alert.id] = Armed(alert)
     }
 
     override fun cancel(id: Int, kind: String) {
@@ -132,7 +141,8 @@ private class BootHarness(startNow: Long) {
     val dao = BootFakeAlertDao()
     val armer = BootRecordingArmer()
     var now: Long = startNow
-    val scheduler = AndroidAlarmScheduler(dao, armer, { now })
+    var elapsed: Long = 0L
+    val scheduler = AndroidAlarmScheduler(dao, armer, { now }, { elapsed })
 }
 
 class BootRescheduleTest {
@@ -280,5 +290,44 @@ class BootRescheduleTest {
 
         assertEquals(10_000L + day, h.armer.armed.getValue(id).triggerAtMillis)
         assertTrue(h.dao.byId(id)!!.enabled)
+    }
+
+    @Test
+    fun `boot re-anchors a future timer to the fresh elapsed clock and skips a past timer`() = runBlocking {
+        // The ELAPSED clock resets at reboot, so a stored anchorElapsedMillis is
+        // meaningless. The remaining wall-clock delta is re-anchored to the new
+        // boot-relative elapsed clock; an already-overdue timer is disabled.
+        val h = BootHarness(startNow = 1_000_000L)
+        h.elapsed = 5_000L
+        val future = h.dao.insert(
+            ScheduledAlertEntity(
+                kind = ScheduledAlertEntity.KIND_TIMER,
+                label = "чай",
+                triggerAtMillis = h.now + 60_000L,
+                clockDomain = ClockDomain.ELAPSED,
+                anchorElapsedMillis = 1L, // stale pre-reboot anchor
+            ),
+        ).toInt()
+        val past = h.dao.insert(
+            ScheduledAlertEntity(
+                kind = ScheduledAlertEntity.KIND_TIMER,
+                label = "старый",
+                triggerAtMillis = h.now - 1L,
+                clockDomain = ClockDomain.ELAPSED,
+                anchorElapsedMillis = 2L, // stale pre-reboot anchor
+            ),
+        ).toInt()
+
+        h.scheduler.rescheduleAllOnBoot()
+
+        val arm = h.armer.armed.getValue(future)
+        assertEquals(ClockDomain.ELAPSED, arm.alert.clockDomain)
+        assertEquals(65_000L, arm.anchorElapsedMillis) // 5_000 + 60_000
+        assertEquals(5_000L, arm.armedElapsedMillis)
+        assertEquals(1_060_000L, arm.triggerAtMillis) // wall value untouched
+        assertEquals(65_000L, h.dao.byId(future)!!.anchorElapsedMillis)
+
+        assertNull(h.armer.armed[past])
+        assertFalse(h.dao.byId(past)!!.enabled)
     }
 }

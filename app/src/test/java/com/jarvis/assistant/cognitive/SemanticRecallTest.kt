@@ -102,6 +102,10 @@ class SemanticRecallTest {
             embedderChoice = embedderChoice,
             localEmbedder = localEngine,
             cloudEmbedder = cloudEngine,
+            // F11: pin the CPU hop (same precedent as the wake-word engine's
+            // `engineBuildDispatcher = Dispatchers.Unconfined`) so the 40 ms
+            // gather `withTimeout` cannot fire because of a real thread hop.
+            cpuDispatcher = kotlinx.coroutines.Dispatchers.Unconfined,
         ),
         parentScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob()),
     )

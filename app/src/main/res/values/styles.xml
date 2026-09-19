@@ -32,4 +32,22 @@
         <item name="android:textSize">13sp</item>
         <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     </style>
+
+    <!--
+      Settings card shell (U1). The same five appearance attributes were
+      copy-pasted into all nine cards of activity_settings.xml; this style is
+      their single definition. `parent=""` is REQUIRED and load-bearing:
+      AAPT treats the dots in a style name as implicit inheritance and would
+      otherwise demand a `Widget.Jarvis` style that does not exist. Breaking
+      that chain also keeps the cards on the exact defaults they already
+      relied on, and `layout_width`/`layout_height` stay explicit at each
+      call site — a style is not the place to risk a card rendering at zero
+      size.
+    -->
+    <style name="Widget.Jarvis.SettingsCard" parent="">
+        <item name="cardBackgroundColor">?attr/colorSurface</item>
+        <item name="cardCornerRadius">16dp</item>
+        <item name="cardElevation">1dp</item>
+        <item name="contentPadding">18dp</item>
+    </style>
 </resources>

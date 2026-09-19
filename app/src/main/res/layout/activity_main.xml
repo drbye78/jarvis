@@ -11,7 +11,7 @@
 
     <LinearLayout
         android:id="@+id/homeColumn"
-        android:layout_width="match_parent"
+        android:layout_width="@dimen/home_column_width"
         android:layout_height="match_parent"
         android:layout_gravity="center_horizontal"
         android:orientation="vertical">
@@ -44,8 +44,8 @@
 
             <ImageButton
                 android:id="@+id/alarmsButton"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="@dimen/touch_target_min"
+                android:layout_height="@dimen/touch_target_min"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/alarms"
                 android:src="@drawable/ic_alarm"
@@ -53,8 +53,8 @@
 
             <ImageButton
                 android:id="@+id/settingsButton"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="@dimen/touch_target_min"
+                android:layout_height="@dimen/touch_target_min"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/settings"
                 android:src="@drawable/ic_settings"
@@ -76,6 +76,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:layout_marginTop="2dp"
+            android:accessibilityLiveRegion="polite"
             android:background="@drawable/bg_status_pill"
             android:paddingStart="18dp"
             android:paddingEnd="18dp"

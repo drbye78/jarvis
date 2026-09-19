@@ -42,13 +42,18 @@ interface MessageDao {
     suspend fun recentDesc(n: Int): List<MessageEntity>
 
     /**
-     * COGNITIVE_PLAN 2.5: the summarize-before-prune window — rows in
-     * `(fromInclusive, toInclusive]` by id, oldest first. The summarizer
-     * reads the doomed range BEFORE the prune delete lands (see
-     * ConversationManager.beforePrune).
+     * COGNITIVE_PLAN 2.5: the summarize-before-prune window — rows `(afterId,
+     * toInclusive]` by id, oldest first. The summarizer reads the doomed range
+     * BEFORE the prune delete lands (see ConversationManager.beforePrune).
+     *
+     * Both bounds are EXCLUSIVE/INCLUSIVE exactly as written in SQL (`id >
+     * :afterId AND id <= :toInclusive`): the lower bound is the cursor that was
+     * already summarized, and re-reading it would re-summarize the same row
+     * forever. The old name `fromInclusive` claimed the opposite and cost an
+     * audit cycle chasing a non-existent off-by-one.
      */
-    @Query("SELECT * FROM messages WHERE id > :fromInclusive AND id <= :toInclusive ORDER BY id ASC")
-    suspend fun inRange(fromInclusive: Long, toInclusive: Long): List<MessageEntity>
+    @Query("SELECT * FROM messages WHERE id > :afterId AND id <= :toInclusive ORDER BY id ASC")
+    suspend fun inRange(afterId: Long, toInclusive: Long): List<MessageEntity>
 
     /** COGNITIVE_PLAN 2.3 gate 5: presence proxy — the newest row's time. */
     @Query("SELECT MAX(createdAt) FROM messages")
@@ -57,9 +62,6 @@ interface MessageDao {
     /** Live transcript for the UI. */
     @Query("SELECT * FROM messages ORDER BY id DESC LIMIT :n")
     fun recentDescLive(n: Int): Flow<List<MessageEntity>>
-
-    @Query("DELETE FROM messages WHERE id NOT IN (:ids)")
-    suspend fun trimToIds(ids: Set<Long>)
 
     /** Deletes all messages except the most recent [maxMessages] by id. */
     @Query("DELETE FROM messages WHERE id NOT IN (SELECT id FROM messages ORDER BY id DESC LIMIT :maxMessages)")

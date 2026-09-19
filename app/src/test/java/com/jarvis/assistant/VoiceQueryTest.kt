@@ -291,4 +291,30 @@ class VoiceQueryTest {
         val np = NowPlaying(title = "Группа крови", artist = "Кино", state = NowPlaying.STATE_PAUSED)
         assertFalse(VoiceQueryMatcher.isVerified(np, vq, null))
     }
+
+    // ------------------------------------------------------------------
+    // S-5: inflection folding + short-token rejection
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `inflected request token still scores against the track`() {
+        // «включи группу Кино» vs a title in the nominative case — the old
+        // exact-token overlap scored this below threshold and re-dispatched a
+        // player that was already correct.
+        val np = NowPlaying(title = "Группа крови", artist = "Кино", state = NowPlaying.STATE_PLAYING)
+        val vq = VoiceQuery.clean("группу Кино")!!
+        assertEquals(0.5, VoiceQueryMatcher.score(np, vq), 0.001)
+        assertTrue(VoiceQueryMatcher.isVerified(np, vq, null))
+    }
+
+    @Test
+    fun `a sub-minimum token is not a scoreable expectation`() {
+        // A one-letter word («я») used to match every title containing it and
+        // gave a single-token false positive.
+        val np = NowPlaying(title = "Я тебя не отдам", state = NowPlaying.STATE_PLAYING)
+        val vq = VoiceQuery.clean("я")!!
+        assertEquals(0.0, VoiceQueryMatcher.score(np, vq), 0.001)
+        assertFalse(VoiceQueryMatcher.hasScoreableExpectation(vq))
+        assertFalse(VoiceQueryMatcher.isVerified(np, vq, null))
+    }
 }

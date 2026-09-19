@@ -133,27 +133,34 @@ class FactNormalizer(
         valueNorm: String,
         now: Long,
         supersedesId: String?,
-    ): FactSnapshot = FactSnapshot(
-        factId = factId,
-        category = incoming.category,
-        subject = subject,
-        predicate = incoming.predicate,
-        value = incoming.value.trim(),
-        valueNormalized = valueNorm,
-        confidence = incoming.confidence.coerceIn(0f, 1f),
-        origin = incoming.origin,
-        status = com.jarvis.assistant.cognitive.model.FactStatus.ACTIVE,
-        supersedesId = supersedesId,
-        contested = false,
-        sensitive = incoming.sensitive,
-        // 0 = explicit memory-tool write with no source message (plan §6.4).
-        sourceMessageId = incoming.messageId.takeIf { it > 0 },
-        createdAt = now,
-        updatedAt = now,
-        lastConfirmedAt = now,
-        lastRecalledAt = null,
-        recallCount = 0,
-    )
+    ): FactSnapshot {
+        val confidence = incoming.confidence.coerceIn(0f, 1f)
+        return FactSnapshot(
+            factId = factId,
+            category = incoming.category,
+            subject = subject,
+            predicate = incoming.predicate,
+            value = incoming.value.trim(),
+            valueNormalized = valueNorm,
+            confidence = confidence,
+            origin = incoming.origin,
+            status = com.jarvis.assistant.cognitive.model.FactStatus.ACTIVE,
+            supersedesId = supersedesId,
+            contested = false,
+            sensitive = incoming.sensitive,
+            // 0 = explicit memory-tool write with no source message (plan §6.4).
+            sourceMessageId = incoming.messageId.takeIf { it > 0 },
+            createdAt = now,
+            updatedAt = now,
+            lastConfirmedAt = now,
+            lastRecalledAt = null,
+            recallCount = 0,
+            // A brand-new fact anchors decay at creation: the curve starts
+            // from the confidence it was created with.
+            decayAnchorConfidence = confidence,
+            decayAnchorAt = now,
+        )
+    }
 
     companion object {
         /** Above this, a conflict is a dispute to ask about, not a correction. */

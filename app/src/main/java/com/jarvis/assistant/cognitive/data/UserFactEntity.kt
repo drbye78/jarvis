@@ -30,9 +30,10 @@ import com.jarvis.assistant.cognitive.recall.SearchTokenizer
     tableName = "user_facts",
     indices = [
         Index("factId", unique = true),
-        Index("status"),
-        Index("category"),
-        Index("updatedAt"),
+        // Single composite covering both the status scan and its updatedAt
+        // ordering; replaces the separate `status` / `updatedAt` indices and
+        // drops the dead `category` index (REMEDIATION_PLAN Phase 2).
+        Index(value = ["status", "updatedAt"]),
     ],
 )
 data class UserFactEntity(
@@ -57,6 +58,19 @@ data class UserFactEntity(
     val lastConfirmedAt: Long,
     val lastRecalledAt: Long?,
     val recallCount: Int,
+    /**
+     * Immutable decay anchor (REMEDIATION_PLAN Phase 4 consumes it): the
+     * confidence the decay curve is computed from. Defaults to [confidence]
+     * so rows written before Phase 4 (and any call site that does not pass
+     * it) anchor at the confidence they were stored with.
+     */
+    val decayAnchorConfidence: Float = confidence,
+    /**
+     * When [decayAnchorConfidence] was anchored (epoch ms); 0 = never
+     * explicitly anchored, at which point Phase 4 falls back to the other
+     * timestamps. Immutable after write.
+     */
+    val decayAnchorAt: Long = 0L,
 ) {
     fun toSnapshot(): FactSnapshot = FactSnapshot(
         factId = factId,
@@ -77,6 +91,8 @@ data class UserFactEntity(
         lastConfirmedAt = lastConfirmedAt,
         lastRecalledAt = lastRecalledAt,
         recallCount = recallCount,
+        decayAnchorConfidence = decayAnchorConfidence,
+        decayAnchorAt = decayAnchorAt,
     )
 
     companion object {
@@ -105,6 +121,8 @@ data class UserFactEntity(
             lastConfirmedAt = s.lastConfirmedAt,
             lastRecalledAt = s.lastRecalledAt,
             recallCount = s.recallCount,
+            decayAnchorConfidence = s.decayAnchorConfidence,
+            decayAnchorAt = s.decayAnchorAt,
         )
     }
 }

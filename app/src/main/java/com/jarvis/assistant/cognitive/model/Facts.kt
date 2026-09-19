@@ -79,6 +79,15 @@ data class FactSnapshot(
     val lastConfirmedAt: Long,
     val lastRecalledAt: Long?,
     val recallCount: Int,
+    /**
+     * Immutable decay anchor (REMEDIATION_PLAN Phase 4 consumes it): the
+     * confidence the decay curve is computed from, plus the epoch ms it was
+     * anchored at (0 = never explicitly anchored). Defaults mirror
+     * [com.jarvis.assistant.cognitive.data.UserFactEntity] so existing
+     * construction sites keep compiling and anchor at the stored confidence.
+     */
+    val decayAnchorConfidence: Float = confidence,
+    val decayAnchorAt: Long = 0L,
 ) {
     /** Identity key for dedup: same (subject, predicate, normalized value). */
     val key: FactKey get() = FactKey(subject, predicate, valueNormalized)

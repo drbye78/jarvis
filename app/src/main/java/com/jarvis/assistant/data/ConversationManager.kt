@@ -73,10 +73,12 @@ class ConversationManager(
         trim()
     }
 
-    /** Keeps the newest [retentionMaxMessages] messages on disk. Tool results
-     *  always have higher ids than their assistant, so a simple id-based
-     *  cutoff preserves pairs. The LLM WINDOW stays [maxMessages] — this is
-     *  storage retention, not context. */
+    /** Keeps the newest [retentionMaxMessages] messages on disk by id.
+     *  The id-based cutoff does NOT preserve assistant/tool pairs: a pair
+     *  straddling the boundary can be split, leaving a dangling half on disk.
+     *  That is acceptable — this is storage retention, not context — and the
+     *  LLM window's pair sanitizer ([getHistoryForLLM]) drops any dangling
+     *  half before the request is built. The LLM WINDOW stays [maxMessages]. */
     private suspend fun trim() {
         // 2.5: hand the doomed range to the summarizer BEFORE the delete.
         // The cutoff is the newest id that will NOT survive retention.

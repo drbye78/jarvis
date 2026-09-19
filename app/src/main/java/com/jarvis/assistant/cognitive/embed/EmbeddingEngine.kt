@@ -57,6 +57,49 @@ interface EmbeddingEngine {
     }
 }
 
+/**
+ * F5 (REMEDIATION_PLAN): the recorded cloud-entitlement verdict.
+ *
+ * The benchmark writes two stamps into `memory_meta` — `cloudEmbedEntitled`
+ * (epoch ms of the last OK probe) and `cloudEmbedUnavailable` (HTTP code of the
+ * last Denied probe). They are MUTUALLY EXCLUSIVE: a verdict REPLACES the other,
+ * never accumulates beside it. Before this, `resolveActiveEngine` ignored both
+ * keys and treated "a cloud engine object exists" as usable, so:
+ * - an account that had been DENIED still routed facts to the cloud (the
+ *   `CLOUD` selector and an AUTO cloud winner both stayed live), and
+ * - a probe that failed after a success left the stale success in place.
+ *
+ * Read side ([isUsable]) and write side ([nextStamps]) are kept in one pure
+ * place so the two can never disagree.
+ */
+object CloudEntitlement {
+
+    /** What a probe verdict does to the two stamps (null stamp = clear it). */
+    data class Stamps(val entitledAt: Long?, val unavailableCode: Int?)
+
+    /**
+     * The stamps a verdict leaves behind, or null for "no verdict recorded".
+     * Ok → entitled stamp, unavailability cleared. Denied → unavailability
+     * stamp, entitled stamp CLEARED (the revocation case). Transient → null:
+     * a network hiccup must not overwrite a real verdict with a blank slate.
+     */
+    fun nextStamps(probe: EmbeddingEngine.Entitlement, now: Long): Stamps? = when (probe) {
+        is EmbeddingEngine.Entitlement.Ok -> Stamps(entitledAt = now, unavailableCode = null)
+        is EmbeddingEngine.Entitlement.Denied -> Stamps(entitledAt = null, unavailableCode = probe.code)
+        is EmbeddingEngine.Entitlement.Transient -> null
+    }
+
+    /**
+     * True only when the engine exists AND the last recorded verdict was a
+     * success AND no unavailability stamp contradicts it.
+     */
+    fun isUsable(
+        engineConstructed: Boolean,
+        entitledStamp: String?,
+        unavailableStamp: String?,
+    ): Boolean = engineConstructed && entitledStamp != null && unavailableStamp == null
+}
+
 /** Selector values behind the `memory.embedder` pref (§12.4-3). */
 enum class EmbedderChoice {
     /** Benchmark winner (memory_meta); CI ship verdict as fallback; else OFF. */

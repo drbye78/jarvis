@@ -11,7 +11,10 @@ package com.jarvis.assistant.session
  * [memory] is a lazy provider so the gather can be STARTED as soon as the
  * utterance is final (before the LLM request is even built — plan §7.2:
  * "launched the moment ASR finalizes") and awaited only when the composer
- * needs it, hidden inside GigaChat's time-to-first-token. The provider
+ * needs it, so it overlaps the PRE-LLM prompt assembly. F11 correction: it is
+ * NOT hidden inside GigaChat's time-to-first-token — TTFT begins once the
+ * request is on the wire, so local ranking work cannot hide there (the CPU
+ * phases run on `Dispatchers.Default`). The provider
  * returns the ALREADY RENDERED `<memory-context>` block («» empty string
  * when memory is off/empty) so the session layer carries no cognitive types
  * and the composer stays a dumb assembler (byte-identity is then trivially

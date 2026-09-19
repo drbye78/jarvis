@@ -4,12 +4,10 @@ import com.jarvis.assistant.grpc.synthesis.SmartSpeechGrpc
 import com.jarvis.assistant.grpc.synthesis.SynthesisRequest
 import com.jarvis.assistant.grpc.synthesis.SynthesisResponse
 import com.jarvis.assistant.llm.TokenManager
-import io.grpc.ClientInterceptors
+import com.jarvis.assistant.speech.bearerStub
 import io.grpc.Context
 import io.grpc.ManagedChannel
-import io.grpc.Metadata
 import io.grpc.Status
-import io.grpc.stub.MetadataUtils
 import io.grpc.stub.StreamObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,7 +17,6 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.util.concurrent.TimeUnit
 
 // The TtsClient contract itself lives in TtsClient.kt (pure JVM) so the
 // audio-etiquette lane can compile against it without gRPC.
@@ -72,18 +69,12 @@ class SaluteSpeechTts(
         val producer = launch(Dispatchers.IO) {
             try {
                 val token = tokenManager.getSaluteToken()
-                val headers = Metadata().apply {
-                    put(
-                        Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
-                        "Bearer $token"
-                    )
-                }
-                val intercepted = ClientInterceptors.intercept(
+                val stub = bearerStub(
                     this@SaluteSpeechTts.channel,
-                    MetadataUtils.newAttachHeadersInterceptor(headers),
+                    token,
+                    deadlineMs,
+                    SmartSpeechGrpc::newStub,
                 )
-                val stub = SmartSpeechGrpc.newStub(intercepted)
-                    .withDeadlineAfter(deadlineMs, TimeUnit.MILLISECONDS)
 
                 val request = SynthesisRequest.newBuilder()
                     .setText(text)

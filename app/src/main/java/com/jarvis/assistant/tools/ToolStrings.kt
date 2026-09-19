@@ -19,7 +19,10 @@ import com.jarvis.assistant.R
  */
 interface ToolStrings {
     val audioServiceUnavailable: String
+    val volumeChangeBlocked: String
     val writeSettingsMissing: String
+    val brightnessWriteFailed: String
+    val brightnessModeWriteFailed: String
     val wifiPanelUnavailable: String
     fun wifiPanelOpenFailed(detail: String?): String
     val wifiPanelDetail: String
@@ -31,6 +34,9 @@ interface ToolStrings {
     val dndServiceUnavailable: String
     val dndAccessMissing: String
     val dndToggleFailed: String
+    val dndPanelUnavailable: String
+    fun dndPanelOpenFailed(detail: String?): String
+    val dndPanelDetail: String
     val adminServiceUnavailable: String
     val adminLockMissing: String
     fun appNotFound(app: String): String
@@ -75,8 +81,14 @@ interface ToolStrings {
         val Default: ToolStrings = object : ToolStrings {
             override val audioServiceUnavailable =
                 "Аудиосервис недоступен на этом устройстве"
+            override val volumeChangeBlocked =
+                "Система запретила менять громкость — возможно, действует режим «Не беспокоить» или политика устройства."
             override val writeSettingsMissing =
                 "Нет права менять настройки системы. Открой приложение Джарвис → Экран приветствия → «Настройки записи» и выдай доступ."
+            override val brightnessWriteFailed =
+                "Не удалось изменить яркость экрана — система отклонила запись."
+            override val brightnessModeWriteFailed =
+                "Не удалось отключить адаптивную яркость — система отклонила запись."
             override val wifiPanelUnavailable =
                 "Системная панель Wi-Fi недоступна на этом устройстве."
             override fun wifiPanelOpenFailed(detail: String?) =
@@ -97,6 +109,12 @@ interface ToolStrings {
                 "Нет доступа к режиму «Не беспокоить». Открой настройки → Звук → Не беспокоить → доступ для приложений → Джарвис."
             override val dndToggleFailed =
                 "Не удалось переключить режим «Не беспокоить»"
+            override val dndPanelUnavailable =
+                "Настройки «Не беспокоить» недоступны на этом устройстве."
+            override fun dndPanelOpenFailed(detail: String?) =
+                "Не удалось открыть настройки «Не беспокоить»: ${detail ?: "неизвестная ошибка"}"
+            override val dndPanelDetail =
+                "Начиная с Android 15 приложение не может менять режим «Не беспокоить» напрямую — открыл настройки."
             override val adminServiceUnavailable =
                 "Сервис администрирования устройства недоступен"
             override val adminLockMissing =
@@ -164,8 +182,14 @@ interface ToolStrings {
 class AndroidToolStrings(private val context: Context) : ToolStrings {
     override val audioServiceUnavailable: String
         get() = context.getString(R.string.tool_audio_service_unavailable)
+    override val volumeChangeBlocked: String
+        get() = context.getString(R.string.tool_volume_change_blocked)
     override val writeSettingsMissing: String
         get() = context.getString(R.string.tool_write_settings_missing)
+    override val brightnessWriteFailed: String
+        get() = context.getString(R.string.tool_brightness_write_failed)
+    override val brightnessModeWriteFailed: String
+        get() = context.getString(R.string.tool_brightness_mode_write_failed)
     override val wifiPanelUnavailable: String
         get() = context.getString(R.string.tool_wifi_panel_unavailable)
     override fun wifiPanelOpenFailed(detail: String?): String =
@@ -196,6 +220,16 @@ class AndroidToolStrings(private val context: Context) : ToolStrings {
         get() = context.getString(R.string.tool_dnd_access_missing)
     override val dndToggleFailed: String
         get() = context.getString(R.string.tool_dnd_toggle_failed)
+    override val dndPanelUnavailable: String
+        get() = context.getString(R.string.tool_dnd_panel_unavailable)
+    override fun dndPanelOpenFailed(detail: String?): String =
+        context.getString(
+            R.string.tool_open_failed_with_detail,
+            context.getString(R.string.tool_dnd_settings),
+            detail ?: ""
+        )
+    override val dndPanelDetail: String
+        get() = context.getString(R.string.tool_dnd_panel_detail)
     override val adminServiceUnavailable: String
         get() = context.getString(R.string.tool_admin_service_unavailable)
     override val adminLockMissing: String

@@ -91,6 +91,27 @@ class AudioPipeline(
     @Volatile private var running = false
 
     /**
+     * The DESIRED capture state — the level the producer converges to. Written
+     * only by [start]/[stop]/[release]; the producer owns the ACTUAL source
+     * lifecycle. This split exists so the slow native open
+     * (`AudioRecord(...)` + `startRecording()`) runs on the producer thread,
+     * never on a main-thread caller: [start] used to open the source under
+     * [producerLock] on the watchdog/unmute/power paths and could ANR. [running]
+     * flips true only once the open completes, so [isRunning] is eventually
+     * consistent.
+     */
+    @Volatile private var wantRunning = false
+
+    /**
+     * True while the native source is OPEN — tracked independently of
+     * [running] (A3). A producer that gave up after repeated read failures
+     * leaves `running == false` while the AudioRecord may still be open, so a
+     * [stop] in that state must still release the mic. Mutated only under
+     * [producerLock] (see [closeSourceLocked]).
+     */
+    @Volatile private var sourceOpen = false
+
+    /**
      * True when the producer exited after [GIVE_UP_AFTER_CONSECUTIVE_FAILURES]
      * consecutive read failures (audit #25). Distinct from a clean stop
      * ([stop]) or a source-unavailable exit: only a give-up means "the source
@@ -122,14 +143,85 @@ class AudioPipeline(
         }
     }
 
+    /**
+     * Releases the native source exactly once. MUST be called while holding
+     * [producerLock] — the `Locked` suffix is the contract. Idempotent: a
+     * second call is a no-op, which is what makes the stop/release paths safe
+     * to race the producer's publish step. [AudioSource.stop] is
+     * non-suspending, so this is safe inside `synchronized`.
+     */
+    private fun closeSourceLocked() {
+        if (sourceOpen) {
+            sourceOpen = false
+            source.stop()
+        }
+    }
+
+    /**
+     * Converges the ACTUAL capture state to the DESIRED state ([wantRunning])
+     * and reports whether the producer may read this iteration.
+     *
+     * The slow native open (`AudioRecord(...)` + `startRecording()`) runs HERE,
+     * on the producer coroutine — never on a caller thread — which is what
+     * removes the ANR from the watchdog/unmute/power paths. It deliberately
+     * runs OUTSIDE [producerLock] so a main-thread [stop] cannot queue behind a
+     * stalled HAL open; the publish step then re-reads [wantRunning] under the
+     * monitor, so a stop that landed mid-open is never published as running.
+     *
+     * A failed open mirrors the give-up path (`gaveUp = true`) so the service
+     * watchdog's revive machinery engages instead of failing silently.
+     */
+    private suspend fun reconcileDesire(): Boolean {
+        if (!wantRunning) {
+            // Withdrawn desire: close an open source exactly once, then park.
+            // source.stop() is non-suspending, so the monitor may be held here.
+            if (running || sourceOpen) {
+                synchronized(producerLock) {
+                    running = false
+                    closeSourceLocked()
+                }
+            }
+            delay(PRODUCER_IDLE_PARK_MS)
+            return false
+        }
+        if (running) return true
+        val opened = try {
+            source.start()
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // WARN, content-free: the reason is a device/HAL condition, and the
+            // exception text is the standard diagnostic precedent in this file.
+            Timber.w(e, "AudioPipeline: audio source open failed — retrying")
+            false
+        }
+        if (!opened) {
+            running = false
+            gaveUp = true
+            delay(READ_RETRY_DELAY_MS)
+            return false
+        }
+        sourceOpen = true
+        synchronized(producerLock) {
+            // Re-read the DESIRED state under the monitor: a stop()/release()
+            // that landed while the open was in flight must not be published as
+            // running, or the mic would stay open while the UI reports muted.
+            if (wantRunning) {
+                running = true
+            } else {
+                running = false
+                closeSourceLocked()
+            }
+        }
+        return running
+    }
+
     private suspend fun runProducer() {
         var loggedEvictions = 0L
         var consecutiveFailures = 0
         while (coroutineContext.isActive) {
-            if (!running) {
-                delay(PRODUCER_IDLE_PARK_MS)
-                continue
-            }
+            if (!reconcileDesire()) continue
             try {
                 val raw = source.read()
                 if (raw.isNotEmpty()) {
@@ -185,7 +277,11 @@ class AudioPipeline(
                 // Log FIRST: isRunning()==false must be the LAST observable
                 // event, so observers never miss this line.
                 Timber.w(e, "Audio source unavailable — pipeline producer exiting cleanly")
-                running = false
+                synchronized(producerLock) {
+                    wantRunning = false
+                    running = false
+                    closeSourceLocked()
+                }
                 return
             } catch (e: Exception) {
                 consecutiveFailures++
@@ -198,8 +294,12 @@ class AudioPipeline(
                     // + gaveUp=true lets the service watchdog (15-min ping)
                     // distinguish "source is failing" from "user stopped" and
                     // revive the capture on the next tick.
-                    running = false
-                    gaveUp = true
+                    synchronized(producerLock) {
+                        wantRunning = false
+                        running = false
+                        gaveUp = true
+                        closeSourceLocked()
+                    }
                     return
                 }
                 Timber.w(e, "AudioPipeline read error (attempt %d)", consecutiveFailures)
@@ -210,15 +310,11 @@ class AudioPipeline(
 
     fun start() {
         synchronized(producerLock) {
-            if (!running) {
-                // Start the SOURCE first, then flip running: if source.start()
-                // throws, isRunning() must not claim active with a dead source.
-                // The exception still propagates to the caller (unchanged
-                // contract — e.g. AppGraph.start() turns it into a retryable
-                // init failure).
-                source.start()
-                running = true
-            }
+            // Level-triggered desire only: do NOT open the source here. The
+            // producer performs the slow native open off the caller thread, so
+            // a main-thread caller (watchdog revive, unmute, power receiver)
+            // cannot ANR. isRunning() turns true only once the open completes.
+            wantRunning = true
             gaveUp = false // a successful start clears the give-up flag
         }
         // Revive a producer that exited cleanly on an unavailable source.
@@ -238,9 +334,12 @@ class AudioPipeline(
      */
     fun stop() {
         synchronized(producerLock) {
-            if (!running) return
+            wantRunning = false
+            // Close based on sourceOpen, NOT running: after a give-up the
+            // producer leaves running=false while the AudioRecord is still
+            // open, and the user's stop must actually release the mic (A3).
             running = false
-            source.stop()
+            closeSourceLocked()
         }
     }
 
@@ -251,9 +350,10 @@ class AudioPipeline(
 
     fun release() {
         synchronized(producerLock) {
+            wantRunning = false
             running = false
             gaveUp = false
-            source.stop()
+            closeSourceLocked()
             producerJob?.cancel()
             producerJob = null
         }

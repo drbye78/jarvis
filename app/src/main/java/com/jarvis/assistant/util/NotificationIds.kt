@@ -10,8 +10,9 @@ package com.jarvis.assistant.util
  *    [FGS_STATE] / [FGS_PERMISSION] / [FGS_ACTIVATION] (the foreground-service
  *    ids previously hardcoded in JarvisForegroundService) and [ALARM_DEGRADE]
  *    (the one-time exact-alarm degrade note previously hardcoded as
- *    `ExactAlarmPolicy.DEGRADE_NOTIFICATION_ID = 4`). The service lane keeps
- *    its own constants until P2 switches it to consume these.
+ *    `ExactAlarmPolicy.DEGRADE_NOTIFICATION_ID = 4`). The service lane
+ *    aliases exactly these constants (P2 follow-through), so the band is one
+ *    source of truth.
  *
  *  - ALARM band `>= [ALARM_BAND_BASE]` — one id per alert row:
  *    [ringingId] = base + row id. With AUTOINCREMENT row ids this can only

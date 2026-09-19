@@ -38,13 +38,11 @@ class VoiceOrbView @JvmOverloads constructor(
     defStyleAttr: Int = 0,
 ) : View(context, attrs, defStyleAttr) {
 
-    /** Displayed state; derived from [AssistantState] + the muted flag. */
-    enum class OrbState { IDLE, LISTENING, THINKING, SPEAKING, FOLLOW_UP, MUTED, DEAF }
+    /** Displayed state; derived from [AssistantState] + mute/deaf flags. */
+    private var state = OrbState.IDLE
 
     /** Remaining follow-up window fraction (0..1); drives the countdown arc. */
     private var followUpProgress = 0f
-
-    private var state = OrbState.IDLE
 
     // Animator-driven phases (all 0f..1f or degrees).
     private var breathePhase = 0f
@@ -68,6 +66,17 @@ class VoiceOrbView @JvmOverloads constructor(
     private var rotationAnimator: ValueAnimator? = null
     private var pulseAnimator: ValueAnimator? = null
 
+    /**
+     * Re-runs the animator decision when the system reduced-motion setting
+     * flips while this orb is attached (accessibility toggle). Registered in
+     * [onAttachedToWindow], removed in [onDetachedFromWindow] so a destroyed
+     * view is never retained by the [Motion] observer.
+     */
+    private val motionListener: () -> Unit = {
+        restartAnimators()
+        invalidate()
+    }
+
     init {
         resolveColors()
     }
@@ -87,18 +96,7 @@ class VoiceOrbView @JvmOverloads constructor(
      * the orb must never look like it is listening when it cannot hear.
      */
     fun setState(state: AssistantState?, muted: Boolean, deaf: Boolean = false) {
-        val next = when {
-            deaf -> OrbState.DEAF
-            muted -> OrbState.MUTED
-            state == null -> OrbState.IDLE
-            else -> when (state) {
-                AssistantState.LISTENING -> OrbState.LISTENING
-                AssistantState.THINKING -> OrbState.THINKING
-                AssistantState.SPEAKING -> OrbState.SPEAKING
-                AssistantState.FOLLOW_UP_WINDOW -> OrbState.FOLLOW_UP
-                AssistantState.IDLE -> OrbState.IDLE
-            }
-        }
+        val next = OrbShape.of(state, muted, deaf)
         if (next == this.state) return
         this.state = next
         restartAnimators()
@@ -117,6 +115,10 @@ class VoiceOrbView @JvmOverloads constructor(
 
     private fun restartAnimators() {
         stopAnimators()
+        if (!Motion.animationsEnabled()) {
+            applyStaticFrame()
+            return
+        }
         when (state) {
             OrbState.IDLE -> breatheAnimator = floatAnimator(3_000L) { breathePhase = it }
             OrbState.LISTENING -> rippleAnimator = floatAnimator(2_400L) { ripplePhase = it }
@@ -128,6 +130,30 @@ class VoiceOrbView @JvmOverloads constructor(
             OrbState.MUTED -> Unit // motionless by design
             OrbState.DEAF -> Unit // static by design — nothing "live" to show
         }
+    }
+
+    /**
+     * Reduced motion: pin each state's phase to a still, representative frame
+     * instead of running an animator, then redraw. The orb must never go blank
+     * or stop conveying the state — IDLE, LISTENING, THINKING and SPEAKING are
+     * still tellable apart from the frozen frame alone.
+     *
+     * FOLLOW_UP is special: its countdown arc is drawn from [followUpProgress]
+     * in the draw path, not from the ripple phase, so it keeps rendering at its
+     * accurate value here. It is information, not decoration — only the
+     * companion ripple freezes.
+     */
+    private fun applyStaticFrame() {
+        when (state) {
+            OrbState.IDLE -> breathePhase = 0.5f
+            OrbState.LISTENING -> ripplePhase = 0.25f
+            OrbState.THINKING -> rotationDegrees = 0f
+            OrbState.SPEAKING -> pulsePhase = 0.5f
+            OrbState.FOLLOW_UP -> ripplePhase = 0.25f
+            OrbState.MUTED -> Unit // already motionless
+            OrbState.DEAF -> Unit // already static
+        }
+        invalidate()
     }
 
     private fun stopAnimators() {
@@ -168,6 +194,10 @@ class VoiceOrbView @JvmOverloads constructor(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        // Reduced motion can flip while this orb is on screen (the user
+        // toggles "Remove animations" in accessibility settings); the listener
+        // re-runs the animator decision so the change takes effect live.
+        Motion.addListener(motionListener)
         // Animators were cancelled in onDetachedFromWindow; a re-attached orb
         // (config change, back navigation) would otherwise sit frozen until
         // the next setState. This also starts IDLE breathing on first attach.
@@ -175,6 +205,9 @@ class VoiceOrbView @JvmOverloads constructor(
     }
 
     override fun onDetachedFromWindow() {
+        // Unregister before cancelling: a destroyed orb must not be retained
+        // by the Motion observer.
+        Motion.removeListener(motionListener)
         stopAnimators()
         super.onDetachedFromWindow()
     }
@@ -285,21 +318,21 @@ class VoiceOrbView @JvmOverloads constructor(
                 canvas.drawCircle(cx, cy, rippleRadius, ringPaint)
             }
         }
-        // Countdown arc: sweep = remaining fraction of the window.
-        val sweep = 360f * followUpProgress
-        if (sweep > 1f) {
-            ringPaint.color = withAlpha(speakingColor, 0.9f)
-            canvas.drawArc(
-                cx - ring,
-                cy - ring,
-                cx + ring,
-                cy + ring,
-                -90f,
-                sweep,
-                false,
-                ringPaint,
-            )
-        }
+        // Countdown arc: sweep = remaining fraction of the window, floored at
+        // the shape-channel minimum so FOLLOW_UP never becomes shapeless.
+        val sweep = (360f * followUpProgress)
+            .coerceAtLeast(OrbShape.MIN_FOLLOW_UP_ARC_DEGREES)
+        ringPaint.color = withAlpha(speakingColor, 0.9f)
+        canvas.drawArc(
+            cx - ring,
+            cy - ring,
+            cx + ring,
+            cy + ring,
+            -90f,
+            sweep,
+            false,
+            ringPaint,
+        )
     }
 
     private fun drawMuted(canvas: Canvas, cx: Float, cy: Float, core: Float, ring: Float) {
@@ -307,6 +340,12 @@ class VoiceOrbView @JvmOverloads constructor(
         canvas.drawCircle(cx, cy, core, corePaint)
         ringPaint.color = withAlpha(mutedColor, 0.3f)
         canvas.drawCircle(cx, cy, ring, ringPaint)
+        // Shape channel (U12): a diagonal slash through the ring. Colour alone
+        // cannot carry "microphone off" for a colour-blind user, and MUTED
+        // must not read as a merely dim IDLE ring.
+        ringPaint.color = withAlpha(mutedColor, 0.55f)
+        val slash = ring * 0.72f
+        canvas.drawLine(cx - slash, cy + slash, cx + slash, cy - slash, ringPaint)
     }
 
     /**
@@ -319,6 +358,12 @@ class VoiceOrbView @JvmOverloads constructor(
         canvas.drawCircle(cx, cy, core, corePaint)
         ringPaint.color = withAlpha(deafColor, 0.6f)
         canvas.drawCircle(cx, cy, ring, ringPaint)
+        // Shape channel (U12): a radial tick at 12 o'clock. DEAF is the most
+        // important shape to tell apart from MUTED — both are "not hearing",
+        // with opposite causes (engine failure vs user intent) — so it must
+        // not rely on the error hue.
+        ringPaint.color = withAlpha(deafColor, 0.9f)
+        canvas.drawLine(cx, cy - ring * 1.14f, cx, cy - ring * 0.84f, ringPaint)
     }
 
     private fun withAlpha(color: Int, alpha: Float): Int =

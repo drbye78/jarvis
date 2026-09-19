@@ -252,6 +252,11 @@ class OnboardingActivity : AppCompatActivity() {
                     setBackgroundResource(out.resourceId)
                     setPadding(dp(12), dp(8), dp(12), dp(8))
                     setOnClickListener { row.action() }
+                    // Accessibility (U6): a click listener alone leaves this
+                    // TextView out of keyboard/D-pad focus order, so the only
+                    // affordance that unblocks onboarding was unreachable
+                    // without touch.
+                    isFocusable = true
                 }
             )
         }

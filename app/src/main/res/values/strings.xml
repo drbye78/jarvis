@@ -79,6 +79,8 @@
     <string name="settings_sherpa_keyword_ok">✓ %1$s</string>
     <string name="error_base_url">Укажите Base URL</string>
     <string name="error_api_key">Укажите API-ключ</string>
+    <string name="error_credential_id_missing">Укажите ID — секрет уже введён</string>
+    <string name="error_credential_secret_missing">Укажите секрет — ID уже введён</string>
 
     <!-- Settings: provider credentials (each user supplies their own) -->
     <string name="credentials_section">Учётные данные провайдеров</string>
@@ -144,11 +146,15 @@
          notification: generic text only, never the user-set alarm label. -->
     <string name="alarm_public_text">Будильник</string>
     <!-- Exact-alarm degradation note (P3.1): shown once when Android 12+ denied
-         SCHEDULE_EXACT_ALARM and a timer was armed inexact. -->
-    <string name="exact_alarm_degrade_title">Точность таймеров ограничена</string>
-    <string name="exact_alarm_degrade_note">Разрешение на точные будильники отключено — таймеры могут сработать с задержкой до 10 минут. Разрешите «Будильники и напоминания» в настройках системы.</string>
+         SCHEDULE_EXACT_ALARM and an alarm or timer was armed inexact. -->
+    <string name="exact_alarm_degrade_title">Точность будильников и таймеров ограничена</string>
+    <string name="exact_alarm_degrade_note">Разрешение на точные будильники отключено — будильники и таймеры могут сработать с задержкой до 10 минут. Разрешите «Будильники и напоминания» в настройках системы.</string>
     <string name="dismiss">Отключить</string>
     <string name="snooze">Отложить на 10 минут</string>
+    <!-- P3.4: shown as the ringing notification action when Android 14+ denied
+         the full-screen-intent permission, so the over-lockscreen launch cannot
+         be restored silently. -->
+    <string name="ring_allow_full_screen">Показ поверх экрана</string>
     <string name="snooze_label">Повтор будильника</string>
     <string name="timer_done">Время вышло!</string>
     <string name="perm_notification_text">Нужен доступ к микрофону. Нажмите, чтобы открыть приложение.</string>
@@ -265,7 +271,10 @@
     <!-- Tool-layer user-visible errors (A4): routed through ToolStrings,
          spoken via the LLM — values-en parity is test-enforced -->
     <string name="tool_audio_service_unavailable">Аудиосервис недоступен на этом устройстве</string>
+    <string name="tool_volume_change_blocked">Система запретила менять громкость — возможно, действует режим «Не беспокоить» или политика устройства.</string>
     <string name="tool_write_settings_missing">Нет права менять настройки системы. Открой приложение Джарвис → Экран приветствия → «Настройки записи» и выдай доступ.</string>
+    <string name="tool_brightness_write_failed">Не удалось изменить яркость экрана — система отклонила запись.</string>
+    <string name="tool_brightness_mode_write_failed">Не удалось отключить адаптивную яркость — система отклонила запись.</string>
     <string name="tool_wifi_panel_unavailable">Системная панель Wi-Fi недоступна на этом устройстве.</string>
     <string name="tool_wifi_panel_detail">Система не позволяет менять Wi-Fi напрямую — открыл панель настроек.</string>
     <string name="tool_wifi_panel">панель Wi-Fi</string>
@@ -278,6 +287,9 @@
     <string name="tool_dnd_service_unavailable">Не удалось получить доступ к сервису уведомлений</string>
     <string name="tool_dnd_access_missing">Нет доступа к режиму «Не беспокоить». Открой настройки → Звук → Не беспокоить → доступ для приложений → Джарвис.</string>
     <string name="tool_dnd_toggle_failed">Не удалось переключить режим «Не беспокоить»</string>
+    <string name="tool_dnd_settings">настройки «Не беспокоить»</string>
+    <string name="tool_dnd_panel_unavailable">Настройки «Не беспокоить» недоступны на этом устройстве.</string>
+    <string name="tool_dnd_panel_detail">Начиная с Android 15 приложение не может менять режим «Не беспокоить» напрямую — открыл настройки.</string>
     <string name="tool_admin_service_unavailable">Сервис администрирования устройства недоступен</string>
     <string name="tool_admin_lock_missing">Экран нельзя выключить без прав администратора устройства. Открой экран приветствия Джарвиса и включи «Блокировка экрана».</string>
     <string name="tool_app_not_found">Приложение \'%1$s\' не найдено</string>
@@ -337,6 +349,12 @@
     <string name="settings_behavior_quota">Максимум предложений в день</string>
     <string name="settings_behavior_minus">−</string>
     <string name="settings_behavior_plus">+</string>
+    <string name="settings_behavior_quiet_start_minus_cd">Уменьшить: начало тихих часов</string>
+    <string name="settings_behavior_quiet_start_plus_cd">Увеличить: начало тихих часов</string>
+    <string name="settings_behavior_quiet_end_minus_cd">Уменьшить: конец тихих часов</string>
+    <string name="settings_behavior_quiet_end_plus_cd">Увеличить: конец тихих часов</string>
+    <string name="settings_behavior_quota_minus_cd">Уменьшить: максимум предложений в день</string>
+    <string name="settings_behavior_quota_plus_cd">Увеличить: максимум предложений в день</string>
 
     <string name="settings_memory_section">Память</string>
     <string name="settings_memory_toggle">Долговременная память</string>

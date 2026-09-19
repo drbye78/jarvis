@@ -2,7 +2,6 @@ package com.jarvis.assistant
 
 import android.content.Intent
 import android.os.Bundle
-import android.util.DisplayMetrics
 import android.view.View
 import android.widget.ImageButton
 import android.widget.TextView
@@ -10,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.SimpleItemAnimator
 import com.google.android.material.button.MaterialButton
 import com.jarvis.assistant.contracts.DetectorState
 import com.jarvis.assistant.data.AppDatabase
@@ -18,13 +18,19 @@ import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.service.JarvisForegroundService
 import com.jarvis.assistant.session.TurnActivity
-import com.jarvis.assistant.session.TurnActivityLabels
+import com.jarvis.assistant.tools.AlarmSchedulerProvider
+import com.jarvis.assistant.tools.AlertPermissionReconciler
+import com.jarvis.assistant.tools.canScheduleExactAlarms
+import com.jarvis.assistant.ui.Motion
+import com.jarvis.assistant.ui.StateLabel
 import com.jarvis.assistant.ui.TranscriptAdapter
 import com.jarvis.assistant.ui.VoiceOrbView
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 /**
  * Home screen: the voice orb (live assistant state), a status pill, a
@@ -47,6 +53,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var voiceOrb: VoiceOrbView
     private lateinit var transcript: RecyclerView
 
+    /** Captured so reduced motion can drop insert animations and restore them. */
+    private var defaultItemAnimator: RecyclerView.ItemAnimator? = null
+
+    /** Re-applies the motion policy when the system setting flips live. */
+    private val motionListener: () -> Unit = { applyMotionPolicy() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -66,20 +78,25 @@ class MainActivity : AppCompatActivity() {
         transcript = findViewById(R.id.transcript)
         adapter = TranscriptAdapter()
 
-        capColumnWidthOnTablets()
-
         transcript.apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = this@MainActivity.adapter
         }
 
         // Auto-scroll: keep the newest exchange in view as rows are inserted.
+        // Reduced motion takes the instant jump: a long smooth scroll is
+        // exactly the kind of movement the setting asks us not to perform.
         adapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
             override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
                 val target = adapter.itemCount - 1
-                if (target >= 0) transcript.smoothScrollToPosition(target)
+                when {
+                    target < 0 -> Unit
+                    Motion.animationsEnabled() -> transcript.smoothScrollToPosition(target)
+                    else -> transcript.scrollToPosition(target)
+                }
             }
         })
+        applyMotionPolicy()
 
         findViewById<ImageButton>(R.id.alarmsButton).setOnClickListener {
             startActivity(Intent(this, AlarmsActivity::class.java))
@@ -92,7 +109,12 @@ class MainActivity : AppCompatActivity() {
             when {
                 GraphHolder.isRunning -> {
                     JarvisForegroundService.explicitStop(this)
-                    statusText.text = getString(R.string.state_stopped)
+                    // The explicit stop clears the bound state; render through
+                    // the single StateLabel path (null -> "Assistant stopped")
+                    // instead of writing the pill text directly.
+                    currentState = null
+                    currentActivity = null
+                    renderStatus()
                 }
                 // Dead service (e.g. after a failed init): NEVER route through
                 // explicitStop — it writes prefs.userStopped=true, which would
@@ -136,6 +158,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Hook B: exact-alarm reconciliation on every foreground. The
+     * revoke/grant broadcast is not reliably delivered, so opening the app
+     * re-arms everything when SCHEDULE_EXACT_ALARM is available. Runs on a
+     * background dispatcher — [AlertPermissionReconciler.reconcile] hits the
+     * alert store; the main thread is never blocked.
+     */
+    override fun onStart() {
+        super.onStart()
+        // Reduced motion must track the system setting live, not only at
+        // process start: Motion owns the ANIMATOR_DURATION_SCALE observer and
+        // this activity owns its lifecycle.
+        Motion.start(this)
+        Motion.addListener(motionListener)
+        applyMotionPolicy()
+        val scheduler = AlarmSchedulerProvider.get(this)
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                AlertPermissionReconciler(
+                    scheduler,
+                    canScheduleExact = { canScheduleExactAlarms(this@MainActivity) },
+                ).reconcile()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Exact-alarm reconciliation on foreground failed")
+            }
+        }
+    }
+
+    override fun onStop() {
+        Motion.removeListener(motionListener)
+        Motion.stop()
+        super.onStop()
+    }
+
+    /**
      * Android 10 background-start policy: the post-boot / post-update
      * activation notification opens this activity with
      * [JarvisForegroundService.EXTRA_ACTIVATE_ASSISTANT]; while the activity
@@ -153,16 +211,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshServiceState()
-    }
-
-    /** Comfortable reading column on wide/tablet screens. */
-    private fun capColumnWidthOnTablets() {
-        val column = findViewById<View>(R.id.homeColumn)
-        val dm: DisplayMetrics = resources.displayMetrics
-        val dp = { v: Int -> (v * dm.density).toInt() }
-        if (dm.widthPixels > dp(TABLET_TWO_COLUMN_MIN_WIDTH_DP)) {
-            column.layoutParams = column.layoutParams.apply { width = dp(TABLET_COLUMN_WIDTH_DP) }
-        }
     }
 
     private fun refreshServiceState() {
@@ -285,6 +333,10 @@ class MainActivity : AppCompatActivity() {
                         micButton.isEnabled = false
                         renderMicButton(muted = false)
                         voiceOrb.setState(null, muted = false, deaf = false)
+                        // Single render path: a null state resolves to the
+                        // honest "Assistant stopped" label instead of leaving
+                        // the last live state on the pill.
+                        renderStatus()
                     }
                 }
                 delay(SERVICE_STATE_POLL_MS)
@@ -324,26 +376,54 @@ class MainActivity : AppCompatActivity() {
     private var currentActivity: TurnActivity? = null
 
     /**
-     * One render path for the status pill: state label by default, but a
-     * finer-grained activity label while THINKING. Called from both the state
-     * and the activity collectors so either change re-renders consistently.
+     * Transcript insert motion policy. With motion allowed the list keeps its
+     * item animator, paced with the plan's single insert token; with reduced
+     * motion the animator is dropped entirely so a new exchange appears as a
+     * static end frame. Called at setup and on every live setting flip.
+     */
+    private fun applyMotionPolicy() {
+        transcript.itemAnimator?.let { defaultItemAnimator = it }
+        if (Motion.animationsEnabled()) {
+            transcript.itemAnimator = defaultItemAnimator
+            (transcript.itemAnimator as? SimpleItemAnimator)?.addDuration =
+                Motion.TRANSCRIPT_INSERT_MS
+        } else {
+            transcript.itemAnimator = null
+        }
+    }
+
+    /**
+     * Truthful pill (N2): the pure [StateLabel] mapping owns what is shown
+     * (deaf / muted / activity / per-state), so every collector that calls
+     * this re-renders the same way. There are deliberately no early `return`s
+     * that skip writing the label — a stale pill was the original bug.
+     *
+     * With motion allowed the label swap crossfades; with reduced motion the
+     * new label is written immediately (static end frame). The `label` is
+     * written in BOTH paths, so the pill can never be left showing an old
+     * state.
      */
     private fun renderStatus() {
-        if (deaf) {
-            // Deaf-engine fix: never claim «Джарвис слушает…» while no wake
-            // word can fire — show the honest failure hint instead.
-            statusText.text = getString(R.string.state_wake_error_full)
+        val label = getString(
+            StateLabel.labelRes(currentState, micMuted, deaf, currentActivity),
+        )
+        statusText.animate().cancel()
+        if (!Motion.animationsEnabled() || statusText.text?.toString() == label) {
+            statusText.alpha = 1f
+            statusText.text = label
             return
         }
-        if (micMuted) return // the muted label owns the pill until unmute
-        val state = currentState ?: return
-        val activity = currentActivity
-        statusText.text =
-            if (state == AssistantState.THINKING && activity != null) {
-                getString(TurnActivityLabels.labelRes(activity))
-            } else {
-                labelFor(state)
+        statusText.animate()
+            .alpha(0f)
+            .setDuration(Motion.PILL_CROSSFADE_MS / 2)
+            .withEndAction {
+                statusText.text = label
+                statusText.animate()
+                    .alpha(1f)
+                    .setDuration(Motion.PILL_CROSSFADE_MS / 2)
+                    .start()
             }
+            .start()
     }
 
     /**
@@ -360,19 +440,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun labelFor(state: AssistantState): String = when (state) {
-        AssistantState.IDLE -> getString(R.string.state_idle_full)
-        AssistantState.LISTENING -> getString(R.string.state_listening_full)
-        AssistantState.THINKING -> getString(R.string.state_thinking_full)
-        AssistantState.SPEAKING -> getString(R.string.state_speaking_full)
-        AssistantState.FOLLOW_UP_WINDOW -> getString(R.string.state_follow_up_full)
-    }
-
     private companion object {
-        /** PROJECT-AUDIT: named layout logic — two-column comfort zone on tablets. */
-        const val TABLET_TWO_COLUMN_MIN_WIDTH_DP = 900
-        const val TABLET_COLUMN_WIDTH_DP = 840
-
         /** UI poll for service/graph state (cheap StateFlow read). */
         const val SERVICE_STATE_POLL_MS = 500L
     }

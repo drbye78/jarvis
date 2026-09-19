@@ -18,6 +18,8 @@ import com.jarvis.assistant.cognitive.embed.LexicalEmbedder
 import com.jarvis.assistant.cognitive.embed.RetrievalGate
 import com.jarvis.assistant.llm.LlmClient
 import com.jarvis.assistant.tools.ToolStrings
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -91,4 +93,30 @@ data class CognitiveDeps(
      * return it (the value is the block, not a thunk to call later).
      */
     val inTransaction: suspend (suspend () -> Unit) -> Unit = { block -> block() },
+    /**
+     * F11 (REMEDIATION_PLAN): the gather read path does real CPU work —
+     * ranking every active fact, RRF fusion, string rendering — and it is
+     * invoked from the session's `Dispatchers.IO` scope. Pure-CPU phases are
+     * dispatched here so they cannot occupy an IO worker (and cannot compete
+     * with the network lane). Injectable so tests can pin the hop.
+     */
+    val cpuDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    /**
+     * F11: monotonic elapsed-time source for the gather phase budget.
+     * Injectable so tests can drive the degradation checks deterministically
+     * (a wall clock would make them untestable).
+     */
+    val elapsedNow: () -> Long = System::nanoTime,
+    /**
+     * The dispatcher of the coordinator's OWN child scope (plan §4). It must
+     * be injectable for the same reason as [cpuDispatcher]: the read path
+     * fires write-behind work on that scope (`RecallPipeline.writeBehind-
+     * RecallStats` → `UserFactDao.recordRecalls`), so a test that inspects
+     * DAO state immediately after `gather()` races an in-flight write on a
+     * real pool thread — observed as a ~1-in-3 full-suite flake where a
+     * cleared row was re-inserted before the next read. Pinning this to the
+     * test dispatcher makes those reads deterministic. Production keeps
+     * `Dispatchers.IO`.
+     */
+    val cognitiveDispatcher: CoroutineDispatcher = Dispatchers.IO,
 )

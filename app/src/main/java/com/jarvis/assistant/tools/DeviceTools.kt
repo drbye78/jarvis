@@ -33,6 +33,8 @@ import com.jarvis.assistant.util.JsonOut
 class DeviceTools(
     private val context: Context,
     private val strings: ToolStrings = ToolStrings.Default,
+    /** Injected for the DND SDK-35 policy; defaults to the running SDK. */
+    private val sdkInt: Int = Build.VERSION.SDK_INT,
 ) {
 
     /** Null-safe audio service lookup (audit #12: `as` threw on odd OEM ROMs). */
@@ -68,11 +70,17 @@ class DeviceTools(
                 else -> AudioManager.STREAM_MUSIC
             }
             val am = audioManager
-                ?: return JsonOut.error(strings.audioServiceUnavailable)
+                ?: return DeviceToolOutcome.Unavailable(strings.audioServiceUnavailable).toJson()
             val max = am.getStreamMaxVolume(stream)
             val target = (level * max + 50) / 100
-            am.setStreamVolume(stream, target, 0)
-            return JsonOut.obj("status" to "ok", "level" to level)
+            return try {
+                am.setStreamVolume(stream, target, 0)
+                DeviceToolOutcome.Ok(listOf("level" to level)).toJson()
+            } catch (ignored: SecurityException) {
+                // DND / notification-policy restrictions can forbid the change;
+                // the call may throw instead of silently applying.
+                DeviceToolOutcome.Unavailable(strings.volumeChangeBlocked).toJson()
+            }
         }
     }
 
@@ -97,20 +105,29 @@ class DeviceTools(
                 ?: return JsonOut.error("Missing required parameter: level")
             if (level !in 0..100) return JsonOut.error("level must be 0–100")
             if (!Settings.System.canWrite(context)) {
-                return JsonOut.error(strings.writeSettingsMissing)
+                return DeviceToolOutcome.Unavailable(strings.writeSettingsMissing).toJson()
             }
             val target = (level * 255 + 50) / 100
-            Settings.System.putInt(
+            // Settings.System.putInt returns whether the write was accepted:
+            // false means it did not take effect (e.g. a policy rejected it),
+            // so success is only reported when BOTH writes applied.
+            val modeApplied = Settings.System.putInt(
                 context.contentResolver,
                 Settings.System.SCREEN_BRIGHTNESS_MODE,
                 Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL,
             )
-            Settings.System.putInt(
+            val brightnessApplied = Settings.System.putInt(
                 context.contentResolver,
                 Settings.System.SCREEN_BRIGHTNESS,
                 target.coerceIn(1, 255),
             )
-            return JsonOut.obj("status" to "ok", "level" to level)
+            return when {
+                !brightnessApplied ->
+                    DeviceToolOutcome.Unavailable(strings.brightnessWriteFailed).toJson()
+                !modeApplied ->
+                    DeviceToolOutcome.Unavailable(strings.brightnessModeWriteFailed).toJson()
+                else -> DeviceToolOutcome.Ok(listOf("level" to level)).toJson()
+            }
         }
     }
 
@@ -254,10 +271,21 @@ class DeviceTools(
                 ?: return JsonOut.error("Invalid JSON arguments")
             val state = obj.string("state")
                 ?: return JsonOut.error("Missing required parameter: state")
+            if (DndPanelPolicy.usePanel(sdkInt)) {
+                // API 35+: `setInterruptionFilter` silently does nothing for
+                // apps, so hand the user to the system settings screen instead
+                // of degrading to a misleading failure.
+                return openDndPanel().toJson()
+            }
+            return applyDndDirect(state).toJson()
+        }
+
+        /** Below API 35 the direct call is allowed and verified. */
+        private fun applyDndDirect(state: String): DeviceToolOutcome {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
-                ?: return JsonOut.error(strings.dndServiceUnavailable)
+                ?: return DeviceToolOutcome.Unavailable(strings.dndServiceUnavailable)
             if (!nm.isNotificationPolicyAccessGranted) {
-                return JsonOut.error(strings.dndAccessMissing)
+                return DeviceToolOutcome.Unavailable(strings.dndAccessMissing)
             }
             val filter = if (state.equals("on", true)) {
                 android.app.NotificationManager.INTERRUPTION_FILTER_PRIORITY
@@ -266,10 +294,31 @@ class DeviceTools(
             }
             nm.setInterruptionFilter(filter)
             return if (nm.currentInterruptionFilter == filter) {
-                JsonOut.obj("status" to "ok", "dnd" to state)
+                DeviceToolOutcome.Ok(listOf("dnd" to state))
             } else {
-                JsonOut.error(strings.dndToggleFailed)
+                DeviceToolOutcome.Unavailable(strings.dndToggleFailed)
             }
+        }
+
+        /**
+         * API 35+ fallback: open the notification-policy / DND access settings.
+         * [Intent.FLAG_ACTIVITY_NEW_TASK] is mandatory because the start comes
+         * from the foreground-service context, not an Activity.
+         */
+        private fun openDndPanel(): DeviceToolOutcome {
+            val panel = Intent(DndPanelPolicy.settingsAction).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (context.packageManager.resolveActivity(panel, 0) == null) {
+                return DeviceToolOutcome.Unavailable(strings.dndPanelUnavailable)
+            }
+            val result = runCatching { context.startActivity(panel) }
+            if (result.isFailure) {
+                return DeviceToolOutcome.Unavailable(
+                    strings.dndPanelOpenFailed(result.exceptionOrNull()?.message),
+                )
+            }
+            return DeviceToolOutcome.PanelOpened(strings.dndPanelDetail)
         }
     }
 

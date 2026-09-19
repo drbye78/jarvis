@@ -27,7 +27,7 @@
     <color name="jarvis_status_idle">#899390</color>
     <color name="jarvis_status_listening">#4FDAC5</color>
     <color name="jarvis_status_thinking">#FFC169</color>
-    <color name="jarvis_status_speaking">#6FF0DE</color>
+    <color name="jarvis_status_speaking">#8FD3FF</color>
 
     <color name="jarvis_night_scrim">#EE000000</color>
     <color name="jarvis_ringing_surface">#0E1514</color>

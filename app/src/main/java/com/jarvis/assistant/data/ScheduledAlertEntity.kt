@@ -24,10 +24,18 @@ import androidx.room.PrimaryKey
     tableName = "scheduled_alerts",
     indices = [
         // Boot re-arm / scheduler sweeps query by (kind, enabled) ordered by
-        // trigger time; the composite index keeps that scan index-covered.
+        // trigger time; `enabled` in the middle of the old index broke the
+        // ordering, so it is dropped and `(kind, triggerAtMillis)` covers the
+        // kind-scoped sweep (REMEDIATION_PLAN Phase 2).
         Index(
-            value = ["kind", "enabled", "triggerAtMillis"],
-            name = "index_scheduled_alerts_kind_enabled_triggerAtMillis",
+            value = ["kind", "triggerAtMillis"],
+            name = "index_scheduled_alerts_kind_triggerAtMillis",
+        ),
+        // Standalone trigger-time index for whole-table ordering scans
+        // (`all()` / `alarmsLive()` order by triggerAtMillis).
+        Index(
+            value = ["triggerAtMillis"],
+            name = "index_scheduled_alerts_triggerAtMillis",
         ),
     ],
 )
@@ -46,9 +54,39 @@ data class ScheduledAlertEntity(
     val anchorTimeMillis: Long = triggerAtMillis,
     val repeatDaily: Boolean = false,
     val enabled: Boolean = true,
+    /**
+     * Which AlarmManager clock space [triggerAtMillis] lives in
+     * ([ClockDomain.RTC] for wall-clock alarms, [ClockDomain.ELAPSED] for
+     * timers). Phase 3 wires arming; Phase 2 only persists it.
+     */
+    val clockDomain: String = ClockDomain.RTC,
+    /**
+     * Reboot-safe anchor for an ELAPSED-domain timer (millis since boot at
+     * arm time); 0 for RTC alarms. Phase 3 owns reconciliation.
+     */
+    val anchorElapsedMillis: Long = 0L,
+    /**
+     * The elapsed anchor that was actually armed (may differ from
+     * [anchorElapsedMillis] after snooze); 0 when unarmed/RTC. Phase 3 owns.
+     */
+    val armedElapsedMillis: Long = 0L,
 ) {
     companion object {
         const val KIND_ALARM = "ALARM"
         const val KIND_TIMER = "TIMER"
     }
+}
+
+/**
+ * Clock domains persisted on [ScheduledAlertEntity] (REMEDIATION_PLAN
+ * Phase 2). Strings (not an enum) so the column stays a plain TEXT and the
+ * values are stable across process versions; the alarms lane maps them onto
+ * `AlarmManager.RTC_WAKEUP` / `AlarmManager.ELAPSED_REALTIME_WAKEUP`.
+ */
+object ClockDomain {
+    /** Wall-clock alarms (`AlarmManager.RTC_WAKEUP`). */
+    const val RTC = "RTC"
+
+    /** Boot-relative timers (`AlarmManager.ELAPSED_REALTIME_WAKEUP`). */
+    const val ELAPSED = "ELAPSED"
 }

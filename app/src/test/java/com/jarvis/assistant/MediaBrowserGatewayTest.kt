@@ -422,13 +422,39 @@ class MediaBrowserGatewayTest {
     }
 
     @Test
-    fun `playLibraryItem without a title accepts any playing state`() = runTest {
+    fun `playLibraryItem without a title requires a command effect`() = runTest {
+        // M-5: without a title there is nothing to score, so the evidence must
+        // be an actual effect on the player (started / position reset / track
+        // switched) — here the fake starts playing, so the dispatch is real.
         val session = FakeBrowserSession("ru.yandex.music")
         val browser = FakeBrowserGateway(sessionFactory = { session })
 
         val out = orchestrator(FakeGateway(), browser).playLibraryItem("whatever-id", null, null)
 
-        assertEquals(MusicPlaybackOrchestrator.Status.PLAYING, out.status)
+        assertEquals(MusicPlaybackOrchestrator.Status.DISPATCHED, out.status)
+        assertEquals("browser_media_id", out.strategy)
+        assertEquals("whatever-id", session.playedMediaId)
+    }
+
+    @Test
+    fun `playLibraryItem without a title never reports a stale track`() = runTest {
+        // M-5: the player accepts the command but nothing changes — the OLD
+        // track is still playing. That is NOT evidence we started the item,
+        // and naming the old track would be a lie.
+        val session = FakeBrowserSession("ru.yandex.music")
+        session.playFromMediaIdBehavior = { true } // accepted, np left untouched
+        session.fakeHandle.np = NowPlaying(
+            title = "Старый трек",
+            artist = "Кто-то",
+            state = NowPlaying.STATE_PLAYING,
+            positionMs = 90_000,
+        )
+        val browser = FakeBrowserGateway(sessionFactory = { session })
+
+        val out = orchestrator(FakeGateway(), browser).playLibraryItem("whatever-id", null, null)
+
+        assertEquals(MusicPlaybackOrchestrator.Status.APP_OPENED, out.status)
+        assertFalse(out.detail.contains("Старый"))
     }
 
     // ------------------------------------------------------------------

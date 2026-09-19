@@ -280,6 +280,33 @@ class AppGraph(
         appContext,
     )
 
+    /**
+     * P2-A (decision #10): the graph-owned alarm scheduler, installed into
+     * [com.jarvis.assistant.tools.AlarmSchedulerProvider] AT CONSTRUCTION so
+     * the voice lane ([functionRouter]) and the UI/ringing lanes share the
+     * SAME instance — one armer, hence ONE [com.jarvis.assistant.tools.OneShotGate]
+     * lifetime for the exact-alarm degrade note per app run. The provider's
+     * lazy fallback remains only for calls that land before any graph exists
+     * (a boot alarm with the service not yet started).
+     */
+    val alarmScheduler = com.jarvis.assistant.tools.AndroidAlarmScheduler(
+        database.alarmDao(),
+        com.jarvis.assistant.tools.SystemAlertArmer(appContext),
+    ).also { com.jarvis.assistant.tools.AlarmSchedulerProvider.install(it) }
+
+    /**
+     * P3.1/P3.3: the graph-owned ring coordinator, installed into
+     * [com.jarvis.assistant.tools.RingCoordinatorProvider] at construction
+     * (same rule as [alarmScheduler]). The receiver, the ringing activity and
+     * the cancel/delete tools all resolve THIS instance, so the durable
+     * `ring_sessions` bookkeeping and the single ring notification cannot fork.
+     */
+    val ringCoordinator = com.jarvis.assistant.tools.RingCoordinator(
+        database.ringSessionDao(),
+        alarmScheduler,
+        com.jarvis.assistant.tools.AndroidRingPresenter(appContext),
+    ).also { com.jarvis.assistant.tools.RingCoordinatorProvider.install(it) }
+
     val functionRouter = FunctionRouter(
         appContext,
         httpClient,
@@ -289,11 +316,9 @@ class AppGraph(
         // A6: weather geocoding answers in the device language.
         weatherLanguageTag = java.util.Locale.getDefault().language.ifBlank { "ru" },
         // DI fix: ONE alarm scheduler, wired here through the graph (the
-        // router no longer reaches AppDatabase.getInstance directly).
-        alarmScheduler = com.jarvis.assistant.tools.AndroidAlarmScheduler(
-            database.alarmDao(),
-            com.jarvis.assistant.tools.SystemAlertArmer(appContext),
-        ),
+        // router no longer reaches AppDatabase.getInstance directly) — and
+        // P2-A shared with the provider (see [alarmScheduler]).
+        alarmScheduler = alarmScheduler,
         // 0.7: ONE AppPrefs instance graph-wide (the router built its own).
         appPrefs = appPrefs,
         // COGNITIVE_PLAN 1.5: remember_fact / recall_facts / forget_fact.

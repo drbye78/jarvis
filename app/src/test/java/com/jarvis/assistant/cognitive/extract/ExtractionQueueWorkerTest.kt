@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -172,6 +173,28 @@ class ExtractionQueueWorkerTest {
     }
 
     @Test
+    fun `unexpected batch failure releases claimed rows and flags transport backoff`() = runTest {
+        val (queue, messages) = seed("меня зовут Алексей")
+        // Not IOException/LlmHttpException: an unexpected parser/serialization
+        // style failure that must NOT leave the claimed rows RUNNING.
+        val llm = FakeLlm { throw SimulatedSerializationFailure() }
+        val worker = ExtractionQueueWorker(
+            queue,
+            FakeUserFactDao(),
+            FakeMemoryMetaDao(),
+            messages,
+            llm,
+        )
+        val report = worker.drainOnce()!!
+        assertTrue(worker.lastBatchTransportFailed)
+        assertEquals("PENDING", queue.rows[10]!!.state)
+        assertNull(queue.rows[10]!!.batchId)
+        assertEquals(1, queue.rows[10]!!.attempt) // attempt preserved
+        assertEquals(0, report.extracted)
+        assertEquals(1, report.messages)
+    }
+
+    @Test
     fun `poison rows quarantine after max attempts instead of retrying forever`() = runTest {
         val (queue, messages) = seed("меня зовут Алексей")
         val llm = object : LlmClient {
@@ -243,4 +266,10 @@ class ExtractionQueueWorkerTest {
     }
 
     private class IOExceptionSim : java.io.IOException("network down")
+
+    /**
+     * An unexpected, non-transport failure (parser/serialization class) — used
+     * to prove a claimed batch is released rather than left RUNNING.
+     */
+    private class SimulatedSerializationFailure : Exception("serialization blew up")
 }

@@ -11,21 +11,24 @@ import org.junit.runner.RunWith
 
 /**
  * Room migration harness for the COLLAPSED pre-release schema (audit
- * remediation decision #2).
+ * remediation decision #2), now at version 2 (REMEDIATION_PLAN Phase 2).
  *
  * The old suite — v2→v3 no-op preservation, v3→v4 cognitive tables + FTS
  * trigger sync, and the rest of the v1→v7 chain — was deleted together with
- * the migrations themselves: there is nothing to migrate to or from. What
- * remains (this file) is:
+ * the migrations themselves: there is nothing to migrate to or from (the v2
+ * bump is destructive, `fallbackToDestructiveMigration(dropAllTables = true)`).
+ * What remains (this file) is:
  *
- *  1. [currentSchema_v1_createsAndRoundTrips] — asserts the exported 1.json
+ *  1. [currentSchema_v2_createsAndRoundTrips] — asserts the exported 2.json
  *     actually creates a usable database: message + alert rows insert and
- *     read back. This validates the schema export the build generates at
- *     `app/schemas/com.jarvis.assistant.data.AppDatabase/1.json`.
+ *     read back, and the new v2 tables/columns exist. This validates the
+ *     schema export the build generates at
+ *     `app/schemas/com.jarvis.assistant.data.AppDatabase/2.json`.
  *  2. A marked-up TEMPLATE (commented, at the bottom) for the FIRST real
- *     migration 1→2, ready to uncomment + adapt when the schema is bumped —
- *     it reuses the same [MigrationTestHelper] rule and insert helpers, so
- *     the harness is genuinely reusable rather than re-derived then.
+ *     data-preserving migration 2→3, ready to uncomment + adapt when the
+ *     schema-freeze promise is exercised — it reuses the same
+ *     [MigrationTestHelper] rule and insert helpers, so the harness is
+ *     genuinely reusable rather than re-derived then.
  *
  * A fresh-install DB from Room's own builder is additionally smoke-tested in
  * [DatabaseSmokeTest]; this file is about the EXPORTED schema JSON.
@@ -83,10 +86,15 @@ class MigrationTest {
         anchorTimeMillis: Long = triggerAtMillis,
         repeatDaily: Boolean = false,
         enabled: Boolean = true,
+        clockDomain: String = ClockDomain.RTC,
+        anchorElapsedMillis: Long = 0L,
+        armedElapsedMillis: Long = 0L,
     ): Int {
         execSQL(
-            "INSERT INTO scheduled_alerts (kind, label, triggerAtMillis, anchorTimeMillis, repeatDaily, enabled) " +
-                "VALUES ('$kind', '$label', $triggerAtMillis, $anchorTimeMillis, ${if (repeatDaily) 1 else 0}, ${if (enabled) 1 else 0})",
+            "INSERT INTO scheduled_alerts (kind, label, triggerAtMillis, anchorTimeMillis, repeatDaily, enabled, " +
+                "clockDomain, anchorElapsedMillis, armedElapsedMillis) " +
+                "VALUES ('$kind', '$label', $triggerAtMillis, $anchorTimeMillis, ${if (repeatDaily) 1 else 0}, " +
+                "${if (enabled) 1 else 0}, '$clockDomain', $anchorElapsedMillis, $armedElapsedMillis)",
         )
         val cursor = query("SELECT last_insert_rowid()", emptyArray<Any?>())
         cursor.moveToFirst()
@@ -98,16 +106,24 @@ class MigrationTest {
     // ----- tests ------------------------------------------------------------
 
     /**
-     * Create/open round-trip scaffold: the exported 1.json creates every
-     * table and the two core alert/message rows read back intact.
+     * Create/open round-trip scaffold: the exported 2.json creates every
+     * table and the core alert/message rows read back intact, including the
+     * v2 clock-domain columns and the new `ring_sessions` table.
      */
     @Test
-    fun currentSchema_v1_createsAndRoundTrips() {
-        val db = helper.createDatabase(TEST_DB_NAME, version = 1)
+    fun currentSchema_v2_createsAndRoundTrips() {
+        val db = helper.createDatabase(TEST_DB_NAME, version = 2)
         db.insertMessage(role = "user", content = "Какая погода?")
         db.insertMessage(role = "assistant", content = "Сегодня +15 °C", name = "get_weather")
         db.insertAlert(kind = ScheduledAlertEntity.KIND_ALARM, label = "подъём", triggerAtMillis = 1_700_003_600_000L, repeatDaily = true)
-        db.insertAlert(kind = ScheduledAlertEntity.KIND_TIMER, label = "чай", triggerAtMillis = 1_700_000_300_000L)
+        db.insertAlert(
+            kind = ScheduledAlertEntity.KIND_TIMER,
+            label = "чай",
+            triggerAtMillis = 1_700_000_300_000L,
+            clockDomain = ClockDomain.ELAPSED,
+            anchorElapsedMillis = 12_345L,
+            armedElapsedMillis = 12_345L,
+        )
 
         val msgCursor = db.query("SELECT role, content FROM messages ORDER BY id ASC", emptyArray<Any?>())
         assertEquals(2, countRows(db, "messages"))
@@ -119,17 +135,28 @@ class MigrationTest {
         msgCursor.close()
 
         assertEquals(2, countRows(db, "scheduled_alerts"))
-        val alertCursor = db.query("SELECT kind, label, anchorTimeMillis FROM scheduled_alerts ORDER BY id ASC", emptyArray<Any?>())
+        val alertCursor = db.query(
+            "SELECT kind, label, anchorTimeMillis, clockDomain, anchorElapsedMillis, armedElapsedMillis " +
+                "FROM scheduled_alerts ORDER BY id ASC",
+            emptyArray<Any?>(),
+        )
         alertCursor.moveToFirst()
         assertEquals(ScheduledAlertEntity.KIND_ALARM, alertCursor.getString(0))
         assertEquals("подъём", alertCursor.getString(1))
         assertEquals(1_700_003_600_000L, alertCursor.getLong(2))
+        assertEquals(ClockDomain.RTC, alertCursor.getString(3))
+        alertCursor.moveToNext()
+        assertEquals(ClockDomain.ELAPSED, alertCursor.getString(3))
+        assertEquals(12_345L, alertCursor.getLong(4))
+        assertEquals(12_345L, alertCursor.getLong(5))
         alertCursor.close()
 
-        // The collapse must be complete: the cognitive tables are part of v1.
+        // The collapse must be complete: the cognitive + v2 tables are part
+        // of the schema.
         assertEquals(0, countRows(db, "user_facts"))
         assertEquals(0, countRows(db, "command_events"))
         assertEquals(0, countRows(db, "fact_vectors"))
+        assertEquals(0, countRows(db, "ring_sessions"))
 
         db.close()
     }
@@ -145,22 +172,21 @@ class MigrationTest {
 
 /*
  * =====================================================================================
- * TODO(next-schema-bump) — TEMPLATE for the first REAL migration (decision #2: pre-1.0
- * bumps before launch may stay destructive; this is the harness for the first bump that
- * must preserve data, e.g. the planned cognitive 1→2). To use:
+ * TODO(next-schema-bump) — TEMPLATE for the first REAL migration (decision #2: the
+ * schema-freeze promise now starts at 2→3; earlier bumps were destructive). To use:
  *
- *   1. Bump @Database(version = 2), add the migration
- *        val MIGRATION_1_2 = object : Migration(1, 2) {
+ *   1. Bump @Database(version = 3), add the migration
+ *        val MIGRATION_2_3 = object : Migration(2, 3) {
  *            override fun migrate(db: SupportSQLiteDatabase) { /* DDL here */ }
  *        }
- *      to AppDatabase and register it via addMigrations(MIGRATION_1_2).
- *   2. Re-export schemas (the build regenerates app/schemas/…/2.json).
+ *      to AppDatabase and register it via addMigrations(MIGRATION_2_3).
+ *   2. Re-export schemas (the build regenerates app/schemas/…/3.json).
  *   3. Uncomment + adapt this test — the MigrationTestHelper rule and the
  *      insertMessage/insertAlert helpers above are already reusable:
  *
  * @Test
- * fun migrate1To2_preservesData_andValidatesAgainstExportedSchema() {
- *     var db = helper.createDatabase(TEST_DB_NAME, version = 1).apply {
+ * fun migrate2To3_preservesData_andValidatesAgainstExportedSchema() {
+ *     var db = helper.createDatabase(TEST_DB_NAME, version = 2).apply {
  *         insertMessage(content = "важно")
  *         insertAlert(label = "подъём", repeatDaily = true)
  *     }
@@ -168,9 +194,9 @@ class MigrationTest {
  *
  *     db = helper.runMigrationsAndValidate(
  *         TEST_DB_NAME,
- *         version = 2,
+ *         version = 3,
  *         validateDroppedTables = true,   // throws if the migration silently drops a table
- *         AppDatabase.MIGRATION_1_2,
+ *         AppDatabase.MIGRATION_2_3,
  *     )
  *
  *     assertEquals(1, countRows(db, "messages"))

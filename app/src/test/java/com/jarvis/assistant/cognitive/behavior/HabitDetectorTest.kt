@@ -146,6 +146,73 @@ class HabitDetectorTest {
         assertEquals(HabitRuleEntity.STATE_ACTIVE, rules.rows.values.single().state)
     }
 
+    // ---- F2 (REMEDIATION_PLAN): a rejected rule is never blessed ----------
+
+    @Test
+    fun `a rejected probation rule never promotes even after a clean fire`() = runBlocking {
+        val events = FakeCommandEventDao()
+        val rules = FakeHabitRuleDao()
+        val now = day7At20()
+        seedSixDays(events, now)
+        val detector = HabitDetector(events, rules, eligible, nowMs = { now })
+        detector.recompute()
+        val rule = rules.rows.values.single()
+
+        // The user pushed back once, then ignored a later suggestion that aged
+        // out: pre-fix, aging out promoted it and the mute ladder restarted.
+        rules.rows[rule.id] = rule.copy(
+            rejectCount = 1,
+            lastFiredAt = now - HabitDetector.CYCLE_GRACE_MS - 1,
+        )
+        detector.promoteProbationRules(now)
+        assertEquals(HabitRuleEntity.STATE_PROBATION, rules.rows.values.single().state)
+
+        // And the reject counter still wins over an explicit accept-shaped
+        // signal: only rejectCount == 0 may promote.
+        rules.rows[rule.id] = rules.rows.getValue(rule.id).copy(acceptCount = 1)
+        detector.promoteProbationRules(now)
+        assertEquals(HabitRuleEntity.STATE_PROBATION, rules.rows.values.single().state)
+    }
+
+    // ---- F3 (REMEDIATION_PLAN): one lock acquisition for the nightly pass --
+
+    @Test
+    fun `nightly runs all three rule passes and returns their total`() = runBlocking {
+        val events = FakeCommandEventDao()
+        val rules = FakeHabitRuleDao()
+        val now = day7At20()
+        seedSixDays(events, now)
+        val detector = HabitDetector(events, rules, eligible, nowMs = { now })
+
+        // recompute mines 1 rule; the same pass then unmutes an unrelated
+        // expired rule, proving nightly chains the passes rather than only
+        // running the first one.
+        val expired = HabitRuleEntity(
+            id = 999,
+            kind = HabitRuleEntity.KIND_TIME_WINDOW,
+            tool = "getWeather",
+            argsFingerprint = "city:москва",
+            hourBucket = 10,
+            daySet = null,
+            supportCount = 9,
+            state = HabitRuleEntity.STATE_MUTED,
+            acceptCount = 2,
+            rejectCount = 3,
+            lastSuggestedAt = null,
+            lastFiredAt = null,
+            mutedUntil = now - 1,
+            createdAt = 0,
+        )
+        rules.rows[expired.id] = expired
+
+        val touched = detector.nightly(now)
+
+        assertEquals("recompute(1) + unmute(1)", 2, touched)
+        assertEquals(HabitRuleEntity.STATE_ACTIVE, rules.rows.getValue(999L).state)
+        assertEquals(null, rules.rows.getValue(999L).mutedUntil)
+        assertEquals("one mined rule + the pre-existing one", 2, rules.rows.size)
+    }
+
     @Test
     fun `muted rules return after their 30-day sentence`() = runBlocking {
         val events = FakeCommandEventDao()

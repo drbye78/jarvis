@@ -143,7 +143,7 @@ class AudioPipelineTest {
         p.start()
         // IOException path retries (READ_RETRY_DELAY_MS); pipeline stays up.
         awaitUntil { source.reads.get() >= 3 }
-        assertTrue(p.isRunning())
+        awaitUntil { p.isRunning() }
         assertTrue(!p.hasGivenUp())
 
         p.release()
@@ -186,7 +186,7 @@ class AudioPipelineTest {
         awaitUntil(timeoutMs = 5_000) { received.get() >= 3 }
         assertTrue("revived producer must deliver frames", received.get() >= 3)
         assertFalse("successful start clears the give-up flag", p.hasGivenUp())
-        assertTrue(p.isRunning())
+        awaitUntil { p.isRunning() }
 
         p.release()
         collector.cancel()
@@ -243,7 +243,7 @@ class AudioPipelineTest {
         // proves short reads ride through as pacing.
         awaitUntil(timeoutMs = 4_000) { received.get() >= 100 }
         assertFalse("short reads must never drive the give-up counter", p.hasGivenUp())
-        assertTrue(p.isRunning())
+        awaitUntil { p.isRunning() }
         assertTrue(
             "normalized frames are counted for diagnostics",
             canceller.irregularFrameCount >= 100L,
@@ -251,6 +251,103 @@ class AudioPipelineTest {
 
         p.release()
         collector.cancel()
+    }
+
+    @Test
+    fun `start returns without waiting for the native open`() = runBlocking {
+        // ANR fix: start() only arms the desired state. The slow native open
+        // (AudioRecord + startRecording) runs on the producer, so a
+        // main-thread caller returns immediately.
+        val source = SlowOpenSource(openMs = 300)
+        val p = AudioPipeline(scope, source, preRollMs = 1_000)
+
+        val began = System.nanoTime()
+        p.start()
+        val elapsedMs = (System.nanoTime() - began) / 1_000_000
+        assertTrue("start() must not block on the native open (took ${elapsedMs}ms)", elapsedMs < 150)
+
+        awaitUntil { p.isRunning() }
+        p.release()
+    }
+
+    @Test
+    fun `stop during an in-flight open never leaves the mic open`() = runBlocking {
+        // Withdrawing desire while the native open is still running must not
+        // strand an open record: the producer notices the withdrawn desire and
+        // closes the source.
+        val source = SlowOpenSource(openMs = 300)
+        val p = AudioPipeline(scope, source, preRollMs = 1_000)
+
+        p.start()
+        // Guarantee the open is in-flight before stopping (otherwise the
+        // producer could legitimately see the withdrawn desire first and never
+        // open the source at all — a vacuous pass).
+        awaitUntil { source.opens.get() >= 1 }
+        p.stop()
+
+        awaitUntil { source.stops.get() >= 1 }
+        assertFalse("pipeline must not report running after a stop during open", p.isRunning())
+        assertTrue("mic must be released after a stop during open", source.stops.get() >= 1)
+        p.release()
+    }
+
+    @Test
+    fun `publishing after an in-flight stop never reports running`() = runBlocking {
+        // The producer must RE-READ the desired state under the monitor before
+        // publishing running=true. Without that re-read it would publish
+        // running=true for a source the caller already asked to close — a
+        // window where the mic is open while the UI reports muted. This test
+        // fails on that pre-fix behaviour.
+        val source = SlowOpenSource(openMs = 300)
+        val p = AudioPipeline(scope, source, preRollMs = 1_000)
+
+        p.start()
+        awaitUntil { source.opens.get() >= 1 } // open is in flight
+        p.stop()
+
+        // Poll across the moment the open completes: running must NEVER be
+        // observed true once stop() has returned.
+        var observedRunning = false
+        val deadline = System.currentTimeMillis() + 900
+        while (System.currentTimeMillis() < deadline) {
+            if (p.isRunning()) {
+                observedRunning = true
+                break
+            }
+            delay(2)
+        }
+        assertFalse(
+            "isRunning() must never turn true after a stop() during an in-flight open",
+            observedRunning,
+        )
+        assertFalse(p.isRunning())
+        assertTrue("the in-flight open must still be released", source.stops.get() >= 1)
+        p.release()
+    }
+
+    @Test
+    fun `release during an in-flight open does not leave running set`() = runBlocking {
+        // release() during the native open must not strand an open source or
+        // publish running on a torn-down pipeline.
+        val source = SlowOpenSource(openMs = 300)
+        val p = AudioPipeline(scope, source, preRollMs = 1_000)
+
+        p.start()
+        awaitUntil { source.opens.get() >= 1 }
+        p.release()
+
+        var observedRunning = false
+        val deadline = System.currentTimeMillis() + 900
+        while (System.currentTimeMillis() < deadline) {
+            if (p.isRunning()) {
+                observedRunning = true
+                break
+            }
+            delay(2)
+        }
+        assertFalse("isRunning() must never turn true after release() during open", observedRunning)
+        assertFalse(p.isRunning())
+        assertTrue("the source opened during release must be closed", source.stops.get() >= 1)
     }
 }
 
@@ -287,4 +384,18 @@ private class RetryThenHealSource : AudioSource {
         if (!healthy.get()) throw java.io.IOException("hardware glitch")
         return ShortArray(320)
     }
+}
+
+/** Source whose native open blocks (simulates the slow AudioRecord construction). */
+private class SlowOpenSource(private val openMs: Long = 300) : AudioSource {
+    val opens = AtomicInteger()
+    val stops = AtomicInteger()
+    override fun start() {
+        opens.incrementAndGet()
+        Thread.sleep(openMs)
+    }
+    override fun stop() {
+        stops.incrementAndGet()
+    }
+    override fun read(): ShortArray = ShortArray(320)
 }

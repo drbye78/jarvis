@@ -1,6 +1,7 @@
 package com.jarvis.assistant.cognitive.embed
 
 import com.jarvis.assistant.llm.LlmHttpException
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -87,6 +88,14 @@ class GigaChatEmbedder(
      * account cannot use embeddings (NOT_ENTITLED); transient failures are
      * surfaced as [EmbeddingEngine.Entitlement.Transient] so the UI can say
      * "network/service problem" instead of wrongly claiming a verdict.
+     *
+     * F6 (REMEDIATION_PLAN): this method's contract is "ALWAYS return a
+     * verdict" — it must never throw. [embed] can fail in ways that are not
+     * [IOException] (a 200 reply whose body is malformed trips `require(...)`
+     * → IllegalArgumentException, or a non-numeric field →
+     * NumberFormatException), and those used to escape into the Settings card
+     * and abort the whole benchmark with a crash instead of an honest
+     * "service problem". Cancellation still propagates.
      */
     override suspend fun checkEntitlement(): EmbeddingEngine.Entitlement = try {
         embed(listOf(PROBE_TEXT))
@@ -97,8 +106,13 @@ class GigaChatEmbedder(
         } else {
             EmbeddingEngine.Entitlement.Denied(e.code)
         }
+    } catch (e: CancellationException) {
+        throw e
     } catch (_: IOException) {
         // Transport problem — no entitlement verdict, retry later.
+        EmbeddingEngine.Entitlement.Transient(-1)
+    } catch (_: Exception) {
+        // Malformed-but-reachable service: no verdict, retry later.
         EmbeddingEngine.Entitlement.Transient(-1)
     }
 

@@ -5,13 +5,11 @@ import com.jarvis.assistant.grpc.recognition.RecognitionRequest
 import com.jarvis.assistant.grpc.recognition.RecognitionResponse
 import com.jarvis.assistant.grpc.recognition.SmartSpeechGrpc
 import com.jarvis.assistant.llm.TokenManager
-import io.grpc.ClientInterceptors
+import com.jarvis.assistant.speech.bearerStub
 import io.grpc.Context
 import io.grpc.ManagedChannel
-import io.grpc.Metadata
 import io.grpc.Status
 import io.grpc.StatusException
-import io.grpc.stub.MetadataUtils
 import io.grpc.stub.StreamObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -19,8 +17,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
 import timber.log.Timber
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * SaluteSpeech streaming ASR over the bidi `Recognize` gRPC stream.
@@ -70,6 +68,14 @@ class SberStreamingAsr(
         private val closed = AtomicBoolean(false)
 
         /**
+         * S-4: audio frames dropped because the RPC was already closing or
+         * never opened. Expected in normal teardown, but a silently growing
+         * counter would hide a mis-paced producer — so it is observable
+         * (content-free DEBUG log, bounded to the first drop then every 50th).
+         */
+        private val droppedFrames = AtomicLong()
+
+        /**
          * Feed-after-death fix: set by [onError]/[onCompleted] so the feeder
          * stops pushing frames (~50/s) into a dead RPC until the async error
          * propagates. finish()/cancel() set it too; a `Final` deliberately
@@ -90,107 +96,130 @@ class SberStreamingAsr(
 
         @Volatile private var requestObserver: StreamObserver<RecognitionRequest>? = null
 
+        /**
+         * The generic catch is the contract: the cancellable context must be
+         * cancelled even when stub construction throws something unexpected
+         * (a native `UnsatisfiedLinkError`, a protobuf allocation `Error`) —
+         * narrowing it would re-open the context leak S-1 exists to close.
+         */
+        @Suppress("TooGenericExceptionCaught")
         fun start() {
-            val headers = Metadata().apply {
-                put(
-                    Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
-                    "Bearer $token"
-                )
-            }
-            val intercepted = ClientInterceptors.intercept(
-                channel,
-                MetadataUtils.newAttachHeadersInterceptor(headers),
-            )
-            val stub = SmartSpeechGrpc.newStub(intercepted)
-                .withDeadlineAfter(deadlineMs, TimeUnit.MILLISECONDS)
+            try {
+                val stub = bearerStub(channel, token, deadlineMs, SmartSpeechGrpc::newStub)
 
-            val responseObserver = object : StreamObserver<RecognitionResponse> {
-                override fun onNext(value: RecognitionResponse) {
-                    if (!value.hasTranscription()) return
-                    val t = value.transcription
-                    val text = t.resultsList.joinToString(" ") { it.text }.trim()
-                    if (t.eou) {
-                        // Terminal for the OBSERVER flow (a Final ends the
-                        // utterance; the send() gate stays open until the
-                        // caller half-closes — see [emitTerminal]).
-                        if (text.isNotBlank()) {
-                            emitTerminal(AsrEvent.Final(text))
-                        } else {
-                            // EOU with no speech (e.g. NO_SPEECH_TIMEOUT).
-                            emitTerminal(AsrEvent.Final(""))
+                val responseObserver = object : StreamObserver<RecognitionResponse> {
+                    override fun onNext(value: RecognitionResponse) {
+                        if (!value.hasTranscription()) return
+                        val t = value.transcription
+                        val text = t.resultsList.joinToString(" ") { it.text }.trim()
+                        if (t.eou) {
+                            // Terminal for the OBSERVER flow (a Final ends the
+                            // utterance; the send() gate stays open until the
+                            // caller half-closes — see [emitTerminal]).
+                            if (text.isNotBlank()) {
+                                emitTerminal(AsrEvent.Final(text))
+                            } else {
+                                // EOU with no speech (e.g. NO_SPEECH_TIMEOUT).
+                                emitTerminal(AsrEvent.Final(""))
+                            }
+                        } else if (text.isNotBlank() && !terminalEmitted.get()) {
+                            // S-3: a late Partial must not replace the terminal
+                            // event already replayed to a late subscriber
+                            // (replay=1) — the terminal always wins.
+                            _events.tryEmit(AsrEvent.Partial(text))
                         }
-                    } else if (text.isNotBlank()) {
-                        _events.tryEmit(AsrEvent.Partial(text))
+                    }
+
+                    override fun onError(t: Throwable) {
+                        val cause = (t as? StatusException)?.status?.code?.toString()
+                            ?: (t as? io.grpc.StatusRuntimeException)?.status?.code?.toString()
+                            ?: t.message
+                        Timber.e(t, "ASR stream error ($cause)")
+                        // Feed-after-death fix: shut the feeder gate BEFORE the
+                        // terminal event — send() must stop feeding the dead RPC.
+                        closed.set(true)
+                        emitTerminal(AsrEvent.Failed(t))
+                    }
+
+                    override fun onCompleted() {
+                        // Server closed without EOU: treat as final empty if we
+                        // never emitted anything; otherwise the session's hard
+                        // cap resolves it. Feed-after-death fix applies here too,
+                        // and the terminal gate guarantees a `Failed` is never
+                        // emitted after a `Final` already went out.
+                        closed.set(true)
+                        emitTerminal(
+                            AsrEvent.Failed(
+                                RuntimeException("ASR stream completed without end-of-utterance")
+                            )
+                        )
                     }
                 }
 
-                override fun onError(t: Throwable) {
-                    val cause = (t as? StatusException)?.status?.code?.toString()
-                        ?: (t as? io.grpc.StatusRuntimeException)?.status?.code?.toString()
-                        ?: t.message
-                    Timber.e(t, "ASR stream error ($cause)")
-                    // Feed-after-death fix: shut the feeder gate BEFORE the
-                    // terminal event — send() must stop feeding the dead RPC.
-                    closed.set(true)
-                    emitTerminal(AsrEvent.Failed(t))
-                }
-
-                override fun onCompleted() {
-                    // Server closed without EOU: treat as final empty if we
-                    // never emitted anything; otherwise the session's hard
-                    // cap resolves it. Feed-after-death fix applies here too,
-                    // and the terminal gate guarantees a `Failed` is never
-                    // emitted after a `Final` already went out.
-                    closed.set(true)
-                    emitTerminal(
-                        AsrEvent.Failed(
-                            RuntimeException("ASR stream completed without end-of-utterance")
-                        )
+                // The RPC executes under the cancellable context.
+                cancellableContext.run {
+                    requestObserver = stub.recognize(responseObserver)
+                    requestObserver?.onNext(
+                        RecognitionRequest.newBuilder()
+                            .setOptions(
+                                com.jarvis.assistant.grpc.recognition.RecognitionOptions.newBuilder()
+                                    .setAudioEncoding(
+                                        com.jarvis.assistant.grpc.recognition.RecognitionOptions.AudioEncoding.PCM_S16LE
+                                    )
+                                    .setSampleRate(16_000)
+                                    .setLanguage("ru-RU")
+                                    .setModel("general")
+                                    .setEnablePartialResults(
+                                        com.jarvis.assistant.grpc.recognition.OptionalBool.newBuilder()
+                                            .setEnable(true).build()
+                                    )
+                                    .setNoSpeechTimeout(
+                                        com.google.protobuf.Duration.newBuilder()
+                                            .setSeconds(noSpeechTimeoutSec).build()
+                                    )
+                                    .setMaxSpeechTimeout(
+                                        com.google.protobuf.Duration.newBuilder()
+                                            .setSeconds(90).build()
+                                    )
+                                    .build()
+                            )
+                            .build()
                     )
                 }
-            }
-
-            // The RPC executes under the cancellable context.
-            cancellableContext.run {
-                requestObserver = stub.recognize(responseObserver)
-                requestObserver?.onNext(
-                    RecognitionRequest.newBuilder()
-                        .setOptions(
-                            com.jarvis.assistant.grpc.recognition.RecognitionOptions.newBuilder()
-                                .setAudioEncoding(
-                                    com.jarvis.assistant.grpc.recognition.RecognitionOptions.AudioEncoding.PCM_S16LE
-                                )
-                                .setSampleRate(16_000)
-                                .setLanguage("ru-RU")
-                                .setModel("general")
-                                .setEnablePartialResults(
-                                    com.jarvis.assistant.grpc.recognition.OptionalBool.newBuilder()
-                                        .setEnable(true).build()
-                                )
-                                .setNoSpeechTimeout(
-                                    com.google.protobuf.Duration.newBuilder()
-                                        .setSeconds(noSpeechTimeoutSec).build()
-                                )
-                                .setMaxSpeechTimeout(
-                                    com.google.protobuf.Duration.newBuilder()
-                                        .setSeconds(90).build()
-                                )
-                                .build()
-                        )
-                        .build()
-                )
+            } catch (t: Throwable) {
+                // S-1: the cancellable context is a child of the caller's
+                // context. If start() throws before the RPC is registered,
+                // nothing else ever cancels it (cancel() guards on `closed`,
+                // which is still false) and the parent leaks the token — cancel
+                // it here, then rethrow so the caller still sees the failure.
+                cancellableContext.cancel(Status.CANCELLED.asException())
+                throw t
             }
         }
 
         override fun send(pcm: ByteArray) {
-            if (closed.get()) return
-            val observer = requestObserver ?: return
+            if (closed.get()) {
+                logDroppedFrame()
+                return
+            }
+            val observer = requestObserver ?: run {
+                logDroppedFrame()
+                return
+            }
             runCatching {
                 observer.onNext(
                     RecognitionRequest.newBuilder()
                         .setAudioChunk(ByteString.copyFrom(pcm))
                         .build()
                 )
+            }
+        }
+
+        /** S-4: bounded, content-free visibility into the drop path. */
+        private fun logDroppedFrame() {
+            val n = droppedFrames.incrementAndGet()
+            if (n == 1L || n % 50L == 1L) {
+                Timber.d("ASR frames dropped before dispatch (count=%d)", n)
             }
         }
 

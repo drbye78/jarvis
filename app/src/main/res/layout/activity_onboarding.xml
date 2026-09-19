@@ -68,7 +68,8 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnStart"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/button_min_height"
             android:layout_marginTop="10dp"
             android:icon="@drawable/ic_power"
             android:text="@string/start_jarvis"

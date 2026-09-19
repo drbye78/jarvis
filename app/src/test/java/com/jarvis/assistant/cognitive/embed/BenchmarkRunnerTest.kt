@@ -153,4 +153,82 @@ class BenchmarkRunnerTest {
         assertEquals("denied:403", outcome.entitlement)
         assertEquals("403", meta.values[MemoryMetaEntity.KEY_CLOUD_EMBED_UNAVAILABLE])
     }
+
+    // ---- F5 (REMEDIATION_PLAN): the two stamps are mutually exclusive ------
+
+    @Test
+    fun `denied verdict clears a previous entitlement stamp`() = runTest {
+        val cloud = CountingEngine(
+            EmbeddingEngine.CLOUD_ID,
+            EmbeddingEngine.Kind.CLOUD,
+            verdict = EmbeddingEngine.Entitlement.Denied(403),
+        )
+        val meta = FakeMemoryMetaDao()
+        // A previous successful probe stamped entitlement; the account is now
+        // revoked. Pre-fix both stamps coexisted and the selector still read
+        // "entitled" → facts kept egressing to a denied account.
+        meta.values[MemoryMetaEntity.KEY_CLOUD_EMBED_ENTITLED] = "1000"
+        val runner = BenchmarkRunner(
+            metaDao = meta,
+            localEmbedder = CountingEngine(EmbeddingEngine.LOCAL_ID, EmbeddingEngine.Kind.LOCAL),
+            cloudEmbedder = cloud,
+            cloudEnabled = { true },
+        )
+
+        runner.run()
+
+        assertNull(
+            "the stale entitlement stamp must be cleared on Denied",
+            meta.values[MemoryMetaEntity.KEY_CLOUD_EMBED_ENTITLED],
+        )
+        assertEquals("403", meta.values[MemoryMetaEntity.KEY_CLOUD_EMBED_UNAVAILABLE])
+    }
+
+    @Test
+    fun `ok verdict clears a previous unavailability stamp`() = runTest {
+        val cloud = CountingEngine(EmbeddingEngine.CLOUD_ID, EmbeddingEngine.Kind.CLOUD)
+        val meta = FakeMemoryMetaDao()
+        meta.values[MemoryMetaEntity.KEY_CLOUD_EMBED_UNAVAILABLE] = "403"
+        val runner = BenchmarkRunner(
+            metaDao = meta,
+            localEmbedder = CountingEngine(EmbeddingEngine.LOCAL_ID, EmbeddingEngine.Kind.LOCAL),
+            cloudEmbedder = cloud,
+            cloudEnabled = { true },
+        )
+
+        runner.run()
+
+        assertNull(
+            "a recovered account must not keep a stale denial stamp",
+            meta.values[MemoryMetaEntity.KEY_CLOUD_EMBED_UNAVAILABLE],
+        )
+        assertNotNull(meta.values[MemoryMetaEntity.KEY_CLOUD_EMBED_ENTITLED])
+    }
+
+    @Test
+    fun `transient verdict leaves both stamps untouched`() = runTest {
+        val cloud = CountingEngine(
+            EmbeddingEngine.CLOUD_ID,
+            EmbeddingEngine.Kind.CLOUD,
+            verdict = EmbeddingEngine.Entitlement.Transient(500),
+        )
+        val meta = FakeMemoryMetaDao()
+        meta.values[MemoryMetaEntity.KEY_CLOUD_EMBED_ENTITLED] = "1000"
+        val runner = BenchmarkRunner(
+            metaDao = meta,
+            localEmbedder = CountingEngine(EmbeddingEngine.LOCAL_ID, EmbeddingEngine.Kind.LOCAL),
+            cloudEmbedder = cloud,
+            cloudEnabled = { true },
+        )
+
+        val outcome = runner.run()
+
+        assertEquals("transient", outcome.entitlement)
+        assertEquals(
+            "a network hiccup must not erase a real verdict",
+            "1000",
+            meta.values[MemoryMetaEntity.KEY_CLOUD_EMBED_ENTITLED],
+        )
+        assertNull(meta.values[MemoryMetaEntity.KEY_CLOUD_EMBED_UNAVAILABLE])
+    }
 }

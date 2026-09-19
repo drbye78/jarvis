@@ -147,11 +147,13 @@ class TimeAwareSystemPrompt(
 
 /**
  * COGNITIVE_PLAN §7.1: the composed prompt — baseline sections plus the
- * gathered memory block. The block itself is produced by the cognitive
- * layer through [PromptContext.memory] (the TurnRunner prefetches it the
- * moment ASR finalizes, so the composer only awaits a ready result hidden
- * inside GigaChat's time-to-first-token) and is ALREADY budget-enforced by
- * the coordinator's renderer.
+ * gathered memory and summary blocks. The sections are produced by the
+ * cognitive layer through [PromptContext.memory]/[PromptContext.summary]
+ * (the TurnRunner prefetches them the moment ASR finalizes, so the composer
+ * only awaits a ready result while GigaChat's stream is being set up). Each
+ * section is budget-capped upstream, but the COMBINED cognitive budget is
+ * enforced HERE (see [PromptComposer.COGNITIVE_BUDGET]) — neither producer
+ * can see the other's output, so only the composer can hold the sum.
  *
  * Failure policy: a gather error NEVER breaks the turn — the block renders
  * empty, the failure is logged (Timber, no fact content), and the
@@ -163,35 +165,66 @@ class PromptComposer(
 
     override suspend fun build(context: PromptContext): String {
         val time = PromptSections.timeContext(nowMs())
-        return PromptSections.assemble(time, renderMemoryBlock(context), renderSummaryBlock(context))
-    }
-
-    private suspend fun renderMemoryBlock(context: PromptContext): String {
-        val block = try {
-            context.memory()
-        } catch (e: CancellationException) {
-            throw e // never swallow cancellation (A8 convention)
-        } catch (e: Exception) {
-            Timber.e(e, "PromptComposer: memory gather failed, rendering without it")
-            ""
-        }
-        return if (block.isBlank()) "" else block + "\n\n"
+        val memory = renderSection("memory") { context.memory() }
+        val summaryRoom = (COGNITIVE_BUDGET - memory.length).coerceAtLeast(0)
+        val summary = truncateByLines(renderSection("summary") { context.summary() }, summaryRoom)
+        return PromptSections.assemble(time, block(memory), block(summary))
     }
 
     /**
-     * COGNITIVE_PLAN 2.5/§7.1: the SummarySection — ≤ 600 chars, rendered
-     * only when summaries exist (presence-gated; cheap). The block is
-     * produced (and budget-truncated) by the coordinator's Summarizer.
+     * A gather error NEVER breaks the turn (plan §7.2/§9.3 fail-quiet): the
+     * section renders empty, the failure is logged without fact content, and
+     * the coordinator owns the degraded counter. Cancellation is always
+     * rethrown (A8 convention).
      */
-    private suspend fun renderSummaryBlock(context: PromptContext): String {
+    private suspend fun renderSection(label: String, gather: suspend () -> String): String {
         val block = try {
-            context.summary()
+            gather()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Timber.e(e, "PromptComposer: summary gather failed, rendering without it")
+            Timber.e(e, "PromptComposer: $label gather failed, rendering without it")
             ""
         }
-        return if (block.isBlank()) "" else block + "\n\n"
+        return if (block.isBlank()) "" else block
+    }
+
+    /** Section text + its structural blank-line separator ("" stays ""). */
+    private fun block(section: String): String =
+        if (section.isBlank()) "" else section + BLOCK_SEPARATOR
+
+    /**
+     * Drops whole lines from the end until the text fits [budget] — the same
+     * stable rule the SummarySection uses upstream, so an over-long summary
+     * loses its lowest-value lines rather than a mid-line fragment.
+     */
+    private fun truncateByLines(text: String, budget: Int): String {
+        if (text.length <= budget) return text
+        val kept = StringBuilder()
+        for (line in text.lineSequence()) {
+            if (kept.length + line.length + 1 > budget) break
+            if (kept.isNotEmpty()) kept.append('\n')
+            kept.append(line)
+        }
+        return kept.toString()
+    }
+
+    companion object {
+        /**
+         * COGNITIVE_PLAN §3/§40: the cognitive additions to the prompt — the
+         * memory section AND the summary section COMBINED — are capped at 1200
+         * chars per turn. The memory section is produced upstream with its own
+         * (equal) cap, so without this guard the two could sum to ~1800 and the
+         * "hard 1200 budget" would be a lie. The summary yields to the memory
+         * block: ranked facts are chosen for THIS turn, the summary is broader
+         * context, so the summary gets only whatever room memory leaves and is
+         * dropped whole-line (never mid-line) when that room is exhausted.
+         *
+         * `MemorySectionRenderer.SECTION_BUDGET` is pinned equal to this value
+         * by a test, so the two caps cannot drift apart unnoticed.
+         */
+        const val COGNITIVE_BUDGET = 1200
+
+        private const val BLOCK_SEPARATOR = "\n\n"
     }
 }

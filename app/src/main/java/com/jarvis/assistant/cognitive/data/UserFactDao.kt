@@ -4,7 +4,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -26,22 +25,20 @@ interface UserFactDao {
     @Update
     suspend fun update(fact: UserFactEntity)
 
-    @Transaction
-    suspend fun upsertAll(facts: List<UserFactEntity>) {
-        facts.forEach { insert(it) }
-    }
-
     @Query("SELECT * FROM user_facts WHERE factId = :factId LIMIT 1")
     suspend fun byFactId(factId: String): UserFactEntity?
 
     @Query("SELECT * FROM user_facts WHERE status = 'ACTIVE' ORDER BY updatedAt DESC")
     suspend fun activeFacts(): List<UserFactEntity>
 
-    @Query("SELECT * FROM user_facts ORDER BY createdAt ASC")
+    // ORDER BY factId (UUIDv7): time-ordered by construction and covered by
+    // the unique factId index — replaces the unindexed `createdAt` ordering
+    // (REMEDIATION_PLAN Phase 2).
+    @Query("SELECT * FROM user_facts ORDER BY factId ASC")
     suspend fun allFacts(): List<UserFactEntity>
 
     /** Live feed for the Memory Inspector (plan §4: transparency is a feature). */
-    @Query("SELECT * FROM user_facts ORDER BY createdAt DESC")
+    @Query("SELECT * FROM user_facts ORDER BY factId DESC")
     fun observeAll(): Flow<List<UserFactEntity>>
 
     @Query("SELECT COUNT(*) FROM user_facts WHERE status = 'ACTIVE'")
@@ -63,18 +60,45 @@ interface UserFactDao {
         valueNorm: String,
     ): UserFactEntity?
 
+    /**
+     * Re-affirmation is usage proof: bump confidence + confirmation time AND
+     * re-anchor decay at the new confidence / affirmation time, so the
+     * decay curve restarts from the re-affirmed state (it must never keep
+     * decaying from a stale anchor).
+     */
     @Query(
         "UPDATE user_facts SET confidence = :confidence, lastConfirmedAt = :confirmedAt, " +
-            "updatedAt = :confirmedAt WHERE factId = :factId",
+            "updatedAt = :confirmedAt, decayAnchorConfidence = :confidence, " +
+            "decayAnchorAt = :confirmedAt WHERE factId = :factId",
     )
     suspend fun confirmFact(factId: String, confidence: Float, confirmedAt: Long)
 
     /**
      * Maintenance decay: confidence ONLY — never touches updatedAt /
-     * lastConfirmedAt, or the decay clock would restart itself.
+     * lastConfirmedAt, or the decay clock would restart itself. Used for
+     * rows that already carry an immutable decay anchor.
      */
     @Query("UPDATE user_facts SET confidence = :confidence WHERE factId = :factId")
     suspend fun updateConfidence(factId: String, confidence: Float)
+
+    /**
+     * Maintenance decay of an UNANCHORED row ([decayAnchorAt] == 0): writes
+     * the recomputed confidence AND latches the immutable anchor (the
+     * pre-decay confidence + updatedAt) in ONE statement, so the next pass
+     * computes from the anchor and decay stops compounding. One DAO call per
+     * row; never touches updatedAt / lastConfirmedAt.
+     */
+    @Query(
+        "UPDATE user_facts SET confidence = :confidence, " +
+            "decayAnchorConfidence = :anchorConfidence, decayAnchorAt = :anchorAt " +
+            "WHERE factId = :factId",
+    )
+    suspend fun updateConfidenceAndAnchor(
+        factId: String,
+        confidence: Float,
+        anchorConfidence: Float,
+        anchorAt: Long,
+    )
 
     @Query("UPDATE user_facts SET status = :status, updatedAt = :now WHERE factId = :factId")
     suspend fun updateStatus(factId: String, status: String, now: Long)

@@ -60,7 +60,7 @@ class BenchmarkRunner(
             when (val probe = cloud.checkEntitlement()) {
                 is EmbeddingEngine.Entitlement.Ok -> {
                     entitlement = "ok"
-                    metaDao.putValue(MemoryMetaEntity.KEY_CLOUD_EMBED_ENTITLED, nowMs().toString())
+                    recordVerdict(probe)
                     cloudReport = try {
                         EmbedderBenchmark.evaluate(
                             fixtures,
@@ -75,7 +75,7 @@ class BenchmarkRunner(
                 }
                 is EmbeddingEngine.Entitlement.Denied -> {
                     entitlement = "denied:${probe.code}"
-                    metaDao.putValue(MemoryMetaEntity.KEY_CLOUD_EMBED_UNAVAILABLE, probe.code.toString())
+                    recordVerdict(probe)
                 }
                 is EmbeddingEngine.Entitlement.Transient -> entitlement = "transient"
             }
@@ -103,6 +103,25 @@ class BenchmarkRunner(
             entitlement = entitlement,
             winnerStored = stored,
         )
+    }
+
+    /**
+     * F5/F6: writes the entitlement verdict as MUTUALLY EXCLUSIVE stamps.
+     * A success CLEARS any previous unavailability and vice versa, so the
+     * selector can never read a stale success after a revocation (or a stale
+     * denial after the account was fixed). Transient verdicts write nothing —
+     * "no verdict" must not overwrite a real one.
+     */
+    private suspend fun recordVerdict(probe: EmbeddingEngine.Entitlement) {
+        val stamps = CloudEntitlement.nextStamps(probe, nowMs()) ?: return
+        when (val entitled = stamps.entitledAt) {
+            null -> metaDao.delete(MemoryMetaEntity.KEY_CLOUD_EMBED_ENTITLED)
+            else -> metaDao.putValue(MemoryMetaEntity.KEY_CLOUD_EMBED_ENTITLED, entitled.toString())
+        }
+        when (val code = stamps.unavailableCode) {
+            null -> metaDao.delete(MemoryMetaEntity.KEY_CLOUD_EMBED_UNAVAILABLE)
+            else -> metaDao.putValue(MemoryMetaEntity.KEY_CLOUD_EMBED_UNAVAILABLE, code.toString())
+        }
     }
 
     data class BenchmarkOutcome(

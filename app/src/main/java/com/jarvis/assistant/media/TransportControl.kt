@@ -103,10 +103,15 @@ class TransportControl(
                     isError = true,
                 )
             }
-            val required = MusicPlaybackOrchestrator.TransportPolicy.requiredAction(action)
-            if (required != null && !caps.supports(required)) {
-                return unsupported(actionName(action))
-            }
+            val required = MusicPlaybackOrchestrator.TransportPolicy.requiredActions(action)
+            // M-3: an ABSENT bit is low confidence, not a refusal. Players
+            // under-report their action masks (compat-only sessions in
+            // particular), and refusing outright lost the whole feature for
+            // them. Dispatch anyway — the Boolean dispatch result IS the
+            // verification — and phrase the uncertainty honestly instead of
+            // claiming support the session never advertised.
+            val lowConfidence = required.isNotEmpty() && caps.known &&
+                required.none { caps.supports(it) }
             if (action == MusicPlaybackOrchestrator.Action.LIKE &&
                 !MusicPlaybackOrchestrator.TransportPolicy.likeAllowed(caps)
             ) {
@@ -114,10 +119,7 @@ class TransportControl(
             }
 
             val dispatched = when (action) {
-                MusicPlaybackOrchestrator.Action.PLAY -> {
-                    playOrResume(controller)
-                    true
-                }
+                MusicPlaybackOrchestrator.Action.PLAY -> playOrResume(controller)
                 MusicPlaybackOrchestrator.Action.PAUSE -> controller.pause()
                 MusicPlaybackOrchestrator.Action.TOGGLE -> {
                     val playing = controller.snapshot().isPlaying
@@ -155,16 +157,19 @@ class TransportControl(
                     (spec.speed ?: 1.0f).coerceIn(0.25f, 4.0f),
                 )
             }
-            return if (dispatched) {
-                detail("Команда отправлена плееру (${controller.packageName}).")
-            } else {
-                MusicPlaybackOrchestrator.Outcome(
+            return when {
+                !dispatched -> MusicPlaybackOrchestrator.Outcome(
                     MusicPlaybackOrchestrator.Status.ERROR,
                     namedApp,
                     strategy = "dispatch_failed",
                     detail = "Плеер не принял команду (возможно, перезапустился) — попробуй ещё раз.",
                     isError = true,
                 )
+                lowConfidence -> detail(
+                    "Команда отправлена плееру (${controller.packageName}), но подтверждения нет: " +
+                        "плеер не сообщал о поддержке этой команды.",
+                )
+                else -> detail("Команда отправлена плееру (${controller.packageName}).")
             }
         }
 
@@ -321,10 +326,13 @@ class TransportControl(
      * resume, so on players advertising playFromSearch we send the EMPTY
      * query — "play my recent mix / something" — and only then fall back to
      * a plain play(). «включи музыку» stops being a dead command.
+     *
+     * M-4: returns the DISPATCH RESULT — Action.PLAY used to hardcode `true`,
+     * so an IPC failure was reported as "Команда отправлена".
      */
-    private fun playOrResume(controller: MediaControllerHandle) {
+    private fun playOrResume(controller: MediaControllerHandle): Boolean {
         val np = controller.snapshot()
-        when {
+        return when {
             np.isPlaying || np.state == NowPlaying.STATE_PAUSED -> controller.play()
             else -> {
                 val dispatched = controller.capabilities()
@@ -332,7 +340,7 @@ class TransportControl(
                     controller.playFromSearchStructured(
                         SearchCommand(query = "", focus = null, extras = emptyMap()),
                     )
-                if (!dispatched) controller.play()
+                if (dispatched) true else controller.play()
             }
         }
     }

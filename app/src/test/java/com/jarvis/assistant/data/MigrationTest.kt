@@ -6,14 +6,16 @@ import org.junit.Test
 
 /**
  * Audit remediation decision #2 collapsed the pre-release Room chain:
- * `AppDatabase` is version 1 with the full current schema, and every
- * `Migration` object (2→3 … 6→7) is deleted — old installs wipe destructively
- * (`fallbackToDestructiveMigration`), which makes the old SQL-string
- * assertions (and the vacuous "MIGRATION_2_3 migrate body does not throw"
- * test — it asserted the version range it had just read back) moot. The
- * recording [androidx.sqlite.db.SupportSQLiteDatabase] fake went with them;
- * real migration tests belong to `androidTest/.../data/MigrationTest.kt`
- * once a genuine 1→2 bump exists (a runnable template lives there).
+ * `AppDatabase` was version 1 with the full schema, and after the Phase 2
+ * coordinated bump it is version 2; every `Migration` object (2→3 … 6→7) is
+ * deleted — old installs wipe destructively
+ * (`fallbackToDestructiveMigration(dropAllTables = true)`), which makes the
+ * old SQL-string assertions (and the vacuous "MIGRATION_2_3 migrate body does
+ * not throw" test — it asserted the version range it had just read back) moot.
+ * The recording [androidx.sqlite.db.SupportSQLiteDatabase] fake went with
+ * them; real migration tests belong to
+ * `androidTest/.../data/MigrationTest.kt` once the real data-preserving
+ * migration exists (a runnable template lives there).
  *
  * What stays pinned here is the *collapse itself*: re-introducing any
  * Migration constant on AppDatabase/its companion is an explicit act that

@@ -66,7 +66,13 @@ class AndroidMediaGateway(
             appContext.contentResolver,
             "enabled_notification_listeners",
         ) ?: return@runCatching false
-        enabled.split(':').any { it.equals(listenerComponent.flattenToString(), ignoreCase = true) }
+        // M-6: tolerate BOTH flattened ComponentName forms (long
+        // `pkg/full.Class` and short `pkg/.Class`) — ROMs persist different
+        // ones, and a plain flattenToString() equals silently disabled the
+        // whole media lane on short-form devices.
+        val pkg = listenerComponent.packageName
+        val cls = listenerComponent.className
+        enabled.split(':').any { NotificationListenerComponent.matches(it, pkg, cls) }
     }.getOrDefault(false)
 
     override fun activeControllers(): List<MediaControllerHandle> = runCatching {
@@ -170,7 +176,13 @@ class AndroidMediaGateway(
      * target player), then any launchable app whose label looks like a music
      * player. An LLM-provided hint ("вк", "яндекс", "звук") pins the brand.
      */
-    val resolver: MusicAppResolver = MusicAppCatalog(::installedLaunchables, preferredPlayerPackage)
+    val resolver: MusicAppResolver = MusicAppCatalog(
+        // M-8: the enumeration costs one PackageManager walk per installed
+        // app; a music command resolves the player at least once per turn, so
+        // memoize it briefly instead of re-walking on every resolve().
+        InstalledAppsCache(::installedLaunchables)::get,
+        preferredPlayerPackage,
+    )
 
     /**
      * Tier 3: the browser lane gateway, built on the same app context.

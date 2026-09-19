@@ -3,7 +3,9 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Android 12+ exact alarm permission for timers (setExactAndAllowWhileIdle).
-         Harmless on older API levels; setAlarmClock() for alarms is always exempt. -->
+         Harmless on older API levels; setAlarmClock() for alarms is NOT exempt at
+         target 31+, and revoking the permission deletes alarms armed via setExact,
+         setExactAndAllowWhileIdle and setAlarmClock. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!-- Core -->
@@ -96,12 +98,16 @@
             android:name=".AlarmsActivity"
             android:exported="false" />
 
-        <!-- Full-screen alarm UI: shows over lockscreen, lights up the screen. -->
+        <!-- Full-screen alarm UI: shows over lockscreen, lights up the screen.
+             REMEDIATION_PLAN P3.5: NOT singleInstance — a relaunch for a new
+             ring must reach onNewIntent (which re-reads the ring token) rather
+             than reopening with stale extras. The activity owns no ring
+             bookkeeping anymore (the receiver does), so multiple instances are
+             harmless. -->
         <activity
             android:name=".service.AlarmRingingActivity"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:theme="@style/Theme.Jarvis.Alarm" />
@@ -124,6 +130,18 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Hook A (Android 12+): SCHEDULE_EXACT_ALARM granted after a revoke
+             DELETES every armed alert, and this system broadcast is not
+             reliably delivered — re-arm every enabled row when it arrives. -->
+        <receiver
+            android:name=".tools.ExactAlarmPermissionReceiver"
+            android:exported="false"
+            android:directBootAware="false">
+            <intent-filter>
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
 

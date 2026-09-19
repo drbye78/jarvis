@@ -3,9 +3,9 @@ package com.jarvis.assistant.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.jarvis.assistant.data.AppDatabase
-import com.jarvis.assistant.tools.AndroidAlarmScheduler
-import com.jarvis.assistant.tools.SystemAlertArmer
+import com.jarvis.assistant.tools.AlarmSchedulerProvider
+import com.jarvis.assistant.tools.AlertPermissionReconciler
+import com.jarvis.assistant.tools.canScheduleExactAlarms
 import com.jarvis.assistant.util.AppPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -50,8 +50,16 @@ class BootReceiver : BroadcastReceiver() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         scope.launch {
             try {
-                val dao = AppDatabase.getInstance(context).alarmDao()
-                AndroidAlarmScheduler(dao, SystemAlertArmer(context)).rescheduleAllOnBoot()
+                // Re-arm through the shared scheduler (never a per-call-site
+                // armer), then reconcile so exactness newly granted since the
+                // alerts were armed is exploited. Alarms are armed even when
+                // exact is unavailable — the armer degrades honestly.
+                val scheduler = AlarmSchedulerProvider.get(context)
+                scheduler.rescheduleAllOnBoot()
+                AlertPermissionReconciler(
+                    scheduler,
+                    canScheduleExact = { canScheduleExactAlarms(context) },
+                ).reconcile()
             } finally {
                 pending.finish()
                 scope.cancel()

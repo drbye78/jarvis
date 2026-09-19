@@ -1,11 +1,15 @@
 package com.jarvis.assistant
 
+import android.app.AlarmManager
 import com.jarvis.assistant.data.AlertDao
+import com.jarvis.assistant.data.ClockDomain
 import com.jarvis.assistant.data.ScheduledAlertEntity
 import com.jarvis.assistant.tools.AlarmSchedulerProvider
 import com.jarvis.assistant.tools.AlertArmer
 import com.jarvis.assistant.tools.AlertListRenderer
+import com.jarvis.assistant.tools.AlertPermissionReconciler
 import com.jarvis.assistant.tools.AndroidAlarmScheduler
+import com.jarvis.assistant.tools.alertArmClockFor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -78,13 +82,20 @@ private class FakeAlertDao : AlertDao {
 
 /** Recording armer fake: keyed by request code, cancel removes the arm. */
 private class FakeArmer : AlertArmer {
-    data class Armed(val id: Int, val triggerAtMillis: Long, val kind: String, val label: String)
+    data class Armed(val alert: ScheduledAlertEntity) {
+        val id: Int get() = alert.id
+        val triggerAtMillis: Long get() = alert.triggerAtMillis
+        val kind: String get() = alert.kind
+        val label: String get() = alert.label
+        val clockDomain: String get() = alert.clockDomain
+        val anchorElapsedMillis: Long get() = alert.anchorElapsedMillis
+    }
 
     val armed = LinkedHashMap<Int, Armed>()
     val cancelled = mutableListOf<Int>()
 
-    override fun arm(id: Int, triggerAtMillis: Long, kind: String, label: String) {
-        armed[id] = Armed(id, triggerAtMillis, kind, label)
+    override fun arm(alert: ScheduledAlertEntity) {
+        armed[alert.id] = Armed(alert)
     }
 
     override fun cancel(id: Int, kind: String) {
@@ -97,7 +108,8 @@ private class AlertHarness(nowMillis: Long) {
     val dao = FakeAlertDao()
     val armer = FakeArmer()
     var now: Long = nowMillis
-    val scheduler = AndroidAlarmScheduler(dao, armer, { now })
+    var elapsed: Long = 0L
+    val scheduler = AndroidAlarmScheduler(dao, armer, { now }, { elapsed })
 }
 
 private fun makeAlarm(trigger: Long, repeatDaily: Boolean = false, enabled: Boolean = true) =
@@ -205,17 +217,24 @@ class AlertStoreTest {
     fun `onFired twice for a daily alarm arms exactly one next occurrence`() = runBlocking {
         val h = AlertHarness(nowMillis = 10_000L)
         val id = h.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
-        h.armer.arm(id, 5_000L, ScheduledAlertEntity.KIND_ALARM, "подъём")
+        h.armer.arm(
+            ScheduledAlertEntity(
+                id = id,
+                kind = ScheduledAlertEntity.KIND_ALARM,
+                label = "подъём",
+                triggerAtMillis = 5_000L,
+            ),
+        )
 
         h.now = 6_000L // alarm fired at 5000, activity opens at 6000
-        h.scheduler.onFired(id)
+        h.scheduler.onFired(id, firedTriggerMillis = 5_000L)
 
         val firstArm = h.armer.armed.getValue(id)
         assertEquals(5_000L + ALERT_DAY_MS, firstArm.triggerAtMillis)
         assertEquals(5_000L + ALERT_DAY_MS, h.dao.byId(id)!!.triggerAtMillis)
 
         val snapshot = h.armer.armed.toMap()
-        h.scheduler.onFired(id) // e.g. activity recreated / second lifecycle pass
+        h.scheduler.onFired(id, firedTriggerMillis = 5_000L) // e.g. activity recreated / second lifecycle pass
 
         assertEquals(snapshot, h.armer.armed) // still exactly ONE next occurrence
         assertEquals(5_000L + ALERT_DAY_MS, h.dao.byId(id)!!.triggerAtMillis)
@@ -225,16 +244,23 @@ class AlertStoreTest {
     fun `onFired disables a one-shot timer row and is a no-op when repeated`() = runBlocking {
         val h = AlertHarness(nowMillis = 10_000L)
         val id = h.dao.insert(makeTimer("яйца", trigger = 5_000L)).toInt()
-        h.armer.arm(id, 5_000L, ScheduledAlertEntity.KIND_TIMER, "яйца")
+        h.armer.arm(
+            ScheduledAlertEntity(
+                id = id,
+                kind = ScheduledAlertEntity.KIND_TIMER,
+                label = "яйца",
+                triggerAtMillis = 5_000L,
+            ),
+        )
 
         h.now = 6_000L
-        h.scheduler.onFired(id)
+        h.scheduler.onFired(id, firedTriggerMillis = 5_000L)
 
         assertFalse(h.dao.byId(id)!!.enabled)
         assertNull(h.armer.armed[id])
         assertTrue(h.armer.cancelled.contains(id))
 
-        h.scheduler.onFired(id) // idempotent: stays disabled, nothing re-armed
+        h.scheduler.onFired(id, firedTriggerMillis = 5_000L) // idempotent: stays disabled, nothing re-armed
         assertFalse(h.dao.byId(id)!!.enabled)
         assertNull(h.armer.armed[id])
     }
@@ -336,7 +362,7 @@ class AlertStoreTest {
 
         // The snoozed alarm fires
         h.now = snoozedTrigger
-        h.scheduler.onFired(id)
+        h.scheduler.onFired(id, firedTriggerMillis = snoozedTrigger)
 
         // Next occurrence must be anchored at 07:00 (5_000), not 07:10 (66_000).
         // nextDailyOccurrence(5_000, 66_000) = 5_000 + 86400000 = 86405_000
@@ -477,7 +503,7 @@ class AlertTransactionTest {
         val dao = FakeAlertDao()
         val id = dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
 
-        val resolution = dao.applyFired(id, nowMillis = 6_000L) { alert ->
+        val resolution = dao.applyFired(id, firedTriggerMillis = 5_000L, nowMillis = 6_000L) { alert ->
             alert.anchorTimeMillis + ALERT_DAY_MS
         }
 
@@ -492,9 +518,9 @@ class AlertTransactionTest {
     fun `applyFired is idempotent in-transaction - second pass is a NoOp on a future trigger`() = runBlocking {
         val dao = FakeAlertDao()
         val id = dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
-        dao.applyFired(id, 6_000L) { it.anchorTimeMillis + ALERT_DAY_MS }
+        dao.applyFired(id, 5_000L, 6_000L) { it.anchorTimeMillis + ALERT_DAY_MS }
 
-        val second = dao.applyFired(id, 6_000L) { it.anchorTimeMillis + ALERT_DAY_MS }
+        val second = dao.applyFired(id, 5_000L, 6_000L) { it.anchorTimeMillis + ALERT_DAY_MS }
 
         assertEquals(com.jarvis.assistant.data.FiredResolution.NoOp, second)
         assertEquals(5_000L + ALERT_DAY_MS, dao.byId(id)!!.triggerAtMillis)
@@ -505,7 +531,43 @@ class AlertTransactionTest {
         val dao = FakeAlertDao()
         val id = dao.insert(makeTimer("яйца", trigger = 5_000L)).toInt()
 
-        val resolution = dao.applyFired(id, 6_000L) { it.anchorTimeMillis + ALERT_DAY_MS }
+        val resolution = dao.applyFired(id, 5_000L, 6_000L) { it.anchorTimeMillis + ALERT_DAY_MS }
+
+        assertEquals(
+            com.jarvis.assistant.data.FiredResolution.OneShotDisabled(ScheduledAlertEntity.KIND_TIMER),
+            resolution,
+        )
+        assertFalse(dao.byId(id)!!.enabled)
+    }
+
+    // ---- P3.2 fire-identity guard: stale fire must be a NoOp ----------------
+
+    @Test
+    fun `applyFired ignores a stale fire for a snoozed one-shot - fire identity guard`() = runBlocking {
+        val dao = FakeAlertDao()
+        val id = dao.insert(makeTimer("яйца", trigger = 5_000L)).toInt()
+
+        // The user snoozed it forward (66_000); the broadcast for the OLD
+        // 5_000 occurrence is then delivered late (T7 / T10).
+        dao.applySnooze(id, 66_000L)
+
+        val resolution = dao.applyFired(id, firedTriggerMillis = 5_000L, nowMillis = 6_000L) {
+            it.anchorTimeMillis + ALERT_DAY_MS
+        }
+
+        assertEquals(com.jarvis.assistant.data.FiredResolution.NoOp, resolution)
+        assertTrue("the re-scheduled row must survive a stale fire", dao.byId(id)!!.enabled)
+        assertEquals("the snoozed trigger must not be clobbered", 66_000L, dao.byId(id)!!.triggerAtMillis)
+    }
+
+    @Test
+    fun `applyFired on a one-shot with the matching trigger still disables - identity is the trigger`() = runBlocking {
+        val dao = FakeAlertDao()
+        val id = dao.insert(makeTimer("яйца", trigger = 5_000L)).toInt()
+
+        val resolution = dao.applyFired(id, firedTriggerMillis = 5_000L, nowMillis = 6_000L) {
+            it.anchorTimeMillis + ALERT_DAY_MS
+        }
 
         assertEquals(
             com.jarvis.assistant.data.FiredResolution.OneShotDisabled(ScheduledAlertEntity.KIND_TIMER),
@@ -520,13 +582,13 @@ class AlertTransactionTest {
         val hA = AlertHarness(nowMillis = 6_000L)
         val idA = hA.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
         hA.scheduler.snooze(idA)
-        hA.scheduler.onFired(idA)
+        hA.scheduler.onFired(idA, firedTriggerMillis = 5_000L)
         assertRowMatchesArm(hA, idA)
 
         // Order B: the fired pass commits first, then the snooze.
         val hB = AlertHarness(nowMillis = 6_000L)
         val idB = hB.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
-        hB.scheduler.onFired(idB)
+        hB.scheduler.onFired(idB, firedTriggerMillis = 5_000L)
         hB.scheduler.snooze(idB)
         assertRowMatchesArm(hB, idB)
 
@@ -544,7 +606,7 @@ class AlertTransactionTest {
         val h = AlertHarness(nowMillis = 10_000L)
         val id = h.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
 
-        h.scheduler.onFired(id)
+        h.scheduler.onFired(id, firedTriggerMillis = 5_000L)
 
         val row = h.dao.byId(id)!!
         val arm = h.armer.armed.getValue(id)
@@ -653,5 +715,83 @@ class AlarmSchedulerProviderTest {
             // Honest seam: building the fallback needs an app context; a
             // silent second armer is exactly the bug this lane is fixing.
         }
+    }
+}
+
+/**
+ * Phase 3 clock-domain wiring: duration timers are armed on the ELAPSED clock
+ * (immune to wall-clock changes within a boot session) while alarms stay RTC.
+ * The row carries the domain; [alertArmClockFor] is the single mapping onto
+ * AlarmManager clock types.
+ */
+class AlertClockDomainTest {
+
+    @Test
+    fun `scheduleTimer arms on the elapsed clock with the elapsed anchor`() = runBlocking {
+        val h = AlertHarness(nowMillis = 1_000_000L)
+        h.elapsed = 40_000L
+
+        val stored = h.scheduler.scheduleTimer("чай", delayMillis = 60_000L)
+
+        val armed = h.armer.armed.getValue(stored.id)
+        assertEquals(ClockDomain.ELAPSED, armed.alert.clockDomain)
+        // Wall-clock trigger stays for display/overdue checks.
+        assertEquals(1_060_000L, armed.triggerAtMillis)
+        // Elapsed anchor is the boot-relative end of the countdown.
+        assertEquals(100_000L, armed.alert.anchorElapsedMillis)
+        assertEquals(40_000L, armed.alert.armedElapsedMillis)
+
+        val clock = alertArmClockFor(armed.alert)
+        assertEquals(AlarmManager.ELAPSED_REALTIME_WAKEUP, clock.alarmType)
+        assertEquals(100_000L, clock.triggerAtMillis)
+    }
+
+    @Test
+    fun `schedule pins an alarm to the RTC domain and arms it via RTC_WAKEUP`() = runBlocking {
+        val h = AlertHarness(nowMillis = 1_000_000L)
+        h.elapsed = 40_000L
+
+        val stored = h.scheduler.schedule(makeAlarm(trigger = 1_500_000L))
+
+        val armed = h.armer.armed.getValue(stored.id)
+        assertEquals(ClockDomain.RTC, armed.alert.clockDomain)
+        assertEquals(40_000L, armed.alert.armedElapsedMillis)
+        assertEquals(1_500_000L, armed.triggerAtMillis)
+
+        val clock = alertArmClockFor(armed.alert)
+        assertEquals(AlarmManager.RTC_WAKEUP, clock.alarmType)
+        assertEquals(1_500_000L, clock.triggerAtMillis)
+    }
+}
+
+/**
+ * Exact-alarm reconciliation (SCHEDULE_EXACT_ALARM): at target 31+ revoking
+ * the permission DELETES every armed alarm/timer, so the three hooks must
+ * re-arm after it returns — but a sweep while it is still missing would only
+ * throw again. These pin the no-op / re-arm split on the JVM.
+ */
+class AlertPermissionReconcilerTest {
+
+    @Test
+    fun `reconcile is a no-op while the exact alarm permission is missing`() = runBlocking {
+        val h = AlertHarness(nowMillis = 10_000L)
+        val id = h.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
+
+        AlertPermissionReconciler(h.scheduler) { false }.reconcile()
+
+        // Scheduler never invoked: nothing armed, no roll-forward write.
+        assertTrue(h.armer.armed.isEmpty())
+        assertEquals(5_000L, h.dao.byId(id)!!.triggerAtMillis)
+    }
+
+    @Test
+    fun `reconcile re-arms all enabled alerts when the exact alarm permission is available`() = runBlocking {
+        val h = AlertHarness(nowMillis = 10_000L)
+        val id = h.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
+
+        AlertPermissionReconciler(h.scheduler) { true }.reconcile()
+
+        // rescheduleAllOnBoot rolled the past daily forward and armed it.
+        assertEquals(5_000L + ALERT_DAY_MS, h.armer.armed.getValue(id).triggerAtMillis)
     }
 }

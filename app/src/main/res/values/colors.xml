@@ -26,11 +26,14 @@
     <color name="jarvis_error_container">#FFDAD6</color>
     <color name="jarvis_on_error_container">#410002</color>
 
-    <!-- Semantic status colors (VoiceOrb + status pill) -->
-    <color name="jarvis_status_idle">#6F7977</color>
-    <color name="jarvis_status_listening">#00897B</color>
-    <color name="jarvis_status_thinking">#B26A00</color>
-    <color name="jarvis_status_speaking">#00A693</color>
+    <!-- Semantic status colors (VoiceOrb + status pill).
+         WCAG-checked in StatusContrastTest: each is a large graphic (>= 3:1)
+         against jarvis_background; listening/thinking double as Settings status
+         text on jarvis_surface, where they must reach 4.5:1. -->
+    <color name="jarvis_status_idle">#5F6967</color>
+    <color name="jarvis_status_listening">#00796B</color>
+    <color name="jarvis_status_thinking">#8A5600</color>
+    <color name="jarvis_status_speaking">#006A8A</color>
 
     <!-- Alarm ringing screen: deep, calm, high-contrast -->
     <color name="jarvis_night_scrim">#EE0E1514</color>

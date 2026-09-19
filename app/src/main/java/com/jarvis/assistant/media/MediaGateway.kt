@@ -182,3 +182,33 @@ interface MusicAppResolver {
      */
     fun resolve(appHint: String?): MediaAppInfo?
 }
+
+/**
+ * M-6: matching of an `enabled_notification_listeners` entry against a
+ * listener component. Settings stores flattened `ComponentName`s, but the
+ * framework has TWO flatten forms — the long `pkg/full.Class` and the short
+ * `pkg/.Class` — and different OEM ROMs persist different ones. A plain
+ * string equals against [android.content.ComponentName.flattenToString]
+ * therefore reported "no access" on a ROM that stored the short form, which
+ * silently disabled the whole media lane.
+ *
+ * Pure Kotlin (no SDK dependency) so the tolerance is JVM-tested; the
+ * Android adapter owns reading the setting and supplying the component.
+ */
+object NotificationListenerComponent {
+    /**
+     * @param entry one `:`-separated value of `enabled_notification_listeners`
+     * @param packageName the listener's package
+     * @param className the listener's fully-qualified class name
+     */
+    fun matches(entry: String, packageName: String, className: String): Boolean {
+        val trimmed = entry.trim()
+        val slash = trimmed.indexOf('/')
+        if (slash <= 0 || slash == trimmed.length - 1) return false
+        val pkg = trimmed.substring(0, slash)
+        if (!pkg.equals(packageName, ignoreCase = true)) return false
+        val cls = trimmed.substring(slash + 1)
+        val expanded = if (cls.startsWith(".")) packageName + cls else cls
+        return expanded.equals(className, ignoreCase = true)
+    }
+}

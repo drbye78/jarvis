@@ -1,27 +1,45 @@
 package com.jarvis.assistant.cognitive.data
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
  * COGNITIVE_PLAN Phase 3 (§11), migration v5→v6: one stored embedding for
- * one fact, in exactly ONE engine space ([engineId]). Primary key is the
- * fact's stable [com.jarvis.assistant.cognitive.model.FactSnapshot.factId]
- * — a fact has at most one vector per engine; re-computing upserts over it.
+ * one fact, in exactly ONE engine space ([engineId]). The primary key is the
+ * composite `(factId, engineId)` — a fact has at most one vector per engine,
+ * and re-computing upserts over that pair (REMEDIATION_PLAN Phase 2 fixed
+ * the old single-column `factId` PK, which contradicted this per-engine
+ * contract and erased the previous engine's row on an engine switch).
  *
  * Vectors of non-ACTIVE facts are garbage-collected by maintenance
  * (retention step), and a selector switch to another engine makes all
  * rows of the old engine dead weight that the next backfill pass replaces
  * (per-engine storage keeps the switch cheap and resumable).
+ *
+ * `factId` is a declared FK to `user_facts.factId` with CASCADE (D1:
+ * derived children are enforced): a fact deletion drops its vectors rather
+ * than leaving orphans. The composite PK's leading column already indexes
+ * the child side, and `UserFactEntity.factId` carries the unique index Room
+ * requires on the parent.
  */
 @Entity(
     tableName = "fact_vectors",
+    primaryKeys = ["factId", "engineId"],
+    foreignKeys = [
+        ForeignKey(
+            entity = UserFactEntity::class,
+            parentColumns = ["factId"],
+            childColumns = ["factId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
     indices = [Index("engineId")],
 )
 data class FactVectorEntity(
     /** Stable fact identity (user_facts.factId), never the internal rowid. */
-    @PrimaryKey val factId: String,
+    val factId: String,
     val engineId: String,
     /** Vector length — a corruption tripwire validated before use. */
     val dim: Int,
@@ -72,6 +90,14 @@ data class EntityRefEntity(
 @Entity(
     tableName = "fact_entities",
     primaryKeys = ["factId", "entityId", "role"],
+    foreignKeys = [
+        ForeignKey(
+            entity = UserFactEntity::class,
+            parentColumns = ["factId"],
+            childColumns = ["factId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
     indices = [Index("entityId")],
 )
 data class FactEntityLinkEntity(

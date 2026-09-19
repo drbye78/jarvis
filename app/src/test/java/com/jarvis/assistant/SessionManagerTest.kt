@@ -194,6 +194,17 @@ class FakeWakeWord : WakeWordDetector {
     override suspend fun reconfigure(req: WakeWordRequest) {}
     override suspend fun setSensitivity(value: Float) {}
 
+    /**
+     * Remediation A5: every stop-lane arming, in order. The lane is fed by
+     * the state collector, so a preference flip with NO state change used to
+     * leave this list untouched — which is exactly the bug the explicit
+     * `reapplyVoiceStopLane()` call site closes.
+     */
+    val stopLaneHistory = CopyOnWriteArrayList<Boolean>()
+    override fun setStopLaneEnabled(enabled: Boolean) {
+        stopLaneHistory.add(enabled)
+    }
+
     /** Waits until the manager's collector has subscribed (avoids dropped emissions). */
     suspend fun awaitSubscribed() {
         withTimeout(5_000) {
@@ -946,7 +957,9 @@ class SessionManagerTest {
             h.wake.detections.emit(Detection.WakeWord)
             withTimeout(5_000) { while (h.asr.streams.isEmpty()) delay(20) }
             assertEquals(AssistantState.LISTENING, h.stateMachine.currentState())
-            assertTrue(h.pipeline.isRunning())
+            // start() arms the level-triggered desire; the producer opens the
+            // source asynchronously, so isRunning() is eventually consistent.
+            withTimeout(5_000) { while (!h.pipeline.isRunning()) delay(10) }
 
             // Muting is a user intent: pipeline stops AND active session dies.
             h.manager.setMuted(true)
@@ -963,7 +976,7 @@ class SessionManagerTest {
             // Unmuting restores pipeline + wake-word collection.
             h.manager.setMuted(false)
             assertFalse(h.manager.muted.value)
-            assertTrue(h.pipeline.isRunning())
+            withTimeout(5_000) { while (!h.pipeline.isRunning()) delay(10) }
             h.wake.awaitSubscribed()
         } finally {
             h.shutdown()
@@ -1483,6 +1496,82 @@ class SessionManagerVoiceStopToggleTest {
                 "the user disabled interruption — playback continues",
                 AssistantState.SPEAKING,
                 h.stateMachine.currentState(),
+            )
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `toggle ON mid-THINKING re-arms the stop lane without a state change`() = runBlocking {
+        var voiceStop = false
+        val h = Harness(
+            llm = ScriptedLlm(mutableListOf()),
+            llmOverride = HangingLlm(),
+            voiceStopOverride = { voiceStop },
+        )
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) { while (h.asr.streams.isEmpty()) delay(20) }
+            h.asr.streams.last().emitFinal("тест")
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.THINKING) delay(10)
+            }
+
+            // The collector armed the lane as (THINKING && voiceStop==false)
+            // on the state transition — the lane has never been on.
+            assertTrue(
+                "toggle was off for the whole turn — the lane was never armed",
+                h.wake.stopLaneHistory.none { it },
+            )
+
+            // A5: Settings flips the pref OFF->ON mid-turn. There is no state
+            // change to piggyback on, so only the explicit re-apply can arm
+            // the lane. On the pre-fix code this assertion fails with an
+            // untouched history.
+            voiceStop = true
+            h.manager.reapplyVoiceStopLane()
+
+            assertTrue(
+                "enabling voice stop mid-turn must arm the lane immediately",
+                h.wake.stopLaneHistory.last(),
+            )
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `toggle OFF mid-SPEAKING disarms the stop lane without a state change`() = runBlocking {
+        var voiceStop = true
+        val player = GatedPlayer()
+        val h = Harness(
+            llm = ScriptedLlm(mutableListOf(listOf(LlmChunk.Text("Длинный ответ."), LlmChunk.Done))),
+            playerOverride = player,
+            voiceStopOverride = { voiceStop },
+        )
+        try {
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) { while (h.asr.streams.isEmpty()) delay(20) }
+            h.asr.streams.last().emitFinal("тест")
+            withTimeout(5_000) {
+                while (h.stateMachine.currentState() != AssistantState.SPEAKING) delay(10)
+            }
+            assertTrue("the SPEAKING transition armed the lane", h.wake.stopLaneHistory.last())
+
+            // A5, the other direction: disabling must stop feeding the lane
+            // right away, not at the next state change (wasted CPU at best,
+            // and a lane still listening after the user opted out).
+            voiceStop = false
+            h.manager.reapplyVoiceStopLane()
+
+            assertFalse(
+                "disabling voice stop mid-SPEAKING must disarm the lane immediately",
+                h.wake.stopLaneHistory.last(),
             )
         } finally {
             h.shutdown()

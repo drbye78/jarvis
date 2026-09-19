@@ -9,7 +9,8 @@
     <!-- Header (NoActionBar theme: we draw our own) -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
+        android:layout_height="wrap_content"
+        android:minHeight="?attr/actionBarSize"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="12dp"
@@ -17,8 +18,8 @@
 
         <ImageButton
             android:id="@+id/closeButton"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="@dimen/touch_target_min"
+            android:layout_height="@dimen/touch_target_min"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/close"
             android:src="@drawable/ic_close"
@@ -49,14 +50,11 @@
 
             <!-- A0) LLM PROVIDER (GigaChat default, any OpenAI-compatible endpoint) -->
             <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Jarvis.SettingsCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="?attr/colorSurface"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="1dp"
-                app:contentPadding="18dp">
+                android:layout_marginBottom="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -81,7 +79,8 @@
                             android:layout_height="wrap_content"
                             android:layout_marginStart="10dp"
                             android:text="@string/provider_label"
-                            style="@style/TextAppearance.Jarvis.SectionHeader" />
+                            style="@style/TextAppearance.Jarvis.SectionHeader"
+                            android:accessibilityHeading="true" />
                     </LinearLayout>
 
                     <RadioGroup
@@ -116,6 +115,7 @@
 
                         <com.google.android.material.textfield.TextInputLayout
                             style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:id="@+id/openAiBaseUrlLayout"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:hint="@string/base_url_label">
@@ -129,6 +129,7 @@
 
                         <com.google.android.material.textfield.TextInputLayout
                             style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:id="@+id/openAiModelLayout"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
@@ -143,6 +144,7 @@
 
                         <com.google.android.material.textfield.TextInputLayout
                             style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:id="@+id/openAiApiKeyLayout"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
@@ -175,13 +177,10 @@
 
             <!-- A1) MUSIC: preferred default player -->
             <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Jarvis.SettingsCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="?attr/colorSurface"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="1dp"
-                app:contentPadding="18dp">
+                android:layout_marginBottom="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -206,7 +205,8 @@
                             android:layout_height="wrap_content"
                             android:layout_marginStart="10dp"
                             android:text="@string/music_section"
-                            style="@style/TextAppearance.Jarvis.SectionHeader" />
+                            style="@style/TextAppearance.Jarvis.SectionHeader"
+                            android:accessibilityHeading="true" />
                     </LinearLayout>
 
                     <RadioGroup
@@ -255,13 +255,10 @@
 
             <!-- A) PROVIDER CREDENTIALS -->
             <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Jarvis.SettingsCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="?attr/colorSurface"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="1dp"
-                app:contentPadding="18dp">
+                android:layout_marginBottom="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -272,7 +269,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/credentials_section"
-                        style="@style/TextAppearance.Jarvis.SectionHeader" />
+                        style="@style/TextAppearance.Jarvis.SectionHeader"
+                        android:accessibilityHeading="true" />
 
                     <!-- Which credentials are mandatory, and what gets validated -->
                     <TextView
@@ -285,6 +283,7 @@
                     <!-- Picovoice access key (normal text, not a password) -->
                     <com.google.android.material.textfield.TextInputLayout
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:id="@+id/picovoiceKeyLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="14dp"
@@ -300,6 +299,7 @@
                     <!-- Sber Salute: Client ID + Client Secret -->
                     <com.google.android.material.textfield.TextInputLayout
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:id="@+id/saluteIdLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
@@ -314,6 +314,7 @@
 
                     <com.google.android.material.textfield.TextInputLayout
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:id="@+id/saluteSecretLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
@@ -339,6 +340,7 @@
                     <!-- GigaChat: Client ID + Client Secret -->
                     <com.google.android.material.textfield.TextInputLayout
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:id="@+id/gigaChatIdLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
@@ -353,6 +355,7 @@
 
                     <com.google.android.material.textfield.TextInputLayout
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:id="@+id/gigaChatSecretLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
@@ -395,12 +398,9 @@
 
             <!-- B) WAKE WORD -->
             <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Jarvis.SettingsCard"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardBackgroundColor="?attr/colorSurface"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="1dp"
-                app:contentPadding="18dp">
+                android:layout_height="wrap_content">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -411,7 +411,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/wake_word_section"
-                        style="@style/TextAppearance.Jarvis.SectionHeader" />
+                        style="@style/TextAppearance.Jarvis.SectionHeader"
+                        android:accessibilityHeading="true" />
 
                     <!-- Engine selector: Porcupine vs Sherpa-ONNX -->
                     <TextView
@@ -578,12 +579,9 @@
 
             <!-- AEC: Phase A (hardware) + Phase B (software), opt-in -->
             <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Jarvis.SettingsCard"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardBackgroundColor="?attr/colorSurface"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="1dp"
-                app:contentPadding="18dp">
+                android:layout_height="wrap_content">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -594,7 +592,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/aec_section"
-                        style="@style/TextAppearance.Jarvis.SectionHeader" />
+                        style="@style/TextAppearance.Jarvis.SectionHeader"
+                        android:accessibilityHeading="true" />
 
                     <RadioGroup
                         android:id="@+id/aecGroup"
@@ -681,12 +680,9 @@
 
             <!-- Voice: TTS voice selection (applies live, no restart) -->
             <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Jarvis.SettingsCard"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardBackgroundColor="?attr/colorSurface"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="1dp"
-                app:contentPadding="18dp">
+                android:layout_height="wrap_content">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -697,7 +693,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/voice_section"
-                        style="@style/TextAppearance.Jarvis.SectionHeader" />
+                        style="@style/TextAppearance.Jarvis.SectionHeader"
+                        android:accessibilityHeading="true" />
 
                     <RadioGroup
                         android:id="@+id/voiceGroup"
@@ -755,12 +752,9 @@
 
             <!-- Follow-up window: continue the dialogue without the wake word -->
             <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Jarvis.SettingsCard"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardBackgroundColor="?attr/colorSurface"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="1dp"
-                app:contentPadding="18dp">
+                android:layout_height="wrap_content">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -771,7 +765,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/followup_section"
-                        style="@style/TextAppearance.Jarvis.SectionHeader" />
+                        style="@style/TextAppearance.Jarvis.SectionHeader"
+                        android:accessibilityHeading="true" />
 
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/followUpSwitch"
@@ -806,12 +801,9 @@
             <!-- COGNITIVE_PLAN 1.8: the «Память» card — §12.4: every cognitive
                  default is the initial value of a user-visible switch. -->
             <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Jarvis.SettingsCard"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardBackgroundColor="?attr/colorSurface"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="1dp"
-                app:contentPadding="18dp">
+                android:layout_height="wrap_content">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -822,7 +814,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/settings_memory_section"
-                        style="@style/TextAppearance.Jarvis.SectionHeader" />
+                        style="@style/TextAppearance.Jarvis.SectionHeader"
+                        android:accessibilityHeading="true" />
 
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/memoryEnabledSwitch"
@@ -887,7 +880,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="16dp"
                         android:text="@string/settings_semantic_section"
-                        style="@style/TextAppearance.Jarvis.SectionHeader" />
+                        style="@style/TextAppearance.Jarvis.SectionHeader"
+                        android:accessibilityHeading="true" />
 
                     <TextView
                         android:layout_width="match_parent"
@@ -969,14 +963,11 @@
             <!-- COGNITIVE_PLAN 2.6: the behaviour card (§12.4-1: the proactive
                  layer ships DEFAULT OFF; quiet hours + quota are user-tunable). -->
             <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Jarvis.SettingsCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="?attr/colorSurface"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="1dp"
-                app:contentPadding="18dp">
+                android:layout_marginBottom="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -987,7 +978,8 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/settings_behavior_section"
-                        style="@style/TextAppearance.Jarvis.SectionHeader" />
+                        style="@style/TextAppearance.Jarvis.SectionHeader"
+                        android:accessibilityHeading="true" />
 
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/behaviorEnabledSwitch"
@@ -1024,6 +1016,7 @@
 
                         <Button
                             android:id="@+id/behaviorQuietStartMinus"
+                            android:contentDescription="@string/settings_behavior_quiet_start_minus_cd"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
@@ -1040,6 +1033,7 @@
 
                         <Button
                             android:id="@+id/behaviorQuietStartPlus"
+                            android:contentDescription="@string/settings_behavior_quiet_start_plus_cd"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
@@ -1062,6 +1056,7 @@
 
                         <Button
                             android:id="@+id/behaviorQuietEndMinus"
+                            android:contentDescription="@string/settings_behavior_quiet_end_minus_cd"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
@@ -1078,6 +1073,7 @@
 
                         <Button
                             android:id="@+id/behaviorQuietEndPlus"
+                            android:contentDescription="@string/settings_behavior_quiet_end_plus_cd"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
@@ -1100,6 +1096,7 @@
 
                         <Button
                             android:id="@+id/behaviorQuotaMinus"
+                            android:contentDescription="@string/settings_behavior_quota_minus_cd"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
@@ -1116,6 +1113,7 @@
 
                         <Button
                             android:id="@+id/behaviorQuotaPlus"
+                            android:contentDescription="@string/settings_behavior_quota_plus_cd"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"

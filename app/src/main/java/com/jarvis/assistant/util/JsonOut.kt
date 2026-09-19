@@ -12,19 +12,24 @@ import kotlinx.serialization.json.JsonPrimitive
  */
 object JsonOut {
 
-    fun obj(vararg pairs: Pair<String, Any?>): String {
-        val map = pairs.associate { (k, v) ->
-            k to when (v) {
-                // D1: a null value serializes as JSON null, not the STRING
-                // "null" — {"x":"null"} mis-types the field for the LLM.
-                null -> JsonNull
-                is String -> JsonPrimitive(v)
-                is Number -> JsonPrimitive(v)
-                is Boolean -> JsonPrimitive(v)
-                else -> JsonPrimitive(v.toString())
-            }
-        }
+    fun obj(vararg pairs: Pair<String, Any?>): String = build(pairs.asList())
+
+    /** Same rendering as [obj], for callers that already hold a field collection. */
+    fun obj(pairs: Iterable<Pair<String, Any?>>): String = build(pairs)
+
+    private fun build(pairs: Iterable<Pair<String, Any?>>): String {
+        val map = pairs.associate { (k, v) -> k to primitive(v) }
         return JsonObject(map).toString()
+    }
+
+    private fun primitive(v: Any?): JsonPrimitive = when (v) {
+        // D1: a null value serializes as JSON null, not the STRING
+        // "null" — {"x":"null"} mis-types the field for the LLM.
+        null -> JsonNull
+        is String -> JsonPrimitive(v)
+        is Number -> JsonPrimitive(v)
+        is Boolean -> JsonPrimitive(v)
+        else -> JsonPrimitive(v.toString())
     }
 
     fun error(message: String): String = obj("error" to message)

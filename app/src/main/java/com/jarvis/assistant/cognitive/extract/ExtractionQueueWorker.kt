@@ -110,31 +110,44 @@ class ExtractionQueueWorker(
             )
         }
 
-        val pairs = fresh.mapNotNull { row ->
-            messageDao.byId(row.messageId)?.content?.let { row.messageId to it }
-        }
-        if (pairs.isEmpty()) {
-            // All source messages pruned before extraction — nothing to do.
-            fresh.forEach {
-                queueDao.updateState(
-                    it.messageId,
-                    ExtractionQueueEntity.STATE_DONE,
-                    it.attempt + 1,
-                    null,
-                    System.currentTimeMillis(),
-                )
+        return try {
+            val pairs = fresh.mapNotNull { row ->
+                messageDao.byId(row.messageId)?.content?.let { row.messageId to it }
             }
-            Timber.i("Cognitive: extraction batch %s emptied by retention", batchId)
-            return ExtractionBatchReport(batchId, batch.size, 0, 0, quarantined = false)
+            if (pairs.isEmpty()) {
+                // All source messages pruned before extraction — nothing to do.
+                fresh.forEach {
+                    queueDao.updateState(
+                        it.messageId,
+                        ExtractionQueueEntity.STATE_DONE,
+                        it.attempt + 1,
+                        null,
+                        System.currentTimeMillis(),
+                    )
+                }
+                Timber.i("Cognitive: extraction batch %s emptied by retention", batchId)
+                ExtractionBatchReport(batchId, batch.size, 0, 0, quarantined = false)
+            } else {
+                // ONE cloud call for the whole batch (plan §6.2), transient-retried.
+                lastBatchTransportFailed = false
+                val response = requestCompletion(batchId, pairs)
+                if (response == null) {
+                    ExtractionBatchReport(batchId, pairs.size, 0, 0, quarantined = false)
+                } else {
+                    finishBatch(batchId, fresh, pairs, response)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e // A8: shutdown/barge-in propagates; rows are recovered at startup
+        } catch (e: Exception) {
+            // An UNEXPECTED failure (parser/serialization/DB) AFTER the claim
+            // must not leave the rows RUNNING with batchId set. Mark the batch
+            // transport-failed so the loop owner applies the existing cloud
+            // backoff, and release it (attempt preserved) back to PENDING.
+            Timber.w(e, "Cognitive: extraction batch %s failed unexpectedly — rows released", batchId)
+            markTransportFailure(batchId)
+            ExtractionBatchReport(batchId, fresh.size, 0, 0, quarantined = false)
         }
-
-        // ONE cloud call for the whole batch (plan §6.2), transient-retried.
-        lastBatchTransportFailed = false
-        val response = requestCompletion(batchId, pairs)
-        if (response == null) {
-            return ExtractionBatchReport(batchId, pairs.size, 0, 0, quarantined = false)
-        }
-        return finishBatch(batchId, fresh, pairs, response)
     }
 
     /** The cloud call with transient retry; null = transport failure (released). */

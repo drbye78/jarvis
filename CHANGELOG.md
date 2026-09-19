@@ -6,6 +6,32 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Changed — P1 hardening (data & privacy)
+- **Room collapsed to v1 (pre-1.0)**: the v2–v7 migration chain is deleted and
+  upgrades go through `fallbackToDestructiveMigration()` — a database from an
+  old versioned build is wiped on first open (owner-accepted pre-release).
+  Only schema `1.json` stays exported; real migrations start at the v1→v2
+  freeze.
+- **Notification-id bands split**: assistant notifications own ids 1–999
+  (foreground service 1–3, alarm-degrade notice 4); ringing alarms use
+  `10_000 + rowId`, with the AlarmManager request code kept as the raw rowId —
+  ringing notification and alarm request are now equal by construction via a
+  shared helper (`util/NotificationIds.kt`).
+- **OAuth token parse failures sanitized**: they are rethrown WITHOUT their
+  cause and carry only the cause TYPE in the message — raw
+  `kotlinx.serialization` messages quote the offending response literal
+  (tokens!), and used to reach the rotating log file via the upstream
+  `TurnRunner` ERROR stack trace, where `LogScrubber` has no pattern for
+  JSON fragments.
+- **One alarm scheduler per process (P2-A wired)**: `AppGraph` now installs
+  the graph-owned scheduler into `AlarmSchedulerProvider` at construction, so
+  the voice lane and the alarms UI / ringing screen share the SAME armer —
+  the one-time «exact alarms denied» note can no longer re-post per lane.
+- **Memory-tool failures sanitized**: `remember_fact` / `recall_facts` /
+  `forget_fact` now report the exception CLASS, never its message — Room and
+  serialization messages quote the user's own stored facts, and the failure
+  detail flows into the LLM tool-result JSON and the spoken failure string.
+
 ### Changed — Phase 1 follow-through
 - **A timed-out TTS sentence is now treated as NEVER SPOKEN**: when a
   sentence's synthesis deadline fires, the follow-up window no longer opens

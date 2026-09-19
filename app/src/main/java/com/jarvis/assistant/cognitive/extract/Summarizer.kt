@@ -141,18 +141,33 @@ class Summarizer(
      */
     suspend fun runBacklogAndDigest(): Int {
         var made = 0
-        repeat(MAX_BACKLOG_BATCHES) {
-            val cursor = cursor()
-            val newest = messageDao.recentDesc(1).firstOrNull()?.id ?: return@repeat
-            if (newest <= cursor + MIN_BATCH_SPAN) return@repeat
-            val rows = messageDao.inRange(cursor, newest)
-                .filter { it.role != "tool" }
-                .take(BATCH_MESSAGES)
-            if (rows.size < MIN_BATCH_SPAN) return@repeat
-            if (summarizeBatch(rows, rows.last().id) != null) made++ else return@repeat
+        var batches = 0
+        var progressed = true
+        while (progressed && batches < MAX_BACKLOG_BATCHES) {
+            progressed = summarizeNextBacklogSpan()
+            if (progressed) made++
+            batches++
         }
         if (dailyDigest() != null) made++
         return made
+    }
+
+    /**
+     * One backlog step: summarize the cursor→latest span if it is large enough.
+     * Returns false when there is nothing left to do (or the summary failed), so
+     * [runBacklogAndDigest] stops instead of re-summarizing a span whose cursor
+     * did not advance — the retry storm this replaced re-ran the same span up to
+     * [MAX_BACKLOG_BATCHES] times.
+     */
+    private suspend fun summarizeNextBacklogSpan(): Boolean {
+        val cursor = cursor()
+        val newest = messageDao.recentDesc(1).firstOrNull()?.id ?: return false
+        if (newest <= cursor + MIN_BATCH_SPAN) return false
+        val rows = messageDao.inRange(cursor, newest)
+            .filter { it.role != "tool" }
+            .take(BATCH_MESSAGES)
+        if (rows.size < MIN_BATCH_SPAN) return false
+        return summarizeBatch(rows, rows.last().id) != null
     }
 
     /**

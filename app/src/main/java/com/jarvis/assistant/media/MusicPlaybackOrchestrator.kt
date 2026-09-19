@@ -351,9 +351,12 @@ class MusicPlaybackOrchestrator(
     /**
      * Tier 3: play a specific library item by the mediaId previously
      * returned by [listPlaylists]/[searchLibrary]. When [titleHint] is
-     * given, playback is score-verified like any other play; without it the
-     * best honest evidence is a PLAYING state (the target was exact by
-     * construction — we named the mediaId).
+     * given, playback is score-verified like any other play. Without it
+     * (M-5) there is no title to score against, so the evidence must be an
+     * actual command EFFECT on the player — started / position reset /
+     * track switched. A bare "something is playing" is not evidence: the
+     * OLD track was still playing, and naming it would report a track we
+     * never started.
      */
     suspend fun playLibraryItem(mediaId: String, titleHint: String?, appHint: String?): Outcome {
         val app = resolver.resolve(appHint)
@@ -387,21 +390,28 @@ class MusicPlaybackOrchestrator(
                 )
             }
             val vq = titleHint?.let { VoiceQuery.clean(it) }
-            val verified = if (vq != null) {
-                awaitVerifiedStart(handle, vq, before)
+            if (vq != null) {
+                val verified = awaitVerifiedStart(handle, vq, before)
+                if (verified != null) return playing(app, "browser_media_id", verified)
             } else {
-                awaitPlaying(handle)
+                // M-5: no title to score — require an actual effect. Never
+                // report success while naming whatever was already playing
+                // (the stale-track lie).
+                if (awaitCommandEffect(handle, before) != null) {
+                    return Outcome(
+                        Status.DISPATCHED,
+                        app,
+                        strategy = "browser_media_id",
+                        detail = "Отправил команду плееру (${app.label}).",
+                    )
+                }
             }
-            return if (verified != null) {
-                playing(app, "browser_media_id", verified)
-            } else {
-                Outcome(
-                    Status.APP_OPENED,
-                    app,
-                    strategy = "browser_media_id",
-                    detail = "Отправил команду плееру, но подтверждения не дождался — проверь экран.",
-                )
-            }
+            return Outcome(
+                Status.APP_OPENED,
+                app,
+                strategy = "browser_media_id",
+                detail = "Отправил команду плееру, но подтверждения не дождался — проверь экран.",
+            )
         } finally {
             session.disconnect()
         }
@@ -470,22 +480,30 @@ class MusicPlaybackOrchestrator(
     )
 
     /**
-     * Pure gating table (plan risk R7): which capability bit (if any) an
-     * action requires, and the extra conditions no bitmask can express.
-     * Null bit = no session-bit requirement (basic transport).
+     * Pure gating table (plan risk R7): which capability bit(s) an action
+     * requires, and the extra conditions no bitmask can express. An empty set
+     * = no session-bit requirement (basic transport).
      */
     object TransportPolicy {
-        fun requiredAction(action: Action): TransportAction? = when (action) {
-            Action.PLAY, Action.TOGGLE -> TransportAction.PLAY
-            Action.PAUSE -> TransportAction.PAUSE
-            Action.NEXT -> TransportAction.SKIP_TO_NEXT
-            Action.PREVIOUS -> TransportAction.SKIP_TO_PREVIOUS
-            Action.STOP -> TransportAction.STOP
-            Action.SEEK, Action.RESTART -> TransportAction.SEEK_TO
-            Action.LIKE -> TransportAction.SET_RATING
-            Action.REPEAT -> TransportAction.SET_REPEAT_MODE
-            Action.SHUFFLE -> TransportAction.SET_SHUFFLE_MODE
-            Action.SPEED -> TransportAction.SET_PLAYBACK_SPEED
+        /**
+         * Which capability bits (if any) an action needs. A SET, not a single
+         * bit: TOGGLE dispatches `play()` when paused and `pause()` when
+         * playing, so a player that advertises either PLAY or PLAY_PAUSE can
+         * honor it — gating on PLAY alone refused compat-only players (M-7).
+         * An empty set = no session-bit requirement (basic transport).
+         */
+        fun requiredActions(action: Action): Set<TransportAction> = when (action) {
+            Action.PLAY -> setOf(TransportAction.PLAY)
+            Action.TOGGLE -> setOf(TransportAction.PLAY, TransportAction.PLAY_PAUSE)
+            Action.PAUSE -> setOf(TransportAction.PAUSE)
+            Action.NEXT -> setOf(TransportAction.SKIP_TO_NEXT)
+            Action.PREVIOUS -> setOf(TransportAction.SKIP_TO_PREVIOUS)
+            Action.STOP -> setOf(TransportAction.STOP)
+            Action.SEEK, Action.RESTART -> setOf(TransportAction.SEEK_TO)
+            Action.LIKE -> setOf(TransportAction.SET_RATING)
+            Action.REPEAT -> setOf(TransportAction.SET_REPEAT_MODE)
+            Action.SHUFFLE -> setOf(TransportAction.SET_SHUFFLE_MODE)
+            Action.SPEED -> setOf(TransportAction.SET_PLAYBACK_SPEED)
         }
 
         /** Framework TransportControls.setPlaybackSpeed exists since API 29
@@ -493,9 +511,14 @@ class MusicPlaybackOrchestrator(
          *  we do not promise. */
         fun speedAllowed(apiLevel: Int): Boolean = apiLevel >= 29
 
-        /** Heart rating is the only rating style we can speak. */
+        /**
+         * Heart rating is the only rating style we can speak. Fails OPEN when
+         * the mask is unknown (M-3): an unpublished PlaybackState reports
+         * RATING_NONE, and refusing LIKE on that basis rejected the command
+         * on players that never told us their rating style at all.
+         */
         fun likeAllowed(caps: MediaCapabilities): Boolean =
-            caps.ratingType == MediaCapabilities.RATING_HEART
+            !caps.known || caps.ratingType == MediaCapabilities.RATING_HEART
 
         /** Actions the global media-key fallback can express at all. */
         fun mediaKeyEligible(action: Action): Boolean = action in setOf(
@@ -541,6 +564,7 @@ class MusicPlaybackOrchestrator(
             }
         }.getOrDefault(emptyList())
         MediaDiagnostics.sessionTable(rows).forEach { Timber.tag("MusicDiag").i("%s", it) }
+        MediaDiagnostics.sessionContentTable(rows).forEach { Timber.tag("MusicDiag").d("%s", it) }
     }
 
     /** Poll [budgets.coldStartTotalMs] for the app's session to appear. */
@@ -613,10 +637,10 @@ class MusicPlaybackOrchestrator(
             val now = runCatching { handle.snapshot() }.getOrNull() ?: return null
             if (VoiceQueryMatcher.isVerified(now, vq, before)) return now
         }
-        Timber.w(
-            "Music: playFromSearch('%s') not verified against the request — continuing cascade",
-            vq.flatQuery(),
-        )
+        // The requested query is user content (AGENTS.md DEBUG-only rule):
+        // the WARN keeps the content-free outcome, the query rides DEBUG.
+        Timber.w("Music: playFromSearch not verified against the request — continuing cascade")
+        Timber.d("Music: playFromSearch('%s') not verified against the request", vq.flatQuery())
         return null
     }
 

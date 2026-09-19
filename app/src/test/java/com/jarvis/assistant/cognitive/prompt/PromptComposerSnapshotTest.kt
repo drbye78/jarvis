@@ -110,6 +110,85 @@ class PromptComposerSnapshotTest {
         )
         assertEquals(composer.build(context), composer.build(context))
     }
+
+    // ---- D8: the COMBINED cognitive budget -------------------------------
+
+    /**
+     * The composer's combined cap must stay equal to the memory renderer's own
+     * cap — they are conceptually the same "1200 chars of cognitive additions"
+     * number (COGNITIVE_PLAN §3/§40), and a drift between them would silently
+     * re-open the 1800-char hole D8 closed.
+     */
+    @Test
+    fun `combined budget matches the memory section budget`() {
+        assertEquals(MemorySectionRenderer.SECTION_BUDGET, PromptComposer.COGNITIVE_BUDGET)
+    }
+
+    /** Memory at its own cap leaves the summary zero room — it is dropped. */
+    @Test
+    fun `summary is dropped when memory consumes the whole budget`() = runBlocking {
+        val fullMemory = "x".repeat(PromptComposer.COGNITIVE_BUDGET)
+        val composer = PromptComposer(nowMs = fixedClock)
+        val context = PromptContext(
+            utterance = "кто я",
+            isFollowUp = false,
+            memory = { fullMemory },
+            summary = { "— вчера обсуждали погоду" },
+        )
+        val prompt = composer.build(context)
+        assertTrue(prompt.contains(fullMemory))
+        assertFalse(prompt.contains("обсуждали погоду"))
+    }
+
+    /**
+     * With a small memory block the summary fits, and the two sections sum to
+     * no more than the combined budget — the property that was unmet before
+     * (memory ≤1200 + summary ≤600 could reach ~1800). The invariant is
+     * measured as "chars added to the prompt", so it holds regardless of the
+     * section contents.
+     */
+    @Test
+    fun `memory plus summary never exceeds the combined budget`() = runBlocking {
+        val memory = "y".repeat(400)
+        val summary = (1..40).joinToString("\n") { "— строка сводки номер $it" }
+        val composer = PromptComposer(nowMs = fixedClock)
+        val baseline = TimeAwareSystemPrompt(nowMs = fixedClock).build(PromptContext.blank())
+        val prompt = composer.build(
+            PromptContext(
+                utterance = "кто я",
+                isFollowUp = false,
+                memory = { memory },
+                summary = { summary },
+            ),
+        )
+        // +4 = the two structural "\n\n" separators, which are not cognitive text.
+        val added = prompt.length - baseline.length
+        assertTrue("cognitive additions were $added chars", added <= PromptComposer.COGNITIVE_BUDGET + 4)
+
+        // Over-long summaries lose whole trailing lines from line 1 onward —
+        // contiguity proves nothing was cut or dropped from the middle.
+        val present = Regex("— строка сводки номер (\\d+)")
+            .findAll(prompt)
+            .map { it.groupValues[1].toInt() }
+            .toList()
+        assertTrue("summary was entirely dropped", present.isNotEmpty())
+        assertEquals((1..present.size).toList(), present)
+        assertTrue("truncation did not happen", present.size < 40)
+    }
+
+    /** A summary that fits entirely is rendered verbatim. */
+    @Test
+    fun `fitting summary is rendered untouched`() = runBlocking {
+        val summary = "— вчера обсуждали погоду\n— договорились о встрече"
+        val composer = PromptComposer(nowMs = fixedClock)
+        val context = PromptContext(
+            utterance = "кто я",
+            isFollowUp = false,
+            memory = { memoryBlock },
+            summary = { summary },
+        )
+        assertTrue(composer.build(context).contains(summary))
+    }
 }
 
 /** §7.1 renderer snapshots: budgets, drop-lowest rule, deterministic framing. */

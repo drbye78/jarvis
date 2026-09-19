@@ -5,7 +5,7 @@ Compact ramp-up for agents. Every line is something easy to miss.
 ## Build & verify
 - Single Gradle module `:app` (root `settings.gradle.kts` includes only `:app`). Use the wrapper: `./gradlew ...`.
 - Build APK: `./gradlew :app:assembleDebug`
-- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~775 tests; refresh this count when you add a batch)
+- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~944 tests; refresh this count when you add a batch)
 - Single test class: `./gradlew :app:testDebugUnitTest --tests "com.jarvis.assistant.PorcupineDetectorTest"`
 - **Gate before claiming done:** `./gradlew :app:assembleDebug :app:testDebugUnitTest`
 - Instrumentation tests (`androidTest`) need a device/emulator; the gate above does not.
@@ -43,8 +43,8 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - Alarm/timer identity is the DB row id everywhere: AlarmManager request codes AND the ringing notification id / full-screen-intent request code (`AlarmReceiver.ringingNotificationId`). Parity by construction — do not introduce a second scheme.
 - `getSystemService(...) as X` is FORBIDDEN — use `as?` with an honest degradation path (JSON error, skip + log, or fallback behavior). Odd OEM ROMs can return null.
 - Content-bearing log material (utterances, TTS text, LLM replies, tool payloads, user-set labels) is **DEBUG-only**; INFO+ lines carry content-free summaries. `FileLoggingTree` persists INFO+ to disk and runs them through `util/LogScrubber` as a second net — the pinned precedent is `SpeechContentLoggingTest`.
-- Room: v1 (pre-release) upgrades destructively (`fallbackToDestructiveMigrationFrom(1)`); v2→v3 is a no-op migration (identical schemas, exists to prevent destructive fallback); real schema migrations start at v3→v4 (cognitive memory core); v6→7 fixed alarm snooze drift (an `anchorTimeMillis` column). The DB is currently at v7. New schema bumps MUST add a real migration + exported schema json.
-- Version: `0.2.1`, pre-1.0 (in-development).
+- Room: the DB is at **v2** (pre-1.0) — the single coordinated Phase-2 bump that lands the data (indices/PKs/FKs), cognitive (fact decay anchors) and alarms (`clockDomain`/`anchorElapsedMillis`/`armedElapsedMillis` + the new `ring_sessions` table) schema changes TOGETHER. Every `Migration` constant is still gone; upgrades go through `fallbackToDestructiveMigration(dropAllTables = true)`, which drops every table found via `sqlite_master` and also covers downgrade, so a database from any older versioned build is WIPED on first open (owner-accepted). Pre-1.0 schema changes bump the version and accept data loss; the real migration chain (migration + exported schema json + migration test + CHANGELOG entry) starts only when the schema freezes at **v2→v3**. `schemas/…/1.json` and `2.json` are exported.
+- Version: `0.2.2`, pre-1.0 (in-development).
 - Large binaries are tracked via Git LFS: `app/libs/sherpa-onnx.aar` (~47 MB) and `app/src/main/assets/sherpa_kws/*` (~5.3 MB — CI fails on unreferenced assets > 1 MB, so never add a model file nothing loads). Don't `.gitignore` them. `git lfs pull` is required after clone (CI does this automatically).
 
 ## Cognitive subsystem conventions (COGNITIVE_PLAN 0.1)

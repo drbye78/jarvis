@@ -64,6 +64,22 @@ class FollowUpWindowControllerTest {
     }
 
     @Test
+    fun `vad onset past the deadline is rejected before the expiry tick`() {
+        // A6: the collector polls transition() on a delay, so an onset can
+        // land after the deadline but before the tick that would expire the
+        // window. It must not start a follow-up turn the UI already stopped
+        // advertising.
+        val c = ctrl(windowMs = 5000)
+        c.onTurnEnded(spoke = true, enabled = true)
+        now = 5000
+        assertNull("deadline passed — onset must not open a turn", c.onVadActive())
+        assertTrue(
+            "the window is still the expiry path's to close",
+            c.transition() is FollowUpWindowController.Effect.ExpireWindow,
+        )
+    }
+
+    @Test
     fun `wake word supersedes the window`() {
         val c = ctrl()
         c.onTurnEnded(spoke = true, enabled = true)

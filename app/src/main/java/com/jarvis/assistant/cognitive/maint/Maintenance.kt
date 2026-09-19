@@ -29,19 +29,36 @@ object Maintenance {
 
     /**
      * Decayed confidence for one fact at [nowMs]: inactive days beyond
-     * [DECAY_AFTER_DAYS] multiply the stored confidence by 0.99 per day,
-     * floored at [CONFIDENCE_FLOOR]. "Inactive" = neither updated nor
-     * confirmed nor recalled since [updatedAt] (recall stats bump
-     * lastRecalledAt WITHOUT touching updatedAt — the ranking recency is a
-     * usage signal, the decay an inactivity signal; here we take the LATER
-     * of the two as "last touched").
+     * [DECAY_AFTER_DAYS] multiply an IMMUTABLE ANCHOR by 0.99 per day,
+     * floored at [CONFIDENCE_FLOOR].
+     *
+     * The value is derived from [FactSnapshot.decayAnchorConfidence] /
+     * [FactSnapshot.decayAnchorAt], never from the current mutable
+     * `confidence`, so repeated maintenance passes are IDEMPOTENT: pass `k`
+     * of a nightly job recomputes `anchor × 0.99^effectiveIdle` from the same
+     * inputs instead of re-decaying its own previous output (which compounded
+     * the exponent to `0.99^(n(n+1)/2)`).
+     *
+     * The anchor is latched by the decay job / write paths; an unanchored row
+     * ([FactSnapshot.decayAnchorAt] == 0, including every pre-existing row)
+     * falls back to `confidence` anchored at `updatedAt` — the historical
+     * behavior on the first pass, after which the job anchors it.
+     *
+     * "Last touched" is the LATER of the anchor time and [FactSnapshot.lastRecalledAt]:
+     * a recall resets the decay CLOCK only (it is a usage signal), it never
+     * moves the anchor confidence. `updatedAt` / `lastConfirmedAt` are not
+     * read here beyond the unanchored fallback, so maintenance decay cannot
+     * restart its own clock.
      */
     fun decayedConfidence(fact: FactSnapshot, nowMs: Long): Float {
-        val lastTouched = maxOf(fact.updatedAt, fact.lastRecalledAt ?: 0L)
+        val anchored = fact.decayAnchorAt > 0L
+        val anchorConfidence = if (anchored) fact.decayAnchorConfidence else fact.confidence
+        val anchorTime = if (anchored) fact.decayAnchorAt else fact.updatedAt
+        val lastTouched = maxOf(anchorTime, fact.lastRecalledAt ?: 0L)
         val idleDays = ((nowMs - lastTouched).coerceAtLeast(0)) / DAY_MS
         val effectiveIdle = idleDays - DECAY_AFTER_DAYS
-        if (effectiveIdle <= 0) return fact.confidence
-        val decayed = fact.confidence * DAILY_FACTOR.pow(effectiveIdle)
+        if (effectiveIdle <= 0) return anchorConfidence
+        val decayed = anchorConfidence * DAILY_FACTOR.pow(effectiveIdle)
         return maxOf(CONFIDENCE_FLOOR, decayed.toFloat())
     }
 

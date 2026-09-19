@@ -89,3 +89,42 @@ class MusicAppCatalog(
         val MUSIC_LABEL_KEYWORDS = listOf("музык", "music", "звук", "zvuk")
     }
 }
+
+/**
+ * M-8: memoizes the installed-app enumeration for a short TTL. The loader
+ * walks every installed package and calls `getLaunchIntentForPackage` +
+ * `getApplicationLabel` for each (hundreds of PackageManager IPC calls on a
+ * device with many apps), and a single music command resolves the player at
+ * least once — sometimes twice (cascade + transport). A TTL cache removes
+ * that per-turn cost while still noticing an install/uninstall within
+ * [DEFAULT_TTL_MS].
+ *
+ * The cached value is a snapshot list, so callers must treat it as
+ * read-only.
+ */
+class InstalledAppsCache(
+    private val loader: () -> List<Pair<String, String>>,
+    private val ttlMs: Long = DEFAULT_TTL_MS,
+    private val now: () -> Long = System::currentTimeMillis,
+) {
+    @Volatile private var cached: List<Pair<String, String>>? = null
+
+    @Volatile private var loadedAtMs: Long = 0L
+
+    fun get(): List<Pair<String, String>> {
+        val current = cached
+        if (current != null && now() - loadedAtMs < ttlMs) return current
+        synchronized(this) {
+            val fresh = cached
+            if (fresh != null && now() - loadedAtMs < ttlMs) return fresh
+            val loaded = loader()
+            cached = loaded
+            loadedAtMs = now()
+            return loaded
+        }
+    }
+
+    companion object {
+        const val DEFAULT_TTL_MS = 60_000L
+    }
+}

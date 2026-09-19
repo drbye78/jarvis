@@ -78,6 +78,8 @@
     <string name="settings_sherpa_keyword_ok">✓ %1$s</string>
     <string name="error_base_url">Enter a Base URL</string>
     <string name="error_api_key">Enter an API key</string>
+    <string name="error_credential_id_missing">Enter the ID — the secret is already filled in</string>
+    <string name="error_credential_secret_missing">Enter the secret — the ID is already filled in</string>
 
     <!-- Settings: provider credentials (each user supplies their own) -->
     <string name="credentials_section">Provider credentials</string>
@@ -143,11 +145,15 @@
          notification: generic text only, never the user-set alarm label. -->
     <string name="alarm_public_text">Alarm</string>
     <!-- Exact-alarm degradation note (P3.1): shown once when Android 12+ denied
-         SCHEDULE_EXACT_ALARM and a timer was armed inexact. -->
-    <string name="exact_alarm_degrade_title">Timer precision limited</string>
-    <string name="exact_alarm_degrade_note">Exact alarm permission is disabled — timers may ring up to 10 minutes late. Allow “Alarms &amp; reminders” for Jarvis in system settings.</string>
+         SCHEDULE_EXACT_ALARM and an alarm or timer was armed inexact. -->
+    <string name="exact_alarm_degrade_title">Alarm and timer precision limited</string>
+    <string name="exact_alarm_degrade_note">Exact alarm permission is disabled — alarms and timers may ring up to 10 minutes late. Allow “Alarms &amp; reminders” for Jarvis in system settings.</string>
     <string name="dismiss">Dismiss</string>
     <string name="snooze">Snooze for 10 minutes</string>
+    <!-- P3.4: shown as the ringing notification action when Android 14+ denied
+         the full-screen-intent permission, so the over-lockscreen launch cannot
+         be restored silently. -->
+    <string name="ring_allow_full_screen">Show over screen</string>
     <string name="snooze_label">Alarm repeat</string>
     <string name="timer_done">Time is up!</string>
     <string name="perm_notification_text">Microphone access is required. Tap to open the app.</string>
@@ -266,7 +272,10 @@
     <!-- Tool-layer user-visible errors (A4): routed through ToolStrings,
          spoken via the LLM — values-en parity is test-enforced -->
     <string name="tool_audio_service_unavailable">The audio service is unavailable on this device</string>
+    <string name="tool_volume_change_blocked">The system blocked the volume change — Do Not Disturb or a device policy may be active.</string>
     <string name="tool_write_settings_missing">No permission to modify system settings. Open Jarvis → Welcome screen → "Recording settings" and grant it.</string>
+    <string name="tool_brightness_write_failed">Could not change the screen brightness — the system rejected the write.</string>
+    <string name="tool_brightness_mode_write_failed">Could not disable adaptive brightness — the system rejected the write.</string>
     <string name="tool_wifi_panel_unavailable">The system Wi-Fi panel is unavailable on this device.</string>
     <string name="tool_wifi_panel_detail">The system does not allow toggling Wi-Fi directly — I opened the settings panel.</string>
     <string name="tool_wifi_panel">the Wi-Fi panel</string>
@@ -279,6 +288,9 @@
     <string name="tool_dnd_service_unavailable">Could not access the notification service</string>
     <string name="tool_dnd_access_missing">No Do-Not-Disturb access. Open Settings → Sound → Do Not Disturb → app access → Jarvis.</string>
     <string name="tool_dnd_toggle_failed">Could not toggle Do-Not-Disturb</string>
+    <string name="tool_dnd_settings">Do-Not-Disturb settings</string>
+    <string name="tool_dnd_panel_unavailable">Do-Not-Disturb settings are unavailable on this device.</string>
+    <string name="tool_dnd_panel_detail">Since Android 15 the app cannot change Do-Not-Disturb directly — I opened the settings.</string>
     <string name="tool_admin_service_unavailable">The device administration service is unavailable</string>
     <string name="tool_admin_lock_missing">The screen cannot be locked without device-admin rights. Open Jarvis\'s welcome screen and enable "Screen lock".</string>
     <string name="tool_app_not_found">App \'%1$s\' not found</string>
@@ -338,6 +350,12 @@
     <string name="settings_behavior_quota">Maximum suggestions per day</string>
     <string name="settings_behavior_minus">−</string>
     <string name="settings_behavior_plus">+</string>
+    <string name="settings_behavior_quiet_start_minus_cd">Decrease: quiet hours start</string>
+    <string name="settings_behavior_quiet_start_plus_cd">Increase: quiet hours start</string>
+    <string name="settings_behavior_quiet_end_minus_cd">Decrease: quiet hours end</string>
+    <string name="settings_behavior_quiet_end_plus_cd">Increase: quiet hours end</string>
+    <string name="settings_behavior_quota_minus_cd">Decrease: maximum suggestions per day</string>
+    <string name="settings_behavior_quota_plus_cd">Increase: maximum suggestions per day</string>
 
 <string name="settings_memory_section">Memory</string>
     <string name="settings_memory_toggle">Long-term memory</string>

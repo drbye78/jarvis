@@ -76,6 +76,23 @@ class LogScrubberTest {
         assertEquals("status=\"IDLE\" ok", LogScrubber.scrub("status=\"IDLE\" ok"))
     }
 
+    /**
+     * Chosen approach for the single-quoted blind spot behind the audit: the
+     * scrubber keeps its deliberately conservative rule set — a `'…'` rule
+     * cannot tell an apostrophe inside a word from a quote — so single-quoted
+     * content spans ride through unredacted. The primary guard stays the
+     * DEBUG-only convention, pinned for the affected call site by
+     * `SpeechContentLoggingTest.unverified music query is logged at DEBUG
+     * never at INFO or above`.
+     */
+    @Test
+    fun `single-quoted spans are intentionally NOT scrubbed - DEBUG demotion is the guard`() {
+        assertEquals(
+            "Music: playFromSearch('секретный запрос') not verified",
+            LogScrubber.scrub("Music: playFromSearch('секретный запрос') not verified"),
+        )
+    }
+
     // ------------------------------------------------------------------
     // Stack-trace / whole-line path
     // ------------------------------------------------------------------

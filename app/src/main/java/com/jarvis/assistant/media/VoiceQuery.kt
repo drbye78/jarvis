@@ -179,7 +179,23 @@ object VoiceQueryMatcher {
             .replace(Regex("\\s+"), " ")
             .trim()
 
-    fun tokens(s: String?): List<String> = normalize(s).split(' ').filter { it.isNotEmpty() }
+    /**
+     * S-5: matching tokens. Two normalizations are applied so a spoken
+     * request and the player's metadata actually meet:
+     *
+     * - Tokens shorter than [MIN_TOKEN_LENGTH] are dropped. A one-letter word
+     *   («я») otherwise matched every title containing it — the single-token
+     *   false positive. Callers that must know whether anything is scoreable
+     *   use [hasScoreableExpectation], which reads THIS list, not the raw
+     *   strings.
+     * - Russian inflectional suffixes are folded ([stem]), so «группу» and
+     *   «группа» compare equal (the «группу Кино» false negative). ASCII
+     *   words are untouched.
+     */
+    fun tokens(s: String?): List<String> =
+        normalize(s).split(' ')
+            .filter { it.length >= MIN_TOKEN_LENGTH }
+            .map(::stem)
 
     /** |tokens(actual) ∩ requested| / |requested| — 0 when nothing requested. */
     fun overlap(actual: String?, requested: Collection<String>): Double {
@@ -260,16 +276,47 @@ object VoiceQueryMatcher {
 
     /**
      * True when the request carries at least one expectation [score] can
-     * test (title/artist/album/genre tokens). A playlist-only request never
-     * appears in track metadata: score is always 0 for it, so the caller
-     * must verify by other means (state evidence), never by silently
-     * passing — and never by silently failing a compliant player either.
+     * test (title/artist/album/genre). A playlist-only request never appears
+     * in track metadata: score is always 0 for it, so the caller must verify
+     * by other means (state evidence), never by silently passing — and never
+     * by silently failing a compliant player either.
+     *
+     * Reads the SAME filtered token list [score] uses: a request made only
+     * of sub-[MIN_TOKEN_LENGTH] tokens has no scoreable expectation, so the
+     * caller falls through to state evidence instead of never verifying
+     * against a token [overlap] would ignore anyway.
      */
     fun hasScoreableExpectation(vq: VoiceQuery): Boolean =
-        vq.query.isNotBlank() ||
-            !vq.artist.isNullOrBlank() ||
-            !vq.album.isNullOrBlank() ||
-            !vq.genre.isNullOrBlank()
+        tokens(vq.query).isNotEmpty() ||
+            listOfNotNull(vq.artist, vq.album, vq.genre).any { tokens(it).isNotEmpty() }
+
+    /** Minimum matching-token length (S-5 stops short words matching). */
+    const val MIN_TOKEN_LENGTH = 3
+
+    private const val MIN_STEM_LENGTH = 3
+
+    /**
+     * S-5: conservative Russian inflection folding. Only suffixes that carry
+     * no lexical information are stripped, and never below [MIN_STEM_LENGTH]
+     * characters, so «группу»/«группа»/«группы» all collapse to «групп»
+     * while unrelated short words stay distinct. ASCII words are untouched.
+     * Longest suffix first so «иями» is not cut by the one-letter «и».
+     */
+    private val RU_SUFFIXES = listOf(
+        "иями", "ями", "ами", "ией", "иях", "ию", "ия", "ий", "ый", "ой",
+        "ая", "яя", "ое", "ее", "ые", "ие", "ов", "ев", "ам", "ям", "ах",
+        "ях", "ом", "ем", "ую", "юю", "у", "ю", "а", "я", "ы", "и", "й", "ь", "о", "е",
+    )
+
+    private fun stem(token: String): String {
+        if (token.length <= MIN_TOKEN_LENGTH) return token
+        for (suffix in RU_SUFFIXES) {
+            if (token.endsWith(suffix) && token.length - suffix.length >= MIN_STEM_LENGTH) {
+                return token.dropLast(suffix.length)
+            }
+        }
+        return token
+    }
 
     private const val W_TITLE = 0.65
     private const val W_ARTIST = 0.35

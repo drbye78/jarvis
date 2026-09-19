@@ -71,14 +71,27 @@ object MediaDiagnostics {
             TransportAction.SET_PLAYBACK_SPEED,
         ).joinToString(" ") { "${it.wireName}=${f(it)}" }
 
+        // Title/artist are user content (AGENTS.md): the INFO capability
+        // line carries state/position only. [sessionContentTable] is the
+        // DEBUG-only companion that may name the track.
         val np = row.nowPlaying?.let { np ->
-            val what = listOfNotNull(np.title, np.artist).joinToString(" — ")
-            " state=${stateName(np.state)} pos=${np.positionMs / 1000}s" +
-                (if (what.isNotBlank()) " «$what»" else "")
+            " state=${stateName(np.state)} pos=${np.positionMs / 1000}s"
         } ?: " state=?"
 
         return "music-diag: [$index] ${row.packageName} ${c.describe()} $flags$np"
     }
+
+    /**
+     * DEBUG-only companion of [sessionTable]: now-playing title/artist echo
+     * what the user requested/played, so they never ride the INFO capability
+     * line. The orchestrator logs these via `Timber.d`.
+     */
+    fun sessionContentTable(sessions: List<SessionRow>): List<String> =
+        sessions.mapIndexedNotNull { i, row ->
+            val what = row.nowPlaying
+                ?.let { listOfNotNull(it.title, it.artist).joinToString(" — ") }
+            if (what.isNullOrBlank()) null else "music-diag: [${i + 1}] ${row.packageName} «$what»"
+        }
 
     private fun stateName(state: Int): String = when (state) {
         NowPlaying.STATE_PLAYING -> "PLAYING"

@@ -1,6 +1,7 @@
 package com.jarvis.assistant.cognitive.data
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -10,8 +11,24 @@ import androidx.room.PrimaryKey
  * is exactly-once per message even if the ingest hook fires twice (retry,
  * process death between insert and trim). Survives process death; the
  * worker polls PENDING ordered by `messageId`.
+ *
+ * Indices (REMEDIATION_PLAN Phase 2): `(state, messageId)` covers the hot
+ * `pending()` scan (`WHERE state = 'PENDING' ORDER BY messageId`), and
+ * `batchId` covers `releaseBatch`.
  */
-@Entity(tableName = "extraction_queue")
+@Entity(
+    tableName = "extraction_queue",
+    indices = [
+        Index(
+            value = ["state", "messageId"],
+            name = "index_extraction_queue_state_messageId",
+        ),
+        Index(
+            value = ["batchId"],
+            name = "index_extraction_queue_batchId",
+        ),
+    ],
+)
 data class ExtractionQueueEntity(
     @PrimaryKey val messageId: Long,
     /** 0 on first enqueue; the worker bumps before each cloud attempt. */

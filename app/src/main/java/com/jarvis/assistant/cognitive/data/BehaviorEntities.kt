@@ -132,7 +132,10 @@ data class BehaviorLogEntity(
  */
 @Entity(
     tableName = "session_summaries",
-    indices = [Index("kind"), Index("toAt")],
+    // Composite replaces the separate `kind` / `toAt` indices
+    // (REMEDIATION_PLAN Phase 2): every summary query is kind-scoped then
+    // ordered by toAt.
+    indices = [Index(value = ["kind", "toAt"])],
 )
 data class SessionSummaryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
