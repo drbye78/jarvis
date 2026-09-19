@@ -1,6 +1,6 @@
 # Jarvis — Runbook
 
-> **Status: in active development (pre-1.0), version 0.2.0.** Procedures may change as the app evolves.
+> **Status: in active development (pre-1.0), version 0.2.2.** Procedures may change as the app evolves.
 > All latency figures below are TARGETS to be measured on the actual device,
 > not marketing numbers. Replace them with your measurements.
 
@@ -457,13 +457,12 @@ suggestion; every decision (including refusals) appears in `behavior_log`
 
 ### Extraction gate (autoExtract default decision)
 
-`memory.autoExtract` ships DEFAULT OFF. It flips to default-ON only after
-the full 40-fixture set (Appendix C format) passes the §10.1 gate:
-precision ≥ 0.85, recall ≥ 0.7, zero hallucinations, measured by
-`ExtractionEvalTest` (JVM, CI-runnable) over recorded GigaChat responses run
-through the real validator + normalizer. The 14-fixture starter set already
-enforces the gate so a validator regression fails CI. To extend the set,
-add `app/src/test/resources/cognitive/eval/fixtures/fixture_NNN.json`
+`memory.autoExtract` ships DEFAULT OFF. The §10.1 gate — precision ≥ 0.85,
+recall ≥ 0.7, zero hallucinations — is now enforced over the full 40-fixture
+set (Appendix C format) by `ExtractionEvalTest` (JVM, CI-runnable) over
+recorded GigaChat responses run through the real validator + normalizer; the
+default flip is deferred until the §10.6 device-side measurements. To extend
+the set, add `app/src/test/resources/cognitive/eval/fixtures/fixture_NNN.json`
 (dialogue + recorded response + expected/forbidden facts) and re-run
 `./gradlew :app:testDebugUnitTest --tests "*ExtractionEvalTest"`.
 
@@ -491,7 +490,7 @@ verdict, plus the opt-in vector path.
    Иванов (relation recall is vector-independent) and prompts stay
    byte-identical to the Phase 2 path (no vector channel).
 6. «Забыть всё» → inspector empty; vector rows and the entity index are
-   gone with everything else (wipe covers the v6 tables).
+   gone with everything else (the wipe covers the vector/entity tables).
 
 Pass: all six observations, no crashes, quiet-hours/proactive behaviour of
 Phase 2 unchanged throughout. ON-DEVICE TODO (honest gap): cloud

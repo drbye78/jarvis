@@ -14,7 +14,7 @@ OpenAI-compatible endpoint).
 
 ## Prerequisites
 - JDK 17
-- Android SDK 34 (`sdk.dir` in `local.properties` or `ANDROID_HOME`)
+- Android SDK 36 (`sdk.dir` in `local.properties` or `ANDROID_HOME`)
 - Gradle wrapper included: `./gradlew`
 
 ## Setup

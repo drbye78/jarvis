@@ -1,11 +1,11 @@
 # Jarvis Voice Assistant — Architecture
 
-> **Status: in active development (pre-1.0), version 0.2.0.**
+> **Status: in active development (pre-1.0), version 0.2.2.**
 > Target: Android 10+ (minSdk 29) / HarmonyOS 2.0+ (AOSP-based) — validated on Huawei MatePad SE 11
 > minSdk 29: HarmonyOS 2.0 devices report API 29
 > Always WiFi · Always charging
 > Default build targets Russian (wake word, ASR/TTS language, UI); providers are multi-lingual
-> targetSdk 34 with Android 14+ guards in code · compileSdk 34
+> targetSdk 36 (Android 16) with Android 14+ guards in code · compileSdk 36
 
 ## Data flow
 
@@ -34,7 +34,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns (job hand-offs under a monitor, seq-guarded supersede/cancel); TurnRunner (bounded tool loop; error turns end via reportFailure only); `SpeechPhrases` — locale-aware runtime spoken phrases (RU default + resource-backed values/values-en). |
 | `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. |
 | `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure capability-gated strategy cascade (structured playFromSearch, MediaBrowser search/token lane, query-aware verification) with rich transport; `MediaBrowserGateway` + `AndroidMediaBrowserGateway` (bind/search/children); `MediaCapabilities`/`VoiceQuery`/`MediaDiagnostics` (pure models). Android adapters: `AndroidMediaGateway` (compat-wrapped controllers), `AndroidMediaBrowserGateway`. |
-| `data/` | Room v7: messages (id-ordered, orphan-safe windowing) + alarms + user_facts (cognitive memory) + extraction_queue + memory_meta (cognitive bookkeeping: schema revision, cursors, counters) + fact_fts (FTS4) + command_events + habit_rules + behavior_log + session_summaries + fact_vectors + entities + fact_entities. |
+| `data/` | Room v2: messages (id-ordered, orphan-safe windowing) + alarms + user_facts (cognitive memory) + extraction_queue + memory_meta (cognitive bookkeeping: schema revision, cursors, counters) + fact_fts (FTS4) + command_events + habit_rules + behavior_log + session_summaries + fact_vectors + entities + fact_entities. |
 | `service/` | Foreground service (permission gate, retryable init, watchdog semantics), boot receiver, ringing activity, notification listener. |
 | `ui/` | Adapters for transcript and alarm lists. |
 | `MemoryInspectorActivity` (app root) | Memory Inspector (COGNITIVE_PLAN 1.8): fact list with provenance marks (sensitive/contested) + confidence/status lines, per-item delete, JSON export via SAF, «Забыть всё» wipe of the cognitive tables; honest read-only empty state when the service graph isn't running. |
@@ -354,10 +354,9 @@ Dismiss/Snooze, 5-minute auto-timeout, daily re-arm, boot re-scheduling.
 Timer tool uses `setExactAndAllowWhileIdle` one-shots. Identity is the DB
 row id EVERYWHERE — AlarmManager request codes, the ringing notification
 id and the full-screen-intent request code — so two near-simultaneous
-alerts can never overwrite each other's notification extras. Schema v1
-(pre-release) upgrades destructively; v2→v3 is a no-op; v3→v7 are real
-schema migrations (cognitive memory, behaviour, semantic recall, the
-snooze-drift anchor fix).
+alerts can never overwrite each other's notification extras. Schema v2
+(pre-release) upgrades destructively (`fallbackToDestructiveMigration(dropAllTables = true)`);
+the real, data-preserving migration chain starts at v2→v3.
 
 ## Lifecycle semantics
 
@@ -387,7 +386,7 @@ silent no-op or a crash:
 | Mic source dies (50 fails) | producer exits honestly (`hasGivenUp`), notification shows idle | watchdog revive ≤ 15 min (never while muted) |
 | Wake-word engine build fails | `DetectorState.Failed` + DetectorError → spoken reason | engine reconfigure / restart |
 | Native process() wedges | detector degrades; release() bounded (leak, not UAF/ANR) | process restart |
-| Room v1 install | destructive wipe (documented) | clean re-setup |
+| Older Room schema (pre-1.0) install | destructive wipe (documented) | clean re-setup |
 | OEM null service lookup | `as?` + log/instructive JSON error everywhere | n/a (per-call) |
 | Token response w/o expiry | 5-min conservative cache + warning | refresh-on-401 |
 | Malformed SSE chunk | skipped + logged; stream continues | n/a |
@@ -397,7 +396,7 @@ silent no-op or a crash:
 
 Gradle 8.14.2 · AGP 8.11.1 · Kotlin 2.2.21 · KSP 2.2.21-2.0.5 · Room 2.8.4
 gRPC 1.83.1 · protobuf-gradle-plugin 0.10.0 · OkHttp 4.12.0
-Porcupine 3.0.0 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Material Components · compileSdk 34 · minSdk 29 · targetSdk 34
+Porcupine 4.0.2 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Material Components · compileSdk 36 · minSdk 29 · targetSdk 36
 
 The SaluteSpeech gRPC endpoint is config-driven (`JarvisConfig.saluteGrpcEndpoint`;
 renamed from the misleading `llmEndpoint` — it NEVER drove the LLM lane, which is
@@ -432,7 +431,7 @@ configured by `gigaChatEndpoint` / the OpenAI-compatible base URL).
 
 ## Tests
 
-JVM unit suite (620 tests, all green; runs in CI on every push/PR):
+JVM unit suite (985 tests, all green; runs in CI on every push/PR):
 wire DTOs (incl. non-null user content), SSE parser (incl. spec multi-line
 assembly), state machine, sentence splitter, conversation windowing (incl.
 char-budget trim), alarm

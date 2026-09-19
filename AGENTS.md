@@ -5,7 +5,7 @@ Compact ramp-up for agents. Every line is something easy to miss.
 ## Build & verify
 - Single Gradle module `:app` (root `settings.gradle.kts` includes only `:app`). Use the wrapper: `./gradlew ...`.
 - Build APK: `./gradlew :app:assembleDebug`
-- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~944 tests; refresh this count when you add a batch)
+- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~985 tests; refresh this count when you add a batch)
 - Single test class: `./gradlew :app:testDebugUnitTest --tests "com.jarvis.assistant.PorcupineDetectorTest"`
 - **Gate before claiming done:** `./gradlew :app:assembleDebug :app:testDebugUnitTest`
 - Instrumentation tests (`androidTest`) need a device/emulator; the gate above does not.
@@ -16,7 +16,7 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - NOTE: several tests are real-time budgeted (bounded waits on latches/polling, e.g. the wedged-engine release test ~2.5 s). They are deterministic but not instant; don't "optimize" them into thread-yield assertions.
 
 ## SDK / toolchain pins (verified in build files)
-- `compileSdk 34`, `minSdk 29`, `targetSdk 34` — Android 14+ guards are handled in code (typed FGS, SCHEDULE_EXACT_ALARM, RECEIVER_NOT_EXPORTED, POST_NOTIFICATIONS). HarmonyOS 2.0 (API-29-based) ignores unknown permissions and behavioral changes — compatibility is maintained.
+- `compileSdk 36`, `minSdk 29`, `targetSdk 36` (Android 16) — Android 14+ guards are handled in code (typed FGS, SCHEDULE_EXACT_ALARM, RECEIVER_NOT_EXPORTED, POST_NOTIFICATIONS); Android 16 makes `MediaProjectionManager.getMediaProjection()` nullable — handled in `audio/aec/PlaybackCaptureFarEndSource.kt`. HarmonyOS 2.0 / Android 10 (API-29-based): unknown permissions and behavioral changes are ignored — compatibility is maintained.
 - Kotlin 2.2.21, AGP 8.11.1, JVM 17. minSdk 29 (HarmonyOS 2.0 devices report API 29). KSP generates Room code; protobuf + gRPC generate Sber Salute Speech stubs into `build/generated/java/generate*Proto`.
 
 ## Architecture (non-obvious)
@@ -36,6 +36,12 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - **`assets/sherpa_kws/keywords.txt` must be BPE-tokenized** for the bundled `gigaspeech` model (tokens verified against `tokens.txt`). Hand-written `▁J A R V I S` fails silently (no detection). Regenerate with `sherpa-onnx-cli text2token`; never hand-edit.
 - **Never build the wake-word engine on the main thread.** The detector builds async on `Dispatchers.Default` (starts `Bootstrapping` → `Ready`/`Failed`). A synchronous build in the constructor reintroduces an ANR on Kirin 710A-class devices. Keep the `engineBuildDispatcher = Dispatchers.Unconfined` injection in the unit tests so the synchronous-contract assertions stay valid.
 - **No secrets in the APK.** Credentials (Picovoice key, Sber/GigaChat tokens) are entered in Settings and stored only in the Android Keystore via `util/KeystoreVault` (AES-256-GCM, zero dependencies). Do not hardcode keys or move them to build config; API clients read them at runtime. (The earlier `EncryptedSharedPreferences`/security-crypto claim was stale — that library is removed from the catalog and must not be reintroduced.)
+
+## Remediation invariants (REMEDIATION_PLAN Phases 1–3)
+- **Schema changes land as ONE coordinated bump.** The data (indices/PKs/FKs), cognitive (fact decay anchors) and alarms (`clockDomain`/anchors + `ring_sessions`) lanes changed the schema together as the single v2 bump; landing them one-at-a-time means repeated destructive wipes, conflicting `N.json` exports and a broken migration test. Verified in `data/AppDatabase.kt` (`@Database(version = 2)`) + `schemas/com.jarvis.assistant.data.AppDatabase/2.json`.
+- **Fact decay anchors are immutable.** `user_facts.decayAnchorConfidence` / `decayAnchorAt` latch the pre-decay confidence and time; maintenance decay updates `confidence` only (never re-anchors, or decay would compound), and a re-affirmation via `confirmFact` is the only path that moves the anchor. Verified in `cognitive/data/UserFactEntity.kt` + `cognitive/data/UserFactDao.kt`.
+- **Ring state is owned by the receiver, not the ringing activity.** `AlarmReceiver` (`tools/AlarmScheduler.kt`) `goAsync()`es and runs `RingCoordinator.beginRing` BEFORE posting the notification / launching the full-screen activity; the durable `ring_sessions` row and its token authorize every dismiss/snooze so a stale notification cannot act on a newer ring. Verified in `tools/AlarmScheduler.kt` (`AlarmReceiver`) + `data/RingSessionEntity.kt` + `tools/RingCoordinator.kt`.
+- **Exact-alarm grant triggers reconciliation.** When `SCHEDULE_EXACT_ALARM` is (re)granted, `AlertPermissionReconciler.reconcile()` re-arms every enabled alert from three hooks: the Android 12+ permission broadcast (`ExactAlarmPermissionReceiver`), app foreground (`MainActivity`), and boot (`BootReceiver`) — the OS deletes exact alarms on revoke and the grant broadcast is not reliably delivered. Verified in `tools/AlarmScheduler.kt` + `MainActivity.kt` + `service/BootReceiver.kt`.
 
 ## Conventions
 - Russian is the default UI/config language (target users; "Джарвис"). Keep user-facing strings in `res/values/strings.xml`.

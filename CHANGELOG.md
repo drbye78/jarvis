@@ -7,11 +7,14 @@ semver (pre-1.0: breaking changes bump the minor).
 ## [Unreleased]
 
 ### Changed — P1 hardening (data & privacy)
-- **Room collapsed to v1 (pre-1.0)**: the v2–v7 migration chain is deleted and
-  upgrades go through `fallbackToDestructiveMigration()` — a database from an
-  old versioned build is wiped on first open (owner-accepted pre-release).
-  Only schema `1.json` stays exported; real migrations start at the v1→v2
-  freeze.
+- **Room: single destructive-upgrade schema at v2 (pre-1.0)**: the pre-release
+  migration chain is deleted and upgrades go through
+  `fallbackToDestructiveMigration(dropAllTables = true)` — a database from an
+  older versioned build is wiped on first open (owner-accepted pre-release).
+  The schema is now **v2**, the single coordinated Phase-2 bump (data
+  indices/PKs/FKs, cognitive decay anchors, alert clock domains + the new
+  `ring_sessions` table); both `1.json` and `2.json` are exported, and the
+  real, data-preserving migration chain starts only at the v2→v3 freeze.
 - **Notification-id bands split**: assistant notifications own ids 1–999
   (foreground service 1–3, alarm-degrade notice 4); ringing alarms use
   `10_000 + rowId`, with the AlarmManager request code kept as the raw rowId —
@@ -31,6 +34,48 @@ semver (pre-1.0: breaking changes bump the minor).
   `forget_fact` now report the exception CLASS, never its message — Room and
   serialization messages quote the user's own stored facts, and the failure
   detail flows into the LLM tool-result JSON and the spoken failure string.
+
+### Changed — REMEDIATION_PLAN Phase 9–10: platform target, 16 KB prebuilts, dependencies, CI
+- **`targetSdk`/`compileSdk` 34 → 36 (Android 16)**, landed as two verified steps
+  (34→35, then 35→36) so a platform regression could not hide behind the second
+  jump. The `lint { disable += "ExpiredTargetSdkVersion" }` suppression is gone —
+  it existed only because the app *was* behind target. One real source break from
+  Android 16: `MediaProjectionManager.getMediaProjection()` is now `@Nullable`, so
+  `audio/aec/PlaybackCaptureFarEndSource.kt` gained an explicit null check (honest
+  `AecDiag` log + return) instead of feeding null into the capture configuration —
+  the software-AEC far-end lane degrades, it does not crash. minSdk stays 29.
+- **Porcupine 3.0.0 → 4.0.2 (16 KB page-size compliance).** `libpv_porcupine.so`
+  3.0.0 was loaded at `0x1000` alignment on **all four ABIs**, i.e. non-compliant;
+  4.0.2 is aligned at `0x4000` on `arm64-v8a`/`x86_64` and also passes the manual
+  RELRO check. The Java API used here is unchanged (4.x `Builder` is a superset and
+  `BuiltInKeyword.JARVIS` still exists). **Breaking for custom keywords:** Porcupine
+  4.x version-binds `.ppn` files, so a keyword trained for 3.x is rejected at
+  runtime — re-download it from Picovoice Console (now v4-format). Documented in
+  `README.md` + `RUNBOOK.md`. 4.0.1 is pom-only on Maven Central (no AAR) — do not pin it.
+  The rest of the 16 KB work passes the documented checks: every 64-bit `.so` has LOAD
+  align `2**14` with congruent `vaddr`/`offset`, `zipalign -c -P 16` verifies, and
+  Google's `check_elf_alignment.sh` reports success. The requirement covers 64-bit
+  ABIs only (`armeabi-v7a`/`x86` are out of scope), so no ABI filter was added.
+  **Known limitation (open):** the vendored `app/libs/sherpa-onnx.aar` libraries still
+  fail the documented **RELRO** check on both 64-bit ABIs — `check_elf_alignment.sh`
+  cannot detect this (it inspects only the first LOAD segment). Play's documented gate
+  still accepts the bundle, so the residual exposure is a crash risk on 16 KB devices,
+  not an upload rejection. Root cause is upstream (sherpa-onnx / ONNX Runtime link with
+  `-Wl,-z,max-page-size` but not `-common-page-size`); tracked as N10 in
+  `REMEDIATION_PLAN.md` pending a decision.
+- **protobuf pinned `3.25.3` → `3.25.9`** (declared `protobuf` + `protoc` together, so
+  they cannot diverge). The declared 3.25.3 was never the version in use — grpc-protobuf
+  1.83.1 already forced the runtime to 3.25.9, which is past the CVE-2024-7254 fix floor
+  (3.25.5) — so this removes latent drift rather than fixing an active exposure. Chose
+  3.25.9 over 4.x because grpc-java 1.83.1 explicitly does **not** support protobuf 4.x
+  yet (not ABI-compatible; protobuf#17247, grpc-java#11015) and 3.25.9 carries no
+  unfixed advisories. The `javax.annotation:javax.annotation-api` `compileOnly`
+  dependency was removed: grpc-java ≥ 1.74.0 generates stubs with `@generated=omit`, so
+  no generated source references it anymore (verified: zero hits across all 82
+  generated files).
+- **GitHub Actions pinned to commit SHAs** (all 25 `uses:` lines) with the tag kept as
+  a trailing comment, so a moved tag can no longer change what CI runs. Annotated tags
+  were dereferenced to their commit. No action major versions were bumped.
 
 ### Changed — Phase 1 follow-through
 - **A timed-out TTS sentence is now treated as NEVER SPOKEN**: when a
