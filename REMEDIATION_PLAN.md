@@ -38,14 +38,16 @@ Status: **APPROVED FOR EXECUTION.** Decisions D1–D9 accepted as recommended
 | Phase 9 step 1 (targetSdk 34 → 35, D9) | **DONE** | `compileSdk`/`targetSdk` 34 → 35 in `app/build.gradle.kts`. Gate green; `aapt dump badging` → `targetSdkVersion:'35'`. Commit `e732e4a` |
 | Phase 9 step 2 (targetSdk 35 → 36 + API-36 nullability) | **DONE** | `compileSdk`/`targetSdk` 35 → 36, and the now-dead `lint { disable += "ExpiredTargetSdkVersion" }` block DELETED (replaced by an explanatory comment — the suppression existed only because the app *was* behind target). One genuine API-36 source break: Android 16 annotates `MediaProjectionManager.getMediaProjection()` `@Nullable`, so a denied/expired consent returns null where the compiler previously saw a platform type; `audio/aec/PlaybackCaptureFarEndSource.kt` fed that straight into `AudioPlaybackCaptureConfiguration.Builder` → fixed with an explicit null check + honest content-free `AecDiag` log + return (the software-AEC far-end lane degrades, it does not crash). `aapt dump badging` → `targetSdkVersion:'36'`. Commit `c28840b` |
 | Phase 9 step 3 (Porcupine 3.0.0 → 4.0.2, 16 KB) | **DONE** | `porcupine = "4.0.2"` in `gradle/libs.versions.toml`; the Java API compiles **unchanged** (4.x `Builder` is a superset of the seven members used — `setAccessKey`/`setKeywordPath`/`setKeyword(BuiltInKeyword.JARVIS)`/`setSensitivity`/`build`/`process`/`delete`, and `BuiltInKeyword.JARVIS` is present and NOT deprecated). Measured from the published AARs (`llvm-objdump -p` for LOAD, `llvm-readelf -Wl` for RELRO): **3.0.0 was misaligned on ALL FOUR ABIs** (LOAD `2**12`; RELRO rem `0x3000` arm64 / `0x2000` x86_64), so the bump was **mandatory, not optional**; **3.0.2, 3.0.3 and 4.0.2 all reach LOAD `2**14` + RELRO rem `0x0` on the 64-bit ABIs**. 4.0.2 chosen over the 3.x alternatives that also fix alignment because Porcupine Console now issues **v4-format** keywords only, so 4.x is the only major whose custom `.ppn` files can still be trained (see N11). 4.0.1 is **pom-only on Maven Central (no AAR)** — do not pin it. Commit `effcaf0`, pushed |
-| Phase 9 16 KB verification (full documented check set) | **DONE (official gate) / OPEN (RELRO, N10)** | All three documented checks run, not just the script. **(1) LOAD — PASS:** every `arm64-v8a`/`x86_64` `.so` has `p_align = 2**14`, and every LOAD segment is congruent (`vaddr ≡ offset mod align`). **(2) zip — PASS:** `zipalign -c -P 16 -v 4` → "Verification succesful". **(3) Google's official `check_elf_alignment.sh` — PASS:** "ELF Verification Successful"; the only `UNALIGNED` entries are `armeabi-v7a`/`x86` `libpv_porcupine.so`, which the script itself excludes ("only arm64-v8a/x86_64 libs need to be aligned") — this is the authoritative confirmation that the requirement is **64-bit only**, not just a reading of the prose. **(4) RELRO — FAIL on the vendored prebuilts (N10):** the doc's second, *manual* check `(GNU_RELRO.VirtAddr + MemSiz) % 0x4000 == 0` fails on `libonnxruntime.so` and 3 of the 4 `libsherpa-onnx-*.so` on BOTH 64-bit ABIs, and `check_elf_alignment.sh` **cannot see it** (it inspects only the first LOAD segment). Porcupine 4.0.2 passes both 64-bit ABIs. See N10 for the owner decision |
+| Phase 9 16 KB verification (full documented check set) | **DONE (official gate) / sherpa RELRO FIXED, ORT residual (N10)** | All three documented checks run, not just the script. **(1) LOAD — PASS:** every `arm64-v8a`/`x86_64` `.so` has `p_align = 2**14`, and every LOAD segment is congruent (`vaddr ≡ offset mod align`). **(2) zip — PASS:** `zipalign -c -P 16 -v 4` → "Verification succesful". **(3) Google's official `check_elf_alignment.sh` — PASS:** "ELF Verification Successful"; the only `UNALIGNED` entries are `armeabi-v7a`/`x86` `libpv_porcupine.so`, which the script itself excludes ("only arm64-v8a/x86_64 libs need to be aligned") — this is the authoritative confirmation that the requirement is **64-bit only**, not just a reading of the prose. **(4) RELRO — sherpa FIXED in Phase 11, ORT residual (N10):** the doc's second, *manual* check `(GNU_RELRO.VirtAddr + MemSiz) % 0x4000 == 0` fails on `libonnxruntime.so` and 3 of the 4 `libsherpa-onnx-*.so` on BOTH 64-bit ABIs, and `check_elf_alignment.sh` **cannot see it** (it inspects only the first LOAD segment). Porcupine 4.0.2 passes both 64-bit ABIs. **Phase 11 then rebuilt the 3 sherpa libs with both flags → RELRO rem `0x0` on all 6 × both ABIs; only `libonnxruntime.so` remains non-compliant.** See N10 |
+| Phase 11 (N10 sherpa RELRO rebuild) | **DONE (partial, owner-chosen)** | Rebuilt only the 3 `libsherpa-onnx-*.so` from **v1.13.6 source** with the missing `-Wl,-z,common-page-size=16384` added beside `-Wl,-z,max-page-size=16384` (single site, `CMakeLists.txt:207`), using NDK r28 / clang 19, `BUILD_SHARED_LIBS=ON` + `SHERPA_ONNX_ENABLE_C_API=ON` (the upstream `android.yaml` config) against the already-pinned ORT 1.27.1 prebuilt. **Before → after RELRO rem (`(GNU_RELRO.VirtAddr+MemSiz) % 0x4000`):** arm64-v8a `c-api 0x3000→0x0`, `jni 0x2000→0x0`, `cxx-api 0x0→0x0`; x86_64 `c-api 0x2000→0x0`, `cxx-api 0x3000→0x0`, `jni 0x1000→0x0` — LOAD `2**14` + congruent throughout. `app/libs/sherpa-onnx.aar` (LFS) repacked with **only those 6 entries** replaced; all 20 others byte-identical, including `classes.jar`, `AndroidManifest.xml`, `R.txt`, `proguard.txt`, `aar-metadata.properties`, **every** `libonnxruntime.so` and both 32-bit ABI directories (proven entry-by-entry against the previous AAR). **Correctness guard:** JNI and C-API exported-symbol sets identical (133/177); C++-API differs by 7 symbols, all statically-linked libc++ COMDAT internals (`std::__ndk1::bad_function_call` ctor/dtor/vtable/typeinfo, `__cxa_call_terminate`) with **zero** references from the JNI lib, and **neither** revision lists `libc++_shared.so` in `DT_NEEDED` (libc++ is static), so there is no shared-runtime ABI skew. Gate green on the repacked AAR (985 tests / 0 failures / 6 skipped / detekt 0); `zipalign -c -P 16 -v 4` → "Verification succesful" and `check_elf_alignment.sh` → all 64-bit libs `ALIGNED (2**14)` on the final APK. **Residual:** `libonnxruntime.so` (all 4 ABIs) stays formally non-compliant — upstream prebuilt, `patchelf` cannot fix RELRO, ORT 1.30.0 measured failing on all 4 ABIs, and a full source build is infeasible on the owner's hardware; its over-protection slack contains **zero sections**, so the documented crash mechanism is not demonstrated |
 | Phase 10 deps (protobuf/`javax.annotation`) | **DONE** | **The declared `protobuf = 3.25.3` was a phantom number, not the version in use:** dependency resolution already upgraded the runtime to `3.25.9` (grpc-protobuf 1.83.1 requires it), so the CVE-2024-7254 floor (3.25.5) was already met at runtime — the pin was stale, and the risk was future drift, not present exposure. Two edits: declared `protobuf` + `protoc` both moved `3.25.3 → 3.25.9`, so declared == resolved and the two can no longer diverge. Chose **3.25.9 over 4.x deliberately**: grpc-java 1.83.1's own build pins `protobuf = 3.25.9` with the comment *"Not upgrading to 4.x as it is not yet ABI compatible"* (protobuf#17247; grpc-java#11015 tracks the upgrade), so forcing 4.36.2 would be an officially unsupported runtime/gencode combination — and 3.25.9 has zero unfixed advisories (deps.dev `advisoryKeys: []`). **`javax.annotation:javax.annotation-api` DELETED** (version entry, catalog alias, and the `compileOnly` line, with the false comment replaced by an accurate one): verified reason, not assumption — `grep -rl 'javax\.annotation' app/build/generated` = 0 hits across all 82 generated files, because grpc-java flipped the `@generated` codegen default to OMIT in v1.74.0 (the app is on 1.83.1; stubs now carry only `@io.grpc.stub.annotations.GrpcGenerated`). Post-change verification: `protoc` 3.25.9 downloaded, `protobuf-java` resolves 3.25.9 with no upgrade arrow, `javax.annotation` absent from `debugCompileClasspath`, gate green |
 | Phase 10 CI (SHA pinning) | **DONE** | All **25** `uses:` lines across the three workflows pinned to full 40-hex commit SHAs with the tag kept as a trailing comment (checkout, setup-java, gradle/actions, upload-artifact, cache, android-emulator-runner). The two **annotated** tags were dereferenced (`gradle/actions` `v4` → tag object `0b6dd653…`, commit `ed408507…`; `android-emulator-runner` `v2` → tag object `4c44018e…`, commit `a421e438…`); the four lightweight tags resolve directly. Every SHA was resolved independently by `git ls-remote refs/tags/<tag> refs/tags/<tag>^{}` **twice** (orchestrator-side and lane-side) and the two resolutions matched exactly. No major-version bumps — each action is pinned to the SHA of the tag it already used. Verified: `grep -rnE 'uses: [^@]+@v[0-9]'` = 0 matches, and all three files still parse as YAML |
 | Phase 10 doc drift | **DONE** | Aligned `README.md`, `AGENTS.md`, `RUNBOOK.md`, `ARCHITECTURE.md`, `CHANGELOG.md` to the code on disk: SDK 34 → **36** (5 sites: README prereqs, AGENTS pin line, ARCHITECTURE ×3 + `Porcupine 3.0.0` → **4.0.2**), version 0.2.0 → **0.2.2** (ARCHITECTURE + RUNBOOK), `Room v7`/`Room v1` prose → **v2** with the real chain starting at v2→v3, test count 620 → **985**, CHANGELOG's stale "collapsed to v1 / migrations start at v1→v2" reconciled to the verified v2 reality, and the RUNBOOK extraction-gate paragraph corrected to the 40-fixture set. **`AGENTS.md` gained the 4 required remediation invariants** (coordinated schema bump / immutable decay anchors / ring state owned by the receiver / exact-alarm reconcile-on-grant), each grounded in a file verified by the orchestrator, not just the lane: `@Database(version = 2)` + both schemas; `confirmFact` moving the anchor while `updateConfidence` does not; `AlarmReceiver`'s `goAsync()`→`beginRing` ordering; the three reconcile hooks. Every rewritten fact was re-checked against source, and two lane claims were independently verified before acceptance (`assertEquals(40, fixtures.size)` with the ≥0.85/≥0.7 gate in `ExtractionEvalTest`; exactly 40 contiguous fixture files). Deliberately preserved: `CHANGELOG`'s genuine historical `0.2.0`/`Room v7` entries and the still-accurate "no certificate pinning (deliberate)" note |
 
 **Phase 9 + 10 complete: gate green (985 tests, 0 failures, 6 skipped, detekt 0 findings), working tree clean.**
-The only item carried forward is **N10** — it is an upstream prebuilt defect, not a Phase 9/10 deliverable, and it is
-explicitly awaiting an owner decision.
+**N10 partially resolved (Phase 11):** the 3 vendored `libsherpa-onnx-*.so` were rebuilt with both 16 KB linker
+flags and now pass the RELRO check on both 64-bit ABIs; `libonnxruntime.so` remains a formally non-compliant
+upstream prebuilt, accepted and characterized (see N10).
 
 **Known flake — FIXED.** `MemoryToolsTest.gather respects the disabled switch and the budget shape`
 failed ~1-in-3 full-suite runs while passing 6/6 in isolation. Root cause: `CognitiveCoordinator.scope`
@@ -101,27 +103,48 @@ and DEAF are both flat, and every shape cue collapses when motion is reduced.
   `jarvis_status_listening` (4.10:1) and `jarvis_status_thinking` (4.03:1) are used
   as status text in Settings and need >= 4.5:1.
 - **N9 (Low, UI):** icon buttons are 44dp, below the 48dp minimum touch target.
-- **N10 (High, platform/packaging — OPEN, owner decision):** the 16 KB page-size
-  work is **not** complete for the bundled native libraries. Google's
-  `check_elf_alignment.sh` passes, but it inspects only the *first LOAD segment*
-  (`objdump -p … | grep LOAD | awk '{print $NF}' | head -1`) and contains no RELRO
-  check at all. The doc's separate manual check
-  `(GNU_RELRO.VirtAddr + MemSiz) % 0x4000 == 0` **fails** on `libonnxruntime.so` and
+- **N10 (High, platform/packaging — sherpa libs FIXED; `libonnxruntime.so` residual accepted):**
+  the 16 KB page-size work was **not** complete for the bundled native libraries.
+  Google's `check_elf_alignment.sh` passes, but it inspects only the *first LOAD
+  segment* (`objdump -p … | grep LOAD | awk '{print $NF}' | head -1`) and contains no
+  RELRO check at all. The doc's separate manual check
+  `(GNU_RELRO.VirtAddr + MemSiz) % 0x4000 == 0` **failed** on `libonnxruntime.so` and
   3 of the 4 `libsherpa-onnx-*.so` inside `app/libs/sherpa-onnx.aar` (v1.13.6) on
   **both** 64-bit ABIs (`arm64-v8a` rem `0x1000`/`0x3000`/`0x2000`, `x86_64` rem
-  `0x3000`/`0x2000`/`0x1000`). The doc states such a library crashes with SIGSEGV on
-  a 16 KB device, and because these libs are LOAD-`0x4000` the OS runs the app in
-  **native** 16 KB mode rather than backcompat mode — exactly the condition under
-  which the over-protection applies. Root cause is upstream, not local: sherpa-onnx
-  PR #2520 and ONNX Runtime's CMake add only `-Wl,-z,max-page-size=16384` and never
+  `0x3000`/`0x2000`/`0x1000`). Root cause is upstream, not local: sherpa-onnx PR #2520
+  and ONNX Runtime's CMake add only `-Wl,-z,max-page-size=16384` and never
   `-Wl,-z,common-page-size=16384`, so LOAD aligns but the RELRO end does not.
-  Porcupine 4.0.2 is clean on both 64-bit ABIs. Play's *documented* gate
-  (LOAD align + `zipalign -P 16`) still accepts the upload, so the exposure is a
-  **runtime crash on 16 KB devices**, not upload rejection (enforcement date
-  Feb 1 2027). Options: accept + document as a known limitation, rebuild the vendored
-  libs with both linker flags (needs an NDK and a replacement LFS AAR), or upstream
-  the missing flag. **Do not** count on version-swapping sherpa/ORT (measured: only
-  isolated releases happen to line up; later ones regress).
+  Porcupine 4.0.2 is clean on both 64-bit ABIs. No cheap version swap: **ORT 1.30.0
+  fails on all four ABIs**, and the vendored ORT is a downloaded prebuilt
+  (byte-identical to `csukuangfj/onnxruntime-libs` v1.27.1). `patchelf` cannot rewrite
+  RELRO, and a full ORT source rebuild is infeasible on the owner's box (~1.3 GB free
+  RAM for a multi-GB C++ template build).
+  **Fixed (owner-chosen partial rebuild):** the 3 `libsherpa-onnx-*.so` were rebuilt
+  from **v1.13.6 source** with BOTH flags — a one-line patch to the single
+  `CMAKE_SHARED_LINKER_FLAGS` site (`CMakeLists.txt:207`) — using NDK r28 / clang 19
+  with `BUILD_SHARED_LIBS=ON` + `SHERPA_ONNX_ENABLE_C_API=ON` (exactly the upstream
+  `android.yaml` config), linking the same pinned ORT 1.27.1 prebuilt. Rebuilt RELRO
+  rem is **`0x0` on all 6 libs × both ABIs** (LOAD `2**14`, congruent). The repacked
+  AAR replaces **only those 6 `.so`**: `classes.jar`, `AndroidManifest.xml`, `R.txt`,
+  `proguard.txt`, `aar-metadata.properties`, **every** `libonnxruntime.so` and both
+  32-bit ABI directories stay byte-identical (verified entry-by-entry against the
+  previous AAR). Symbol surface verified: JNI and C-API export sets identical
+  (133/177); C++-API differs by 7 symbols, all statically-linked libc++ COMDAT
+  internals (`std::__ndk1::bad_function_call` ctor/dtor/vtable/typeinfo,
+  `__cxa_call_terminate`) with **zero** references from the JNI lib — and **neither**
+  the old nor the new lib lists `libc++_shared.so` in `DT_NEEDED` (libc++ is linked
+  statically), so there is no shared-runtime ABI skew. `zipalign -c -P 16 -v 4` and
+  `check_elf_alignment.sh` both still pass; the only `UNALIGNED` entries are the
+  two 32-bit `libpv_porcupine.so` files the script itself excludes.
+  **Accepted residual:** `libonnxruntime.so` (all four ABIs) remains formally
+  RELRO-non-compliant. Measured mitigation of the *stated* mechanism: the
+  over-protected slack above RELRO end (12288 B arm64 / 4096 B x86_64) contains
+  **zero sections**, so bionic is over-protecting pure padding — a formal
+  non-compliance and latent fragility, **not a demonstrated crash**. Exposure stays a
+  runtime-crash-on-16-KB-devices class, not upload rejection (Play's documented gate —
+  LOAD align + `zipalign -P 16` — still accepts; enforcement Feb 1 2027). **Do not**
+  count on version-swapping sherpa/ORT (measured: only isolated releases happen to line
+  up; later ones regress).
 - **N11 (Low, docs/compat):** Porcupine 4.x binds keyword files to the SDK major
   version, so a `.ppn` trained for 3.x is rejected at runtime ("file belongs to a
   different version of the library"). Documented in `README.md` + `RUNBOOK.md`; the
@@ -449,9 +472,9 @@ changes the ring path depends on.
 > `armeabi-v7a`/`x86` misalignment is out of scope and no ABI filter needs adding.
 
 - **Exit:** gate green; `aapt dump badging` shows targetSdk 36; **official** ELF check
-  (`check_elf_alignment.sh` + `zipalign -P 16`) passes — all met. The RELRO check is a
+  (`check_elf_alignment.sh` + `zipalign -P 16`) passes — all met. The RELRO check was a
   **separate open finding (N10)**, deliberately not treated as a Phase 9 exit gate
-  because it needs an owner decision and an upstream/prebuilt fix.
+  because it needed an owner decision and an upstream/prebuilt fix. Addressed in Phase 11.
 
 ### Phase 10 — Docs, dependencies, CI hardening (independent, parallelizable) — **DONE**
 
@@ -481,8 +504,35 @@ changes the ring path depends on.
 - **AGENTS.md** must record the new invariants: single coordinated schema bump,
   immutable decay anchors, ring state owned by the receiver, exact-alarm reconcile.
 
-**Exit:** gate green; docs match code. **Met** — the only carried item is N10 (upstream
-prebuilt defect, owner decision), which is not a Phase 10 deliverable.
+**Exit:** gate green; docs match code. **Met** — the only carried item was N10 (upstream
+prebuilt defect), resolved to the extent the owner chose in Phase 11.
+
+### Phase 11 — N10: vendored sherpa 16 KB RELRO rebuild (owner-scoped) — **DONE (partial, owner-chosen)**
+
+- **Scope (owner decision):** "Partial: fix sherpa libs only" — rebuild the 3
+  `libsherpa-onnx-*.so` from source with the missing `-Wl,-z,common-page-size=16384`,
+  and leave `libonnxruntime.so` as the pinned upstream prebuilt. Full ORT source
+  rebuild was ruled out as infeasible on the owner's hardware (~1.3 GB free RAM).
+- **Build:** sherpa-onnx **v1.13.6** source, one-line patch to the single
+  `CMAKE_SHARED_LINKER_FLAGS` site (`CMakeLists.txt:207`) so BOTH page-size flags are
+  passed. NDK r28 (clang 19), `BUILD_SHARED_LIBS=ON`,
+  `SHERPA_ONNX_ENABLE_C_API=ON`, `ANDROID_ABI` per target — the upstream
+  `android.yaml` configuration — linking the same pinned ORT 1.27.1 prebuilt that the
+  AAR already shipped.
+- **Artifact:** `app/libs/sherpa-onnx.aar` (LFS) repacked with ONLY the 6 sherpa
+  `.so` (3 libs × `arm64-v8a`/`x86_64`) replaced; every other entry byte-identical.
+- **Evidence:** rebuilt RELRO rem `0x0` on all 6; LOAD `2**14` + congruent; 32-bit
+  ABIs, `classes.jar`, manifest, `R.txt`, `proguard.txt`, `aar-metadata.properties`
+  and all four `libonnxruntime.so` unchanged; symbol surface identical for
+  JNI/C-API (133/177) and the 7 C++-API deltas proven to be unused static-libc++
+  COMDAT internals; no `libc++_shared.so` dependency in either revision; gate green;
+  `zipalign -c -P 16 -v 4` and `check_elf_alignment.sh` still pass.
+- **Accepted residual:** `libonnxruntime.so` remains formally RELRO-non-compliant;
+  its over-protection slack contains zero sections, so the documented crash
+  mechanism is not demonstrated — formal non-compliance only. Tracked in N10.
+
+**Exit:** gate green on the repacked AAR (985 tests, 0 failures, 6 skipped, detekt
+0 findings) + the 16 KB check set re-run against the final APK. **Met.**
 
 ---
 
@@ -497,7 +547,8 @@ prebuilt defect, owner decision), which is not a Phase 10 deliverable.
 | 5 | Give-up → `stop()` releases mic; seq-guard atomicity test under interleaving |
 | 6 | PLAY propagates false on dispatch failure; enumeration cached (call-count assertion) |
 | 7 | `StateLabel` truth-table test; `StatusContrastTest` >= 4.5:1 |
-| 9 | `aapt dump badging` targetSdk; `llvm-objdump -p` LOAD align `2**14` for every 64-bit `.so`; `zipalign -c -P 16`; `check_elf_alignment.sh` → ALIGNED; **plus the RELRO formula** `(GNU_RELRO.VirtAddr + MemSiz) % 0x4000 == 0` (the first three pass; RELRO is open as N10) |
+| 9 | `aapt dump badging` targetSdk; `llvm-objdump -p` LOAD align `2**14` for every 64-bit `.so`; `zipalign -c -P 16`; `check_elf_alignment.sh` → ALIGNED; **plus the RELRO formula** `(GNU_RELRO.VirtAddr + MemSiz) % 0x4000 == 0` (all four pass after Phase 11 for the sherpa libs; `libonnxruntime.so` residual = N10) |
+| 11 | Rebuilt libs: RELRO rem `0x0` + LOAD `2**14` + congruent; AAR diff proves exactly 6 entries replaced and every other entry byte-identical; JNI/C-API export sets identical and the C++-API delta proven to be unused static-libc++ COMDAT symbols; `DT_NEEDED` shows no `libc++_shared.so`; gate green; `zipalign -P 16` + `check_elf_alignment.sh` still pass on the final APK |
 
 Every "fails on old code" claim is mandatory — a regression test that passes before the
 fix does not count.

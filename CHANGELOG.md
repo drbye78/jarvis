@@ -56,13 +56,12 @@ semver (pre-1.0: breaking changes bump the minor).
   align `2**14` with congruent `vaddr`/`offset`, `zipalign -c -P 16` verifies, and
   Google's `check_elf_alignment.sh` reports success. The requirement covers 64-bit
   ABIs only (`armeabi-v7a`/`x86` are out of scope), so no ABI filter was added.
-  **Known limitation (open):** the vendored `app/libs/sherpa-onnx.aar` libraries still
-  fail the documented **RELRO** check on both 64-bit ABIs — `check_elf_alignment.sh`
-  cannot detect this (it inspects only the first LOAD segment). Play's documented gate
-  still accepts the bundle, so the residual exposure is a crash risk on 16 KB devices,
-  not an upload rejection. Root cause is upstream (sherpa-onnx / ONNX Runtime link with
-  `-Wl,-z,max-page-size` but not `-common-page-size`); tracked as N10 in
-  `REMEDIATION_PLAN.md` pending a decision.
+  **RELRO (N10):** the vendored `app/libs/sherpa-onnx.aar` libraries initially failed the
+  documented **RELRO** check on both 64-bit ABIs — `check_elf_alignment.sh` cannot detect
+  this (it inspects only the first LOAD segment). Root cause is upstream (sherpa-onnx /
+  ONNX Runtime link with `-Wl,-z,max-page-size` but not `-common-page-size`). **The three
+  `libsherpa-onnx-*.so` are now rebuilt and compliant** (see the Phase 11 entry below);
+  `libonnxruntime.so` remains non-compliant, accepted and documented.
 - **protobuf pinned `3.25.3` → `3.25.9`** (declared `protobuf` + `protoc` together, so
   they cannot diverge). The declared 3.25.3 was never the version in use — grpc-protobuf
   1.83.1 already forced the runtime to 3.25.9, which is past the CVE-2024-7254 fix floor
@@ -76,6 +75,35 @@ semver (pre-1.0: breaking changes bump the minor).
 - **GitHub Actions pinned to commit SHAs** (all 25 `uses:` lines) with the tag kept as
   a trailing comment, so a moved tag can no longer change what CI runs. Annotated tags
   were dereferenced to their commit. No action major versions were bumped.
+
+### Changed — REMEDIATION_PLAN Phase 11: vendored sherpa 16 KB RELRO fix (N10)
+- **Rebuilt the three `libsherpa-onnx-*.so` with both 16 KB linker flags.** The vendored
+  `app/libs/sherpa-onnx.aar` (v1.13.6) shipped libraries that failed the documented
+  RELRO check `(GNU_RELRO.VirtAddr + MemSiz) % 0x4000 == 0` on both 64-bit ABIs while
+  still passing every automated check — `check_elf_alignment.sh` inspects only the first
+  LOAD segment, so the misalignment was invisible to it. The upstream CMake passes
+  `-Wl,-z,max-page-size=16384` but never `-Wl,-z,common-page-size=16384`, which aligns
+  LOAD yet leaves the RELRO end unaligned. The libs were rebuilt from v1.13.6 source
+  with the missing flag added (`CMakeLists.txt:207`), using NDK r28 / clang 19 with the
+  same configuration as the upstream Android CI (`BUILD_SHARED_LIBS=ON`,
+  `SHERPA_ONNX_ENABLE_C_API=ON`) against the already-pinned ORT 1.27.1 prebuilt. All six
+  affected libraries (3 libs × `arm64-v8a`/`x86_64`) now report RELRO remainder `0x0`
+  and LOAD align `2**14`.
+- **The AAR was repacked surgically:** exactly those six `.so` entries changed; every
+  other entry — `classes.jar`, `AndroidManifest.xml`, `R.txt`, `proguard.txt`,
+  `aar-metadata.properties`, all four `libonnxruntime.so` and both 32-bit ABI
+  directories — is byte-identical to the previous revision. Export surfaces were
+  compared to rule out an ABI break: the JNI and C-API symbol sets are identical, and
+  the only C++-API difference is 7 statically-linked libc++ COMDAT internals that the
+  JNI library never references (`DT_NEEDED` lists no `libc++_shared.so` in either
+  revision, so there is no shared-runtime coupling).
+- **Accepted residual:** `libonnxruntime.so` stays formally RELRO-non-compliant on all
+  four ABIs. It is a downloaded upstream prebuilt (`csukuangfj/onnxruntime-libs`
+  v1.27.1); no released version fixes it (1.30.0 fails on all four ABIs), `patchelf`
+  cannot rewrite RELRO, and a full ORT source build exceeds this machine's RAM. Its
+  over-protection slack contains no sections, so bionic is over-protecting padding — a
+  formal non-compliance rather than a demonstrated crash. Play's documented gate still
+  accepts the bundle (enforcement Feb 1 2027). Tracked as N10.
 
 ### Changed — Phase 1 follow-through
 - **A timed-out TTS sentence is now treated as NEVER SPOKEN**: when a
