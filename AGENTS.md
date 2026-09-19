@@ -5,7 +5,7 @@ Compact ramp-up for agents. Every line is something easy to miss.
 ## Build & verify
 - Single Gradle module `:app` (root `settings.gradle.kts` includes only `:app`). Use the wrapper: `./gradlew ...`.
 - Build APK: `./gradlew :app:assembleDebug`
-- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~987 tests; refresh this count when you add a batch)
+- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (~1001 tests; refresh this count when you add a batch)
 - Single test class: `./gradlew :app:testDebugUnitTest --tests "com.jarvis.assistant.PorcupineDetectorTest"`
 - **Gate before claiming done:** `./gradlew :app:assembleDebug :app:testDebugUnitTest`
 - Instrumentation tests (`androidTest`) need a device/emulator; the gate above does not.

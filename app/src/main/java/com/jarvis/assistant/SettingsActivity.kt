@@ -28,6 +28,7 @@ import com.jarvis.assistant.ui.FieldValidation
 import com.jarvis.assistant.ui.SettingsMapping
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.CredentialsStore
+import com.jarvis.assistant.util.SberAuthorizationKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -740,9 +741,19 @@ class SettingsActivity : AppCompatActivity() {
         // the controller — its inputs stayed blank and checkNow() (the
         // button AND the create-time health check below) silently resolved
         // to Idle with the status rows hidden. Feed the current values
-        // explicitly so the probe sees the SAVED pair.
-        credentialChecks.onSaluteInput(saluteId.text.toString(), saluteSecret.text.toString())
-        credentialChecks.onGigaChatInput(gigaChatId.text.toString(), gigaChatSecret.text.toString())
+        // explicitly so the probe sees the SAVED pair. A saved pair is
+        // normalized too, so a combined key stored by an older build still
+        // probes correctly.
+        val (saluteIdValue, saluteSecretValue) = SberAuthorizationKey.normalize(
+            saluteId.text.toString(),
+            saluteSecret.text.toString(),
+        )
+        credentialChecks.onSaluteInput(saluteIdValue, saluteSecretValue)
+        val (gigaIdValue, gigaSecretValue) = SberAuthorizationKey.normalize(
+            gigaChatId.text.toString(),
+            gigaChatSecret.text.toString(),
+        )
+        credentialChecks.onGigaChatInput(gigaIdValue, gigaSecretValue)
         lifecycleScope.launch {
             credentialChecks.states.collect { state ->
                 renderCheckStatus(
@@ -871,12 +882,20 @@ class SettingsActivity : AppCompatActivity() {
     /** Feed the credential controller on every keystroke in the 4 fields. */
     private fun attachCredentialWatchers() {
         val saluteWatcher = textWatcher {
-            credentialChecks.onSaluteInput(saluteId.text.toString(), saluteSecret.text.toString())
+            val (id, secret) = SberAuthorizationKey.normalize(
+                saluteId.text.toString(),
+                saluteSecret.text.toString(),
+            )
+            credentialChecks.onSaluteInput(id, secret)
         }
         saluteId.addTextChangedListener(saluteWatcher)
         saluteSecret.addTextChangedListener(saluteWatcher)
         val gigaWatcher = textWatcher {
-            credentialChecks.onGigaChatInput(gigaChatId.text.toString(), gigaChatSecret.text.toString())
+            val (id, secret) = SberAuthorizationKey.normalize(
+                gigaChatId.text.toString(),
+                gigaChatSecret.text.toString(),
+            )
+            credentialChecks.onGigaChatInput(id, secret)
         }
         gigaChatId.addTextChangedListener(gigaWatcher)
         gigaChatSecret.addTextChangedListener(gigaWatcher)
@@ -941,10 +960,24 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun saveCredentials() {
         val key = picovoiceKey.text.toString().trim()
-        val sId = saluteId.text.toString().trim()
-        val sSec = saluteSecret.text.toString().trim()
-        val gId = gigaChatId.text.toString().trim()
-        val gSec = gigaChatSecret.text.toString().trim()
+        val rawSaluteId = saluteId.text.toString()
+        val rawSaluteSecret = saluteSecret.text.toString()
+        val rawGigaId = gigaChatId.text.toString()
+        val rawGigaSecret = gigaChatSecret.text.toString()
+
+        // Sber issues ONE combined "authorization key"; accept it pasted into
+        // either half. Normalization runs BEFORE validation so a combined key
+        // in the secret field with an empty id does not read as a half-filled
+        // pair. (The live watchers already normalize; this is the save-path
+        // guarantee for whatever is in the fields right now.)
+        val (sId, sSec) = SberAuthorizationKey.normalize(rawSaluteId, rawSaluteSecret)
+        val (gId, gSec) = SberAuthorizationKey.normalize(rawGigaId, rawGigaSecret)
+
+        // UX: reveal the split so the user can see what the app understood.
+        // Only when a combined key was actually split; the write-back triggers
+        // the watchers, which re-feed the SAME normalized pair — no loop.
+        writeBackSplitCredential(saluteId, saluteSecret, rawSaluteId, rawSaluteSecret, sId, sSec)
+        writeBackSplitCredential(gigaChatId, gigaChatSecret, rawGigaId, rawGigaSecret, gId, gSec)
 
         // U7: a HALF-filled OAuth pair can never authenticate, and the error
         // belongs on the missing half. A fully-empty pair is "not configured
@@ -957,6 +990,26 @@ class SettingsActivity : AppCompatActivity() {
             callbacks.onSaveCredentials(key, sId, sSec, gId, gSec)
             Toast.makeText(this@SettingsActivity, R.string.settings_saved, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /**
+     * If either raw field held a combined Sber key, write the split halves back
+     * so the fields show `(uuid, secret)`. Guarded so ordinary input (including
+     * surrounding whitespace) is left untouched — only a real split rewrites.
+     */
+    private fun writeBackSplitCredential(
+        idField: TextInputEditText,
+        secretField: TextInputEditText,
+        rawId: String,
+        rawSecret: String,
+        id: String,
+        secret: String,
+    ) {
+        val combined = SberAuthorizationKey.split(rawSecret) != null ||
+            SberAuthorizationKey.split(rawId) != null
+        if (!combined) return
+        if (idField.text.toString() != id) idField.setText(id)
+        if (secretField.text.toString() != secret) secretField.setText(secret)
     }
 
     /**
