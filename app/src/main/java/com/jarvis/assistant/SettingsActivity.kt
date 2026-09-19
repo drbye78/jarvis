@@ -190,32 +190,31 @@ class SettingsActivity : AppCompatActivity() {
         porcupineBlock = findViewById(R.id.porcupineBlock)
         sherpaBlock = findViewById(R.id.sherpaBlock)
 
-        // Pre-fill credential fields from the keystore-backed store.
-        picovoiceKey.setText(CredentialsStore.get().picovoiceKey)
-        saluteId.setText(CredentialsStore.get().saluteClientId)
-        saluteSecret.setText(CredentialsStore.get().saluteClientSecret)
-        gigaChatId.setText(CredentialsStore.get().gigaChatClientId)
-        gigaChatSecret.setText(CredentialsStore.get().gigaChatClientSecret)
+        // Header close affordance (the theme is NoActionBar).
+        findViewById<View>(R.id.closeButton).setOnClickListener { finish() }
 
-        // Pre-select the current wake-word model. An imported .ppn writes
-        // `custom_user`, which has NO radio of its own — it is represented by
-        // the custom radio. The old restore only knew builtin/custom_bundled,
-        // so an imported word restored onto the CUSTOM_BUNDLED radio and was
-        // silently disabled by the next toggle (imported-word fix).
-        wakeWordGroup.check(
-            if (WakeWordModelUi.isBuiltinRadio(appPrefs.wakeWordModel)) {
-                R.id.wakeBuiltin
-            } else {
-                R.id.wakeCustomBundled
-            },
-        )
-        renderCustomWakeCaption()
+        // One call per card. Each method owns that card's initial state, its render
+        // step and its listeners — in that order. The order is load-bearing: every
+        // control is put into its stored state BEFORE its listener is attached, so a
+        // programmatic `check()`/`isChecked =` can never look like a user action
+        // (that is what would stop a live capture lane or rebuild the wake engine).
+        setupLlmProviderCard()
+        setupMusicCard()
+        setupAecCard()
+        setupFollowUpCard()
+        setupMemoryCard()
+        setupBehaviorCard()
+        setupSemanticRecallCard()
+        setupVoiceCard()
 
-        // Pre-set the sensitivity slider.
-        sensitivityBar.max = 100
-        sensitivityBar.progress = (appPrefs.wakeSensitivity * 100).toInt()
-        updateSensitivityLabel(appPrefs.wakeSensitivity)
+        callbacks = RealCallbacks()
 
+        setupCredentialsCard()
+        setupWakeWordCard()
+    }
+
+    /** A0) LLM provider card: GigaChat default, or any OpenAI-compatible endpoint. */
+    private fun setupLlmProviderCard() {
         // A0) LLM provider selection. The graph consumes these prefs at
         // service start (AppGraph builds GigaChatClient or OpenAiCompatClient
         // from ProviderSettings), so a change takes effect after the next
@@ -236,7 +235,10 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<Button>(R.id.saveProviderButton).setOnClickListener {
             saveLlmProviderSettings()
         }
+    }
 
+    /** A1) Music card: the preferred default player (read lazily on every resolve). */
+    private fun setupMusicCard() {
         // A1) Preferred default music player (Settings «Музыка» card). The
         // composition root reads this pref lazily on every resolve, so the
         // change applies to the NEXT voice command — no service restart.
@@ -260,7 +262,10 @@ class SettingsActivity : AppCompatActivity() {
             }
             appPrefs.preferredMusicPlayer = SettingsMapping.playerPrefFor(player)
         }
+    }
 
+    /** AEC card: OFF / HARDWARE / SOFTWARE, opt-in (rebuilds AudioRecord on next start). */
+    private fun setupAecCard() {
         // ------------------------------------------------------------------
         // AEC card: OFF / HARDWARE / SOFTWARE (opt-in, default OFF; the mode
         // rebuilds the AudioRecord → applies after service restart).
@@ -315,7 +320,10 @@ class SettingsActivity : AppCompatActivity() {
             if (!checked) GraphHolder.graph?.playbackCapture?.stop()
             // Enabling alone does nothing: the Grant button runs the consent.
         }
+    }
 
+    /** Follow-up window card: switch + 2..12 s window, live-applied to the running graph. */
+    private fun setupFollowUpCard() {
         // ------------------------------------------------------------------
         // Follow-up window card: switch + 2..12 s window, LIVE-applied through
         // the running graph (no service restart).
@@ -343,7 +351,10 @@ class SettingsActivity : AppCompatActivity() {
                 GraphHolder.graph?.sessionManager?.setFollowUpWindow(followUpSwitch.isChecked, followUpSeconds())
             }
         })
+    }
 
+    /** COGNITIVE_PLAN 1.8 «Память» card: the four switches + the extraction backfill action. */
+    private fun setupMemoryCard() {
         // ------------------------------------------------------------------
         // COGNITIVE_PLAN 1.8: «Память» card. §12.4: EVERY cognitive default
         // is the initial value of a user-visible switch; all four switches
@@ -421,7 +432,10 @@ class SettingsActivity : AppCompatActivity() {
                     .show()
             }
         }
+    }
 
+    /** COGNITIVE_PLAN 2.6 behaviour card: proactive switch, quiet hours, daily quota (default OFF). */
+    private fun setupBehaviorCard() {
         // ------------------------------------------------------------------
         // COGNITIVE_PLAN 2.6: behaviour card (§12.4-1 — the proactive layer
         // ships DEFAULT OFF). The coordinator consumes these prefs through
@@ -475,7 +489,10 @@ class SettingsActivity : AppCompatActivity() {
             appPrefs.behaviorDailyQuota = SettingsMapping.quota(appPrefs.behaviorDailyQuota, +1)
             renderBehaviorControls()
         }
+    }
 
+    /** COGNITIVE_PLAN Phase 3 semantic-recall half of the «Память» card: embedder selector + vectors. */
+    private fun setupSemanticRecallCard() {
         // ----------------------------------------------------------------
         // COGNITIVE_PLAN Phase 3 (§11/§12.4-3/§12.4-4): semantic recall.
         // Selector AUTO/CLOUD/LOCAL/OFF (default AUTO, §12.4-3), the
@@ -507,6 +524,17 @@ class SettingsActivity : AppCompatActivity() {
             renderEmbedderSelector()
         }
 
+        observeSemanticStatus(embedderStatus, vectorsStatus, engineLabels)
+        setupSemanticBenchmarkButton(benchmarkResult, engineLabels)
+        setupSemanticVectorsButton(vectorsStatus)
+    }
+
+    /** Mirrors the stored embedder verdict and the live vector-build progress into the status rows. */
+    private fun observeSemanticStatus(
+        embedderStatus: TextView,
+        vectorsStatus: TextView,
+        engineLabels: Map<String, String>,
+    ) {
         lifecycleScope.launch {
             val graph = awaitAssistantGraph() ?: return@launch
             // Provenance line: benchmark verdict + stored vector count.
@@ -538,7 +566,13 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
         }
+    }
 
+    /** On-device retrieval benchmark (static probes only — no user-data egress). */
+    private fun setupSemanticBenchmarkButton(
+        benchmarkResult: TextView,
+        engineLabels: Map<String, String>,
+    ) {
         findViewById<Button>(R.id.semanticBenchmarkButton).setOnClickListener {
             benchmarkResult.setText(R.string.settings_semantic_benchmark_running)
             lifecycleScope.launch {
@@ -562,7 +596,10 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
         }
+    }
 
+    /** The opt-in vector build, disclosing the §9.2 egress of the chosen engine. */
+    private fun setupSemanticVectorsButton(vectorsStatus: TextView) {
         findViewById<Button>(R.id.semanticVectorsButton).setOnClickListener {
             lifecycleScope.launch {
                 val graph = awaitAssistantGraph() ?: run {
@@ -597,7 +634,10 @@ class SettingsActivity : AppCompatActivity() {
                     .show()
             }
         }
+    }
 
+    /** Voice card (Y6): preset Mila or a custom Salute voice ID, resolved per sentence. */
+    private fun setupVoiceCard() {
         // ------------------------------------------------------------------
         // Voice card (Y6): preset (Mila, verified) or a custom Salute voice
         // ID. The voice is resolved PER SENTENCE from prefs by the running
@@ -651,8 +691,16 @@ class SettingsActivity : AppCompatActivity() {
                 graph.speakVoiceSample(selectedVoice())
             }
         }
+    }
 
-        callbacks = RealCallbacks()
+    /** A) Provider credentials: stored values, live validation status and the save action. */
+    private fun setupCredentialsCard() {
+        // Pre-fill credential fields from the keystore-backed store.
+        picovoiceKey.setText(CredentialsStore.get().picovoiceKey)
+        saluteId.setText(CredentialsStore.get().saluteClientId)
+        saluteSecret.setText(CredentialsStore.get().saluteClientSecret)
+        gigaChatId.setText(CredentialsStore.get().gigaChatClientId)
+        gigaChatSecret.setText(CredentialsStore.get().gigaChatClientSecret)
 
         // A2) Upfront validation of the mandatory credential pairs. The
         // controller debounces typing, dedupes confirmed-Ok pairs and discards
@@ -690,9 +738,6 @@ class SettingsActivity : AppCompatActivity() {
         // Opening the panel is a health check for the SAVED pair too.
         credentialChecks.checkNow()
 
-        // Close / back affordance (theme is NoActionBar).
-        findViewById<View>(R.id.closeButton).setOnClickListener { finish() }
-
         // A) Save provider credentials. Saving stays local-first (works
         // offline); the status rows above tell the truth about validity, and
         // save triggers a fresh verdict for whatever is being persisted.
@@ -700,6 +745,28 @@ class SettingsActivity : AppCompatActivity() {
             credentialChecks.checkNow()
             saveCredentials()
         }
+    }
+
+    /** B) Wake word card: model, imported .ppn, custom Sherpa keyword, voice stop, engine, sensitivity. */
+    private fun setupWakeWordCard() {
+        // Pre-select the current wake-word model. An imported .ppn writes
+        // `custom_user`, which has NO radio of its own — it is represented by
+        // the custom radio. The old restore only knew builtin/custom_bundled,
+        // so an imported word restored onto the CUSTOM_BUNDLED radio and was
+        // silently disabled by the next toggle (imported-word fix).
+        wakeWordGroup.check(
+            if (WakeWordModelUi.isBuiltinRadio(appPrefs.wakeWordModel)) {
+                R.id.wakeBuiltin
+            } else {
+                R.id.wakeCustomBundled
+            },
+        )
+        renderCustomWakeCaption()
+
+        // Pre-set the sensitivity slider.
+        sensitivityBar.max = 100
+        sensitivityBar.progress = (appPrefs.wakeSensitivity * 100).toInt()
+        updateSensitivityLabel(appPrefs.wakeSensitivity)
 
         // B) Wake word selection (built-in "Jarvis" or a custom model —
         // bundled keywords OR an imported .ppn: the mapping keeps an import,
