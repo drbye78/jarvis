@@ -15,7 +15,6 @@ import okhttp3.OkHttpClient
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.util.concurrent.TimeUnit
 
 /**
  * P2.2 — LIVE GigaChat smoke tests (REMEDIATION_PLAN Phase 2). LOCAL ONLY:
@@ -44,10 +43,12 @@ class GigaChatLiveSmokeTest {
             liveTokenManager(LiveSecrets.secrets)
         }
         private val httpClient: OkHttpClient by lazy {
-            OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(120, TimeUnit.SECONDS)
-                .build()
+            // Uses the shared live client so the Минцифры CA fallback
+            // (withSberTrust) applies here too — GigaChat's host
+            // (gigachat.devices.sberbank.ru) chains to the Russian root CA,
+            // which the host JDK trust store does not carry. A locally built
+            // plain client dies in the handshake with PKIX errors.
+            liveOkHttpClient()
         }
     }
 

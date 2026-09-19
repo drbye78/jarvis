@@ -100,10 +100,12 @@ class SherpaSmokeTest {
     fun engineRefusesToBuild_whenBundledModeHasNoContext() {
         // Bundled mode REQUIRES a context (AssetManager) — a null context is
         // a failed build surfaced as an exception, never a silent dead engine.
+        // The engine validates the argument with `requireNotNull`, so the type
+        // is IllegalArgumentException (an invalid ARGUMENT, not bad state).
         try {
             SherpaKwsEngine(context = null, sensitivity = 0.5f, entries = entries)
             throw AssertionError("null-context bundled build must fail")
-        } catch (expected: IllegalStateException) {
+        } catch (expected: IllegalArgumentException) {
             assertNotNull(expected.message)
         }
     }

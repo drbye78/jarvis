@@ -3,6 +3,8 @@ package com.jarvis.assistant.integration
 import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.llm.TokenManager
 import com.jarvis.assistant.util.InMemoryVault
+import com.jarvis.assistant.util.SberTrust
+import com.jarvis.assistant.util.withSberTrust
 import io.grpc.ManagedChannel
 import io.grpc.okhttp.OkHttpChannelBuilder
 import okhttp3.OkHttpClient
@@ -24,6 +26,11 @@ internal fun liveOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
     .connectTimeout(15, TimeUnit.SECONDS)
     .readTimeout(90, TimeUnit.SECONDS)
     .build()
+    // The Sber endpoints chain to the Минцифры root CA, which is absent from
+    // the host JDK trust store; without this every live call dies in the TLS
+    // handshake ("PKIX path building failed") before reaching the service.
+    // Production installs the same host-scoped trust via the shared client.
+    .withSberTrust()
 
 /** Real TLS channel to the configured Salute gRPC endpoint (host:port). */
 internal fun saluteChannel(config: JarvisConfig = JarvisConfig()): ManagedChannel {
@@ -31,7 +38,12 @@ internal fun saluteChannel(config: JarvisConfig = JarvisConfig()): ManagedChanne
     require(parts.size == 2) { "saluteGrpcEndpoint must be host:port" }
     // TLS is the DEFAULT negotiation for forAddress — do not "fix" this into
     // usePlaintext(); smartspeech.sber.ru:443 is a real TLS endpoint.
-    return OkHttpChannelBuilder.forAddress(parts[0], parts[1].toInt()).build()
+    // The SSLContext carries the same host-scoped Минцифры fallback the HTTP
+    // clients use; the gRPC channel is handed the factory directly rather than
+    // a trust manager (mirrors AppGraph's saluteChannel).
+    return OkHttpChannelBuilder.forAddress(parts[0], parts[1].toInt())
+        .sslSocketFactory(SberTrust.sslContext().socketFactory)
+        .build()
 }
 
 /**
