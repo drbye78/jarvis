@@ -13,7 +13,7 @@ plugins {
 
 android {
     namespace = "com.jarvis.assistant"
-    compileSdk = 35
+    compileSdk = 36
 
     val localProps = LocalProperties().apply {
         val f = rootProject.file("local.properties")
@@ -22,15 +22,14 @@ android {
 
     defaultConfig {
         applicationId = "com.jarvis.assistant"
-        // targetSdk 35: intermediate step of the D9 path to 36 (Play requires 36
-        // from Aug 31 2026). At 35 edge-to-edge is enforced but the opt-out still
-        // exists; the app already adopted edge-to-edge unconditionally
-        // (ui/EdgeToEdge.kt), so neither the enforcement nor its removal at 36
-        // changes the insets behaviour.
+        // targetSdk 36: the D9 end state (Play requires 36 from Aug 31 2026). The
+        // 35 opt-outs are gone here, so the unconditional edge-to-edge adoption in
+        // ui/EdgeToEdge.kt is now the only thing keeping the insets correct — there
+        // is no `windowOptOutEdgeToEdgeEnforcement` to fall back on.
         // minSdk 29: HarmonyOS 2.0 devices (e.g. Huawei AGS6-W09) report API 29.
         // No backward compat below it is claimed or needed.
         minSdk = 29
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 6
         versionName = "0.2.2"
 
@@ -83,9 +82,10 @@ android {
         buildConfig = true
     }
 
-    lint {
-        disable += "ExpiredTargetSdkVersion"
-    }
+    // The `lint { disable += "ExpiredTargetSdkVersion" }` suppression is gone:
+    // it existed only while targetSdk trailed Play's requirement, and at 36 the
+    // check has nothing to report. CI's lint job was already advisory
+    // (`continue-on-error: true`).
 
     sourceSets {
         getByName("debug") {

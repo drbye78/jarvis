@@ -105,6 +105,14 @@ class PlaybackCaptureFarEndSource(
                 return
             }
             val proj = projectionManager.getMediaProjection(resultCode, data)
+            // API 36 annotates this return as nullable (before then it was a
+            // platform type, so a denial sailed straight into the Builder and
+            // threw there). A refused/expired consent is a normal outcome: log it
+            // and stop, exactly like the manager-unavailable path above.
+            if (proj == null) {
+                Timber.tag("AecDiag").e("MediaProjection not granted — playback capture not started")
+                return
+            }
             projection = proj
 
             val config = AudioPlaybackCaptureConfiguration.Builder(proj)
