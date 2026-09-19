@@ -24,6 +24,7 @@ import com.jarvis.assistant.llm.CredentialCheckController
 import com.jarvis.assistant.llm.OAuthCredentialValidator
 import com.jarvis.assistant.ui.FieldErrorRenderer
 import com.jarvis.assistant.ui.FieldValidation
+import com.jarvis.assistant.ui.SettingsMapping
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.CredentialsStore
 import kotlinx.coroutines.Dispatchers
@@ -243,20 +244,21 @@ class SettingsActivity : AppCompatActivity() {
         // MusicAppCatalog (tested), so no validation is needed here.
         playerGroup = findViewById(R.id.playerGroup)
         playerGroup.check(
-            when (appPrefs.preferredMusicPlayer) {
-                "ru.yandex.music", "com.yandex.music" -> R.id.playerYandex
-                "com.zvooq.openplay" -> R.id.playerZvuk
-                "com.vk.music" -> R.id.playerVk
-                else -> R.id.playerAuto
+            when (SettingsMapping.playerForPref(appPrefs.preferredMusicPlayer)) {
+                SettingsMapping.Player.YANDEX -> R.id.playerYandex
+                SettingsMapping.Player.ZVUK -> R.id.playerZvuk
+                SettingsMapping.Player.VK -> R.id.playerVk
+                SettingsMapping.Player.AUTO -> R.id.playerAuto
             },
         )
         playerGroup.setOnCheckedChangeListener { _, checkedId ->
-            appPrefs.preferredMusicPlayer = when (checkedId) {
-                R.id.playerYandex -> "ru.yandex.music"
-                R.id.playerZvuk -> "com.zvooq.openplay"
-                R.id.playerVk -> "com.vk.music"
-                else -> "auto"
+            val player = when (checkedId) {
+                R.id.playerYandex -> SettingsMapping.Player.YANDEX
+                R.id.playerZvuk -> SettingsMapping.Player.ZVUK
+                R.id.playerVk -> SettingsMapping.Player.VK
+                else -> SettingsMapping.Player.AUTO
             }
+            appPrefs.preferredMusicPlayer = SettingsMapping.playerPrefFor(player)
         }
 
         // ------------------------------------------------------------------
@@ -450,27 +452,27 @@ class SettingsActivity : AppCompatActivity() {
         }
         renderBehaviorControls()
         quietStartMinus.setOnClickListener {
-            appPrefs.behaviorQuietStart = (appPrefs.behaviorQuietStart + 23) % 24
+            appPrefs.behaviorQuietStart = SettingsMapping.quietHour(appPrefs.behaviorQuietStart, -1)
             renderBehaviorControls()
         }
         quietStartPlus.setOnClickListener {
-            appPrefs.behaviorQuietStart = (appPrefs.behaviorQuietStart + 1) % 24
+            appPrefs.behaviorQuietStart = SettingsMapping.quietHour(appPrefs.behaviorQuietStart, +1)
             renderBehaviorControls()
         }
         quietEndMinus.setOnClickListener {
-            appPrefs.behaviorQuietEnd = (appPrefs.behaviorQuietEnd + 23) % 24
+            appPrefs.behaviorQuietEnd = SettingsMapping.quietHour(appPrefs.behaviorQuietEnd, -1)
             renderBehaviorControls()
         }
         quietEndPlus.setOnClickListener {
-            appPrefs.behaviorQuietEnd = (appPrefs.behaviorQuietEnd + 1) % 24
+            appPrefs.behaviorQuietEnd = SettingsMapping.quietHour(appPrefs.behaviorQuietEnd, +1)
             renderBehaviorControls()
         }
         quotaMinus.setOnClickListener {
-            appPrefs.behaviorDailyQuota = (appPrefs.behaviorDailyQuota - 1).coerceIn(1, 5)
+            appPrefs.behaviorDailyQuota = SettingsMapping.quota(appPrefs.behaviorDailyQuota, -1)
             renderBehaviorControls()
         }
         quotaPlus.setOnClickListener {
-            appPrefs.behaviorDailyQuota = (appPrefs.behaviorDailyQuota + 1).coerceIn(1, 5)
+            appPrefs.behaviorDailyQuota = SettingsMapping.quota(appPrefs.behaviorDailyQuota, +1)
             renderBehaviorControls()
         }
 
@@ -481,7 +483,6 @@ class SettingsActivity : AppCompatActivity() {
         // egress), and the opt-in vector build with the §9.2 privacy
         // disclosure for the cloud branch.
         // ----------------------------------------------------------------
-        val embedderOrder = listOf("AUTO", "CLOUD", "LOCAL", "OFF")
         val embedderLabels = mapOf(
             "AUTO" to getString(R.string.settings_semantic_embedder_auto),
             "CLOUD" to getString(R.string.settings_semantic_embedder_cloud),
@@ -502,10 +503,7 @@ class SettingsActivity : AppCompatActivity() {
         }
         renderEmbedderSelector()
         selectorButton.setOnClickListener {
-            val next = embedderOrder[
-                (embedderOrder.indexOf(appPrefs.memoryEmbedder) + 1).mod(embedderOrder.size),
-            ]
-            appPrefs.memoryEmbedder = next
+            appPrefs.memoryEmbedder = SettingsMapping.nextEmbedder(appPrefs.memoryEmbedder)
             renderEmbedderSelector()
         }
 
@@ -902,15 +900,13 @@ class SettingsActivity : AppCompatActivity() {
         aecSoftwareHint.visibility = if (mode == "software") View.VISIBLE else View.GONE
     }
 
-    private fun followUpSeconds(): Long = ((followUpBar.progress + 2).toLong()).coerceIn(2, 12) * 1000L
+    private fun followUpSeconds(): Long = SettingsMapping.followUpSeconds(followUpBar.progress)
 
     /** Current custom-ID text, or Mila when blank. */
-    private fun selectedVoice(): String =
-        if (voiceGroup.checkedRadioButtonId == R.id.voiceMila) {
-            "Mila"
-        } else {
-            voiceCustomId.text.toString().trim().ifBlank { "Mila" }
-        }
+    private fun selectedVoice(): String = SettingsMapping.selectedVoiceId(
+        isMilaSelected = voiceGroup.checkedRadioButtonId == R.id.voiceMila,
+        customText = voiceCustomId.text.toString(),
+    )
 
     /** Saves the custom voice ID (trimmed); blank is ignored. */
     private fun persistCustomVoice() {
@@ -924,7 +920,7 @@ class SettingsActivity : AppCompatActivity() {
 
     /** Show the controls for the active engine, hide the other. */
     private fun applyEngineVisibility(engine: String) {
-        val isSherpa = engine == "sherpa"
+        val isSherpa = SettingsMapping.isSherpaEngine(engine)
         porcupineBlock.visibility = if (isSherpa) View.GONE else View.VISIBLE
         sherpaBlock.visibility = if (isSherpa) View.VISIBLE else View.GONE
     }

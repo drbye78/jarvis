@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Settings card extracted from activity_settings.xml (U1). The card keeps its own
+  android:layout_width/layout_height so this file is a valid, standalone layout, and
+  the per-card margins live on the <include> tag in the host (they legitimately differ
+  per card). Every id declared here is checked by SettingsLayoutTest, which ties the
+  host, these includes and SettingsActivity's findViewById calls together.
+-->
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/Widget.Jarvis.SettingsCard"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/aec_section"
+            style="@style/TextAppearance.Jarvis.SectionHeader"
+            android:accessibilityHeading="true" />
+
+        <RadioGroup
+            android:id="@+id/aecGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp">
+
+            <RadioButton
+                android:id="@+id/aecOff"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/aec_off" />
+
+            <RadioButton
+                android:id="@+id/aecHardware"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/aec_hardware" />
+
+            <RadioButton
+                android:id="@+id/aecSoftware"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/aec_software" />
+        </RadioGroup>
+
+        <TextView
+            android:id="@+id/aecProbeRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            style="@style/TextAppearance.Jarvis.Hint" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/aec_hint"
+            style="@style/TextAppearance.Jarvis.Hint" />
+
+        <TextView
+            android:id="@+id/aecSoftwareHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/aec_software_hint"
+            android:visibility="gone"
+            style="@style/TextAppearance.Jarvis.Hint" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/aec_capture_section"
+            android:textColor="?attr/colorOnSurface"
+            android:textStyle="bold" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/aecCaptureSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/aec_capture_switch" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/aecCaptureGrant"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/aec_capture_grant" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/aec_capture_hint"
+            style="@style/TextAppearance.Jarvis.Hint" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>
