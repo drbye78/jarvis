@@ -13,7 +13,7 @@ plugins {
 
 android {
     namespace = "com.jarvis.assistant"
-    compileSdk = 34
+    compileSdk = 35
 
     val localProps = LocalProperties().apply {
         val f = rootProject.file("local.properties")
@@ -22,11 +22,15 @@ android {
 
     defaultConfig {
         applicationId = "com.jarvis.assistant"
-        // targetSdk 34: Android 14+ guards handled in code.
+        // targetSdk 35: intermediate step of the D9 path to 36 (Play requires 36
+        // from Aug 31 2026). At 35 edge-to-edge is enforced but the opt-out still
+        // exists; the app already adopted edge-to-edge unconditionally
+        // (ui/EdgeToEdge.kt), so neither the enforcement nor its removal at 36
+        // changes the insets behaviour.
         // minSdk 29: HarmonyOS 2.0 devices (e.g. Huawei AGS6-W09) report API 29.
         // No backward compat below it is claimed or needed.
         minSdk = 29
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 6
         versionName = "0.2.2"
 
