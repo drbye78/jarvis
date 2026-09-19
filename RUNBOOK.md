@@ -28,6 +28,12 @@
      "Jarvis" keyword is resolved by the Picovoice SDK at runtime, and a
      custom `.ppn` (loaded via Settings) must match your key. If Porcupine
      fails to build, switch the engine back to Sherpa-ONNX.
+   - **Keyword files are bound to the SDK major version.** The app ships
+     Porcupine **4.x**, so a `.ppn` trained for 3.x is rejected at runtime
+     ("file belongs to a different version of the library") — re-download it
+     from [Picovoice Console](https://console.picovoice.ai/), which now issues
+     v4-format keywords. The built-in "Jarvis" keyword is unaffected (the 4.x
+     AAR ships a regenerated keyword + params file).
    - If Sherpa fails to load you'll see a logged "Sherpa model failed to
      load" — the bundled assets under `app/src/main/assets/sherpa_kws/`
      must be present in the APK.

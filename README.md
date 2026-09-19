@@ -61,6 +61,9 @@ OpenAI-compatible endpoint).
     - **Picovoice Porcupine:** built-in "Jarvis", or **load your own `.ppn`**
       trained in [Picovoice Console](https://console.picovoice.ai/) (a Console
       `.ppn` is bound to your Picovoice key). Requires a free Picovoice account.
+      The app ships Porcupine **4.x**, and keyword files are version-bound: a
+      `.ppn` trained for 3.x is rejected, so download a current one (Console
+      now issues v4-format keywords). The built-in "Jarvis" keyword is unaffected.
     Switching engines and the sensitivity slider apply live while the assistant
     is running. Custom Sherpa wake words are supported — the app extracts
     models, BPE-tokenizes keywords, and loads via `newFromFile`.
