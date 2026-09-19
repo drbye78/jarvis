@@ -157,6 +157,7 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_settings)
         // Text fields live in this screen: reserve the keyboard too.
         EdgeToEdge.pad(findViewById(R.id.settingsRoot), includeIme = true)
+        capColumnWidthOnWideScreens()
 
         appPrefs = AppPrefs(this)
 
@@ -215,6 +216,24 @@ class SettingsActivity : AppCompatActivity() {
 
         setupCredentialsCard()
         setupWakeWordCard()
+    }
+
+    /**
+     * Caps the reading column at [SETTINGS_COLUMN_MAX_WIDTH_DP] only when the
+     * window is genuinely wider than that, so it stays centered and
+     * comfortable instead of spanning a large tablet. The layout keeps
+     * `layout_width="match_parent"`: a fixed dp width is NOT clamped by a
+     * ScrollView, which centers an oversized child and lets it spill off both
+     * edges (the regression this mirrors from the home screen). Re-applied on
+     * every recreation, which covers rotation and window resizes.
+     */
+    private fun capColumnWidthOnWideScreens() {
+        val column = findViewById<View>(R.id.settingsColumn)
+        val dm = resources.displayMetrics
+        val maxWidthPx = (SETTINGS_COLUMN_MAX_WIDTH_DP * dm.density).toInt()
+        if (dm.widthPixels > maxWidthPx) {
+            column.layoutParams = column.layoutParams.apply { width = maxWidthPx }
+        }
     }
 
     /** A0) LLM provider card: GigaChat default, or any OpenAI-compatible endpoint. */
@@ -1298,6 +1317,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private companion object {
         const val PPN_REQUEST = 1002
+        const val SETTINGS_COLUMN_MAX_WIDTH_DP = 760
         const val CAPTURE_REQUEST = 1003
 
         /**

@@ -38,12 +38,14 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <!-- Comfortable reading column on tablets. -->
+        <!-- Comfortable reading column on tablets: match_parent so it always
+             fits the window; on windows wider than 760dp it is width-capped
+             and centered in code (capColumnWidthOnWideScreens). -->
         <LinearLayout
+            android:id="@+id/settingsColumn"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:maxWidth="760dp"
             android:orientation="vertical"
             android:paddingStart="20dp"
             android:paddingEnd="20dp"
