@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Tablet comfort zone: narrow the reading column here instead of computing
-     it in code. Screens at or below this width are unaffected (the cap is
-     clamped to the parent), which matches the previous runtime behaviour. -->
-<resources>
-    <dimen name="home_column_width">840dp</dimen>
-</resources>

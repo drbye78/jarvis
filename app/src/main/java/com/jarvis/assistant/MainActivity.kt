@@ -73,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         EdgeToEdge.enable(this)
         setContentView(R.layout.activity_main)
         EdgeToEdge.pad(findViewById(R.id.mainRoot))
+        capColumnWidthOnWideScreens()
         statusText = findViewById(R.id.statusText)
         micButton = findViewById(R.id.micButton)
         toggleButton = findViewById(R.id.toggleButton)
@@ -153,6 +154,24 @@ class MainActivity : AppCompatActivity() {
         // activity is visible, so the start is user-present and the mic
         // is granted (the while-in-use rule).
         maybeActivateFromIntent(intent)
+    }
+
+    /**
+     * Caps the reading column at [HOME_COLUMN_MAX_WIDTH_DP] only when the
+     * window is genuinely wider than that, so it stays centered and
+     * comfortable instead of spanning a large tablet. The layout keeps
+     * `layout_width="match_parent"`: a fixed dp width is NOT clamped by a
+     * FrameLayout, which centers an oversized child and lets it spill off
+     * both edges (the regression this restores). Re-applied on every
+     * recreation, which covers rotation and window resizes.
+     */
+    private fun capColumnWidthOnWideScreens() {
+        val column = findViewById<View>(R.id.homeColumn)
+        val dm = resources.displayMetrics
+        val maxWidthPx = (HOME_COLUMN_MAX_WIDTH_DP * dm.density).toInt()
+        if (dm.widthPixels > maxWidthPx) {
+            column.layoutParams = column.layoutParams.apply { width = maxWidthPx }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -446,5 +465,8 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         /** UI poll for service/graph state (cheap StateFlow read). */
         const val SERVICE_STATE_POLL_MS = 500L
+
+        /** Reading-column cap on wide windows; narrower windows fill the width. */
+        const val HOME_COLUMN_MAX_WIDTH_DP = 840
     }
 }
