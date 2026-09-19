@@ -135,7 +135,7 @@ ksp {
 
 protobuf {
     protoc {
-        artifact = "com.google.protobuf:protoc:3.25.3"
+        artifact = "com.google.protobuf:protoc:3.25.9"
     }
     plugins {
         create("grpc") {
@@ -177,8 +177,9 @@ dependencies {
     implementation(libs.grpc.protobuf)
     implementation(libs.protobuf.java)
 
-    // Generated gRPC code uses @javax.annotation.Generated
-    compileOnly(libs.javax.annotation)
+    // No javax.annotation dependency: grpc-java >= 1.74.0 generates stubs with
+    // @generated=omit (only @io.grpc.stub.annotations.GrpcGenerated), so the
+    // old @javax.annotation.Generated compileOnly shim is dead.
 
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
