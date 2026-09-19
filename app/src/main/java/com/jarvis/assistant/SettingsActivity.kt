@@ -22,6 +22,7 @@ import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.llm.CredentialCheck
 import com.jarvis.assistant.llm.CredentialCheckController
 import com.jarvis.assistant.llm.OAuthCredentialValidator
+import com.jarvis.assistant.ui.EdgeToEdge
 import com.jarvis.assistant.ui.FieldErrorRenderer
 import com.jarvis.assistant.ui.FieldValidation
 import com.jarvis.assistant.ui.SettingsMapping
@@ -152,7 +153,10 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        EdgeToEdge.enable(this)
         setContentView(R.layout.activity_settings)
+        // Text fields live in this screen: reserve the keyboard too.
+        EdgeToEdge.pad(findViewById(R.id.settingsRoot), includeIme = true)
 
         appPrefs = AppPrefs(this)
 

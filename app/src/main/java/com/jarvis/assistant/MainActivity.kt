@@ -21,6 +21,7 @@ import com.jarvis.assistant.session.TurnActivity
 import com.jarvis.assistant.tools.AlarmSchedulerProvider
 import com.jarvis.assistant.tools.AlertPermissionReconciler
 import com.jarvis.assistant.tools.canScheduleExactAlarms
+import com.jarvis.assistant.ui.EdgeToEdge
 import com.jarvis.assistant.ui.Motion
 import com.jarvis.assistant.ui.StateLabel
 import com.jarvis.assistant.ui.TranscriptAdapter
@@ -69,7 +70,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        EdgeToEdge.enable(this)
         setContentView(R.layout.activity_main)
+        EdgeToEdge.pad(findViewById(R.id.mainRoot))
         statusText = findViewById(R.id.statusText)
         micButton = findViewById(R.id.micButton)
         toggleButton = findViewById(R.id.toggleButton)

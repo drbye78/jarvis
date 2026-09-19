@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.data.ScheduledAlertEntity
 import com.jarvis.assistant.tools.AlarmSchedulerProvider
+import com.jarvis.assistant.ui.EdgeToEdge
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -39,7 +40,9 @@ class AlarmsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        EdgeToEdge.enable(this)
         setContentView(R.layout.activity_alarms)
+        EdgeToEdge.pad(findViewById(R.id.alarmsRoot))
 
         adapter = AlarmListAdapter(
             onToggle = { alarm, enabled -> toggle(alarm, enabled) },

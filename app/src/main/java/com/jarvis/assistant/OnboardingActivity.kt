@@ -22,6 +22,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.jarvis.assistant.service.JarvisForegroundService
 import com.jarvis.assistant.tools.JarvisDeviceAdmin
+import com.jarvis.assistant.ui.EdgeToEdge
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.CredentialsStore
 
@@ -63,7 +64,9 @@ class OnboardingActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        EdgeToEdge.enable(this)
         setContentView(R.layout.activity_onboarding)
+        EdgeToEdge.pad(findViewById(R.id.onboardingRoot))
 
         rowsContainer = findViewById(R.id.permRows)
         startButton = findViewById(R.id.btnStart)

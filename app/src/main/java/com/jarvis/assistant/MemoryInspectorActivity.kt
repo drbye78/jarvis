@@ -19,6 +19,7 @@ import com.jarvis.assistant.cognitive.CognitiveCoordinator
 import com.jarvis.assistant.cognitive.CognitiveCoordinator.Companion.prettyJson
 import com.jarvis.assistant.cognitive.data.UserFactEntity
 import com.jarvis.assistant.di.GraphHolder
+import com.jarvis.assistant.ui.EdgeToEdge
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -57,7 +58,9 @@ class MemoryInspectorActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        EdgeToEdge.enable(this)
         setContentView(R.layout.activity_memory_inspector)
+        EdgeToEdge.pad(findViewById(R.id.memoryInspectorRoot))
 
         list = findViewById(R.id.memoryList)
         emptyView = findViewById(R.id.memoryEmpty)

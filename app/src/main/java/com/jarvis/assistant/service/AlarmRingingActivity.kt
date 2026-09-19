@@ -10,6 +10,7 @@ import com.jarvis.assistant.tools.AlarmReceiver
 import com.jarvis.assistant.tools.AlarmRinger
 import com.jarvis.assistant.tools.RingCoordinator
 import com.jarvis.assistant.tools.RingCoordinatorProvider
+import com.jarvis.assistant.ui.EdgeToEdge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -47,7 +48,9 @@ class AlarmRingingActivity : Activity() {
             return
         }
 
+        EdgeToEdge.enable(this)
         setContentView(R.layout.activity_alarm_ringing)
+        EdgeToEdge.pad(findViewById(R.id.ringingRoot))
         window.addFlags(
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                 WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or

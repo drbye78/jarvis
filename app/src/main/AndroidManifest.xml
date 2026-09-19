@@ -85,9 +85,14 @@
             android:name=".OnboardingActivity"
             android:exported="false" />
 
+        <!-- Edge-to-edge (Phase 8): with the window drawing behind the bars,
+             `adjustResize` no longer resizes the window, so SettingsActivity
+             reserves the keyboard from the ime() insets itself. Pinning the
+             mode here stops the system from choosing adjustPan instead. -->
         <activity
             android:name=".SettingsActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
         <!-- COGNITIVE_PLAN 1.8: Memory Inspector (view/delete/export/wipe). -->
         <activity
