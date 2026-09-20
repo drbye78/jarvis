@@ -25,6 +25,7 @@ object FieldValidation {
         SALUTE_SECRET,
         GIGACHAT_ID,
         GIGACHAT_SECRET,
+        YANDEX_API_KEY,
     }
 
     /** One validation failure, addressed to the field the user must fix. */
@@ -58,14 +59,22 @@ object FieldValidation {
      * error: an id without its secret (or the reverse) can never
      * authenticate, and the message is attached to the missing half, which is
      * the field the user has to act on.
+     *
+     * [validateSalute] is false when the Yandex speech backend is selected.
+     * Salute is then unused (it backs only Sber ASR/TTS), and the card hides
+     * the pair — reporting an error against a hidden field would strand the
+     * user on an input they cannot see, blocking the save of everything else.
      */
     fun validateCredentials(
         saluteId: String,
         saluteSecret: String,
         gigaChatId: String,
         gigaChatSecret: String,
+        validateSalute: Boolean = true,
     ): List<FieldError> = buildList {
-        addAll(halfFilledPair(saluteId, saluteSecret, Field.SALUTE_ID, Field.SALUTE_SECRET))
+        if (validateSalute) {
+            addAll(halfFilledPair(saluteId, saluteSecret, Field.SALUTE_ID, Field.SALUTE_SECRET))
+        }
         addAll(
             halfFilledPair(
                 gigaChatId,
@@ -75,6 +84,21 @@ object FieldValidation {
             ),
         )
     }
+
+    /**
+     * The Yandex SpeechKit API key, required only once that backend is
+     * actually selected — the same rule the [OI]-compatible block applies,
+     * where a key is mandatory as soon as a base URL states the intent.
+     * A selected backend with no key cannot speak a single word, so the error
+     * belongs on the field rather than surfacing later as a failed
+     * synthesis.
+     */
+    fun validateYandexApiKey(apiKey: String): List<FieldError> =
+        if (apiKey.trim().isEmpty()) {
+            listOf(FieldError(Field.YANDEX_API_KEY, R.string.error_yandex_api_key))
+        } else {
+            emptyList()
+        }
 
     private fun halfFilledPair(
         id: String,

@@ -81,6 +81,13 @@
     <string name="error_api_key">Укажите API-ключ</string>
     <string name="error_credential_id_missing">Укажите ID — секрет уже введён</string>
     <string name="error_credential_secret_missing">Укажите секрет — ID уже введён</string>
+    <string name="error_yandex_api_key">Укажите API-ключ Yandex — без него выбранный движок речи не работает</string>
+
+    <!-- Settings: speech backend (one choice drives recognition AND synthesis) -->
+    <string name="speech_backend_section">Движок речи (ASR + TTS)</string>
+    <string name="speech_backend_hint">Один выбор для распознавания и синтеза речи. Ключи нужны только для выбранного движка.</string>
+    <string name="speech_backend_sber">Сбер (SaluteSpeech) — по умолчанию</string>
+    <string name="speech_backend_yandex">Yandex SpeechKit v3</string>
 
     <!-- Settings: provider credentials (each user supplies their own) -->
     <string name="credentials_section">Учётные данные провайдеров</string>
@@ -94,6 +101,8 @@
 
     <!-- Settings: upfront credential validation (mandatory = Salute + GigaChat) -->
     <string name="credentials_hint">Salute и GigaChat — обязательные ключи, они проверяются сразу при вводе. В консоли Sber выдаётся один ключ авторизации (base64) — вставьте его в поле секрета, приложение разделит его на ID и секрет само. Ключ Picovoice нужен только для движка Porcupine и не проверяется.</string>
+    <string name="yandex_api_key_label">API-ключ Yandex</string>
+    <string name="yandex_api_key_hint">Сервисный аккаунт Yandex Cloud с ролью ai.speechkit-stt.user и ai.speechkit-tts.user. Ключ не истекает; ID каталога указывать не нужно. Хранится только в защищённом хранилище устройства.</string>
     <string name="credentials_check_button">Проверить ключи</string>
     <string name="credentials_checking">Проверяю ключи…</string>
     <string name="credentials_ok">Ключи верны</string>
@@ -265,6 +274,9 @@
     <string name="voice_custom_hint_field">ID голоса, например May_24000</string>
     <string name="voice_test_button">Проверить голос</string>
     <string name="voice_hint">Мила — проверенный голос по умолчанию. Дополнительные идентификаторы голосов из пула Salute можно ввести вручную и проверить кнопкой. Смена применяется к следующей фразе — без перезапуска сервиса.</string>
+    <string name="yandex_voice_label">Голос Yandex</string>
+    <string name="yandex_role_label">Роль (необязательно)</string>
+    <string name="yandex_voice_hint">Список голосов Yandex SpeechKit v3 фиксирован. Роль меняет манеру речи; не все голоса поддерживают все роли — неподходящую комбинацию сервис отклонит при проверке. Смена применяется к следующей фразе — без перезапуска сервиса.</string>
     <string name="voice_service_not_running">Запустите ассистента, чтобы проверить голос</string>
     <string name="phrase_voice_sample">Привет! Я Джарвис. Так будет звучать мой голос.</string>
 

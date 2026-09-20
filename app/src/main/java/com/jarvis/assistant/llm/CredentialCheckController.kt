@@ -76,6 +76,20 @@ class CredentialCheckController(
     /** Pair values already confirmed Valid — debounce path skips re-probing. */
     private val confirmedOk = mutableMapOf<Service, Pair<String, String>>()
 
+    /**
+     * Whether the Salute pair is probed at all. Turned OFF while the Yandex
+     * speech backend is selected, where the Salute pair is hidden and unused:
+     * probing it would ship the user's Sber OAuth credentials to Sber's token
+     * endpoint on behalf of a provider the app has been configured NOT to call,
+     * and the resulting verdict row could only sit under a hidden field.
+     * Observable as a plain flag — every read and write happens on the
+     * controller's single [scope] dispatcher (or before it starts), so there is
+     * no publication race to guard against.
+     */
+    private var saluteValidationEnabled = true
+
+    val isSaluteValidationEnabled: Boolean get() = saluteValidationEnabled
+
     init {
         scope.launch {
             inputs.map { it.salute }
@@ -110,7 +124,22 @@ class CredentialCheckController(
         launchCheck(Service.GIGACHAT, inputs.value.gigachat, force = true)
     }
 
+    /**
+     * Enables/disables Salute probing (see [saluteValidationEnabled]). Turning
+     * it OFF cancels any in-flight probe and clears the row, so a verdict that
+     * lands after the switch cannot re-show itself under the hidden field.
+     */
+    fun setSaluteValidationEnabled(enabled: Boolean) {
+        if (saluteValidationEnabled == enabled) return
+        saluteValidationEnabled = enabled
+        if (enabled) return
+        jobs[Service.SALUTE]?.cancel()
+        confirmedOk.remove(Service.SALUTE)
+        _states.update { it + (Service.SALUTE to UiState.Idle) }
+    }
+
     private fun launchCheck(service: Service, pair: Pair<String, String>, force: Boolean) {
+        if (service == Service.SALUTE && !saluteValidationEnabled) return
         jobs[service]?.cancel()
         if (pair.first.isBlank() || pair.second.isBlank()) {
             _states.update { it + (service to UiState.Idle) }

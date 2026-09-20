@@ -80,6 +80,13 @@
     <string name="error_api_key">Enter an API key</string>
     <string name="error_credential_id_missing">Enter the ID — the secret is already filled in</string>
     <string name="error_credential_secret_missing">Enter the secret — the ID is already filled in</string>
+    <string name="error_yandex_api_key">Enter the Yandex API key — the selected speech engine cannot work without it</string>
+
+    <!-- Settings: speech backend (one choice drives recognition AND synthesis) -->
+    <string name="speech_backend_section">Speech engine (ASR + TTS)</string>
+    <string name="speech_backend_hint">A single choice for both recognition and synthesis. Credentials are only needed for the selected engine.</string>
+    <string name="speech_backend_sber">Sber (SaluteSpeech) — default</string>
+    <string name="speech_backend_yandex">Yandex SpeechKit v3</string>
 
     <!-- Settings: provider credentials (each user supplies their own) -->
     <string name="credentials_section">Provider credentials</string>
@@ -93,6 +100,8 @@
 
     <!-- Settings: upfront credential validation (mandatory = Salute + GigaChat) -->
     <string name="credentials_hint">Salute and GigaChat are the mandatory keys — they are validated as you type. Sber\'s console issues a single authorization key (base64) — paste it into the secret field and the app splits it into the ID and secret for you. The Picovoice key is only needed for the Porcupine engine and is not validated.</string>
+    <string name="yandex_api_key_label">Yandex API key</string>
+    <string name="yandex_api_key_hint">A Yandex Cloud service account with the ai.speechkit-stt.user and ai.speechkit-tts.user roles. The key never expires and no folder ID is needed. Stored only in the device\'s secure storage.</string>
     <string name="credentials_check_button">Check credentials</string>
     <string name="credentials_checking">Checking credentials…</string>
     <string name="credentials_ok">Credentials are valid</string>
@@ -266,6 +275,9 @@
     <string name="voice_custom_hint_field">Voice ID, e.g. May_24000</string>
     <string name="voice_test_button">Test voice</string>
     <string name="voice_hint">Mila is the verified default voice. Other Salute voice pool IDs can be entered manually and previewed with the button. Changes apply to the next spoken sentence — no service restart.</string>
+    <string name="yandex_voice_label">Yandex voice</string>
+    <string name="yandex_role_label">Role (optional)</string>
+    <string name="yandex_voice_hint">The Yandex SpeechKit v3 voice list is fixed. The role changes the speaking manner; not every voice supports every role, and the service rejects an unsupported pair when you test it. Changes apply to the next spoken sentence — no service restart.</string>
     <string name="voice_service_not_running">Start the assistant to test the voice</string>
     <string name="phrase_voice_sample">Hi! I\'m Jarvis. This is how my voice sounds.</string>
 

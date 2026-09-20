@@ -68,6 +68,16 @@
                 android:layout_marginBottom="16dp"
                 />
 
+            <!-- Speech backend: Sber Salute / Yandex SpeechKit v3. Sits with
+                 the other provider choice and directly above the credentials
+                 card, which carries whichever keys that choice needs. -->
+            <include
+                layout="@layout/settings_card_speech_backend"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                />
+
             <!-- A) PROVIDER CREDENTIALS -->
             <include
                 layout="@layout/settings_card_credentials"

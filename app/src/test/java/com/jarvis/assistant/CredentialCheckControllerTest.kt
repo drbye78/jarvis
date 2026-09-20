@@ -214,4 +214,86 @@ class CredentialCheckControllerTest {
         assertEquals(0, fake.gigachatCalls.size)
         assertEquals(UiState.Idle, controller.states.value[Service.GIGACHAT])
     }
+
+    // ---- Salute probing gated by the speech backend ----
+
+    @Test
+    fun `disabling Salute validation stops the probe entirely`() = runTest {
+        // Yandex speech backend selected: the Salute pair is hidden and
+        // unused, so probing it would send the user's Sber OAuth credentials
+        // to Sber's token endpoint for a provider the app was told not to call.
+        val fake = FakeValidator()
+        val controller = newController(fake, debounceMs = 10)
+
+        controller.setSaluteValidationEnabled(false)
+        controller.onSaluteInput("a", "b")
+        advanceUntilIdle()
+
+        assertEquals(0, fake.saluteCalls.size)
+        assertEquals(UiState.Idle, controller.states.value[Service.SALUTE])
+    }
+
+    @Test
+    fun `disabling Salute validation leaves GigaChat probing untouched`() = runTest {
+        val fake = FakeValidator()
+        val controller = newController(fake, debounceMs = 10)
+
+        controller.setSaluteValidationEnabled(false)
+        controller.onGigaChatInput("g", "s")
+        advanceUntilIdle()
+
+        assertEquals(1, fake.gigachatCalls.size)
+        assertEquals(UiState.Verdict(CredentialCheck.Valid), controller.states.value[Service.GIGACHAT])
+    }
+
+    @Test
+    fun `checkNow does not force a Salute probe while validation is disabled`() = runTest {
+        // The «Проверить ключи» button is reachable with the Yandex backend
+        // active; it must not resurrect the Salute probe behind the user's back.
+        val fake = FakeValidator()
+        val controller = newController(fake, debounceMs = 10)
+
+        controller.setSaluteValidationEnabled(false)
+        controller.onSaluteInput("a", "b")
+        controller.onGigaChatInput("g", "s")
+        controller.checkNow()
+        advanceUntilIdle()
+
+        assertEquals(0, fake.saluteCalls.size)
+        assertEquals(1, fake.gigachatCalls.size)
+    }
+
+    @Test
+    fun `re-enabling Salute validation probes the current values again`() = runTest {
+        // Switching back to the Sber backend must re-arm the checks, including
+        // for a pair entered while the card was hidden.
+        val fake = FakeValidator()
+        val controller = newController(fake, debounceMs = 10)
+
+        controller.setSaluteValidationEnabled(false)
+        controller.onSaluteInput("a", "b")
+        advanceUntilIdle()
+        assertEquals(0, fake.saluteCalls.size)
+
+        controller.setSaluteValidationEnabled(true)
+        controller.checkNow()
+        advanceUntilIdle()
+
+        assertEquals(1, fake.saluteCalls.size)
+        assertEquals("a" to "b", fake.saluteCalls.single())
+    }
+
+    @Test
+    fun `disabling Salute validation clears a verdict already shown`() = runTest {
+        val fake = FakeValidator()
+        val controller = newController(fake, debounceMs = 10)
+
+        controller.onSaluteInput("a", "b")
+        advanceUntilIdle()
+        assertEquals(UiState.Verdict(CredentialCheck.Valid), controller.states.value[Service.SALUTE])
+
+        controller.setSaluteValidationEnabled(false)
+
+        assertEquals(UiState.Idle, controller.states.value[Service.SALUTE])
+    }
 }

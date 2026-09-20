@@ -98,4 +98,59 @@ class FieldValidationTest {
         val errors = FieldValidation.validateCredentials("  ", "  ", "", "")
         assertTrue(errors.isEmpty())
     }
+
+    // ---- Yandex backend: which pair is actually in play ----
+
+    @Test
+    fun `a half-filled Salute pair is ignored while Yandex is selected`() {
+        // With the Yandex speech backend the Salute fields are hidden AND
+        // unused. Reporting an error against them would point the user at an
+        // input they cannot see and block saving the key that does matter.
+        val errors = FieldValidation.validateCredentials(
+            saluteId = "s-id",
+            saluteSecret = "",
+            gigaChatId = "",
+            gigaChatSecret = "",
+            validateSalute = false,
+        )
+        assertTrue(errors.isEmpty())
+    }
+
+    @Test
+    fun `disabling Salute validation still validates GigaChat`() {
+        // GigaChat backs the LLM, not speech — it stays mandatory regardless
+        // of which speech backend is active. Only Salute is gated.
+        val errors = FieldValidation.validateCredentials(
+            saluteId = "s-id",
+            saluteSecret = "",
+            gigaChatId = "g-id",
+            gigaChatSecret = "",
+            validateSalute = false,
+        )
+        assertEquals(listOf(Field.GIGACHAT_SECRET), errors.map { it.field })
+    }
+
+    @Test
+    fun `a half-filled Salute pair is still an error while Sber is selected`() {
+        val errors = FieldValidation.validateCredentials(
+            saluteId = "s-id",
+            saluteSecret = "",
+            gigaChatId = "",
+            gigaChatSecret = "",
+            validateSalute = true,
+        )
+        assertEquals(listOf(Field.SALUTE_SECRET), errors.map { it.field })
+    }
+
+    @Test
+    fun `the Yandex API key is mandatory once that backend is selected`() {
+        val errors = FieldValidation.validateYandexApiKey("   ")
+        assertEquals(1, errors.size)
+        assertEquals(Field.YANDEX_API_KEY, errors.single().field)
+    }
+
+    @Test
+    fun `a present Yandex API key is accepted`() {
+        assertTrue(FieldValidation.validateYandexApiKey("AQVN...").isEmpty())
+    }
 }

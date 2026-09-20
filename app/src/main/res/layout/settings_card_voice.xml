@@ -25,42 +25,112 @@
             style="@style/TextAppearance.Jarvis.SectionHeader"
             android:accessibilityHeading="true" />
 
-        <RadioGroup
-            android:id="@+id/voiceGroup"
+        <!-- Sber voices, shown only while the Sber speech backend is active.
+             The two providers have disjoint voice namespaces, so showing both
+             at once would offer the user IDs the running client cannot use. -->
+        <LinearLayout
+            android:id="@+id/sberVoiceBlock"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
             android:orientation="vertical">
 
-            <RadioButton
-                android:id="@+id/voiceMila"
+            <RadioGroup
+                android:id="@+id/voiceGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/voice_mila" />
+                android:layout_marginTop="12dp"
+                android:orientation="vertical">
 
-            <RadioButton
-                android:id="@+id/voiceCustom"
+                <RadioButton
+                    android:id="@+id/voiceMila"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/voice_mila" />
+
+                <RadioButton
+                    android:id="@+id/voiceCustom"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/voice_custom" />
+            </RadioGroup>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/voiceCustomInput"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/voice_custom" />
-        </RadioGroup>
+                android:layout_marginTop="4dp"
+                android:hint="@string/voice_custom_hint_field"
+                android:visibility="gone">
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/voiceCustomInput"
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/voiceCustomId"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:imeOptions="actionDone"
+                    android:inputType="text"
+                    android:maxLines="1" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/voice_hint"
+                style="@style/TextAppearance.Jarvis.Hint" />
+        </LinearLayout>
+
+        <!-- Yandex voices (SpeechKit v3). The voice list is a documented,
+             closed set, so it is a real dropdown rather than free text; the
+             ROLE stays editable because the service rejects role/voice
+             combinations it does not support, and a hard dropdown would make
+             an unsupported pair impossible to correct on the spot. -->
+        <LinearLayout
+            android:id="@+id/yandexVoiceBlock"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:hint="@string/voice_custom_hint_field"
+            android:orientation="vertical"
             android:visibility="gone">
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/voiceCustomId"
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                android:id="@+id/yandexVoiceLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:imeOptions="actionDone"
-                android:inputType="text"
-                android:maxLines="1" />
-        </com.google.android.material.textfield.TextInputLayout>
+                android:layout_marginTop="12dp"
+                android:hint="@string/yandex_voice_label">
+
+                <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                    android:id="@+id/yandexVoice"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="none" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                android:id="@+id/yandexRoleLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/yandex_role_label"
+                app:endIconMode="clear_text">
+
+                <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                    android:id="@+id/yandexRole"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:imeOptions="actionDone"
+                    android:inputType="text"
+                    android:maxLines="1" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/yandex_voice_hint"
+                style="@style/TextAppearance.Jarvis.Hint" />
+        </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/voiceTestButton"
@@ -69,12 +139,5 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="@string/voice_test_button" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/voice_hint"
-            style="@style/TextAppearance.Jarvis.Hint" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

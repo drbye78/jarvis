@@ -15,6 +15,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
@@ -22,6 +23,9 @@ import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.llm.CredentialCheck
 import com.jarvis.assistant.llm.CredentialCheckController
 import com.jarvis.assistant.llm.OAuthCredentialValidator
+import com.jarvis.assistant.speech.SpeechBackend
+import com.jarvis.assistant.speech.tts.VoiceCatalog
+import com.jarvis.assistant.speech.tts.YandexVoiceSpec
 import com.jarvis.assistant.ui.EdgeToEdge
 import com.jarvis.assistant.ui.FieldErrorRenderer
 import com.jarvis.assistant.ui.FieldValidation
@@ -52,10 +56,18 @@ interface SettingsCallbacks {
         saluteSecret: String,
         gigaChatId: String,
         gigaChatSecret: String,
+        yandexApiKey: String,
     )
 
     /** The LLM backend changed: "gigachat" | "openai". */
     fun onLlmProviderSelected(type: String)
+
+    /**
+     * The speech backend changed (Sber / Yandex). Persisting is the caller's
+     * job; the running graph keeps the old provider until the next service
+     * start, which the card's hint states.
+     */
+    fun onSpeechBackendSelected(backend: SpeechBackend)
 
     /** Persist the OpenAI-compatible endpoint settings (url/model/key). */
     suspend fun onSaveLlmProviderSettings(baseUrl: String, model: String, apiKey: String)
@@ -115,6 +127,12 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var openAiModel: TextInputEditText
     private lateinit var openAiApiKey: TextInputEditText
 
+    // Speech backend (Sber / Yandex) — one choice drives ASR + TTS
+    private lateinit var speechBackendGroup: RadioGroup
+    private lateinit var sberCredentialsBlock: View
+    private lateinit var yandexCredentialsBlock: View
+    private lateinit var yandexApiKey: TextInputEditText
+
     private lateinit var playerGroup: RadioGroup
 
     private lateinit var engineGroup: RadioGroup
@@ -143,6 +161,10 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var voiceGroup: RadioGroup
     private lateinit var voiceCustomInput: View
     private lateinit var voiceCustomId: TextInputEditText
+    private lateinit var sberVoiceBlock: View
+    private lateinit var yandexVoiceBlock: View
+    private lateinit var yandexVoice: MaterialAutoCompleteTextView
+    private lateinit var yandexRole: MaterialAutoCompleteTextView
 
     private lateinit var appPrefs: AppPrefs
 
@@ -183,6 +205,11 @@ class SettingsActivity : AppCompatActivity() {
         openAiModel = findViewById(R.id.openAiModel)
         openAiApiKey = findViewById(R.id.openAiApiKey)
 
+        speechBackendGroup = findViewById(R.id.speechBackendGroup)
+        sberCredentialsBlock = findViewById(R.id.sberCredentialsBlock)
+        yandexCredentialsBlock = findViewById(R.id.yandexCredentialsBlock)
+        yandexApiKey = findViewById(R.id.yandexApiKey)
+
         fieldLayouts = mapOf(
             FieldValidation.Field.OPENAI_BASE_URL to findViewById(R.id.openAiBaseUrlLayout),
             FieldValidation.Field.OPENAI_API_KEY to findViewById(R.id.openAiApiKeyLayout),
@@ -190,6 +217,7 @@ class SettingsActivity : AppCompatActivity() {
             FieldValidation.Field.SALUTE_SECRET to findViewById(R.id.saluteSecretLayout),
             FieldValidation.Field.GIGACHAT_ID to findViewById(R.id.gigaChatIdLayout),
             FieldValidation.Field.GIGACHAT_SECRET to findViewById(R.id.gigaChatSecretLayout),
+            FieldValidation.Field.YANDEX_API_KEY to findViewById(R.id.yandexApiKeyLayout),
         )
 
         engineGroup = findViewById(R.id.engineGroup)
@@ -217,6 +245,13 @@ class SettingsActivity : AppCompatActivity() {
 
         setupCredentialsCard()
         setupWakeWordCard()
+
+        // LAST: the speech-backend card only toggles visibility of blocks that
+        // the credentials and voice cards own, so it must run after both have
+        // bound their views. Running it earlier leaves the Yandex voice block
+        // (bound in setupVoiceCard) unreferenced and the card crashes on an
+        // install that already has Yandex stored.
+        setupSpeechBackendCard()
     }
 
     /**
@@ -258,6 +293,75 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.saveProviderButton).setOnClickListener {
             saveLlmProviderSettings()
+        }
+    }
+
+    /**
+     * Speech backend card: Sber SaluteSpeech or Yandex SpeechKit v3.
+     *
+     * Both ASR and TTS move together — they are one product decision, and the
+     * two providers have disjoint credential and voice namespaces, so a split
+     * could pair a Sber voice ID with the Yandex client. The choice is SEALED
+     * at graph construction (each provider owns its channel and auth scheme),
+     * so it applies after a service restart; the card says so.
+     *
+     * The gated blocks below (credential + voice) are driven by
+     * [applySpeechBackendVisibility], which is called ONCE here from the
+     * stored pref and again on every change — never from inside a listener
+     * alone, or an install that was already on Yandex would render the Sber
+     * fields until the user happened to touch the radio.
+     */
+    private fun setupSpeechBackendCard() {
+        val backend = appPrefs.speechBackend
+        speechBackendGroup.check(
+            when (backend) {
+                SpeechBackend.SBER -> R.id.speechBackendSber
+                SpeechBackend.YANDEX -> R.id.speechBackendYandex
+            },
+        )
+        applySpeechBackendVisibility(backend)
+
+        speechBackendGroup.setOnCheckedChangeListener { _, checkedId ->
+            val selected = if (checkedId == R.id.speechBackendYandex) {
+                SpeechBackend.YANDEX
+            } else {
+                SpeechBackend.SBER
+            }
+            callbacks.onSpeechBackendSelected(selected)
+            applySpeechBackendVisibility(selected)
+            // Switching BACK to Sber re-arms Salute probing, but re-arming
+            // alone would leave the status row blank (the verdict was cleared
+            // when Yandex was selected, and Idle renders as GONE) while the
+            // freshly-revealed fields sit there. Probing here reproduces what
+            // opening the panel already does, so the card looks the same
+            // whether it was opened on Sber or switched back to it.
+            if (selected == SpeechBackend.SBER) credentialChecks.checkNow()
+        }
+    }
+
+    /**
+     * Shows the credential and voice controls belonging to [backend] and hides
+     * the other provider's. Visibility ONLY — the hidden fields keep their
+     * values, so switching back and forth never discards a key the user typed
+     * or a voice they chose.
+     */
+    private fun applySpeechBackendVisibility(backend: SpeechBackend) {
+        val isYandex = backend == SpeechBackend.YANDEX
+        sberCredentialsBlock.visibility = if (isYandex) View.GONE else View.VISIBLE
+        yandexCredentialsBlock.visibility = if (isYandex) View.VISIBLE else View.GONE
+        sberVoiceBlock.visibility = if (isYandex) View.GONE else View.VISIBLE
+        yandexVoiceBlock.visibility = if (isYandex) View.VISIBLE else View.GONE
+        // A stale Salute verdict must not sit under a card the user cannot see
+        // (and must not read as a problem with the Yandex key). Probing is
+        // stopped too, not just hidden: with Yandex selected the Salute pair is
+        // unused, so sending the user's Sber OAuth credentials to Sber's token
+        // endpoint would be egress on behalf of a provider the app has been
+        // told not to call.
+        credentialChecks.setSaluteValidationEnabled(!isYandex)
+        if (isYandex) {
+            saluteCheckStatus.visibility = View.GONE
+            fieldLayouts[FieldValidation.Field.SALUTE_ID]?.error = null
+            fieldLayouts[FieldValidation.Field.SALUTE_SECRET]?.error = null
         }
     }
 
@@ -660,20 +764,27 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** Voice card (Y6): preset Mila or a custom Salute voice ID, resolved per sentence. */
+    /** Voice card (Y6): per-backend voice selection, resolved per sentence. */
     private fun setupVoiceCard() {
         // ------------------------------------------------------------------
         // Voice card (Y6): preset (Mila, verified) or a custom Salute voice
-        // ID. The voice is resolved PER SENTENCE from prefs by the running
-        // graph, so a change applies to the next spoken sentence — NO
-        // service restart. «Проверить голос» probes through the real
-        // synthesis + player lane.
+        // ID for Sber, a fixed-list voice + optional role for Yandex. The
+        // voice is resolved PER SENTENCE from prefs by the running graph, so
+        // a change applies to the next spoken sentence — NO service restart.
+        // «Проверить голос» probes through the real synthesis + player lane.
+        //
+        // Both blocks are populated unconditionally, including the hidden one:
+        // [applySpeechBackendVisibility] only toggles visibility, so whichever
+        // backend the user switches to already shows its own stored values
+        // instead of an empty field.
         // ------------------------------------------------------------------
         voiceGroup = findViewById(R.id.voiceGroup)
         voiceCustomInput = findViewById(R.id.voiceCustomInput)
         voiceCustomId = findViewById(R.id.voiceCustomId)
+        sberVoiceBlock = findViewById(R.id.sberVoiceBlock)
+        yandexVoiceBlock = findViewById(R.id.yandexVoiceBlock)
         val savedVoice = appPrefs.ttsVoice
-        val savedIsPreset = com.jarvis.assistant.speech.tts.VoiceCatalog.PRESETS.any {
+        val savedIsPreset = VoiceCatalog.PRESETS.any {
             it.id.equals(savedVoice, ignoreCase = true)
         }
         if (savedIsPreset) {
@@ -707,14 +818,88 @@ class SettingsActivity : AppCompatActivity() {
         voiceCustomId.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) persistCustomVoice()
         }
+        setupYandexVoiceControls()
         findViewById<Button>(R.id.voiceTestButton).setOnClickListener {
             lifecycleScope.launch {
                 // Await-then-proceed: a bootstrap in progress no longer reads
                 // as "service not running" — the await returns the live graph.
                 val graph = awaitAssistantGraph() ?: return@launch
-                graph.speakVoiceSample(selectedVoice())
+                graph.speakVoiceSample(selectedVoiceForActiveBackend())
             }
         }
+    }
+
+    /**
+     * Yandex voice + role controls.
+     *
+     * The voice list is a closed, documented set, so it is a real dropdown
+     * (filtered to nothing typed — the user picks, they do not invent an ID).
+     * The ROLE is an editable-combo: the service rejects role/voice pairs it
+     * does not support, so a pure dropdown would trap the user on a value they
+     * may not use; the preset roles are suggestions, and free text is allowed.
+     *
+     * Both commit on IME-done / focus loss for the same per-sentence reason as
+     * the Salute custom ID — the running graph re-reads the pref between
+     * sentences, so a per-keystroke write would speak from half-typed values.
+     */
+    private fun setupYandexVoiceControls() {
+        yandexVoice = findViewById(R.id.yandexVoice)
+        yandexRole = findViewById(R.id.yandexRole)
+
+        val voiceAdapter = android.widget.ArrayAdapter(
+            this,
+            android.R.layout.simple_list_item_1,
+            VoiceCatalog.YANDEX_VOICES,
+        )
+        yandexVoice.setAdapter(voiceAdapter)
+        // The dropdown list is the whole vocabulary; the filter that
+        // AutoCompleteTextView installs by default would also hide entries as
+        // the user types, which is wrong for a closed list.
+        yandexVoice.setOnClickListener { yandexVoice.showDropDown() }
+        yandexVoice.setText(
+            appPrefs.yandexTtsVoice.ifBlank { YandexVoiceSpec.DEFAULT_VOICE },
+            false,
+        )
+
+        val roleAdapter = android.widget.ArrayAdapter(
+            this,
+            android.R.layout.simple_list_item_1,
+            VoiceCatalog.YANDEX_ROLES,
+        )
+        yandexRole.setAdapter(roleAdapter)
+        yandexRole.setText(appPrefs.yandexTtsRole, false)
+
+        // Keep the raw (un-trimmed) text through the commit helpers so the
+        // pref never stores a half-typed trailing space.
+        fun commitVoice() {
+            val id = yandexVoice.text.toString().trim()
+            if (id.isNotEmpty()) appPrefs.yandexTtsVoice = id
+        }
+
+        fun commitRole() {
+            appPrefs.yandexTtsRole = yandexRole.text.toString().trim()
+        }
+
+        yandexVoice.setOnEditorActionListener { _, action, _ ->
+            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                commitVoice()
+                true
+            } else {
+                false
+            }
+        }
+        yandexVoice.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) commitVoice() }
+        yandexVoice.setOnItemClickListener { _, _, _, _ -> commitVoice() }
+        yandexRole.setOnEditorActionListener { _, action, _ ->
+            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                commitRole()
+                true
+            } else {
+                false
+            }
+        }
+        yandexRole.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) commitRole() }
+        yandexRole.setOnItemClickListener { _, _, _, _ -> commitRole() }
     }
 
     /** A) Provider credentials: stored values, live validation status and the save action. */
@@ -725,6 +910,7 @@ class SettingsActivity : AppCompatActivity() {
         saluteSecret.setText(CredentialsStore.get().saluteClientSecret)
         gigaChatId.setText(CredentialsStore.get().gigaChatClientId)
         gigaChatSecret.setText(CredentialsStore.get().gigaChatClientSecret)
+        yandexApiKey.setText(CredentialsStore.get().yandexApiKey)
 
         // A2) Upfront validation of the mandatory credential pairs. The
         // controller debounces typing, dedupes confirmed-Ok pairs and discards
@@ -960,6 +1146,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun saveCredentials() {
         val key = picovoiceKey.text.toString().trim()
+        val yandexKey = yandexApiKey.text.toString().trim()
         val rawSaluteId = saluteId.text.toString()
         val rawSaluteSecret = saluteSecret.text.toString()
         val rawGigaId = gigaChatId.text.toString()
@@ -981,13 +1168,29 @@ class SettingsActivity : AppCompatActivity() {
 
         // U7: a HALF-filled OAuth pair can never authenticate, and the error
         // belongs on the missing half. A fully-empty pair is "not configured
-        // yet", not an error — saving stays local-first.
-        val errors = FieldValidation.validateCredentials(sId, sSec, gId, gSec)
+        // yet", not an error — saving stays local-first. Salute is only checked
+        // while the Sber speech backend is active: on Yandex its fields are
+        // hidden and unused, and an error on an invisible field would block the
+        // save of the credentials that ARE in play.
+        val activeBackend = appPrefs.speechBackend
+        val errors = FieldValidation.validateCredentials(
+            sId,
+            sSec,
+            gId,
+            gSec,
+            validateSalute = activeBackend == SpeechBackend.SBER,
+        ) + if (activeBackend == SpeechBackend.YANDEX) {
+            // The mirror rule for Yandex: its key is mandatory exactly when its
+            // backend is selected, since the client cannot speak without it.
+            FieldValidation.validateYandexApiKey(yandexKey)
+        } else {
+            emptyList()
+        }
         renderFieldErrors(errors)
         if (errors.isNotEmpty()) return
 
         lifecycleScope.launch {
-            callbacks.onSaveCredentials(key, sId, sSec, gId, gSec)
+            callbacks.onSaveCredentials(key, sId, sSec, gId, gSec, yandexKey)
             Toast.makeText(this@SettingsActivity, R.string.settings_saved, Toast.LENGTH_SHORT).show()
         }
     }
@@ -1050,6 +1253,27 @@ class SettingsActivity : AppCompatActivity() {
         isMilaSelected = voiceGroup.checkedRadioButtonId == R.id.voiceMila,
         customText = voiceCustomId.text.toString(),
     )
+
+    /**
+     * The voice to hand to the «Проверить голос» probe for the ACTIVE backend.
+     *
+     * The probe synthesizes through the running graph, whose TTS client is the
+     * one sealed at construction — so previewing the other backend's voice
+     * would send an ID that client cannot speak and fail confusingly. This
+     * mirrors `AppGraph.voiceSource` (including the in-band role packing) so
+     * the probe hears exactly what the assistant will say.
+     */
+    private fun selectedVoiceForActiveBackend(): String =
+        when (appPrefs.speechBackend) {
+            SpeechBackend.SBER -> selectedVoice()
+
+            SpeechBackend.YANDEX -> YandexVoiceSpec.join(
+                voice = yandexVoice.text.toString().ifBlank {
+                    appPrefs.yandexTtsVoice.ifBlank { YandexVoiceSpec.DEFAULT_VOICE }
+                },
+                role = yandexRole.text.toString(),
+            )
+        }
 
     /** Saves the custom voice ID (trimmed); blank is ignored. */
     private fun persistCustomVoice() {
@@ -1230,17 +1454,27 @@ class SettingsActivity : AppCompatActivity() {
             saluteSecret: String,
             gigaChatId: String,
             gigaChatSecret: String,
+            yandexApiKey: String,
         ) {
             CredentialsStore.get().picovoiceKey = picovoiceKey
             CredentialsStore.get().saluteClientId = saluteId
             CredentialsStore.get().saluteClientSecret = saluteSecret
             CredentialsStore.get().gigaChatClientId = gigaChatId
             CredentialsStore.get().gigaChatClientSecret = gigaChatSecret
+            CredentialsStore.get().yandexApiKey = yandexApiKey
             // Force a token refresh so a changed Picovoice/Sber key applies now.
             GraphHolder.graph?.tokenManager?.invalidate()
             // Apply a changed Picovoice key live to the wake-word engine (this
             // method is suspend, so reconfigure can be awaited directly).
             GraphHolder.graph?.reconfigureWakeWord()
+        }
+
+        override fun onSpeechBackendSelected(backend: SpeechBackend) {
+            // Pref only. The composition root seals the backend at construction
+            // (each provider owns its channel AND its auth scheme, so there is
+            // no live path), which is exactly what the card's restart hint
+            // tells the user.
+            appPrefs.speechBackend = backend
         }
 
         override fun onLlmProviderSelected(type: String) {
@@ -1331,8 +1565,13 @@ class SettingsActivity : AppCompatActivity() {
             saluteSecret: String,
             gigaChatId: String,
             gigaChatSecret: String,
+            yandexApiKey: String,
         ) {
             notReady("onSaveCredentials")
+        }
+
+        override fun onSpeechBackendSelected(backend: SpeechBackend) {
+            notReady("onSpeechBackendSelected")
         }
 
         override fun onLlmProviderSelected(type: String) {

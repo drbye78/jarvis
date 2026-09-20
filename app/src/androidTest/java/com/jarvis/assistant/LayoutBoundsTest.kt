@@ -61,13 +61,15 @@ class LayoutBoundsTest {
     @Test
     fun settingsActivity_readingColumn_isCappedAndContained() {
         // SettingsActivity has no onboarding gate; it launches standalone.
-        // Wide child: the provider RadioGroup (match_parent) from the first card.
+        // Wide children: the provider RadioGroup and the speech-backend
+        // RadioGroup (both match_parent) — the latter is what catches the
+        // Yandex card spilling past the reading column.
         ActivityScenario.launch(SettingsActivity::class.java).use { scenario ->
             val layout = captureLayout(
                 scenario = scenario,
                 rootId = R.id.settingsRoot,
                 columnId = R.id.settingsColumn,
-                controlIds = listOf(R.id.llmProviderGroup),
+                controlIds = listOf(R.id.llmProviderGroup, R.id.speechBackendGroup),
             )
             assertReadingColumn(layout, SETTINGS_COLUMN_MAX_WIDTH_DP, "settingsColumn")
             assertControlsInsideWindow(layout, "settings")
