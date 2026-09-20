@@ -3,6 +3,7 @@ package com.jarvis.assistant.util
 import android.content.Context
 import android.content.SharedPreferences
 import com.jarvis.assistant.config.ProviderSettings
+import com.jarvis.assistant.speech.SpeechBackend
 
 /**
  * Plain (non-secret) app preferences: onboarding state, user-stop flag,
@@ -203,6 +204,45 @@ class AppPrefs(
         set(value) = prefs.edit().putString(KEY_TTS_VOICE, value).apply()
 
     // ------------------------------------------------------------------
+    // Speech backend (Sber SaluteSpeech vs Yandex SpeechKit v3). ONE choice
+    // drives recognition and synthesis together (deepwork plan §5.2). The
+    // backend is consumed at graph construction — each provider needs its own
+    // channel and auth scheme — so a change applies after the next service
+    // restart, exactly like the LLM provider selector.
+    // ------------------------------------------------------------------
+
+    /** Active speech backend. Unknown/absent values degrade to [SpeechBackend.DEFAULT]. */
+    var speechBackend: SpeechBackend
+        get() = SpeechBackend.fromPref(prefs.getString(KEY_SPEECH_BACKEND, null))
+        set(value) = prefs.edit().putString(KEY_SPEECH_BACKEND, SpeechBackend.toPref(value)).apply()
+
+    /**
+     * Yandex Cloud API key. Routed to the Keystore vault (same slot rule as
+     * [openAiApiKey]) — never to the plain SharedPreferences file.
+     */
+    var yandexApiKey: String
+        get() = vault.getString(SecretVault.KEY_YANDEX_API_KEY) ?: ""
+        set(value) = vault.putString(SecretVault.KEY_YANDEX_API_KEY, value.trim())
+
+    /**
+     * Yandex TTS voice ID (e.g. `marina`). Read PER SENTENCE by the session
+     * lane's voice source, so a change applies to the next spoken sentence
+     * without a restart. Blank falls back to the config default.
+     */
+    var yandexTtsVoice: String
+        get() = prefs.getString(KEY_YANDEX_TTS_VOICE, null)
+            ?: com.jarvis.assistant.config.JarvisConfig().yandexTtsVoice
+        set(value) = prefs.edit().putString(KEY_YANDEX_TTS_VOICE, value.trim()).apply()
+
+    /**
+     * Yandex TTS role for the selected voice (e.g. `good`, `strict`). Blank
+     * means "send no role hint at all", which is what most voices want.
+     */
+    var yandexTtsRole: String
+        get() = prefs.getString(KEY_YANDEX_TTS_ROLE, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_YANDEX_TTS_ROLE, value.trim()).apply()
+
+    // ------------------------------------------------------------------
     // COGNITIVE_PLAN Phase 2 (§8/§12.4-1): the behaviour switches. The
     // proactive layer ships DEFAULT OFF (trust first — §12.4-1); quiet
     // hours and the daily quota are user-tunable. All are consumed
@@ -291,6 +331,9 @@ class AppPrefs(
         internal const val KEY_FOLLOW_UP_ENABLED = "follow_up_enabled"
         internal const val KEY_FOLLOW_UP_WINDOW_MS = "follow_up_window_ms"
         internal const val KEY_TTS_VOICE = "tts_voice"
+        internal const val KEY_SPEECH_BACKEND = "speech_backend"
+        internal const val KEY_YANDEX_TTS_VOICE = "yandex_tts_voice"
+        internal const val KEY_YANDEX_TTS_ROLE = "yandex_tts_role"
         internal const val KEY_MEMORY_ENABLED = "memory_enabled"
         internal const val KEY_MEMORY_AUTO_EXTRACT = "memory_auto_extract"
         internal const val KEY_MEMORY_CLOUD_ENABLED = "memory_cloud_enabled"

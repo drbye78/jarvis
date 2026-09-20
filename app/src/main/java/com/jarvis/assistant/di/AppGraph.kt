@@ -24,10 +24,15 @@ import com.jarvis.assistant.llm.OpenAiCompatClient
 import com.jarvis.assistant.llm.TokenManager
 import com.jarvis.assistant.session.SessionManager
 import com.jarvis.assistant.session.SessionStateMachine
+import com.jarvis.assistant.speech.SpeechBackend
 import com.jarvis.assistant.speech.asr.SberStreamingAsr
+import com.jarvis.assistant.speech.asr.StreamingAsrClient
+import com.jarvis.assistant.speech.asr.YandexStreamingAsr
 import com.jarvis.assistant.speech.tts.SaluteSpeechTts
 import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
+import com.jarvis.assistant.speech.tts.YandexSpeechTts
+import com.jarvis.assistant.speech.tts.YandexVoiceSpec
 import com.jarvis.assistant.tools.FunctionRouter
 import com.jarvis.assistant.util.NetworkMonitor
 import io.grpc.ManagedChannel
@@ -99,6 +104,29 @@ class AppGraph(
         .sslSocketFactory(com.jarvis.assistant.util.SberTrust.sslContext().socketFactory)
         .build()
 
+    /**
+     * Yandex SpeechKit v3 channels. v3 exposes STT and TTS on SEPARATE hosts,
+     * so this is two channels where Salute needed one.
+     *
+     * TRUST: plain system CAs — Yandex's certificates chain to a public root
+     * (unlike Sber's Минцифры hierarchy), so NO [com.jarvis.assistant.util.SberTrust]
+     * override is used here. Reusing the Sber composite trust manager would
+     * work but would needlessly widen the accepted root set for every Yandex
+     * call.
+     *
+     * Both are built eagerly (and cheaply): [OkHttpChannelBuilder] dials on
+     * the first RPC, so an unused channel costs one object, not a socket.
+     */
+    val yandexSttChannel: ManagedChannel = OkHttpChannelBuilder
+        .forTarget(config.yandexSttEndpoint)
+        .useTransportSecurity()
+        .build()
+
+    val yandexTtsChannel: ManagedChannel = OkHttpChannelBuilder
+        .forTarget(config.yandexTtsEndpoint)
+        .useTransportSecurity()
+        .build()
+
     val database: AppDatabase = AppDatabase.getInstance(appContext)
     val conversationManager = ConversationManager(
         database.messageDao(),
@@ -142,16 +170,51 @@ class AppGraph(
         // the Sber credentials (AppPrefs.openAiApiKey routes to the same slot).
         appPrefs.openAiApiKey
 
-    val asrClient = SberStreamingAsr(
-        tokenManager = tokenManager,
-        channel = saluteChannel,
-        // m11: the gRPC deadline must OUTLIVE the local maxUtteranceMs cap
-        // (90s) plus its grace window, or deadline-exceeded races/masks the
-        // local no-speech path and misclassifies the outcome.
-        deadlineMs = config.asrStreamDeadlineMs + 5_000,
-    )
+    /**
+     * The active speech backend, SEALED at construction. Each provider needs
+     * its own channel and auth scheme (Sber OAuth vs a Yandex API key), so a
+     * switch takes effect after the next service restart — the same rule the
+     * LLM provider selector follows, and what the Settings hint tells the user.
+     *
+     * [voiceSource] reads THIS val rather than re-reading the pref, so the
+     * microphone/synthesis path and the voice sent to it can never disagree
+     * about which provider is in play.
+     */
+    val speechBackend: SpeechBackend = appPrefs.speechBackend
 
-    val ttsClient: TtsClient = SaluteSpeechTts(tokenManager, saluteChannel)
+    /**
+     * Yandex API-key provider. Resolved PER CALL (not snapshotted) so entering
+     * the key in Settings lands on the next synthesis/recognition without a
+     * restart — the same live-read rule as [voiceSource].
+     */
+    private val yandexApiKeyProvider: () -> String = { appPrefs.yandexApiKey }
+
+    val asrClient: StreamingAsrClient = when (speechBackend) {
+        SpeechBackend.SBER -> SberStreamingAsr(
+            tokenManager = tokenManager,
+            channel = saluteChannel,
+            // m11: the gRPC deadline must OUTLIVE the local maxUtteranceMs cap
+            // (90s) plus its grace window, or deadline-exceeded races/masks the
+            // local no-speech path and misclassifies the outcome.
+            deadlineMs = config.asrStreamDeadlineMs + 5_000,
+        )
+
+        SpeechBackend.YANDEX -> YandexStreamingAsr(
+            apiKeyProvider = yandexApiKeyProvider,
+            channel = yandexSttChannel,
+            // Same m11 rule as Sber: outlive the local utterance cap.
+            deadlineMs = config.asrStreamDeadlineMs + 5_000,
+        )
+    }
+
+    val ttsClient: TtsClient = when (speechBackend) {
+        SpeechBackend.SBER -> SaluteSpeechTts(tokenManager, saluteChannel)
+
+        SpeechBackend.YANDEX -> YandexSpeechTts(
+            apiKeyProvider = yandexApiKeyProvider,
+            channel = yandexTtsChannel,
+        )
+    }
 
     // ------------------------------------------------------------------
     // AEC (Phase A + Phase B), all opt-in via Settings (default OFF).
@@ -268,8 +331,24 @@ class AppGraph(
      * falling back to the config default when the pref is blank. Read per
      * sentence by the turn lane and per phrase by [speechFeedback], so a
      * Settings change applies with no service restart.
+     *
+     * BACKEND-AWARE: the two providers have disjoint voice namespaces, so the
+     * value handed to [ttsClient] always comes from the ACTIVE backend's pref
+     * ([speechBackend], sealed at construction). For Yandex the voice and the
+     * optional role are packed in-band by [YandexVoiceSpec] — the convention
+     * [YandexSpeechTts] unpacks — with a blank role collapsing to the bare
+     * voice so the service applies its own default.
      */
-    val voiceSource: () -> String = { appPrefs.ttsVoice.ifBlank { config.ttsVoice } }
+    val voiceSource: () -> String = {
+        when (speechBackend) {
+            SpeechBackend.SBER -> appPrefs.ttsVoice.ifBlank { config.ttsVoice }
+
+            SpeechBackend.YANDEX -> YandexVoiceSpec.join(
+                voice = appPrefs.yandexTtsVoice.ifBlank { config.yandexTtsVoice },
+                role = appPrefs.yandexTtsRole,
+            )
+        }
+    }
 
     val speechFeedback = com.jarvis.assistant.audio.TtsSpeechFeedback(
         scope,
@@ -661,6 +740,11 @@ class AppGraph(
         runCatching { player.release() }
         runCatching { scope.cancel() }
         runCatching { saluteChannel.shutdown().awaitTermination(2, TimeUnit.SECONDS) }
+        // Yandex v3 own their own two channels (STT + TTS hosts are distinct);
+        // leaving them up would pin sockets to Yandex across every graph
+        // rebuild (provider change, watchdog restart).
+        runCatching { yandexSttChannel.shutdown().awaitTermination(2, TimeUnit.SECONDS) }
+        runCatching { yandexTtsChannel.shutdown().awaitTermination(2, TimeUnit.SECONDS) }
         // C3: the gRPC channel was torn down but the OkHttp client's pooled
         // connections and dispatcher threads were not — every graph rebuild
         // (provider change, watchdog restart) previously left them lingering

@@ -51,6 +51,20 @@ data class JarvisConfig(
     val ttsSentenceTimeoutMs: Long = 20_000,
     val ttsDrainTimeoutMs: Long = 60_000,
 
+    // Yandex SpeechKit v3 (alternative speech backend; API-key auth)
+    /**
+     * v3 STT and TTS are SEPARATE hosts (unlike Salute's single
+     * `smartspeech.sber.ru`), so the graph owns one channel per service.
+     */
+    val yandexSttEndpoint: String = "stt.api.cloud.yandex.net:443",
+    val yandexTtsEndpoint: String = "tts.api.cloud.yandex.net:443",
+    /**
+     * Yandex TTS voice used when the user has not chosen one. `marina` is the
+     * documented default ru-RU voice; the Settings card exposes the full
+     * ru-RU catalog ([com.jarvis.assistant.speech.tts.VoiceCatalog]).
+     */
+    val yandexTtsVoice: String = "marina",
+
     // Service watchdog
     val restartIntervalMs: Long = 15 * 60 * 1000L,
 

@@ -40,6 +40,13 @@ interface SecretVault {
         const val KEY_GIGA_ID = "gigachat_client_id"
         const val KEY_GIGA_SECRET = "gigachat_client_secret"
         const val KEY_OPENAI_API_KEY = "openai_api_key"
+
+        /**
+         * Yandex Cloud service-account API key for SpeechKit v3. Unlike the
+         * Sber OAuth pair this key never expires and needs no folder id — see
+         * [com.jarvis.assistant.speech.yandexApiKeyStub].
+         */
+        const val KEY_YANDEX_API_KEY = "yandex_api_key"
         const val KEY_GIGACHAT_TOKEN = "gigachat_token"
         const val KEY_GIGACHAT_EXPIRY = "gigachat_token_expiry"
         const val KEY_SALUTE_TOKEN = "salute_token"

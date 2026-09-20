@@ -40,6 +40,16 @@ class CredentialsStore(private val vault: SecretVault) {
         set(v) { vault.putString(SecretVault.KEY_GIGA_SECRET, v.trim()) }
 
     /**
+     * Yandex Cloud API key for SpeechKit v3 (ASR + TTS when the Yandex
+     * backend is selected). Not part of [hasMandatoryApiKeys]: only one speech
+     * backend is active at a time, so demanding both credential sets would
+     * block a user who legitimately uses only Yandex.
+     */
+    var yandexApiKey: String
+        get() = vault.getString(SecretVault.KEY_YANDEX_API_KEY) ?: ""
+        set(v) { vault.putString(SecretVault.KEY_YANDEX_API_KEY, v.trim()) }
+
+    /**
      * The MANDATORY keys: SaluteSpeech (ASR+TTS) and GigaChat (LLM).
      *
      * Audit #16: the old `hasRequiredSber()` also demanded the Picovoice key,
