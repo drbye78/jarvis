@@ -6,6 +6,36 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — Yandex SpeechKit v3 as a selectable speech backend (ASR + TTS)
+- **Second speech provider.** Settings → «Речь» chooses **Sber SaluteSpeech** or
+  **Yandex SpeechKit v3**; one choice drives recognition *and* synthesis. The
+  choice is sealed at graph construction (each provider owns its channel and
+  auth scheme), so it applies after a service restart — the card says so, and
+  the session lane needed **zero edits** (`SessionManager`/`TurnRunner`
+  reference no provider type).
+- **Auth: a single API key.** `Authorization: Api-Key <key>` (case-sensitive
+  scheme), stored in the Keystore like every other secret. No OAuth, no IAM
+  token exchange, no `x-folder-id` — the service account's folder is implied.
+- **Vendored v3 protos** (`app/src/main/proto/yandex_stt_v3*.proto`,
+  `yandex_tts_v3*.proto`) with slim service protos so the heavy
+  `google/api` + `yandex/cloud` import chain is not pulled in. The clients
+  raise gRPC's 4 MB inbound ceiling (16 MB) and pin
+  `RawAudio(LINEAR16_PCM, 24 kHz)` for TTS — the service default is 22.05 kHz
+  **with a WAV header**, which the 24 kHz headerless playback chain would emit
+  as wrong-pitch noise and which would poison the AEC far-end reference.
+- **Voice + optional role** for Yandex (dropdown of the documented v3 ru-RU
+  voices, `marina` by default; editable-combo role with presets), packed
+  in-band as `"<voice>:<role>"` by the new `YandexVoiceSpec` — the single
+  source of truth for both directions, since a drift fails silently.
+- **Live verification tier** (`YandexAsrLiveSmokeTest`, `YandexTtsLiveSmokeTest`,
+  local-only, self-skipping) — the only tier that can catch a vendored-proto
+  mistake, since the in-process fakes agree with any field number the client
+  sends.
+- **Salute probing is gated by the backend.** With Yandex active the Salute
+  fields are hidden *and their OAuth probe is stopped*, so Sber credentials are
+  no longer sent to Sber's token endpoint on behalf of a provider the app was
+  told not to call; switching back to Sber re-probes.
+
 ### Fixed — REMEDIATION_PLAN N7: CLOUD vectors are purged when the memory cloud toggle is turned off
 - **Privacy:** `memory.cloudEnabled=false` previously only *stopped reading* cloud
   vectors — the embeddings of user facts stayed in Room forever. Turning the switch

@@ -48,6 +48,24 @@
   there instead of debugging the runtime error.
 - Or switch Settings → provider to an OpenAI-compatible endpoint.
 
+### Yandex SpeechKit selected but the assistant stays silent / errors
+- Settings → «Речь» → **Yandex**. The choice is SEALED when the service starts
+  (each provider owns its own channel and auth scheme), so after switching you
+  must restart: Стоп → Запустить on the home screen. The card states this.
+- The Salute card is **hidden and not probed** while Yandex is active — the
+  probe is stopped, not merely hidden, so your Sber OAuth credentials are no
+  longer sent to Sber's token endpoint. Switching back to Sber re-probes.
+- A wrong/expired key surfaces as gRPC **`UNAUTHENTICATED`** (16); a key whose
+  service account lacks `ai.speechkit-stt.user` / `ai.speechkit-tts.user`
+  surfaces as **`PERMISSION_DENIED`** (7); exhausted quota is
+  **`RESOURCE_EXHAUSTED`** (8). All three are logged with the status code only.
+- `INVALID_ARGUMENT` on a streaming call is almost always a **vendored-proto**
+  problem, not a user error (the in-process fakes cannot catch it) — see
+  "Integration testing" below.
+- The Yandex key is a **single** value (no folder id, no id/secret pair, never
+  expires): Yandex Cloud console → service account → API keys → create, then
+  paste the **secret** into Settings.
+
 ### "GigaChat request failed (HTTP ...)"
 - Check credentials/scope (`GIGACHAT_API_PERS`) in **Settings**.
 - Or switch Settings → Нейросеть (LLM) → **OpenAI-совместимый endpoint**: pick
@@ -217,8 +235,10 @@ decision #1).
 cp local.secrets.properties.example local.secrets.properties
 # fill in the Salute + GigaChat OAuth client id/secret pairs (same values
 # the app asks for in Settings; scopes SALUTE_SPEECH_PERS / GIGACHAT_API_PERS)
+# optionally add a Yandex SpeechKit v3 API key (jarvis.yandex.apiKey) to run
+# the Yandex ASR/TTS smoke tests
 
-./gradlew :app:integrationTest        # live smoke tests (GigaChat + Salute ASR/TTS)
+./gradlew :app:integrationTest        # live smoke tests (GigaChat + Salute + Yandex ASR/TTS)
 ./gradlew :app:recordSaluteFixtures   # re-record sanitized fixtures into app/src/test/resources/recorded/
 ```
 
@@ -228,6 +248,14 @@ Behavior without credentials:
   tests skip through JUnit assumptions and the suite stays green.
 - `:app:integrationTest` / `:app:recordSaluteFixtures` print a skip reason
   listing the MISSING KEY NAMES (values are never printed) and exit green.
+
+Yandex live tests (`YandexAsrLiveSmokeTest`, `YandexTtsLiveSmokeTest`) are the
+only tier that can catch a **vendored-proto mistake**: the in-process fakes
+agree with whatever field numbers the client sends, so a mis-vendored message
+is invisible to the JVM suite. A live `INVALID_ARGUMENT` therefore points at
+the protos, while `UNAUTHENTICATED` points at the key and `PERMISSION_DENIED`
+at a missing `ai.speechkit-stt.user` / `ai.speechkit-tts.user` role on the
+service account.
 
 What gets recorded and the privacy note: only **server responses** land in a
 fixture — no credentials, no request headers, no timestamps. The recorder
@@ -350,15 +378,29 @@ tail. Chained conversation: every spoken reply re-opens the window.
 
 ### Voice selection (Голос)
 
-Settings → «Голос»: Mila (`May_24000`) is the only voice ID verified against
-the Salute synthesis pool by this project; the card also accepts a free-text
-Salute voice ID for advanced users. «Проверить голос» speaks one sample
-sentence through the real synthesis+player lane (requires a running
-assistant — otherwise the toast says so). The voice is resolved **per spoken
-sentence**, so a change applies immediately — no service restart. If a custom
-ID produces silence or a logcat `TTS stream error`, the ID is not in the pool
-for your account/endpoint: return to Mila. The system prompt language
-(Russian) does not change with the voice.
+Settings → «Голос» shows the controls for the **active speech backend**
+(Settings → «Речь»):
+
+- **Sber:** Mila (`May_24000`) is the only voice ID verified against the Salute
+  synthesis pool by this project; the card also accepts a free-text Salute
+  voice ID for advanced users.
+- **Yandex:** a dropdown of the documented v3 ru-RU voices (`marina` default)
+  plus an optional **role**. Role is an editable combo, not a closed list,
+  because the service rejects unsupported voice/role pairs — the presets
+  (neutral / good / strict / friendly / whisper / evil) are suggestions and
+  free text is allowed. Voice and role are packed in-band as
+  `"<voice>:<role>"` by `YandexVoiceSpec`; an empty role collapses to the bare
+  voice. A role glued into the speaker name is a silent failure, so both
+  directions live on that one class.
+
+«Проверить голос» speaks one sample sentence through the real synthesis+player
+lane using the **active** backend (previewing the other backend's voice would
+hand its client an ID it cannot speak), and requires a running assistant —
+otherwise the toast says so. The voice is resolved **per spoken sentence**, so
+a change applies immediately — no service restart. If a custom Salute ID
+produces silence or a logcat `TTS stream error`, the ID is not in the pool for
+your account/endpoint: return to Mila. The system prompt language (Russian)
+does not change with the voice.
 
 ## Performance targets (to be measured on-device)
 

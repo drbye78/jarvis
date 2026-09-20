@@ -39,7 +39,9 @@ OpenAI-compatible endpoint).
 4. **Enter provider credentials in-app.** On first launch, open **Settings**
    (gear button) and enter your own:
    - **Picovoice access key** (wake word)
-   - **Sber Salute** client ID + secret (ASR/TTS)
+   - **Sber Salute** client ID + secret (ASR/TTS), **or** a **Yandex
+     SpeechKit v3** API key — pick the speech backend in Settings → «Speech»
+     (one choice drives recognition *and* synthesis)
    - **GigaChat** client ID + secret (LLM)
    The mandatory Salute/GigaChat pairs are **validated upfront in the panel as
    you type** (a live status row: valid / invalid / unreachable) and on every
@@ -47,7 +49,7 @@ OpenAI-compatible endpoint).
    voice command.    Credentials are stored encrypted in the Android Keystore
    (`KeystoreVault`, AES-256-GCM) on the device — **nothing secret is ever in
    the APK or in `local.properties`**. GigaChat creds are optional if you use
-   the OpenAI-compatible provider instead (also configured in Settings).
+   the [OI]-compatible provider instead (also configured in Settings).
    The UI ships in Russian and English (full `values-en`), and the runtime
    spoken phrases follow the locale too (see RUNBOOK for the honest
    English-voice caveat).
@@ -88,23 +90,26 @@ Keystore.
 ```bash
 cp local.secrets.properties.example local.secrets.properties
 # fill in: Salute Speech (ASR+TTS) and GigaChat (LLM/embeddings) OAuth
-# client id/secret pairs — the same values the app asks for in Settings.
+# client id/secret pairs — the same values the app asks for in Settings —
+# and/or a Yandex SpeechKit v3 API key (jarvis.yandex.apiKey).
 ./gradlew :app:integrationTest        # live smoke tests (skips with a logged reason if creds are absent)
 ./gradlew :app:recordSaluteFixtures   # re-records the sanitized fixtures below
 ```
 
-Environment variables (`JARVIS_SALUTE_CLIENT_ID`, …) are accepted as a
-fallback; the properties file wins. Values are never printed by Gradle or the
-tests.
+Environment variables (`JARVIS_SALUTE_CLIENT_ID`, `JARVIS_YANDEX_API_KEY`, …)
+are accepted as a fallback; the properties file wins. Values are never printed
+by Gradle or the tests.
 
 What the live tests do (tiny, quota-aware payloads):
 - **GigaChat**: OAuth fetch, a one-word `chatOnce` prompt capped at 16 tokens,
   a short streaming pass, one embeddings call (1024-dim).
-- **Salute ASR**: one round trip on **synthetic silence** — asserts PROTOCOL
-  HEALTH only (stream opens, authenticates, closes cleanly); an empty
-  transcript is the expected outcome and is documented in the test.
-- **Salute TTS**: one synthesis round trip on a fixed probe phrase; asserts a
-  non-empty audio payload.
+- **Salute / Yandex ASR**: one round trip on **synthetic silence** — asserts
+  PROTOCOL HEALTH only (stream opens, authenticates, closes cleanly); an empty
+  transcript is the expected outcome and is documented in the test. The Yandex
+  variant is the only tier that can catch a vendored-proto mistake, since the
+  in-process fakes would agree with a wrong field number.
+- **Salute / Yandex TTS**: one synthesis round trip on a fixed probe phrase;
+  asserts a non-empty audio payload.
 
 `recordSaluteFixtures` re-captures the **sanitized** fixtures committed under
 `app/src/test/resources/recorded/` (same file names, clean diff on
@@ -170,9 +175,17 @@ keystore with `keytool` and update `local.properties` accordingly.
   bounded by a character budget — verbose tool results can no longer overflow
   the model's context window (the newest turn is always kept, truncated if
   needed).
-- **Voice picker** (Settings → «Голос»): Mila by default, any other Salute
-  voice ID by hand, with a «Проверить голос» preview button. Applies to the
-  next spoken sentence — no restart.
+- **Speech backend** (Settings → «Речь»): **Sber SaluteSpeech** or **Yandex
+  SpeechKit v3** — one choice covers recognition *and* synthesis. The two
+  providers have separate credential fields and separate voice lists, and the
+  selection takes effect after a service restart (each provider owns its own
+  channel and auth scheme, so there is no live switch — the card says so).
+- **Voice picker** (Settings → «Голос»): the controls follow the selected
+  speech backend. Sber: Mila by default, any other Salute voice ID by hand.
+  Yandex: a dropdown of the documented v3 voices plus an optional role
+  (neutral / good / strict / friendly / whisper / evil, or free text). Both
+  have a «Проверить голос» preview that synthesizes through the *active*
+  backend. Applies to the next spoken sentence — no restart.
 - **Music**: «Джарвис, включи Bohemian Rhapsody», «включи альбом Группа
   крови», «включи музыку» — a capability-gated cascade drives the installed
   player (Яндекс Музыка by default): structured voice search with slots,
@@ -205,7 +218,7 @@ keystore with `keytool` and update `local.properties` accordingly.
 ## Tech stack
 - Kotlin 2.2.21 · Coroutines · Flow · kotlinx.serialization
 - Picovoice Porcupine + Sherpa-ONNX (hybrid wake word: Porcupine with a Picovoice account, or fully offline Sherpa-ONNX with no account)
-- Sber SaluteSpeech (streaming ASR + TTS via gRPC)
+- Sber SaluteSpeech **or** Yandex SpeechKit v3 (streaming ASR + TTS via gRPC)
 - Sber GigaChat or any OpenAI-compatible API (LLM via SSE, tool calling)
 - Room (conversation + alarms) · Open-Meteo (weather)
 - Material 3 UI (teal/amber day+night design system): home screen with a

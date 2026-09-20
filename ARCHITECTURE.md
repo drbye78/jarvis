@@ -13,11 +13,11 @@
 Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame)
    ├─ HybridWakeWordDetector (engine-agnostic wake word: Porcupine OR Sherpa-ONNX; single actor, 320→512 re-chunk)
    └─ SessionManager (delegates each turn to TurnRunner)
-        ├─ SberStreamingAsr (bidi gRPC; live audio up, partials/EOU down)
+        ├─ StreamingAsrClient (bidi gRPC, provider-neutral: Sber Salute OR Yandex v3; live audio up, partials/EOU down)
        ├─ ConversationManager (Room; 20-msg window, tool-pair-safe)
-       ├─ LlmClient (GigaChat | OpenAI-compatible; SSE; wire DTOs)
+       ├─ LlmClient (GigaChat | [OI]-compatible; SSE; wire DTOs)
        │    └─ ToolRegistry → alarms/timers · weather · 8 device tools
-       └─ SaluteSpeechTts (gRPC, cancellable Context, deadline)
+       └─ TtsClient (gRPC, cancellable Context, deadline: Sber Salute OR Yandex v3)
             └─ StreamingAudioTrackPlayer (single actor, generation-based flush)
 ```
 
@@ -28,8 +28,8 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `model/` | Pure domain types (Message, ToolCall, ChatRequest, LlmChunk, states). No serialization annotations. |
 | `wire/` | OpenAI-protocol DTOs with `@SerialName` snake_case + mappers. The only code that shapes request JSON. |
 | `llm/` | `SseParser` (pure), `SseLlmClient` (shared SSE transport with correct cancellation), GigaChat / OpenAI-compatible profiles, `TokenManager` (mutex-serialized OAuth refresh). |
-| `speech/asr/` | `StreamingAsrClient` / `AsrStream` — bidi streaming ASR; server-side EOU. |
-| `speech/tts/` | `TtsClient` (SaluteSpeech, cancellable + deadline) and `TtsPlayer` contract. |
+| `speech/asr/` | `StreamingAsrClient` / `AsrStream` — bidi streaming ASR; server-side EOU. Implementations: `SberStreamingAsr` (Salute OAuth) and `YandexStreamingAsr` (Yandex v3, `Api-Key`). |
+| `speech/tts/` | `TtsClient` (cancellable + deadline) and `TtsPlayer` contract. Implementations: `SaluteSpeechTts` and `YandexSpeechTts` (Yandex v3, 24 kHz `RawAudio`); voice/role packing via `YandexVoiceSpec`. |
 | `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loads BOTH ways per FIXPLAN C — bundled models asset-relative (`newFromAsset`), custom/extracted models from the filesystem (`newFromFile` via `SherpaModelStore`)), player (generations), and the Phase-5 etiquette pair: `AssistantAudioFocus` (duck-during-TTS state machine + `AndroidAudioFocusAdapter`) and `SpeechFeedback` (spoken cascade progress). |
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns (job hand-offs under a monitor, seq-guarded supersede/cancel); TurnRunner (bounded tool loop; error turns end via reportFailure only); `SpeechPhrases` — locale-aware runtime spoken phrases (RU default + resource-backed values/values-en). |
 | `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. |
@@ -431,8 +431,8 @@ configured by `gigaChatEndpoint` / the OpenAI-compatible base URL).
 
 ## Tests
 
-JVM unit suite (995 tests, all green; runs in CI on every push/PR). The live
-Sber smoke tier (`integration/**/*LiveSmokeTest`) shares `src/test` but is
+JVM unit suite (1049 tests, all green; runs in CI on every push/PR). The live
+smoke tier (Sber + Yandex, `integration/**/*LiveSmokeTest`) shares `src/test` but is
 excluded from the gate task and runs only through `:app:integrationTest`,
 which self-skips when credentials are absent:
 wire DTOs (incl. non-null user content), SSE parser (incl. spec multi-line
