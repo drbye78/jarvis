@@ -47,6 +47,25 @@ internal fun saluteChannel(config: JarvisConfig = JarvisConfig()): ManagedChanne
 }
 
 /**
+ * Real TLS channel to the configured Yandex SpeechKit v3 gRPC endpoint.
+ *
+ * Deliberately does NOT install [SberTrust]: Yandex chains to a public CA that
+ * the host JDK already trusts, and scoping the Минцифры override to Sber hosts
+ * is what keeps the two providers' trust independent (mirrors AppGraph's
+ * yandexSttChannel / yandexTtsChannel).
+ */
+internal fun yandexChannel(endpoint: String): ManagedChannel {
+    // Same host:port shape AppGraph's channels are built from, so the live tier
+    // and production reach the identical target.
+    require(endpoint.split(":").let { it.size == 2 && it[1].toIntOrNull() != null }) {
+        "Yandex endpoint must be host:port, got $endpoint"
+    }
+    // TLS is the default negotiation for forTarget — do not "fix" this into
+    // usePlaintext(); stt/tts.api.cloud.yandex.net:443 are real TLS endpoints.
+    return OkHttpChannelBuilder.forTarget(endpoint).useTransportSecurity().build()
+}
+
+/**
  * [TokenManager] against the REAL OAuth endpoint with the local credentials
  * from [LiveSecrets] routed per scope (GigaChat vs Salute).
  */

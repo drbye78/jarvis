@@ -46,11 +46,19 @@ object LiveSecrets {
         val saluteClientSecret: String?,
         val gigachatClientId: String?,
         val gigachatClientSecret: String?,
+        /**
+         * Yandex Cloud service-account API key for SpeechKit v3. A SINGLE
+         * value (no id/secret pair, no folder id, never expires) because the
+         * backend authenticates with `Authorization: Api-Key <key>`. It covers
+         * BOTH recognition and synthesis — one key, one backend choice.
+         */
+        val yandexApiKey: String?,
     ) {
         override fun toString(): String {
             val present = buildList {
                 if (!saluteClientId.isNullOrBlank() && !saluteClientSecret.isNullOrBlank()) add("salute")
                 if (!gigachatClientId.isNullOrBlank() && !gigachatClientSecret.isNullOrBlank()) add("gigachat")
+                if (!yandexApiKey.isNullOrBlank()) add("yandex")
             }
             return "LiveSecrets.Secrets(present=$present)" // never the values
         }
@@ -64,7 +72,9 @@ object LiveSecrets {
     val hasGigaChat: Boolean
         get() = !secrets.gigachatClientId.isNullOrBlank() && !secrets.gigachatClientSecret.isNullOrBlank()
 
-    val hasAny: Boolean get() = hasSalute || hasGigaChat
+    val hasYandex: Boolean get() = !secrets.yandexApiKey.isNullOrBlank()
+
+    val hasAny: Boolean get() = hasSalute || hasGigaChat || hasYandex
 
     /** JUnit4 assumption gates: a missing key SKIPS the live test, never fails CI. */
     fun assumeSalute(reason: String) =
@@ -72,6 +82,9 @@ object LiveSecrets {
 
     fun assumeGigaChat(reason: String) =
         Assume.assumeTrue(assumeMessage(reason, "gigachat"), hasGigaChat)
+
+    fun assumeYandex(reason: String) =
+        Assume.assumeTrue(assumeMessage(reason, "yandex"), hasYandex)
 
     private fun assumeMessage(reason: String, service: String) =
         "$reason skipped: jarvis.$service.* credentials not present " +
@@ -93,6 +106,7 @@ object LiveSecrets {
             saluteClientSecret = resolve("jarvis.salute.clientSecret", "JARVIS_SALUTE_CLIENT_SECRET"),
             gigachatClientId = resolve("jarvis.gigachat.clientId", "JARVIS_GIGACHAT_CLIENT_ID"),
             gigachatClientSecret = resolve("jarvis.gigachat.clientSecret", "JARVIS_GIGACHAT_CLIENT_SECRET"),
+            yandexApiKey = resolve("jarvis.yandex.apiKey", "JARVIS_YANDEX_API_KEY"),
         )
     }
 
