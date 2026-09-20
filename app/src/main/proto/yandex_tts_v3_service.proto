@@ -1,0 +1,29 @@
+// Yandex SpeechKit v3 — speech synthesis SERVICE only.
+//
+// Upstream `yandex/cloud/ai/tts/v3/tts_service.proto` declares `Synthesizer`
+// with a REST-annotated `UtteranceSynthesis` plus an undocumented bidi
+// `StreamSynthesis`. We use only `UtteranceSynthesis` (unary request, streamed
+// response), so this file re-declares just that RPC in the SAME proto package
+// as `yandex_tts_v3.proto` and imports only that local file — avoiding the
+// google/api import chain.
+//
+// RPC name, message types and field numbers are identical to upstream, so the
+// generated stub is wire-compatible.
+//
+// `StreamSynthesis` is deliberately NOT vendored: it is not in the archived
+// api-ref and is not in the app's synthesis path.
+
+syntax = "proto3";
+
+package speechkit.tts.v3;
+
+import "yandex_tts_v3.proto";
+
+option java_package = "com.jarvis.assistant.grpc.yandextts";
+option java_multiple_files = true;
+
+// Speech synthesis: one `UtteranceSynthesisRequest` in, a stream of
+// `UtteranceSynthesisResponse` audio chunks out.
+service Synthesizer {
+  rpc UtteranceSynthesis(UtteranceSynthesisRequest) returns (stream UtteranceSynthesisResponse);
+}

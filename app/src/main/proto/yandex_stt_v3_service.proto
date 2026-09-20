@@ -1,0 +1,30 @@
+// Yandex SpeechKit v3 — streaming recognition SERVICE only.
+//
+// Upstream `yandex/cloud/ai/stt/v3/stt_service.proto` declares THREE services
+// (Recognizer, AsyncRecognizer) and two of them carry google.api.http REST
+// annotations plus yandex.cloud operation/validation imports. We use only the
+// bidi streaming RPC, so vendoring the upstream service file would drag the
+// whole google/api + yandex/cloud import chain into the build for nothing.
+//
+// This file therefore re-declares just `Recognizer.RecognizeStreaming` in the
+// SAME proto package as `yandex_stt_v3.proto` and imports only that local file.
+// The RPC name, message types and field numbers are identical to upstream, so
+// the generated stub is wire-compatible.
+//
+// Sync this with the vendored data proto whenever it is re-vendored.
+
+syntax = "proto3";
+
+package speechkit.stt.v3;
+
+import "yandex_stt_v3.proto";
+
+option java_package = "com.jarvis.assistant.grpc.yandexstt";
+option java_multiple_files = true;
+
+// Streaming speech recognition: the client pushes `StreamingRequest` events
+// (session_options first, then audio chunks) and the server streams
+// `StreamingResponse` events back.
+service Recognizer {
+  rpc RecognizeStreaming(stream StreamingRequest) returns (stream StreamingResponse);
+}
