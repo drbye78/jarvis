@@ -37,7 +37,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `data/` | Room v2: messages (id-ordered, orphan-safe windowing) + alarms + user_facts (cognitive memory) + extraction_queue + memory_meta (cognitive bookkeeping: schema revision, cursors, counters) + fact_fts (FTS4) + command_events + habit_rules + behavior_log + session_summaries + fact_vectors + entities + fact_entities + ring_sessions (durable ring state, `RingSessionEntity`). |
 | `service/` | Foreground service (permission gate, retryable init, watchdog semantics), boot receiver, ringing activity, notification listener. |
 | `ui/` | Adapters for transcript and alarm lists. |
-| `MemoryInspectorActivity` (app root) | Memory Inspector (COGNITIVE_PLAN 1.8): fact list with provenance marks (sensitive/contested) + confidence/status lines, per-item delete, JSON export via SAF, «Забыть всё» wipe of the cognitive tables; honest read-only empty state when the service graph isn't running. |
+| `MemoryInspectorActivity` (app root) | Memory Inspector: fact list with provenance marks (sensitive/contested) + confidence/status lines, per-item delete, JSON export via SAF, «Забыть всё» wipe of the cognitive tables; honest read-only empty state when the service graph isn't running. |
 
 ## Concurrency model
 

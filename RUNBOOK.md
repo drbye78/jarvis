@@ -243,8 +243,7 @@ adb shell settings get secure enabled_notification_listeners
 ## Integration testing (live services + recorded fixtures)
 
 CI is credential-free by construction: live tests run **locally only**, and CI
-replays **sanitized recorded fixtures** (REMEDIATION_PLAN Phase 2, owner
-decision #1).
+replays **sanitized recorded fixtures** (owner decision #1).
 
 ```bash
 # One-time setup
@@ -445,8 +444,7 @@ Streaming ASR means these numbers no longer grow with utterance length.
 ## Memory subsystem (Phase 1): E2E scenarios and the extraction gate
 
 The informal probe protocol from the cognitive review is replaced by these
-scripted, reproducible scenarios (COGNITIVE_PLAN §10.5 / Appendix D) and the
-fixture-based extraction gate.
+scripted, reproducible scenarios and the fixture-based extraction gate.
 
 ### E2E scenario: memory basics (Appendix D)
 
@@ -477,7 +475,7 @@ switch OFF mid-session and repeat (4) → the assistant must not inject
 memory content (kill-switch degrades to the pre-cognitive prompt,
 snapshot-tested).
 
-### E2E scenario: proactive suggestion, accept and reject paths (COGNITIVE_PLAN §10.5, Phase 2)
+### E2E scenario: proactive suggestion, accept and reject paths (Phase 2)
 
 Precondition: Settings → «Проактивность» switch ON (default OFF — flipping
 it is the point of the scenario), quiet hours as shipped (23:00–08:00),
@@ -528,7 +526,7 @@ the set, add `app/src/test/resources/cognitive/eval/fixtures/fixture_NNN.json`
 (dialogue + recorded response + expected/forbidden facts) and re-run
 `./gradlew :app:testDebugUnitTest --tests "*ExtractionEvalTest"`.
 
-### E2E scenario: semantic recall + relation questions (COGNITIVE_PLAN §10.5, Phase 3)
+### E2E scenario: semantic recall + relation questions (Phase 3)
 
 Precondition: fresh `jarvis.db` or an existing store; Sherpa engine;
 Settings → Память → memory enabled. The eval gate already decided the

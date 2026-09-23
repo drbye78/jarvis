@@ -41,7 +41,7 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - **No secrets in the APK.** Credentials (Picovoice key, Sber/GigaChat tokens) are entered in Settings and stored only in the Android Keystore via `util/KeystoreVault` (AES-256-GCM, zero dependencies). Do not hardcode keys or move them to build config; API clients read them at runtime. (The earlier `EncryptedSharedPreferences`/security-crypto claim was stale — that library is removed from the catalog and must not be reintroduced.)
 - **Dynamic receivers need an explicit flag — `RegisterReceiverGuardTest` enforces it.** Every `registerReceiver(` in main sources must be `ContextCompat.registerReceiver(..., RECEIVER_NOT_EXPORTED)` or the `registerReceiver(null, filter)` sticky retrieval. Below API 33 `ContextCompat` emulates the flag by gating the receiver behind a `signature`-level `${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` that `androidx.core` declares in its own manifest (hence its appearance in the MERGED manifest, not `app/src/main/AndroidManifest.xml`) — it throws at registration time if that permission is absent, so do not strip it.
 
-## Remediation invariants (REMEDIATION_PLAN Phases 1–3)
+## Remediation invariants
 - **Schema changes land as ONE coordinated bump.** The data (indices/PKs/FKs), cognitive (fact decay anchors) and alarms (`clockDomain`/anchors + `ring_sessions`) lanes changed the schema together as the single v2 bump; landing them one-at-a-time means repeated destructive wipes, conflicting `N.json` exports and a broken migration test. Verified in `data/AppDatabase.kt` (`@Database(version = 2)`) + `schemas/com.jarvis.assistant.data.AppDatabase/2.json`.
 - **Fact decay anchors are immutable.** `user_facts.decayAnchorConfidence` / `decayAnchorAt` latch the pre-decay confidence and time; maintenance decay updates `confidence` only (never re-anchors, or decay would compound), and a re-affirmation via `confirmFact` is the only path that moves the anchor. Verified in `cognitive/data/UserFactEntity.kt` + `cognitive/data/UserFactDao.kt`.
 - **Ring state is owned by the receiver, not the ringing activity.** `AlarmReceiver` (`tools/AlarmScheduler.kt`) `goAsync()`es and runs `RingCoordinator.beginRing` BEFORE posting the notification / launching the full-screen activity; the durable `ring_sessions` row and its token authorize every dismiss/snooze so a stale notification cannot act on a newer ring. Verified in `tools/AlarmScheduler.kt` (`AlarmReceiver`) + `data/RingSessionEntity.kt` + `tools/RingCoordinator.kt`.
@@ -57,9 +57,9 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - Version: `0.2.2`, pre-1.0 (in-development).
 - Large binaries are tracked via Git LFS: `app/libs/sherpa-onnx.aar` (~47 MB) and `app/src/main/assets/sherpa_kws/*` (~6 MB — CI fails on unreferenced assets > 1 MB, so never add a model file nothing loads). Don't `.gitignore` them. `git lfs pull` is required after clone (CI does this automatically).
 
-## Cognitive subsystem conventions (COGNITIVE_PLAN 0.1)
+## Cognitive subsystem conventions
 
-Binding from Phase 1 onward — the full contract lives in `COGNITIVE_PLAN.md` (§2, Appendix B of the plan):
+The full contract:
 - Memory tools must return structured outcomes (`MemoryOutcome`), never bare success strings; user-facing strings go through `ToolStrings` + `ResourceParityTest`.
 - Cognitive config is consumed reactively (`util/PrefsFlow`) — never snapshotted at graph build time. Every new setting ships with a live-toggle regression test.
 - Cognitive coroutines run on the coordinator's own supervised scope, catch only IO/serialization errors, and ALWAYS rethrow `CancellationException`.

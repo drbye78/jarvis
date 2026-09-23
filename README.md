@@ -94,10 +94,9 @@ suite + `assembleDebug` are the push/PR gate.
 ## Integration testing (live speech/LLM services — local only)
 
 CI never talks to Sber and holds no secrets. Live smoke tests run **locally
-only** with your own credentials (owner decision #1, REMEDIATION_PLAN
-Phase 2): the credentials live in a gitignored file, never in the repo, the
-chat, or the APK — the app itself stores credentials only in the Android
-Keystore.
+only** with your own credentials (owner decision #1): the credentials live in
+a gitignored file, never in the repo, the chat, or the APK — the app itself
+stores credentials only in the Android Keystore.
 
 ```bash
 cp local.secrets.properties.example local.secrets.properties
