@@ -70,6 +70,25 @@ semver (pre-1.0: breaking changes bump the minor).
   `registerReceiver(null, filter)` sticky-broadcast retrieval. Proven non-vacuous —
   it fails on the pre-fix call and on a `flags = 0` variant.
 
+### Fixed — importing a wake-word `.ppn` could fail silently and destructively
+- **The copy is now verify-then-replace.** The old inline copy in
+  `SettingsActivity.onActivityResult` did `openInputStream(uri)?.use { … }` and
+  then persisted `customWakeWordPath` + `wakeWordModel = "custom_user"`
+  unconditionally — so a null stream skipped the copy entirely while still
+  pointing the detector at a missing or stale file, with no error surfaced. A
+  `copyTo` `IOException` (disk full, provider error) escaped the callback
+  uncaught on the main thread, and a re-import that failed partway left a
+  truncated model where a working one had been.
+- New `audio/WakeWordImport` is the single definition of that install: the copy
+  lands in a sibling `*.tmp`, is verified non-empty, and only then replaces the
+  destination, so a failed import installs **nothing** and leaves the previous
+  model intact. The result is an explicit `Copied` / `NoSource` / `Failed`
+  outcome — the caller persists the prefs only on `Copied` and otherwise shows a
+  new `error_ppn_import` toast and logs a content-free reason. Non-persistable
+  URI grants and a failure to release them are now reported instead of throwing.
+- New `WakeWordImportTest` (9) covers every failure path; proven non-vacuous —
+  restoring the old copy semantics fails 4 of them.
+
 ### Changed — P1 hardening (data & privacy)
 - **Room: single destructive-upgrade schema at v2 (pre-1.0)**: the pre-release
   migration chain is deleted and upgrades go through

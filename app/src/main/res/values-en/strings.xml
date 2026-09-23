@@ -109,6 +109,7 @@
     <string name="credentials_invalid_http">Invalid credentials (HTTP %1$d)</string>
     <string name="credentials_unverifiable">Could not verify: no connection to the server</string>
     <string name="error_ppn_file">Invalid wake word file (.ppn required)</string>
+    <string name="error_ppn_import">Could not copy the wake word file</string>
 
     <!-- Settings: music (preferred default player) -->
     <string name="music_section">Music</string>

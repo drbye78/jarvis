@@ -110,6 +110,7 @@
     <string name="credentials_invalid_http">Неверные ключи (HTTP %1$d)</string>
     <string name="credentials_unverifiable">Не удалось проверить: нет связи с сервером</string>
     <string name="error_ppn_file">Неверный файл wake word (нужен .ppn)</string>
+    <string name="error_ppn_import">Не удалось скопировать файл wake word</string>
 
     <!-- Settings: music (preferred default player) -->
     <string name="music_section">Музыка</string>

@@ -18,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import com.jarvis.assistant.audio.WakeWordImport
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
 import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.llm.CredentialCheck
@@ -1433,7 +1434,7 @@ class SettingsActivity : AppCompatActivity() {
         if (requestCode == PPN_REQUEST && resultCode == RESULT_OK && data != null) {
             val uri = data.data ?: return
             // L2: only a .ppn file is valid.
-            if (uri.lastPathSegment?.endsWith(".ppn", ignoreCase = true) != true) {
+            if (!WakeWordImport.isPpnFileName(uri.lastPathSegment)) {
                 Toast.makeText(
                     this,
                     R.string.error_ppn_file,
@@ -1442,23 +1443,46 @@ class SettingsActivity : AppCompatActivity() {
                 return
             }
             val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-            contentResolver.takePersistableUriPermission(uri, takeFlags)
-            // L3: copy into a private app file (sandboxed, explicit mode).
-            val dst = getFileStreamPath("user_wake.ppn")
-            contentResolver.openInputStream(uri)?.use { input ->
-                openFileOutput("user_wake.ppn", Context.MODE_PRIVATE).use { output ->
-                    input.copyTo(output)
+            // A provider may hand out a non-persistable grant; that is not fatal
+            // for a one-shot copy, so it is reported and the copy proceeds.
+            // (L4: the URI is only read once, below, so the grant is released
+            // again immediately after.)
+            runCatching { contentResolver.takePersistableUriPermission(uri, takeFlags) }
+                .onFailure { Timber.w("wake-word import: the URI grant is not persistable") }
+            // L3: copy into a private app file (sandboxed, explicit mode). The
+            // copy lands in a temp file and replaces the model only once
+            // verified, so a failed import cannot point the detector at a
+            // missing/truncated file nor destroy a previously working model —
+            // and the outcome is reported instead of silently skipped.
+            val destination = getFileStreamPath(WakeWordImport.PPN_FILE_NAME)
+            val outcome = WakeWordImport.install(
+                source = runCatching { contentResolver.openInputStream(uri) }.getOrNull(),
+                destination = destination,
+                openOutput = { file -> openFileOutput(file.name, Context.MODE_PRIVATE) },
+            )
+            when (outcome) {
+                is WakeWordImport.Outcome.Copied -> {
+                    appPrefs.customWakeWordPath = destination.absolutePath
+                    appPrefs.wakeWordModel = "custom_user"
+                    // Reconfigure off the UI thread.
+                    lifecycleScope.launch(Dispatchers.Default) {
+                        GraphHolder.graph?.reconfigureWakeWord()
+                    }
+                }
+
+                WakeWordImport.Outcome.NoSource,
+                is WakeWordImport.Outcome.Failed,
+                -> {
+                    Timber.w("wake-word import %s", outcome.describe())
+                    Toast.makeText(
+                        this,
+                        R.string.error_ppn_import,
+                        Toast.LENGTH_SHORT,
+                    ).show()
                 }
             }
-            appPrefs.customWakeWordPath = dst.absolutePath
-            appPrefs.wakeWordModel = "custom_user"
-            // Reconfigure off the UI thread.
-            lifecycleScope.launch(Dispatchers.Default) {
-                GraphHolder.graph?.reconfigureWakeWord()
-            }
-            // L4: the URI is only read once (during the copy above), so the
-            // persistable permission can be released immediately.
-            contentResolver.releasePersistableUriPermission(uri, takeFlags)
+            runCatching { contentResolver.releasePersistableUriPermission(uri, takeFlags) }
+                .onFailure { Timber.w("wake-word import: releasing the URI grant failed") }
         }
     }
 
