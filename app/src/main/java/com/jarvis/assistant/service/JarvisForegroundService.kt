@@ -642,7 +642,21 @@ class JarvisForegroundService : Service() {
             addAction(Intent.ACTION_POWER_DISCONNECTED)
             addAction(Intent.ACTION_POWER_CONNECTED)
         }
-        registerReceiver(powerReceiver, filter)
+        // RECEIVER_NOT_EXPORTED: this receiver only ever consumes the two
+        // system power broadcasts above, so no other app has any business
+        // delivering to it. On API 33+ ContextCompat passes the flag straight
+        // to the platform; below it, the flag does not exist yet, so androidx
+        // instead registers the receiver under the app's own `signature`-level
+        // ${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION (declared in
+        // androidx.core's manifest, hence present in the MERGED manifest and
+        // needing no app-side declaration) — still effectively non-exported,
+        // and the system server still gets the power broadcasts through.
+        ContextCompat.registerReceiver(
+            this,
+            powerReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     // ------------------------------------------------------------------
