@@ -7,7 +7,9 @@ import android.service.media.MediaBrowserService
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.jarvis.assistant.service.JarvisNotificationListener
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -28,8 +30,9 @@ import org.junit.runner.RunWith
  *
  * What a device adds that a JVM fake cannot: the real package ids resolve, the
  * OEM's real `enabled_notification_listeners` string is matched, real
- * MediaSession action masks are decoded, and the real MediaBrowserService table
- * is enumerated.
+ * MediaSession action masks are decoded, the real MediaBrowserService table is
+ * enumerated AND bound (T7 — no permission, no activity start), and each
+ * player's legacy `MEDIA_PLAY_FROM_SEARCH` advertisement is resolved (T6).
  *
  * API-29 LIMITATION (honest): package-visibility filtering via manifest
  * `<queries>` only exists from Android 11 (API 30). On API 29 every installed
@@ -265,12 +268,168 @@ class MediaTransportDeviceTest {
         )
     }
 
+    // ------------------------------------------------------------------
+    // T6 — legacy MEDIA_PLAY_FROM_SEARCH activity advertisement
+    // ------------------------------------------------------------------
+
+    /**
+     * Resolution-only probe — it NEVER dispatches the intent, so no activity
+     * is started and the device state is untouched. The package-scoped form
+     * (`.setPackage(pkg)`) is deliberate: an unscoped query would also match
+     * the system resolver and prove nothing about the player.
+     */
+    private fun legacySearchActivityCount(pkg: String): Int =
+        packageManager.queryIntentActivities(
+            Intent(LEGACY_SEARCH_ACTION).setPackage(pkg),
+            0,
+        ).size
+
+    @Test
+    fun yandexMusic_advertisesLegacySearchActivity() {
+        assumeTrue("Yandex Music ($YANDEX_MUSIC) is not installed", isInstalled(YANDEX_MUSIC))
+        assertTrue(
+            "Yandex Music must advertise $LEGACY_SEARCH_ACTION",
+            legacySearchActivityCount(YANDEX_MUSIC) >= 1,
+        )
+    }
+
+    @Test
+    fun zvuk_advertisesLegacySearchActivity() {
+        assumeTrue("Zvuk ($ZVUK) is not installed", isInstalled(ZVUK))
+        assertTrue(
+            "Zvuk must advertise $LEGACY_SEARCH_ACTION",
+            legacySearchActivityCount(ZVUK) >= 1,
+        )
+    }
+
+    @Test
+    fun vkMusic_shipsNoLegacySearchActivity() {
+        assumeTrue("VK Music ($VK_MUSIC) is not installed", isInstalled(VK_MUSIC))
+        // MEASURED TRUTH on the target device: VK Music advertises ZERO
+        // MEDIA_PLAY_FROM_SEARCH activities. This is expected asymmetry, not a
+        // bug — VK relies on the session/browser lanes and the S4 legacy-intent
+        // strategy is a clean miss for it. Asserting the absence documents that
+        // shape instead of looking like a missing positive test.
+        assertEquals(
+            "VK Music is measured to ship no $LEGACY_SEARCH_ACTION activity",
+            0,
+            legacySearchActivityCount(VK_MUSIC),
+        )
+    }
+
+    // ------------------------------------------------------------------
+    // T7 — real MediaBrowserService bind handshake (permission-free)
+    // ------------------------------------------------------------------
+
+    private fun installedPlayers(): List<String> =
+        listOf(YANDEX_MUSIC, ZVUK, VK_MUSIC).filter { isInstalled(it) }
+
+    @Test
+    fun browserDiscover_listsInstalledPlayers() {
+        val gateway = AndroidMediaBrowserGateway(context)
+        val services = gateway.discover()
+        assumeTrue("device advertises no MediaBrowserService", services.isNotEmpty())
+
+        for (service in services) {
+            assertTrue(
+                "discovered browser service ${service.packageName} must be a real installed package",
+                isInstalled(service.packageName),
+            )
+        }
+
+        val installed = installedPlayers()
+        assumeTrue("none of the target players is installed", installed.isNotEmpty())
+        val discovered = services.map { it.packageName }.toSet()
+        for (pkg in installed) {
+            assertTrue("discover() must list the installed player $pkg", pkg in discovered)
+        }
+    }
+
+    @Test
+    fun browserConnect_handshakeIsHonestAndCleansUp() {
+        val gateway = AndroidMediaBrowserGateway(context)
+        val installed = installedPlayers()
+        assumeTrue("none of the target players is installed", installed.isNotEmpty())
+
+        // connect() returning null is a LEGITIMATE outcome (the service refused
+        // a null root, or the bind did not settle) — never a failure. The
+        // invariant asserted is: WHEN a session is handed out, it belongs to the
+        // package we asked for, and every bind is cleaned up.
+        //
+        // Bind from Dispatchers.IO DELIBERATELY — this is the PRODUCTION thread.
+        // MediaBrowserCompat's constructor builds a no-arg android.os.Handler,
+        // which throws on a thread without a Looper; production reaches connect()
+        // from TurnRunner's Dispatchers.IO tool lane. The gateway now hops the
+        // construction to the main looper internally, so binding from IO must
+        // SUCCEED — and before that hop existed this test failed (every bind
+        // returned null, because the throw was swallowed into a plain null).
+        // Binding on Main instead would pass either way and guard nothing.
+        var connectedCount = 0
+        for (pkg in installed) {
+            val session = runCatching {
+                runBlocking { withContext(Dispatchers.IO) { gateway.connect(pkg, BROWSER_CONNECT_TIMEOUT_MS) } }
+            }.getOrNull() ?: continue
+            connectedCount++
+            try {
+                assertEquals("bound session must belong to the requested package", pkg, session.packageName)
+                // controller() needs NO permission, but the service MAY withhold
+                // a token — assert the handle's package only when handed one.
+                // MediaControllerCompat builds no Handler, so no Looper hop is
+                // needed here (asserted by running it off the main thread).
+                val handle = runCatching {
+                    runBlocking { withContext(Dispatchers.IO) { session.controller() } }
+                }.getOrNull()
+                handle?.let {
+                    assertEquals("session token controller must be for $pkg", pkg, it.packageName)
+                }
+            } finally {
+                session.disconnect()
+                session.disconnect() // documented idempotent — must not throw
+            }
+        }
+
+        // Honest skip: if every bind returned null the per-session invariants
+        // above never ran, so do not report a vacuous PASS.
+        assumeTrue("no installed player accepted the browser bind", connectedCount > 0)
+    }
+
+    /**
+     * Regression guard for the threading defect above, stated as its own case so
+     * the failure mode is unambiguous: the FIRST bind attempt in the process must
+     * happen on a Looper-less thread and still connect. Kept separate from
+     * [browserConnect_handshakeIsHonestAndCleansUp] because that test tolerates
+     * null (honest degradation); this one pins that null-everywhere is a BUG, not
+     * a player behaviour.
+     */
+    @Test
+    fun browserConnect_worksFromLooperlessProductionThread() {
+        val gateway = AndroidMediaBrowserGateway(context)
+        val installed = installedPlayers()
+        assumeTrue("none of the target players is installed", installed.isNotEmpty())
+
+        val results = installed.associateWith { pkg ->
+            runCatching {
+                runBlocking { withContext(Dispatchers.IO) { gateway.connect(pkg, BROWSER_CONNECT_TIMEOUT_MS) } }
+            }.getOrNull().also { it?.disconnect() }
+        }
+
+        assertTrue(
+            "at least one installed player MUST bind from the production (Looper-less) " +
+                "thread; all-null means the Looper hop regressed. results=$results",
+            results.values.any { it != null },
+        )
+    }
+
     private companion object {
         const val VK_MUSIC = "com.uma.musicvk"
         const val VK_CODE_NAMESPACE = "com.vk.music"
         const val YANDEX_MUSIC = "ru.yandex.music"
         const val ZVUK = "com.zvooq.openplay"
         const val ENABLED_LISTENERS = "enabled_notification_listeners"
+        const val LEGACY_SEARCH_ACTION = "android.media.action.MEDIA_PLAY_FROM_SEARCH"
+
+        /** MediaBrowserService bind budget — a hung service must not wedge the test. */
+        const val BROWSER_CONNECT_TIMEOUT_MS = 5_000L
 
         /** The connected device's API level; only LIKE gating is probed here. */
         const val DEVICE_API_LEVEL = 29

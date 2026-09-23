@@ -6,7 +6,9 @@ import android.content.Intent
 import android.os.Bundle
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.session.MediaControllerCompat
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import kotlin.coroutines.resume
@@ -27,6 +29,26 @@ import kotlin.coroutines.resume
  *
  * Permission model: binding needs NO permission and NO notification-listener
  * access; the session token controller is the Assistant-grade headless path.
+ *
+ * THREADING (load-bearing, was silently broken): `MediaBrowserCompat`'s
+ * constructor creates a `CallbackHandler extends android.os.Handler` through the
+ * no-arg `Handler()` constructor, which throws on a thread without a Looper.
+ * Production reaches this class from `TurnRunner`'s `Dispatchers.IO` tool lane
+ * (`FunctionRouter` → `MusicTools` → `MusicPlaybackOrchestrator.runBrowserLane`),
+ * and the throw was swallowed by the construction's `runCatching { … }.getOrNull()`
+ * into a plain `null` — so the browser lane answered "not installed / refused"
+ * for EVERY player and was effectively dead. Device-verified: `connect()` on
+ * `Dispatchers.IO` returned null for all three installed players while the same
+ * call on `Dispatchers.Main` connected to Zvuk.
+ *
+ * Only the CONSTRUCTION needs the Looper: `MediaControllerCompat(Context, Token)`
+ * builds no Handler (so [AndroidMediaGateway.activeControllers] and the transport
+ * lane are unaffected), and the session's remaining calls are field reads
+ * (`root`, `sessionToken`) or Binder IPC (`subscribe`, `search`, transport), all
+ * thread-safe. The hop is therefore exactly the constructor/connect call, and it
+ * is pinned by the device test
+ * `MediaTransportDeviceTest.browserConnect_worksFromLooperlessProductionThread`
+ * (a JVM test cannot reach this class — `MediaBrowserCompat` is a framework type).
  */
 class AndroidMediaBrowserGateway(private val context: Context) : MediaBrowserGateway {
 
@@ -52,45 +74,51 @@ class AndroidMediaBrowserGateway(private val context: Context) : MediaBrowserGat
         val component = ComponentName(service.packageName, service.name)
 
         return withTimeoutOrNull(timeoutMs) {
-            suspendCancellableCoroutine { cont ->
-                var browser: MediaBrowserCompat? = null
-                val callback = object : MediaBrowserCompat.ConnectionCallback() {
-                    override fun onConnected() {
-                        // Refused-root services never reach here; empty-root
-                        // services DO (token, no browse) — that is S2's lane.
-                        val b = browser
-                        if (cont.isActive) {
-                            if (b != null) {
-                                cont.resume(ConnectedSession(this@AndroidMediaBrowserGateway.appContext, b))
-                            } else {
-                                cont.resume(null)
+            // The Looper hop — see the class THREADING note.
+            // `suspendCancellableCoroutine` suspends and releases the main thread,
+            // so the main looper stays free to deliver the framework's connection
+            // callback (no deadlock).
+            withContext(Dispatchers.Main) {
+                suspendCancellableCoroutine { cont ->
+                    var browser: MediaBrowserCompat? = null
+                    val callback = object : MediaBrowserCompat.ConnectionCallback() {
+                        override fun onConnected() {
+                            // Refused-root services never reach here; empty-root
+                            // services DO (token, no browse) — that is S2's lane.
+                            val b = browser
+                            if (cont.isActive) {
+                                if (b != null) {
+                                    cont.resume(ConnectedSession(appContext, b))
+                                } else {
+                                    cont.resume(null)
+                                }
                             }
                         }
-                    }
 
-                    override fun onConnectionFailed() {
-                        Timber.i("BrowserDiag: %s refused the connection (null root)", packageName)
+                        override fun onConnectionFailed() {
+                            Timber.i("BrowserDiag: %s refused the connection (null root)", packageName)
+                            if (cont.isActive) cont.resume(null)
+                        }
+
+                        override fun onConnectionSuspended() {
+                            // Service died mid-use; the session's next op fails
+                            // best-effort. Nothing to resume — connect() is done.
+                        }
+                    }
+                    val b = runCatching {
+                        MediaBrowserCompat(appContext, component, callback, null)
+                    }.getOrNull()
+                    if (b == null) {
+                        if (cont.isActive) cont.resume(null)
+                        return@suspendCancellableCoroutine
+                    }
+                    browser = b
+                    cont.invokeOnCancellation { runCatching { b.disconnect() } }
+                    runCatching { b.connect() }.onFailure {
+                        Timber.w(it, "BrowserDiag: connect() threw for %s", packageName)
+                        runCatching { b.disconnect() }
                         if (cont.isActive) cont.resume(null)
                     }
-
-                    override fun onConnectionSuspended() {
-                        // Service died mid-use; the session's next op fails
-                        // best-effort. Nothing to resume — connect() is done.
-                    }
-                }
-                val b = runCatching {
-                    MediaBrowserCompat(appContext, component, callback, null)
-                }.getOrNull()
-                if (b == null) {
-                    if (cont.isActive) cont.resume(null)
-                    return@suspendCancellableCoroutine
-                }
-                browser = b
-                cont.invokeOnCancellation { runCatching { b.disconnect() } }
-                runCatching { b.connect() }.onFailure {
-                    Timber.w(it, "BrowserDiag: connect() threw for %s", packageName)
-                    runCatching { b.disconnect() }
-                    if (cont.isActive) cont.resume(null)
                 }
             }
         }?.also { session ->

@@ -61,6 +61,30 @@ semver (pre-1.0: breaking changes bump the minor).
   the `<queries>` entry works under package-visibility rules) and that
   `com.vk.music` is not launchable.
 
+### Fixed — the MediaBrowser lane was silently dead in production (Looper-less thread)
+- **A whole strategy tier never ran.** `AndroidMediaBrowserGateway.connect()`
+  constructs `MediaBrowserCompat`, whose constructor creates a
+  `CallbackHandler extends android.os.Handler` through the **no-arg** `Handler()`
+  — which throws on a thread without a `Looper`. Production reaches `connect()`
+  from `TurnRunner`'s `Dispatchers.IO` tool lane (`FunctionRouter` → `MusicTools`
+  → `MusicPlaybackOrchestrator.runBrowserLane`), and the throw was swallowed by
+  the construction's `runCatching { … }.getOrNull()` into a plain `null`. The
+  lane therefore answered "not installed / refused" for every player: the S0
+  search-by-mediaId and S2 cold-start-through-session-token paths were
+  unreachable, and the cascade always fell through to the launch/legacy lanes.
+- **Device-verified before the fix**, on Huawei AGS6-W09 (API 29):
+  `connect()` on `Dispatchers.IO` returned null for all three installed players
+  while the same call on `Dispatchers.Main` connected to Zvuk — so this was a
+  threading defect, not player behaviour (Zvuk advertises
+  `AndroidAutoMediaBrowserService`).
+- Fixed by hopping only the construction to the main looper
+  (`withContext(Dispatchers.Main)`) inside `connect()`. The scope is deliberately
+  narrow: `MediaControllerCompat(Context, Token)` builds **no** Handler, so
+  `activeControllers()` and the whole transport lane were never affected, and the
+  session's remaining calls are field reads or Binder IPC. No dispatcher is
+  injected — a JVM test cannot reach this class (`MediaBrowserCompat` is a
+  framework type), so the hop is pinned on-device instead.
+
 ### Added — device-tier media/transport coverage (first for this subsystem)
 - **The media lane had ZERO device tests** — every cascade, capability-gate and
   honesty behaviour was asserted only against JVM fakes. New

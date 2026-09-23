@@ -595,6 +595,13 @@ CHANGELOG Phase 3 performance block.
   blocked when Jarvis's own UI is not visible — a foreground service is NOT
   an exemption. The browser bind is immune (it is not an activity); launch
   outcomes are phrased as attempts with a contingency instruction.
+  Threading note: the browser bind MUST construct `MediaBrowserCompat` on a
+  Looper thread. The tool lane runs on `Dispatchers.IO`, so
+  `AndroidMediaBrowserGateway.connect()` hops the construction to the main
+  looper itself — if that hop is ever removed, `connect()` silently returns
+  null for every player (the throw is swallowed by `runCatching`, so nothing
+  looks broken) and the whole S0/S2 browser strategy stops running. The device
+  test `browserConnect_worksFromLooperlessProductionThread` pins this.
 - **No acoustic echo cancellation (wake word vs loud music).** The mic hears
   the speaker: loud external playback can mask the wake word entirely.
   Ducking softens this; the full mitigation is `pauseMusicOnWake` (config,
