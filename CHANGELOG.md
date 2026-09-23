@@ -27,6 +27,13 @@ semver (pre-1.0: breaking changes bump the minor).
   voices, `marina` by default; editable-combo role with presets), packed
   in-band as `"<voice>:<role>"` by the new `YandexVoiceSpec` — the single
   source of truth for both directions, since a drift fails silently.
+- **Per-backend voice catalog with per-voice roles.** `VoiceCatalog` is keyed
+  by provider (`SBER_VOICES` / `YANDEX_VOICES`) instead of being one flat list,
+  and every Yandex entry carries the roles the v3 docs list *for that voice*,
+  so the role dropdown stops suggesting pairs the service rejects (`marina`
+  offers neutral / whisper / friendly, `alena` neutral / good). Roles stay an
+  editable combo — a voice whose roles the docs do not list keeps the full
+  vocabulary, and free text is always allowed.
 - **Live verification tier** (`YandexAsrLiveSmokeTest`, `YandexTtsLiveSmokeTest`,
   local-only, self-skipping) — the only tier that can catch a vendored-proto
   mistake, since the in-process fakes agree with any field number the client
@@ -46,6 +53,22 @@ semver (pre-1.0: breaking changes bump the minor).
   than the on-device `LOCAL_ID` is removed, so stale/renamed cloud ids are caught too.
   The log line is content-free (space/row counts only). Covered by the new
   `CloudVectorPurgeTest` (live flip + cold-start backstop).
+
+### Fixed — power receiver registered with an explicit export flag
+- **Hardening:** `JarvisForegroundService.registerPowerReceiver()` registered its
+  `ACTION_POWER_CONNECTED`/`DISCONNECTED` receiver bare. At target 36 an unflagged
+  dynamic registration is deliverable by any app on the device, and `AGENTS.md`
+  already claimed the Android 14+ guards were handled — the code was the part that
+  was wrong. It now goes through `ContextCompat.registerReceiver(...,
+  RECEIVER_NOT_EXPORTED)`, which is a no-op below API 33 as far as the receiver's
+  delivery of the two system broadcasts is concerned (the pre-33 path gates the
+  receiver behind androidx's own `signature`-level
+  `${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, supplied by the
+  `androidx.core` manifest, so no manifest edit is required).
+- New `RegisterReceiverGuardTest` pins the invariant for the whole module: every
+  `registerReceiver(` in main sources must either declare an export flag or be the
+  `registerReceiver(null, filter)` sticky-broadcast retrieval. Proven non-vacuous —
+  it fails on the pre-fix call and on a `flags = 0` variant.
 
 ### Changed — P1 hardening (data & privacy)
 - **Room: single destructive-upgrade schema at v2 (pre-1.0)**: the pre-release

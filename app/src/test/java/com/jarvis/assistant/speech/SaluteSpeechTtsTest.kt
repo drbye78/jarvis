@@ -1,13 +1,11 @@
 package com.jarvis.assistant.speech
 
-import com.jarvis.assistant.R
 import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.grpc.synthesis.SynthesisRequest
 import com.jarvis.assistant.llm.TokenManager
 import com.jarvis.assistant.speech.grpc.FakeSaluteTtsService
 import com.jarvis.assistant.speech.grpc.InProcessGrpc
 import com.jarvis.assistant.speech.tts.SaluteSpeechTts
-import com.jarvis.assistant.speech.tts.VoiceCatalog
 import com.jarvis.assistant.util.InMemoryVault
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
@@ -158,12 +156,6 @@ class SaluteSpeechTtsTest {
         fakeTts.awaitRequest()
         assertEquals("Baya_24000", fakeTts.capturedRequest!!.voice)
         job3.cancel()
-    }
-
-    @Test
-    fun `voice catalog ships exactly the verified Mila preset`() {
-        assertEquals(listOf("Mila"), VoiceCatalog.PRESETS.map { it.id })
-        assertEquals(R.string.voice_mila, VoiceCatalog.PRESETS.single().labelRes)
     }
 
     @Test

@@ -767,10 +767,12 @@ class SettingsActivity : AppCompatActivity() {
     /** Voice card (Y6): per-backend voice selection, resolved per sentence. */
     private fun setupVoiceCard() {
         // ------------------------------------------------------------------
-        // Voice card (Y6): preset (Mila, verified) or a custom Salute voice
-        // ID for Sber, a fixed-list voice + optional role for Yandex. The
-        // voice is resolved PER SENTENCE from prefs by the running graph, so
-        // a change applies to the next spoken sentence — NO service restart.
+        // Voice card (Y6): per-backend voice selection, resolved per sentence.
+        // Sber offers the verified preset or a custom voice ID; Yandex offers
+        // the closed v3 voice list plus an optional role whose suggestions
+        // follow the selected voice ([VoiceCatalog.yandexRolesFor]). The voice
+        // is resolved PER SENTENCE from prefs by the running graph, so a change
+        // applies to the next spoken sentence — NO service restart.
         // «Проверить голос» probes through the real synthesis + player lane.
         //
         // Both blocks are populated unconditionally, including the hidden one:
@@ -784,7 +786,7 @@ class SettingsActivity : AppCompatActivity() {
         sberVoiceBlock = findViewById(R.id.sberVoiceBlock)
         yandexVoiceBlock = findViewById(R.id.yandexVoiceBlock)
         val savedVoice = appPrefs.ttsVoice
-        val savedIsPreset = VoiceCatalog.PRESETS.any {
+        val savedIsPreset = VoiceCatalog.SBER_VOICES.any {
             it.id.equals(savedVoice, ignoreCase = true)
         }
         if (savedIsPreset) {
@@ -834,9 +836,11 @@ class SettingsActivity : AppCompatActivity() {
      *
      * The voice list is a closed, documented set, so it is a real dropdown
      * (filtered to nothing typed — the user picks, they do not invent an ID).
-     * The ROLE is an editable-combo: the service rejects role/voice pairs it
-     * does not support, so a pure dropdown would trap the user on a value they
-     * may not use; the preset roles are suggestions, and free text is allowed.
+     * The ROLE is an editable-combo whose suggestions are narrowed to the roles
+     * the selected voice documents ([VoiceCatalog.yandexRolesFor]): the service
+     * rejects a role/voice pair it does not support, so a pure dropdown would
+     * trap the user on a value they may not use — the presets are suggestions,
+     * and free text is still allowed for undocumented voices.
      *
      * Both commit on IME-done / focus loss for the same per-sentence reason as
      * the Salute custom ID — the running graph re-reads the pref between
@@ -849,7 +853,7 @@ class SettingsActivity : AppCompatActivity() {
         val voiceAdapter = android.widget.ArrayAdapter(
             this,
             android.R.layout.simple_list_item_1,
-            VoiceCatalog.YANDEX_VOICES,
+            VoiceCatalog.YANDEX_VOICES.map { it.id },
         )
         yandexVoice.setAdapter(voiceAdapter)
         // The dropdown list is the whole vocabulary; the filter that
@@ -861,19 +865,31 @@ class SettingsActivity : AppCompatActivity() {
             false,
         )
 
-        val roleAdapter = android.widget.ArrayAdapter(
+        // Role suggestions are VOICE-specific ([VoiceCatalog.yandexRolesFor]):
+        // the service rejects a pair it does not document, so offering
+        // `whisper` under `alena` would invite a failure. The field stays an
+        // editable combo — these are suggestions, not a whitelist — so the
+        // adapter is re-pointed rather than the typed text being rewritten.
+        val roleAdapter = android.widget.ArrayAdapter<String>(
             this,
             android.R.layout.simple_list_item_1,
-            VoiceCatalog.YANDEX_ROLES,
         )
         yandexRole.setAdapter(roleAdapter)
+        fun refreshRoleSuggestions(voiceId: String) {
+            roleAdapter.clear()
+            roleAdapter.addAll(VoiceCatalog.yandexRolesFor(voiceId))
+        }
+        refreshRoleSuggestions(yandexVoice.text.toString())
         yandexRole.setText(appPrefs.yandexTtsRole, false)
 
         // Keep the raw (un-trimmed) text through the commit helpers so the
         // pref never stores a half-typed trailing space.
         fun commitVoice() {
             val id = yandexVoice.text.toString().trim()
-            if (id.isNotEmpty()) appPrefs.yandexTtsVoice = id
+            if (id.isNotEmpty()) {
+                appPrefs.yandexTtsVoice = id
+                refreshRoleSuggestions(id)
+            }
         }
 
         fun commitRole() {

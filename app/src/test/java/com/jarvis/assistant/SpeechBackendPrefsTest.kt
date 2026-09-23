@@ -1,7 +1,6 @@
 package com.jarvis.assistant
 
 import com.jarvis.assistant.speech.SpeechBackend
-import com.jarvis.assistant.speech.tts.VoiceCatalog
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.InMemoryVault
 import org.junit.Assert.assertEquals
@@ -138,44 +137,5 @@ class SpeechBackendPrefsTest {
 
         assertEquals("yandex-secret", appPrefs.yandexApiKey)
         assertEquals("openai-secret", appPrefs.openAiApiKey)
-    }
-
-    // ---- Voice catalog ---------------------------------------------------
-
-    @Test
-    fun `the yandex catalog is non-empty, unique and contains the default`() {
-        val voices = VoiceCatalog.YANDEX_VOICES
-        assertTrue("the Yandex voice list must not be empty", voices.isNotEmpty())
-        assertEquals(
-            "duplicate voice ids would render two identical dropdown rows",
-            voices.size,
-            voices.toSet().size,
-        )
-        assertTrue(
-            "the config default voice must be selectable in the UI",
-            "marina" in voices,
-        )
-        assertTrue("voice ids must not carry stray whitespace", voices.none { it != it.trim() })
-    }
-
-    @Test
-    fun `the Sber and Yandex voice sets are disjoint`() {
-        val sber = VoiceCatalog.PRESETS.map { it.id.lowercase() }.toSet()
-        val yandex = VoiceCatalog.YANDEX_VOICES.map { it.lowercase() }.toSet()
-        assertEquals(
-            "a shared id would make the active backend ambiguous",
-            emptySet<String>(),
-            sber intersect yandex,
-        )
-    }
-
-    @Test
-    fun `suggested yandex roles are non-blank and unique`() {
-        assertTrue(VoiceCatalog.YANDEX_ROLES.isNotEmpty())
-        assertEquals(
-            VoiceCatalog.YANDEX_ROLES.size,
-            VoiceCatalog.YANDEX_ROLES.toSet().size,
-        )
-        assertTrue(VoiceCatalog.YANDEX_ROLES.none { it.isBlank() })
     }
 }

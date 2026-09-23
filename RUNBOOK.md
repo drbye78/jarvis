@@ -385,13 +385,16 @@ Settings → «Голос» shows the controls for the **active speech backend**
   synthesis pool by this project; the card also accepts a free-text Salute
   voice ID for advanced users.
 - **Yandex:** a dropdown of the documented v3 ru-RU voices (`marina` default)
-  plus an optional **role**. Role is an editable combo, not a closed list,
-  because the service rejects unsupported voice/role pairs — the presets
-  (neutral / good / strict / friendly / whisper / evil) are suggestions and
-  free text is allowed. Voice and role are packed in-band as
-  `"<voice>:<role>"` by `YandexVoiceSpec`; an empty role collapses to the bare
-  voice. A role glued into the speaker name is a silent failure, so both
-  directions live on that one class.
+  plus an optional **role**. The role suggestions follow the selected voice
+  (`VoiceCatalog.yandexRolesFor`) — `marina` offers neutral / whisper /
+  friendly, `alena` offers neutral / good — because the service rejects a
+  voice/role pair it does not support. The field is an editable combo, not a
+  closed list: a voice whose roles the docs do not list (e.g. `filipp`, the
+  `*_ru` voices) keeps the full vocabulary (neutral / good / strict / friendly
+  / whisper / evil), and free text is always allowed. Voice and role are packed
+  in-band as `"<voice>:<role>"` by `YandexVoiceSpec`; an empty role collapses
+  to the bare voice. A role glued into the speaker name is a silent failure, so
+  both directions live on that one class.
 
 «Проверить голос» speaks one sample sentence through the real synthesis+player
 lane using the **active** backend (previewing the other backend's voice would
