@@ -43,6 +43,42 @@ semver (pre-1.0: breaking changes bump the minor).
   no longer sent to Sber's token endpoint on behalf of a provider the app was
   told not to call; switching back to Sber re-probes.
 
+### Fixed — VK Music was unreachable: `com.vk.music` is a code namespace, not a package
+- **The preferred-player radio never targeted a real app.** The catalog, the
+  manifest `<queries>` allowlist and `SettingsMapping.Player.VK` all used
+  `com.vk.music` — which is VK Music's internal Java/Kotlin **code namespace**
+  (`com.vk.music.screens.main.MainActivity`), not an installed package. Verified
+  on device: `com.vk.music` resolves to nothing while VK Music's real
+  applicationId `com.uma.musicvk` does. So a VK preference silently degraded to
+  the auto priority (Yandex) and the «вк» hint could not target it.
+- Corrected to `com.uma.musicvk` in the resolver catalog, the `<queries>`
+  allowlist, the Settings mapping and the pref doc comment. The legacy
+  `com.vk.music` value an older build persisted is still **accepted** on read
+  and canonicalized on write, so an existing install does not lose its choice
+  (same precedent as the legacy Yandex id).
+- Device-verified, not just unit-tested: a new instrumentation test asserts
+  `getLaunchIntentForPackage("com.uma.musicvk")` is non-null (which also proves
+  the `<queries>` entry works under package-visibility rules) and that
+  `com.vk.music` is not launchable.
+
+### Added — device-tier media/transport coverage (first for this subsystem)
+- **The media lane had ZERO device tests** — every cascade, capability-gate and
+  honesty behaviour was asserted only against JVM fakes. New
+  `MediaTransportDeviceTest` (10 tests, all self-skipping when the environment
+  lacks a player or a live session) exercises the real stack on hardware:
+  package visibility per player, `hasNotificationListenerAccess()` agreeing with
+  an independent read of `Settings.Secure` on a real OEM ROM (the M-6
+  flattened-ComponentName tolerance), real `getActiveSessions()` enumeration and
+  capability decoding, and — on a genuinely rich live mask — the M-3/M-7
+  capability-gate honesty path (LIKE fail-open on an unknown mask, honest
+  refusal when the real rating type is not heart, and never a *confirmed*
+  success when the session does not publish `SET_RATING`).
+- Honest scope recorded in the class KDoc: on the target API-29 device the
+  `<queries>` allowlist is not *enforced*, so T1 proves the package ids resolve
+  rather than that visibility filtering works; and the "publishes a
+  PlaybackState" proxy is definitionally tied to the decoded mask because no
+  public accessor exposes the framework state.
+
 ### Fixed — REMEDIATION_PLAN N7: CLOUD vectors are purged when the memory cloud toggle is turned off
 - **Privacy:** `memory.cloudEnabled=false` previously only *stopped reading* cloud
   vectors — the embeddings of user facts stayed in Room forever. Turning the switch
