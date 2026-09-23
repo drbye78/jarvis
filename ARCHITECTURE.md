@@ -29,12 +29,12 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `wire/` | OpenAI-protocol DTOs with `@SerialName` snake_case + mappers. The only code that shapes request JSON. |
 | `llm/` | `SseParser` (pure), `SseLlmClient` (shared SSE transport with correct cancellation), GigaChat / OpenAI-compatible profiles, `TokenManager` (mutex-serialized OAuth refresh). |
 | `speech/asr/` | `StreamingAsrClient` / `AsrStream` — bidi streaming ASR; server-side EOU. Implementations: `SberStreamingAsr` (Salute OAuth) and `YandexStreamingAsr` (Yandex v3, `Api-Key`). |
-| `speech/tts/` | `TtsClient` (cancellable + deadline) and `TtsPlayer` contract. Implementations: `SaluteSpeechTts` and `YandexSpeechTts` (Yandex v3, 24 kHz `RawAudio`); voice/role packing via `YandexVoiceSpec`. |
+| `speech/tts/` | `TtsClient` (cancellable + deadline) and `TtsPlayer` contract. Implementations: `SaluteSpeechTts` and `YandexSpeechTts` (Yandex v3, 24 kHz `RawAudio`); voice/role packing via `YandexVoiceSpec`. `VoiceCatalog` is the per-backend voice catalog and the single source of truth for the Settings «Голос» card (`SBER_VOICES`, `YANDEX_VOICES`, `yandexRolesFor()`), keyed by backend because the two providers have disjoint voice namespaces. |
 | `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loads BOTH ways per FIXPLAN C — bundled models asset-relative (`newFromAsset`), custom/extracted models from the filesystem (`newFromFile` via `SherpaModelStore`)), player (generations), and the Phase-5 etiquette pair: `AssistantAudioFocus` (duck-during-TTS state machine + `AndroidAudioFocusAdapter`) and `SpeechFeedback` (spoken cascade progress). |
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns (job hand-offs under a monitor, seq-guarded supersede/cancel); TurnRunner (bounded tool loop; error turns end via reportFailure only); `SpeechPhrases` — locale-aware runtime spoken phrases (RU default + resource-backed values/values-en). |
 | `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. |
-| `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure capability-gated strategy cascade (structured playFromSearch, MediaBrowser search/token lane, query-aware verification) with rich transport; `MediaBrowserGateway` + `AndroidMediaBrowserGateway` (bind/search/children); `MediaCapabilities`/`VoiceQuery`/`MediaDiagnostics` (pure models). Android adapters: `AndroidMediaGateway` (compat-wrapped controllers), `AndroidMediaBrowserGateway`. |
-| `data/` | Room v2: messages (id-ordered, orphan-safe windowing) + alarms + user_facts (cognitive memory) + extraction_queue + memory_meta (cognitive bookkeeping: schema revision, cursors, counters) + fact_fts (FTS4) + command_events + habit_rules + behavior_log + session_summaries + fact_vectors + entities + fact_entities. |
+| `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure capability-gated strategy cascade (structured playFromSearch, MediaBrowser search/token lane, query-aware verification) with rich transport; `MediaBrowserGateway` + `AndroidMediaBrowserGateway` (bind/search/children); `MediaCapabilities`/`VoiceQuery`/`MediaDiagnostics` (pure models). Android adapters: `AndroidMediaGateway` (compat-wrapped controllers), `AndroidMediaBrowserGateway`. Threading invariant: `AndroidMediaBrowserGateway.connect()` must construct `MediaBrowserCompat` on a Looper thread and therefore hops to `Dispatchers.Main` internally — the production tool lane is `Dispatchers.IO`, and without that hop every bind silently returns null (the throw is swallowed by `runCatching`), so the whole browser strategy is dead. Pinned only on-device. |
+| `data/` | Room v2: messages (id-ordered, orphan-safe windowing) + alarms + user_facts (cognitive memory) + extraction_queue + memory_meta (cognitive bookkeeping: schema revision, cursors, counters) + fact_fts (FTS4) + command_events + habit_rules + behavior_log + session_summaries + fact_vectors + entities + fact_entities + ring_sessions (durable ring state, `RingSessionEntity`). |
 | `service/` | Foreground service (permission gate, retryable init, watchdog semantics), boot receiver, ringing activity, notification listener. |
 | `ui/` | Adapters for transcript and alarm lists. |
 | `MemoryInspectorActivity` (app root) | Memory Inspector (COGNITIVE_PLAN 1.8): fact list with provenance marks (sensitive/contested) + confidence/status lines, per-item delete, JSON export via SAF, «Забыть всё» wipe of the cognitive tables; honest read-only empty state when the service graph isn't running. |
@@ -111,9 +111,10 @@ answers), and the dialogue policies from the dialogue-system audit: tool-first
 routing, ONE clarifying question for ambiguous requests, confirmation before
 irreversible actions unless the command is explicit, no technical details,
 honest failure with an alternative, harm refusal. The music routing rules
-live in the same prompt. Deliberately RU-only: the ASR is ru-RU and the
-Salute voice pool is Russian; the EN UI translates the *interface*, not the
-assistant's brain (RUNBOOK documents the honest caveat).
+live in the same prompt. Deliberately RU-only: the ASR is ru-RU and both
+speech backends default to Russian voices (the Salute pool; Yandex `marina`);
+the EN UI translates the *interface*, not the assistant's brain (RUNBOOK
+documents the honest caveat).
 
 ## LLM transient-failure retry
 
@@ -210,8 +211,10 @@ the brand (яндекс/звук/вк — per-request, always wins); the user's
 preferred default player from Settings («Музыка» card, read lazily by
 the composition root so changes apply without a restart —
 uninstalled preferences degrade honestly to auto); else known packages
-in priority order (ru.yandex.music → com.yandex.music → zvooq → vk);
-else any launchable app with a music-looking label. The whole cascade
+in priority order (ru.yandex.music → com.yandex.music →
+com.zvooq.openplay → com.uma.musicvk — the last being VK Music's real
+applicationId, since `com.vk.music` is only its code namespace); else
+any launchable app with a music-looking label. The whole cascade
 is pure Kotlin over gateway interfaces → fully JVM-tested
 (`MusicOrchestratorTest`, `MusicAppCatalogTest`,
 `MediaBrowserGatewayTest`, `VoiceQueryTest`, `TransportToolsTest`).
@@ -379,7 +382,7 @@ silent no-op or a crash:
 | ASR open fails | 2 retries w/ backoff → error voice, IDLE | next wake word |
 | LLM stream dies mid-turn | error voice, IDLE; partial sentence already spoken stays | next wake word |
 | LLM times out (45 s) | error voice, IDLE | next wake word |
-| Tool throws / hangs | JSON error result (isError) within 15 s (30 s playMusic) | same turn — LLM reacts |
+| Tool throws / hangs | JSON error result (isError) within 15 s (50 s playMusic) | same turn — LLM reacts |
 | Barge-in during tool | cancellation propagates (never a fake tool error); completed subset persisted | new turn |
 | TTS sentence fails | sentence dropped, rest of the answer still speaks | next turn |
 | TTS drain exceeds 60 s | stragglers cancelled, turn ends | next turn |
@@ -405,11 +408,13 @@ configured by `gigaChatEndpoint` / the OpenAI-compatible base URL).
 ## Security
 
 - **Per-user credentials, no shared secrets.** Provider keys (Picovoice, Sber
-  Salute, GigaChat) are entered in-app via **Settings** and stored in
-  `KeystoreVault` (AndroidKeyStore AES-256-GCM; the deprecated
-  security-crypto library is gone). **Nothing secret is baked
-  into `BuildConfig` or `local.properties`** — every install uses its owner's
-  own credentials, so the APK is safe to distribute to colleagues.
+  Salute, GigaChat, Yandex SpeechKit v3 API key) are entered in-app via
+  **Settings** and stored in `KeystoreVault` (AndroidKeyStore AES-256-GCM; the
+  deprecated security-crypto library is gone). The Yandex key is a
+  non-expiring API key with no folder id (`SecretVault.KEY_YANDEX_API_KEY`).
+  **Nothing secret is baked into `BuildConfig` or `local.properties`** — every
+  install uses its owner's own credentials, so the APK is safe to distribute
+  to colleagues.
 - OAuth uses `Authorization: Basic base64(client_id:client_secret)` per
   Sber's spec; tokens are cached encrypted; secrets/tokens are never logged.
 - HTTPS only (`usesCleartextTraffic=false`)
@@ -425,6 +430,13 @@ configured by `gigaChatEndpoint` / the OpenAI-compatible base URL).
   attacker the same token material the device's own user already holds.
   Revisit ONLY if Sber publishes a pin-worthy stable intermediate CA and a
   rotation contract.
+- **Минцифры trust roots are host-scoped (`util/SberTrust.kt`).** The two
+  published Russian Trusted Root/Sub CA PEMs are embedded and installed via a
+  host-scoped trust manager, so those bundled anchors apply ONLY to `sber.ru`,
+  `*.sber.ru`, `sberbank.ru` and `*.sberbank.ru`. Every other host — including
+  the Yandex endpoints, which deliberately use the platform store — validates
+  against the system trust store only. Label matching is label-exact (no
+  suffix tricks).
 - **HTTP timeouts are total.** connect 10 s / read 60 s / whole-call 120 s
   (the call cap sits above every legit use — 45 s LLM cap, per-sentence TTS
   deadlines, 5–15 s credential probes — so it only fires on stuck calls).
@@ -432,9 +444,9 @@ configured by `gigaChatEndpoint` / the OpenAI-compatible base URL).
 ## Tests
 
 JVM unit suite (1071 tests, all green; runs in CI on every push/PR). The live
-smoke tier (Sber + Yandex, `integration/**/*LiveSmokeTest`) shares `src/test` but is
-excluded from the gate task and runs only through `:app:integrationTest`,
-which self-skips when credentials are absent:
+smoke tier (Sber + Yandex + GigaChat, `integration/**/*LiveSmokeTest`) shares
+`src/test` but is excluded from the gate task and runs only through
+`:app:integrationTest`, which self-skips when credentials are absent:
 wire DTOs (incl. non-null user content), SSE parser (incl. spec multi-line
 assembly), state machine, sentence splitter, conversation windowing (incl.
 char-budget trim), alarm
@@ -447,3 +459,10 @@ producer give-up/revive), music cascade, router tool surface, system prompt
 sections + time injection, turn-activity lifecycle, LLM retry semantics
 (transient vs fatal, partial-output safety), RU/EN resource parity.
 Run with `./gradlew testDebugUnitTest`.
+
+Beyond the JVM suite there is an **instrumentation tier** under
+`app/src/androidTest` (including `MediaTransportDeviceTest`, 16 self-skipping
+`@Test`s) that needs a device/emulator and is NOT part of the push/PR gate. It
+runs in the separate nightly `.github/workflows/android-test.yml`
+(`connectedDebugAndroidTest`, 03:20 UTC) plus manual dispatch; `ci.yml` runs
+the JVM suite on push-to-main/PR.

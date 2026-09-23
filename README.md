@@ -40,12 +40,14 @@ OpenAI-compatible endpoint).
    (gear button) and enter your own:
    - **Picovoice access key** (wake word)
    - **Sber Salute** client ID + secret (ASR/TTS), **or** a **Yandex
-     SpeechKit v3** API key — pick the speech backend in Settings → «Speech»
-     (one choice drives recognition *and* synthesis)
+     SpeechKit v3** API key — pick the speech backend in Settings →
+     «Движок речи (ASR + TTS)»; one choice drives recognition *and*
+     synthesis
    - **GigaChat** client ID + secret (LLM)
-   The mandatory Salute/GigaChat pairs are **validated upfront in the panel as
-   you type** (a live status row: valid / invalid / unreachable) and on every
-   «Проверить ключи» press — a typo is caught in seconds, not at the next
+   The GigaChat pair (and the Salute pair while the Sber backend is active) is
+   **validated upfront in the panel as you type** (a live status row: valid /
+   invalid / unreachable) and on every «Проверить ключи» press — a typo is
+   caught in seconds, not at the next
    voice command.    Credentials are stored encrypted in the Android Keystore
    (`KeystoreVault`, AES-256-GCM) on the device — **nothing secret is ever in
    the APK or in `local.properties`**. GigaChat creds are optional if you use
@@ -65,7 +67,14 @@ OpenAI-compatible endpoint).
       `.ppn` is bound to your Picovoice key). Requires a free Picovoice account.
       The app ships Porcupine **4.x**, and keyword files are version-bound: a
       `.ppn` trained for 3.x is rejected, so download a current one (Console
-      now issues v4-format keywords). The built-in "Jarvis" keyword is unaffected.
+      now issues v4-format keywords). The built-in "Jarvis" keyword is
+      unaffected. The **model** choice is separate from the engine: the
+      built-in keyword requires selecting the **"Jarvis (встроенный)" /
+      built-in** wake-word model radio, whereas the default model selection is
+      **"Custom (bundled)"**, which points at a user-supplied `jarvis_ru.ppn`
+      that the repo intentionally does not ship — so merely switching the
+      engine to Porcupine without choosing the built-in model fails by design,
+      and the detector asks for a key/`.ppn`.
     Switching engines and the sensitivity slider apply live while the assistant
     is running. Custom Sherpa wake words are supported — the app extracts
     models, BPE-tokenizes keywords, and loads via `newFromFile`.
@@ -77,9 +86,12 @@ OpenAI-compatible endpoint).
 ```
 
 CI runs the same suite plus `assembleDebug` on every push/PR (see the badge
-above — includes the Git-LFS-tracked native assets).
+above — includes the Git-LFS-tracked native assets). It also runs an R8
+`assembleRelease` build, a detekt+ktlint `static-analysis` job, and an
+advisory `lintDebug` job — all in `.github/workflows/ci.yml`, where the JVM
+suite + `assembleDebug` are the push/PR gate.
 
-## Integration testing (live Sber services — local only)
+## Integration testing (live speech/LLM services — local only)
 
 CI never talks to Sber and holds no secrets. Live smoke tests run **locally
 only** with your own credentials (owner decision #1, REMEDIATION_PLAN
@@ -144,7 +156,7 @@ in `app/` — it is `.gitignore`d and never committed.
 
 To verify the signature:
 ```bash
-/path/to/Android/Sdk/build-tools/34.0.0/apksigner verify --print-certs \
+/path/to/Android/Sdk/build-tools/<version>/apksigner verify --print-certs \
   app/build/outputs/apk/release/app-release.apk
 ```
 
@@ -175,11 +187,19 @@ keystore with `keytool` and update `local.properties` accordingly.
   bounded by a character budget — verbose tool results can no longer overflow
   the model's context window (the newest turn is always kept, truncated if
   needed).
-- **Speech backend** (Settings → «Речь»): **Sber SaluteSpeech** or **Yandex
-  SpeechKit v3** — one choice covers recognition *and* synthesis. The two
-  providers have separate credential fields and separate voice lists, and the
-  selection takes effect after a service restart (each provider owns its own
-  channel and auth scheme, so there is no live switch — the card says so).
+- **Memory of facts** (Settings → «Память»): a long-term cognitive memory
+  that remembers things about you, with semantic search over those facts in
+  its own card (Settings → «Семантический поиск по памяти»). Cloud fact
+  extraction is opt-in (`memory.autoExtract`, default off), and the whole
+  subsystem can be switched off.
+- **Proactive suggestions** (Settings → «Проактивность»): opt-in spoken
+  suggestions based on what Jarvis remembers — **off by default**.
+- **Speech backend** (Settings → «Движок речи (ASR + TTS)»): **Sber
+  SaluteSpeech** or **Yandex SpeechKit v3** — one choice covers
+  recognition *and* synthesis. The two providers have separate credential
+  fields and separate voice lists, and the selection takes effect after a
+  service restart (each provider owns its own channel and auth scheme, so
+  there is no live switch — the card says so).
 - **Voice picker** (Settings → «Голос»): the controls follow the selected
   speech backend. Sber: Mila by default, any other Salute voice ID by hand.
   Yandex: a dropdown of the documented v3 voices plus an optional role
@@ -220,7 +240,7 @@ keystore with `keytool` and update `local.properties` accordingly.
 - Picovoice Porcupine + Sherpa-ONNX (hybrid wake word: Porcupine with a Picovoice account, or fully offline Sherpa-ONNX with no account)
 - Sber SaluteSpeech **or** Yandex SpeechKit v3 (streaming ASR + TTS via gRPC)
 - Sber GigaChat or any OpenAI-compatible API (LLM via SSE, tool calling)
-- Room (conversation + alarms) · Open-Meteo (weather)
+- Room (conversation, alarms, memory/facts) · Open-Meteo (weather)
 - Material 3 UI (teal/amber day+night design system): home screen with a
   live voice orb (breathing/ripple/thinking/speaking animations), chat-style
   transcript, permission onboarding with status rows and start gating,

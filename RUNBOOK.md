@@ -7,10 +7,10 @@
 ## First run
 
 1. Install the APK, open Jarvis → onboarding screen appears.
-2. Grant **микрофон** (mandatory). Optionally grant notification-listener
-   access (music ducking), battery-optimization exemption (mandatory for
-   always-on), write-settings (brightness tool), DND access, device admin
-   (screen-off tool).
+2. Grant **микрофон** and the **оптимизация батареи** exemption (both
+   mandatory). Optionally grant notification-listener access (media
+   transport / music control), write-settings (brightness tool), DND access,
+   device admin (screen-off tool).
 3. Press **Запустить Джарвиса**.
 
 ## Common issues
@@ -18,7 +18,8 @@
 ### "Assistant never responds to the wake word"
 - Check the persistent notification says «Ожидание».
 - Release builds: `adb shell run-as com.jarvis.assistant cat files/logs/jarvis.log`
-  (debug builds: `adb logcat -s Timber:*`).
+  (debug builds: plain `adb logcat`; tags are class names, so
+  `| grep -i <Class>` narrows it).
    - **Engine:** Settings → Wake word. The **default is Sherpa-ONNX** (bundled,
      offline, no account, zero configuration) — a fresh install hears "Джарвис"
      out of the box. **Picovoice Porcupine** is opt-in and needs a free
@@ -49,7 +50,8 @@
 - Or switch Settings → provider to an OpenAI-compatible endpoint.
 
 ### Yandex SpeechKit selected but the assistant stays silent / errors
-- Settings → «Речь» → **Yandex**. The choice is SEALED when the service starts
+- Settings → «Движок речи (ASR + TTS)» → **Yandex**. The choice is SEALED
+  when the service starts
   (each provider owns its own channel and auth scheme), so after switching you
   must restart: Стоп → Запустить on the home screen. The card states this.
 - The Salute card is **hidden and not probed** while Yandex is active — the
@@ -96,8 +98,9 @@ open/save). The amber status means *no verdict*, not *bad credentials*:
   probed — they are the mandatory pair. The Picovoice key is optional
   (Porcupine engine only) and is validated by engine init, not probed.
 
-Offline note: the probe is the ONLY network call the settings panel makes;
-the app itself works offline with cached tokens.
+Offline note: the automatic credential probe is the only *background* network
+call the settings panel makes (the memory benchmark and «Проверить голос» are
+user-triggered); the app itself works offline with cached tokens.
 
 ### "Service keeps getting killed"
 - Huawei PowerGenie: Settings → Apps → App launch → Jarvis → Manage manually
@@ -122,10 +125,12 @@ adb logcat -s MusicDiag
 
 Every play attempt dumps the ground truth: each live session's action mask
  decoded (playFromSearch/seekTo/rating/repeat/shuffle/speed bits), rating
- type, queue presence, plus MediaBrowserService discovery. One «включи
- музыку» attempt on the tablet answers the per-build questions no static
- audit can: does this Yandex build honor playFromSearch? repeat/shuffle
- bits? heart rating? browser root? onSearch?
+ type, queue presence, plus the discovered MediaBrowserService table
+ (`pkg(label)`). One «включи музыку» attempt on the tablet answers the
+ per-build questions no static audit can: does this Yandex build honor
+ playFromSearch? repeat/shuffle bits? heart rating? Browser root/onSearch
+ outcomes log separately under a `BrowserDiag:` prefix — grep
+ `adb logcat | grep BrowserDiag` for those.
 
 ### «Джарвис, включи <трек>» — Jarvis opens search instead of playing
 The cascade is capability-gated and degrades honestly through up to seven
@@ -135,9 +140,10 @@ browser session-token dispatch → app launch + poll → legacy
 MEDIA_PLAY_FROM_SEARCH intent → search-screen deep link → launch-only.
 
 1. Jarvis says «Включил…» — a strategy verified playback matching the
-   request. Done. (`adb logcat -s MusicDiag` shows WHICH strategy —
-   `active_session` / `browser_media_id` / `browser_cold_start` /
-   `cold_start` / `legacy_intent`.)
+   request. Done. (The chosen strategy is in the `playMusic` tool result
+   JSON — `active_session` / `browser_media_id` / `browser_cold_start` /
+   `cold_start` / `legacy_intent`; `adb logcat -s MusicDiag` shows the
+   capability tables and skip reasons, not the strategy.)
 2. Jarvis says «Секунду…» then plays — normal cold start (bind + verify
    can take a few seconds).
 3. Jarvis says «открыл поиск — нажми на трек» — every strategy failed or
@@ -198,19 +204,24 @@ The one-minute on-device check that re-enables it:
 - Alarms fire via `setAlarmClock` — check the system alarm indicator appears.
 - Do-not-disturb filters can silence alarms: check DND settings.
 - Alarms survive reboots (BootReceiver re-arms them from Room).
-- **Timers on Android 12+:** exact scheduling needs `SCHEDULE_EXACT_ALARM`
-  ("Alarms & reminders" in system settings; denied-by-default from Android 14
-  on fresh installs of sideloaded APKs). If it is revoked, `SystemAlertArmer`
-  degrades honestly: the timer arms as inexact `setWindow` (up to the 10-minute
-  window late) and posts a one-time low-importance notification ("Точность
-  таймеров ограничена") telling the user to grant the permission. Alarms, by
-  contrast, are never affected — `setAlarmClock` is exempt from the permission.
+- **Alarms and timers on Android 12+:** exact scheduling needs
+  `SCHEDULE_EXACT_ALARM` ("Alarms & reminders" in system settings;
+  denied-by-default from Android 14 on fresh installs of sideloaded APKs). A
+  revoked/absent grant degrades BOTH alarms and timers: `SystemAlertArmer`
+  falls back to an inexact path (`setWindow` for timers,
+  `setAndAllowWhileIdle` for alarms) and posts a one-time low-importance
+  notification ("Точность будильников и таймеров ограничена"), whose note
+  warns that alarms and timers may ring up to 10 minutes late. Revoking the
+  grant also deletes already-armed exact alarms — `setAlarmClock` is NOT
+  exempt from the permission — and they are re-armed on the next
+  reconcile/boot.
 
 ## Debugging
 
 ```bash
-# Logs (debug builds)
-adb logcat -s Timber:*
+# Logs (debug builds; tags are class names)
+adb logcat
+# or narrow: adb logcat | grep -i <Class>
 
 # Music lane ground truth (capability table + browser discovery)
 adb logcat -s MusicDiag
@@ -249,8 +260,10 @@ cp local.secrets.properties.example local.secrets.properties
 
 Behavior without credentials:
 
-- `:app:testDebugUnitTest` (the CI gate) never touches the network — the live
-  tests skip through JUnit assumptions and the suite stays green.
+- `:app:testDebugUnitTest` (the CI gate) never touches the network — the
+  `*LiveSmokeTest*` classes are EXCLUDED from it in `app/build.gradle.kts`, so
+  the suite stays green. (`:app:integrationTest` is the tier that compiles
+  them in and skips them through JUnit assumptions without credentials.)
 - `:app:integrationTest` / `:app:recordSaluteFixtures` print a skip reason
   listing the MISSING KEY NAMES (values are never printed) and exit green.
 
@@ -276,7 +289,7 @@ Common issues:
   `jarvis.gigachat.*`).
 - **Live tests skipped inside `integrationTest`** — only one service's
   credentials are present; the other class's `@Before` assumption skipped it.
-  Provide all four keys to run everything.
+  Provide all four Sber keys plus the optional Yandex key to run everything.
 - **Embeddings smoke fails with HTTP 4xx** — the GigaChat account has no
   embeddings entitlement (the app degrades to the lexical embedder; the live
   smoke reports it honestly).
@@ -335,25 +348,24 @@ AEC3 becomes linkable.
 2. Verify the own-TTS lane: say the wake word; while the answer SPEAKS,
    say «Джарвис» (barge-in). With the tap working, the wake word should be
    recognisable during playback; without it, the answer's own echo masks it.
-3. Watch convergence:
-   ```
-   adb logcat -s AecDiag
-   # MusicDiag-style: delay estimate should lock near the true path delay
-   # and stay there; errorToFloor ≈ 1 during echo-only spans.
-   ```
-4. **Music lane (optional, experimental):** Settings → «Захват музыки» →
+   The canceller's internal convergence stats (delay estimate, residual
+   error, divergence flag) are NOT logged, so convergence cannot be watched
+   from logcat — judge it by this barge-in behaviour.
+3. **Music lane (optional, experimental):** Settings → «Захват музыки» →
    «Разрешить захват звука» → system consent dialog (once per service run).
    Start music in a player, then:
    ```
-   adb logcat -s AecDiag | grep captureLane
-   # frames=0 while music plays ⇒ the player opted out of capture or the
-   # projection died — nothing we can do; the wake-word-through-music case
-   # then needs pauseMusicOnWake.
+   adb logcat -s AecDiag | grep "playback capture"
+   # "playback capture started" on success.
    ```
-5. Recovery after moving the tablet / volume changes: the freeze-reseed
-   logic re-adapts within ~3 s; the divergence guard resets pathological
-   state (logged as `hwAec=...` never changes — watch `diverged=true`).
-6. **Тихая речь при музыке (честный трейд-офф):** residual-гейт сохраняет
+   The lane's frame counter is not logged, so a silent lane (player opted
+   out of capture or the projection died) shows only as the absence of fresh
+   capture output — the wake-word-through-music case then needs
+   `pauseMusicOnWake`.
+4. Recovery after moving the tablet / volume changes: the freeze-reseed
+   logic re-adapts within ~3 s and the divergence guard resets pathological
+   state — neither is logged, so expect normal barge-in to resume on its own.
+5. **Тихая речь при музыке (честный трейд-офф):** residual-гейт сохраняет
    двойной разговор, но тихий голос во время громкой музыки может частично
    подавляться (до `MIN_GATE` = 0.15 ≈ −16.5 дБ) на ~3 с, пока пол не подтянется.
    Если тихую речь «съедает» — по порядку предпочтения: удлинить окно
@@ -362,7 +374,7 @@ AEC3 becomes linkable.
    умолчанию — больше = гейт открывается охотнее = речь слышнее, но
    остаточное эхо выше; значение подобрано на синтетике, на устройстве
    мерить ERLE и разборчивость, см. цель выше).
-7. **Потеря far-end кадров:** `AecDiag` логирует переполнение очереди
+6. **Потеря far-end кадров:** `AecDiag` логирует переполнение очереди
    каждой полосы («far-end lane '...' overflow: dropped oldest N frames»).
    Растущий счётчик = темп производителя полосы не совпадает с
    потреблением — страдает именно опорный сигнал (качество AEC), а не
@@ -384,7 +396,7 @@ tail. Chained conversation: every spoken reply re-opens the window.
 ### Voice selection (Голос)
 
 Settings → «Голос» shows the controls for the **active speech backend**
-(Settings → «Речь»):
+(Settings → «Движок речи (ASR + TTS)»):
 
 - **Sber:** Mila (`May_24000`) is the only voice ID verified against the Salute
   synthesis pool by this project; the card also accepts a free-text Salute
@@ -529,10 +541,10 @@ verdict, plus the opt-in vector path.
 2. «Джарвис, кто мой начальник?» → the answer names Иванов (the
    relation-question boost promotes the fact even with zero lexical
    overlap between «начальник» and the stored value).
-3. Settings → Память → Семантический поиск → «Проверить качество поиска»:
-   the result line shows the local engine numbers and, when the account
-   has embeddings entitlement, the cloud branch. STATIC probe strings are
-   sent for the cloud branch — never user facts (§9.2 note on screen).
+3. Settings → Память → Семантический поиск по памяти → «Проверить качество
+   поиска»: the result line shows the local engine numbers and, when the
+   account has embeddings entitlement, the cloud branch. STATIC probe strings
+   are sent for the cloud branch — never user facts (§9.2 note on screen).
 4. Selector «На устройстве» → «Построить векторы памяти» → the dialog
    states on-device-only → accept → progress line counts up to the ACTIVE
    fact count; re-press resumes if interrupted.
@@ -562,8 +574,9 @@ CHANGELOG Phase 3 performance block.
   can fully encode are accepted (Settings validates with the real tokenizer
   and shows ✗ for digits/punctuation/Cyrillic). After applying, run the same
   false-accept ladder as above. If the engine build fails (bad custom model
-  dir), the detector surfaces `DetectorState.Failed` with the reason — check
-  `adb logcat -s JarvisWake`.
+  dir), the detector surfaces `DetectorState.Failed` with the reason, and the
+  user sees the actionable "deaf" state guidance. To watch the build, use
+  `adb logcat | grep -iE "Sherpa|Wake-word|HybridWakeWordDetector"`.
 
 
 - **Sherpa-ONNX startup is async (no ANR).** The engine build now runs off the
@@ -602,10 +615,10 @@ CHANGELOG Phase 3 performance block.
   null for every player (the throw is swallowed by `runCatching`, so nothing
   looks broken) and the whole S0/S2 browser strategy stops running. The device
   test `browserConnect_worksFromLooperlessProductionThread` pins this.
-- **No acoustic echo cancellation (wake word vs loud music).** The mic hears
-  the speaker: loud external playback can mask the wake word entirely.
-  Ducking softens this; the full mitigation is `pauseMusicOnWake` (config,
-  default off, no auto-resume).
+- **Acoustic echo cancellation is opt-in, default OFF (wake word vs loud
+  music).** The mic otherwise hears the speaker: loud external playback can
+  mask the wake word entirely. Enable it in Settings → «Эхоподавление», or
+  use `pauseMusicOnWake` (config, default off, no auto-resume).
 - **Rich transport is player-dependent.** seek/like/repeat/shuffle/speed are
   gated on the session's action mask and rating type; media-key fallback only
   covers play/pause/next/previous/stop. Unsupported actions get an honest
@@ -623,14 +636,23 @@ CHANGELOG Phase 3 performance block.
   artist can verify as "playing" even when it is not the exact recording the
   user meant. The alternative — reporting `search_opened` for every
   near-match — is worse; exact-match does not exist for unstructured search.
-- **On-device capability validation is still pending.** The MusicDiag
-  capability matrix (`adb logcat -s MusicDiag` after one play attempt) is
-  designed to answer, on the target hardware and CURRENT player builds,
-  whether `playFromSearch`, browser `onSearch`, repeat/shuffle bits, and
-  heart rating are actually exposed. Until that dump is read, every
-  capability is an assumption the cascade degrades gracefully around.
+- **On-device capability is now MEASURED (Huawei AGS6-W09, API 29).** The
+  MusicDiag matrix was read after one play attempt; per-player findings:
+  - Yandex Music (`ru.yandex.music`): advertises 1 `MEDIA_PLAY_FROM_SEARCH`
+    activity and a `MediaBrowserService`; publishes a PAUSED MediaSession on
+    launch.
+  - Zvuk (`com.zvooq.openplay`): 1 legacy activity and a
+    `MediaBrowserService`, but publishes NO MediaSession until playback
+    actually starts.
+  - VK Music (`com.uma.musicvk`): **0** legacy `MEDIA_PLAY_FROM_SEARCH`
+    activities and a `MediaBrowserService`; its live action mask lacks
+    `STOP`/`SET_RATING`/`SET_REPEAT_MODE`/`SET_SHUFFLE_MODE`, so honest
+    refusals are expected there.
+  The browser bind itself is exercised by the device test
+  `browserConnect_worksFromLooperlessProductionThread` (see above). Per-player
+  capability still varies by app build/version.
 - **English locale: UI is fully localized, runtime speech is not.** Every
-  user-facing string resource now has an English twin (values-en, 322 keys
+  user-facing string resource now has an English twin (values-en, 358 keys
   incl. the credential-validation and behavior-setting rows), so the whole UI — Settings,
   onboarding, alarms, music card — renders in English under an English locale.
   Runtime spoken/system messages (turn failures, music outcome details,

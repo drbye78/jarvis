@@ -1,7 +1,14 @@
 # Jarvis Remediation Plan — 0.2.2 audit closure
 
-Status: **APPROVED FOR EXECUTION.** Decisions D1–D9 accepted as recommended
-(2026-09-19, §1).
+Status: **EXECUTED — all phases landed.** Decisions D1–D9 accepted as recommended
+(2026-09-19, §1). Phases 1–11 and finding **N7** are done; every row in the
+progress log below is evidence from the run, not a pending task. The two
+residual items are owner-accepted, not open work: **N10** (`libonnxruntime.so`
+is a formally non-compliant upstream prebuilt — `patchelf` cannot fix RELRO and
+a source build is infeasible on the owner's hardware) and **N11** (Porcupine
+4.x is the only major whose `.ppn` files can still be trained). Test counts in
+the rows are the figure AT THAT STEP, so they rise monotonically; the current
+JVM count lives in `AGENTS.md` / `ARCHITECTURE.md`.
 
 ## Progress log (updated as lanes land)
 

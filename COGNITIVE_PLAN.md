@@ -3,6 +3,20 @@
 Version 1.0 · branch `fixplan-audit-remediation` · baseline commit `c3a662d` (396 tests green)
 Scope: production-quality design and a phased implementation plan for long-term memory, user context, habit detection and proactive behaviour in Jarvis. No backward compatibility is preserved; refactors are permitted where they pay for themselves. The plan also closes every defect identified in the two prior audit rounds.
 
+> **Status: IMPLEMENTED (Phases 0–3).** Kept as the design record — the rationale,
+> budgets and invariants below still bind (see `AGENTS.md` → "Cognitive subsystem
+> conventions"). Two things changed at implementation time and are called out so the
+> design text is not read as current fact:
+> 1. **The schema did NOT land as v3→v4→v5→v6.** §5's three migrations were superseded
+>    by the single coordinated **v2** bump (`fallbackToDestructiveMigration(dropAllTables
+>    = true)`; no `Migration` constants exist). The DB is **v2**; the real chain starts
+>    only at v2→v3. Read §5 for the *entity design*, not the migration numbering.
+> 2. The **"396 tests green"** baseline is the pre-implementation figure at commit
+>    `c3a662d`. The current count lives in `AGENTS.md` / `ARCHITECTURE.md`.
+>
+> Everything else here is implemented and verified — see `CHANGELOG.md` for the
+> per-phase entries (`COGNITIVE_PLAN Phase 1/2/3`).
+
 ## Executive Summary
 
 Jarvis is a Russian-first, always-listening voice assistant for a single wall-mounted tablet (Kirin 710A), built around Sber cloud ASR/TTS, the GigaChat cloud LLM, Room persistence, a hand-built manual DI graph (`AppGraph`), and a hard product ethic of honest refusal. Today it is stateless across sessions: a 20-message sliding window (`ConversationManager.getHistoryForLLM()`), a time-only system prompt (`TimeAwareSystemPrompt`), and tools that hold no user model. The user's proposed cognitive report correctly identifies the gap and a sensible tiering, but it contains one material architecture mislabel (a "local LLM extractor" — Jarvis has no local LLM and cannot afford one) and underestimates the interaction between proactive speech and the wake-word/AEC/stop-lane audio stack.
