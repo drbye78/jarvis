@@ -148,10 +148,15 @@ MEDIA_PLAY_FROM_SEARCH intent → search-screen deep link → launch-only.
    - The player is LOGGED IN and started at least once.
    - Player app is up to date — vendors ship assistant integrations
      (playFromSearch / onSearch / browser service) per build.
-4. Yandex Music package: current builds use `ru.yandex.music`, older
-   sideloads `com.yandex.music` — both are matched. Other players (Звук,
-   VK Music) are found by label; name the app in the command («включи X в
-   Звуке») to pin it.
+4. Player packages: Yandex Music is `ru.yandex.music` (older sideloads
+   `com.yandex.music`), Zvuk is `com.zvooq.openplay`, VK Music is
+   `com.uma.musicvk` — all three are matched by brand token, so «включи X в
+   Звуке» / «в ВК» / «в Яндексе» pin the player. **`com.vk.music` is NOT a
+   package** — it is VK Music's internal code namespace (its launcher class is
+   `com.vk.music.screens.main.MainActivity`, but the applicationId is
+   `com.uma.musicvk`). Older builds stored `com.vk.music` as the preferred
+   player; that value is still accepted and canonicalized on write. A player
+   not in the known set is still found by its label.
 
 Status is always honest: `playing` (verified against the request),
 `search_opened` (user must tap), `app_opened` (player on screen), `error`

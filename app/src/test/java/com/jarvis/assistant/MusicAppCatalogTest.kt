@@ -16,7 +16,7 @@ class MusicAppCatalogTest {
     private val allPlayers = listOf(
         "ru.yandex.music" to "Яндекс Музыка",
         "com.zvooq.openplay" to "Звук",
-        "com.vk.music" to "VK Музыка",
+        "com.uma.musicvk" to "VK Музыка",
     )
 
     // ------------------------------------------------------------------
@@ -92,6 +92,29 @@ class MusicAppCatalogTest {
         assertEquals("com.zvooq.openplay", catalog.resolve("сбер звук")?.packageName)
     }
 
+    @Test
+    fun `vk brand hints resolve to the real VK package`() {
+        val catalog = MusicAppCatalog({ allPlayers })
+        // The Cyrillic token is the only path: "вк" cannot match the Latin
+        // label "VK Музыка", so this pins the brand-token table. Regression:
+        // it used to target com.vk.music, which is not an applicationId.
+        assertEquals("com.uma.musicvk", catalog.resolve("вк")?.packageName)
+        assertEquals("com.uma.musicvk", catalog.resolve("vk")?.packageName)
+    }
+
+    @Test
+    fun `code namespace com vk music is not a known player package`() {
+        // com.vk.music is VK Music's internal code namespace, never an
+        // applicationId. A brand hint must not match it (labels without a
+        // music keyword isolate the brand table from the label heuristic),
+        // while the real package com.uma.musicvk does.
+        assertNull(MusicAppCatalog({ listOf("com.vk.music" to "VK") }).resolve("вк"))
+        assertEquals(
+            "com.uma.musicvk",
+            MusicAppCatalog({ listOf("com.uma.musicvk" to "VK") }).resolve("вк")?.packageName,
+        )
+    }
+
     // ------------------------------------------------------------------
     // Generic-token collision (regression): a hint containing "музык" AND
     // another brand's marker must go to that brand, not to Yandex (whose
@@ -103,13 +126,13 @@ class MusicAppCatalogTest {
     @Test
     fun `vk full label hint resolves to VK not Yandex`() {
         val catalog = MusicAppCatalog({ allPlayers })
-        assertEquals("com.vk.music", catalog.resolve("VK Музыка")?.packageName)
+        assertEquals("com.uma.musicvk", catalog.resolve("VK Музыка")?.packageName)
     }
 
     @Test
     fun `hint with vk marker and word muzyka stays VK`() {
         val catalog = MusicAppCatalog({ allPlayers })
-        assertEquals("com.vk.music", catalog.resolve("музыка вк")?.packageName)
+        assertEquals("com.uma.musicvk", catalog.resolve("музыка вк")?.packageName)
     }
 
     @Test

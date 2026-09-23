@@ -112,7 +112,7 @@ class AppPrefs(
     /**
      * The user's preferred default music player: "auto" (Яндекс Музыка first,
      * the project default) or a package name — com.zvooq.openplay (Звук),
-     * ru.yandex.music, com.vk.music. Set from the Settings «Музыка» card;
+     * ru.yandex.music, com.uma.musicvk. Set from the Settings «Музыка» card;
      * consumed by [com.jarvis.assistant.media.MusicAppCatalog] as resolution
      * step 3 (an explicit voice hint "включи в Звуке" still wins).
      */

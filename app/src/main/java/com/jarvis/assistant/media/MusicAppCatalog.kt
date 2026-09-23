@@ -76,7 +76,7 @@ class MusicAppCatalog(
             "ru.yandex.music" to "яндекс|yandex|музык",
             "com.yandex.music" to "яндекс|yandex|музык",
             "com.zvooq.openplay" to "звук|zvuk|сберзвук",
-            "com.vk.music" to "вк|vk",
+            "com.uma.musicvk" to "вк|vk",
         )
 
         /**

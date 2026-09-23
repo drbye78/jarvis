@@ -24,7 +24,7 @@ object SettingsMapping {
         AUTO("auto"),
         YANDEX("ru.yandex.music"),
         ZVUK("com.zvooq.openplay"),
-        VK("com.vk.music"),
+        VK("com.uma.musicvk"),
     }
 
     /** Preferred-player preference value → the radio it selects. */
@@ -33,7 +33,10 @@ object SettingsMapping {
         // still accepted so an old install does not lose its choice.
         "ru.yandex.music", "com.yandex.music" -> Player.YANDEX
         "com.zvooq.openplay" -> Player.ZVUK
-        "com.vk.music" -> Player.VK
+        // com.vk.music is VK Music's code namespace, never an installed
+        // package; it is accepted only as the legacy value older builds
+        // persisted, so an old install does not lose its choice.
+        "com.uma.musicvk", "com.vk.music" -> Player.VK
         else -> Player.AUTO
     }
 

@@ -49,10 +49,13 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
-        <!-- MUSIC lane: target players (current + legacy Yandex Music ids, Zvuk) -->
+        <!-- MUSIC lane: target players (current + legacy Yandex Music ids, Zvuk, VK).
+             VK Music's applicationId is com.uma.musicvk; com.vk.music is its
+             internal code namespace, not an installed package. -->
         <package android:name="ru.yandex.music" />
         <package android:name="com.yandex.music" />
         <package android:name="com.zvooq.openplay" />
+        <package android:name="com.uma.musicvk" />
         <!-- Tier 1 (S4): legacy Assistant voice-search intent resolution -->
         <intent>
             <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />

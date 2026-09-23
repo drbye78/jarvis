@@ -27,8 +27,22 @@ class SettingsMappingTest {
     @Test
     fun `known players map to their radios`() {
         assertEquals(Player.ZVUK, SettingsMapping.playerForPref("com.zvooq.openplay"))
-        assertEquals(Player.VK, SettingsMapping.playerForPref("com.vk.music"))
+        assertEquals(Player.VK, SettingsMapping.playerForPref("com.uma.musicvk"))
         assertEquals(Player.AUTO, SettingsMapping.playerForPref("auto"))
+    }
+
+    @Test
+    fun `both vk package names map to the same radio`() {
+        // The canonical applicationId plus the legacy com.vk.music value
+        // older builds persisted. com.vk.music is VK Music's code namespace,
+        // never an applicationId, but a stored pref may still hold it.
+        assertEquals(Player.VK, SettingsMapping.playerForPref("com.uma.musicvk"))
+        assertEquals(Player.VK, SettingsMapping.playerForPref("com.vk.music"))
+    }
+
+    @Test
+    fun `writing a vk selection canonicalizes to the real package`() {
+        assertEquals("com.uma.musicvk", SettingsMapping.playerPrefFor(Player.VK))
     }
 
     @Test
