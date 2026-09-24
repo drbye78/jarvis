@@ -6,6 +6,69 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — Yandex AI Studio LLM as a third provider (Responses API + web search)
+- **A third LLM backend: Yandex AI Studio.** Settings → «Нейросеть (LLM)» now
+  offers **Sber GigaChat**, **Yandex AI Studio**, or any [OI]-compatible
+  endpoint. The Yandex backend speaks the **Responses API**
+  (`https://ai.api.cloud.yandex.net/v1/responses`) and, like GigaChat, does
+  **server-executed web search**, so fresh-fact questions are answered from the
+  web without any client round-trip.
+- **Reuses the existing Yandex speech key — no second secret.** Auth is
+  `Authorization: Api-Key <key>` over the same `SecretVault.KEY_YANDEX_API_KEY`
+  as SpeechKit v3, read live per request (no OAuth/`TokenManager`). Caveat
+  surfaced in Settings: the key must carry AI Studio access, not just
+  SpeechKit — a speech-only-scoped key is rejected with 401.
+- **The folder id is discovered, not configured.** The Responses model URI is
+  `gpt://<folder>/<model>/latest`, so the client resolves the folder from
+  `GET /v1/models` (the 2nd URI segment), `@Volatile`-caching it; resolution is
+  lazy on the first call and NEVER in the constructor. A blank-allowed manual
+  **Folder ID** override exists for keys that cannot list models. Discovery
+  failure is a typed error (→ the normal "не смог ответить" voice), never a crash
+  and never a silently empty answer.
+- **Protocol is entirely its own** (`YandexAiStudioClient` + `YandexSseParser` +
+  `wire/YandexWireDtos.kt`), verified against the live service:
+  `input[]`/`instructions` (not `messages[]`); **flattened** tool specs
+  (`{"type":"function","name",…}`) rather than the [OI]-nested or GigaChat
+  `functions.specifications` shapes; the `event:` line merely duplicates
+  `data.type`; there is **no `[DONE]`** (`response.completed` is terminal, with
+  an EOF `finish()` fallback); and errors are **RFC-7807** (`{title,status,detail}`).
+  The client reuses the shared `SseStream`, so the cancellation-correct
+  transport is not forked a third time.
+- **Client function calls round-trip.** A tool call arrives as one
+  `FunctionCallComplete` whose `ToolCall.id` carries the response's `call_id`
+  **verbatim** (never regenerated), which is what the follow-up
+  `function_call_output` pairs on. `TurnRunner` needed **zero changes**: a
+  web-search turn is `Text` + `Done` with no pending tool calls, and a tool
+  turn is the existing loop.
+- **No custom trust store needed.** `ai.api.cloud.yandex.net` chains to a
+  **public GlobalSign** root, so — unlike `api.giga.chat` — Yandex is
+  deliberately NOT added to `SberTrust.SBER_APEX_DOMAINS`.
+- **Citations stay internal (product decision).** Both native providers return
+  url+title citations; the assistant is voice-first, so URLs are never spoken
+  and no citation carrier was added. As part of this, the consumerless
+  `GigaChatSseParser.sources` accessor and its two now-unused source DTOs were
+  **deleted** rather than kept for a UI that does not exist.
+- **Config wiring bug fixed (structural).** `JarvisForegroundService` used to
+  hand-copy `ProviderSettings.DEFAULT.copy(...)`, which silently DROPPED
+  `gigaChatModel` — making the GigaChat model radio inert in production (and
+  which would have dropped the new Yandex fields too). The service now reads
+  prefs through the single `AppPrefs.loadProviderSettings()` path, so a field
+  added to `ProviderSettings` can no longer be forgotten; `AppPrefsProviderSettingsTest`
+  is the round-trip guard.
+- **Settings** (`settings_card_llm_provider.xml`): a third provider radio and a
+  `yandexBlock` (model radio — Alice AI / Alice AI Flash / YandexGPT 5 Lite —
+  plus the optional Folder ID field), sealed at graph construction like every
+  other provider choice. New strings in BOTH locales.
+- **New tests**: `YandexSseParserTest` (replays real recorded SSE fixtures;
+  pins the one-`Done` latch, `call_id` preservation, lane separation),
+  `YandexWireTest` (MockWebServer request shape + folder-resolution order),
+  `AppPrefsProviderSettingsTest` (all-field round-trip). A live
+  `YandexLlmLiveSmokeTest` ran against the real service (plain + web-search +
+  function-tool) and passed.
+- **Fixtures** (`app/src/test/resources/recorded/yandex/`): sanitized real
+  responses (plain / search / function-call, JSON + SSE) with a provenance
+  README. No credentials and no user data; the real folder id is replaced.
+
 ### Added — GigaChat native API + built-in web search: arbitrary Q&A and open-topic conversation
 - **The assistant now answers arbitrary questions and holds a conversation on
   any topic, grounded by GigaChat's server-executed `web_search`.** The LLM is
@@ -26,10 +89,10 @@ semver (pre-1.0: breaking changes bump the minor).
   [OI]-compatible provider and `SseParser` are untouched.
 - **`web_search` results never reach the speaker.** The built-in runs
   server-side; results arrive as `inline_data.sources` (url + title) and
-  progress as `tool_execution` parts. `GigaChatSseParser` keeps both on a side
-  channel and emits only real assistant text, so progress narration or URLs
-  can never be spoken. Client function calls still round-trip as
-  `role:"tool"` + `content:[{function_result:{name,result}}]`.
+  progress as `tool_execution` parts. `GigaChatSseParser` ignores both and
+  emits only real assistant text, so progress narration or URLs can never be
+  spoken. Client function calls still round-trip as `role:"tool"` +
+  `content:[{function_result:{name,result}}]`.
 - **`TurnRunner` needed zero changes**: a search turn arrives as `Text` +
   `Done` with no pending tool calls, so it takes the existing plain-answer
   branch. Client-tool loops, `maxToolPasses` and the unknown-function path are

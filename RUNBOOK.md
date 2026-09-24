@@ -89,6 +89,35 @@ credentials, not the wire shape.
   after the next service restart (Стоп → Запустить on the home screen) — the
   provider client is built once, when the service starts.
 
+### "Yandex AI Studio request failed (HTTP ...)"
+The Yandex LLM lane talks the **AI Studio Responses API** at
+`https://ai.api.cloud.yandex.net/v1/responses` with
+`Authorization: Api-Key <key>` — the **same key as the Yandex speech engine**
+(`SecretVault.KEY_YANDEX_API_KEY`), so there is no second secret to enter.
+
+- **HTTP 401** — the key is not authorized for AI Studio. SpeechKit and AI
+  Studio are separate grants: a key scoped only to SpeechKit (e.g.
+  `yc.ai.speechkitStt/Tts.execute`) is rejected here. Recreate/re-scope the key
+  with `yc.ai.foundationModels.execute` (or `yc.ai.languageModels.execute`).
+- **HTTP 403** — the service account is missing the `ai.languageModels.user`
+  role (add `ai.assistants.editor` for web search).
+- **HTTP 400 `Invalid model URI` / `Unknown folder`** — the folder could not be
+  resolved. The client normally discovers it from `GET /v1/models`; if the key
+  cannot list models, set **Settings → Нейросеть (LLM) → Folder ID** manually.
+  The folder must be the **service account's own folder**.
+- **No trust-store error expected**: `ai.api.cloud.yandex.net` chains to a
+  **public GlobalSign** root, so Yandex is deliberately NOT in
+  `SberTrust.SBER_APEX_DOMAINS` (unlike `giga.chat`). A trust error here means
+  something else rewrote the trust config.
+- Or switch Settings → Нейросеть (LLM) → **GigaChat** or the [OI]-compatible
+  radio; the choice takes effect after the next service restart.
+
+### "Модель Yandex отвечает не тем / хочу другую"
+Settings → Нейросеть (LLM) → **Yandex AI Studio** offers Alice AI (default),
+Alice AI Flash (fast) and YandexGPT 5 Lite. The model list is what the
+**service** publishes per folder (`GET /v1/models`); a stored id the folder no
+longer serves falls back to the default rather than failing the turn.
+
 ### "Ответы без свежих данных / поиск в интернете не срабатывает"
 Web search is a **server-executed built-in**: the request declares
 `tools:[{"web_search":{}}]` with `tool_config:{"mode":"auto"}` and the model
@@ -278,10 +307,11 @@ replays **sanitized recorded fixtures** (owner decision #1).
 cp local.secrets.properties.example local.secrets.properties
 # fill in the Salute + GigaChat OAuth client id/secret pairs (same values
 # the app asks for in Settings; scopes SALUTE_SPEECH_PERS / GIGACHAT_API_PERS)
-# optionally add a Yandex SpeechKit v3 API key (jarvis.yandex.apiKey) to run
-# the Yandex ASR/TTS smoke tests
+# optionally add a Yandex Cloud API key (jarvis.yandex.apiKey) — it powers the
+#   Yandex ASR/TTS smokes AND the Yandex AI Studio LLM smoke (same key;
+#   needs AI Studio access, not just SpeechKit)
 
-./gradlew :app:integrationTest        # live smoke tests (GigaChat + Salute + Yandex ASR/TTS)
+./gradlew :app:integrationTest        # live smoke tests (GigaChat + Yandex LLM + Salute/Yandex ASR/TTS)
 ./gradlew :app:recordSaluteFixtures   # re-record sanitized fixtures into app/src/test/resources/recorded/
 ```
 

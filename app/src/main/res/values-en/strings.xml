@@ -67,6 +67,7 @@
     <string name="provider_label">AI model (LLM)</string>
     <string name="provider_gigachat">GigaChat (Sber) — default</string>
     <string name="provider_openai_compat">OpenAI-compatible endpoint (OpenAI, LocalAI, Ollama…)</string>
+    <string name="provider_yandex">Yandex AI Studio</string>
     <string name="provider_restart_hint">Changes apply after a service restart: Stop → Start on the home screen.</string>
     <string name="base_url_label">Base URL (…/v1)</string>
     <string name="api_key_label">API key</string>
@@ -78,6 +79,15 @@
     <string name="gigachat_model_lightning">GigaChat-3 Lightning — fast</string>
     <string name="gigachat_model_pro">GigaChat-3 Pro — balanced</string>
     <string name="gigachat_model_ultra">GigaChat-3 Ultra — smartest</string>
+
+    <!-- Settings: Yandex AI Studio model + folder (applies after a service restart) -->
+    <string name="yandex_model_label">Yandex model</string>
+    <string name="yandex_model_hint">The higher the model, the more accurate the answers and the longer the wait.</string>
+    <string name="yandex_model_aliceai_llm">Alice AI — main</string>
+    <string name="yandex_model_aliceai_llm_flash">Alice AI Flash — fast</string>
+    <string name="yandex_model_yandexgpt_5_lite">YandexGPT 5 Lite — light</string>
+    <string name="yandex_folder_label">Folder ID (optional)</string>
+    <string name="yandex_folder_hint">Can be left empty — the folder is detected automatically from the key. Use the same key as the speech engine, one with Yandex AI Studio access.</string>
     <string name="sensitivity_label">Wake word sensitivity</string>
     <string name="sensitivity_value">Sensitivity: %1$.2f</string>
     <string name="apply">Apply and restart</string>

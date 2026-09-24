@@ -102,4 +102,43 @@ object SettingsMapping {
     /** The flavor at [index], clamped so a stale index can never fall off the list. */
     fun gigaChatModelAt(index: Int): String =
         GIGACHAT_MODELS[index.coerceIn(0, GIGACHAT_MODELS.lastIndex)]
+
+    // ---- Yandex AI Studio model ----
+
+    /**
+     * The models the Settings radio lists, in display order. Re-exported from
+     * [ProviderSettings] so the control and the client it configures can never
+     * drift apart.
+     */
+    val YANDEX_MODELS: List<String> = ProviderSettings.YANDEX_MODELS
+
+    /**
+     * The model the stored pref selects. An unrecognized value — hand-edited,
+     * or from a build that offered a different list — degrades to the default
+     * (`aliceai-llm`) instead of leaving the radio group with nothing checked.
+     */
+    fun yandexModelForPref(prefValue: String): String =
+        prefValue.trim().takeIf { it in YANDEX_MODELS } ?: ProviderSettings.DEFAULT_YANDEX_MODEL
+
+    /** Position of the stored model in [YANDEX_MODELS]; unknown input → the default's slot. */
+    fun yandexModelIndex(prefValue: String): Int =
+        YANDEX_MODELS.indexOf(yandexModelForPref(prefValue))
+
+    /** The model at [index], clamped so a stale index can never fall off the list. */
+    fun yandexModelAt(index: Int): String =
+        YANDEX_MODELS[index.coerceIn(0, YANDEX_MODELS.lastIndex)]
+
+    // ---- LLM provider type ----
+
+    /**
+     * The provider the card's radio choice ("gigachat" | "openai" | "yandex")
+     * denotes. The string spelling is the wire between the card and the
+     * callback, so the mapping lives here — pure, total, and shared by the
+     * listener and the persistence callback instead of being spelled twice.
+     */
+    fun providerTypeFor(choice: String): ProviderSettings.Type = when (choice.trim().lowercase()) {
+        "openai" -> ProviderSettings.Type.OPENAI_COMPAT
+        "yandex" -> ProviderSettings.Type.YANDEX
+        else -> ProviderSettings.Type.GIGACHAT
+    }
 }

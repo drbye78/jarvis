@@ -1,5 +1,6 @@
 package com.jarvis.assistant
 
+import com.jarvis.assistant.config.ProviderSettings
 import com.jarvis.assistant.ui.SettingsMapping
 import com.jarvis.assistant.ui.SettingsMapping.Player
 import org.junit.Assert.assertEquals
@@ -206,5 +207,54 @@ class SettingsMappingTest {
         assertEquals(0, SettingsMapping.gigaChatModelIndex("GigaChat-3-Unknown"))
         assertEquals("GigaChat-3-Lightning", SettingsMapping.gigaChatModelAt(-3))
         assertEquals("GigaChat-3-Ultra", SettingsMapping.gigaChatModelAt(99))
+    }
+
+    // ---- Yandex AI Studio model ----
+
+    @Test
+    fun `known yandex models map to their stored value`() {
+        for (model in SettingsMapping.YANDEX_MODELS) {
+            assertEquals(model, SettingsMapping.yandexModelForPref(model))
+        }
+    }
+
+    @Test
+    fun `unknown or blank yandex model degrades to the default`() {
+        // A hand-edited value or one from a build with a different list must
+        // not leave the radio group with nothing checked.
+        assertEquals("aliceai-llm", SettingsMapping.yandexModelForPref("gpt-5"))
+        assertEquals("aliceai-llm", SettingsMapping.yandexModelForPref(""))
+    }
+
+    @Test
+    fun `yandex model index round-trips through every slot`() {
+        SettingsMapping.YANDEX_MODELS.forEachIndexed { index, model ->
+            assertEquals(index, SettingsMapping.yandexModelIndex(model))
+            assertEquals(model, SettingsMapping.yandexModelAt(index))
+        }
+    }
+
+    @Test
+    fun `yandex model index and slot clamp out-of-range input`() {
+        assertEquals(0, SettingsMapping.yandexModelIndex("aliceai-unknown"))
+        assertEquals("aliceai-llm", SettingsMapping.yandexModelAt(-3))
+        assertEquals(SettingsMapping.YANDEX_MODELS.last(), SettingsMapping.yandexModelAt(99))
+    }
+
+    // ---- LLM provider type ----
+
+    @Test
+    fun `provider choice maps to its type`() {
+        assertEquals(ProviderSettings.Type.GIGACHAT, SettingsMapping.providerTypeFor("gigachat"))
+        assertEquals(ProviderSettings.Type.OPENAI_COMPAT, SettingsMapping.providerTypeFor("openai"))
+        assertEquals(ProviderSettings.Type.YANDEX, SettingsMapping.providerTypeFor("yandex"))
+    }
+
+    @Test
+    fun `provider choice is case-insensitive and total`() {
+        assertEquals(ProviderSettings.Type.YANDEX, SettingsMapping.providerTypeFor("  Yandex "))
+        // Unknown/blank must never crash or produce a null radio selection.
+        assertEquals(ProviderSettings.Type.GIGACHAT, SettingsMapping.providerTypeFor(""))
+        assertEquals(ProviderSettings.Type.GIGACHAT, SettingsMapping.providerTypeFor("bogus"))
     }
 }

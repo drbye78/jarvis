@@ -80,6 +80,16 @@ data class JarvisConfig(
      */
     val yandexTtsVoice: String = "marina",
 
+    // Yandex AI Studio (LLM provider; OpenAI-compatible chat/completions API).
+    //
+    // NOTE: this is the SAME `yandexApiKey` secret as the Yandex speech
+    // backend (one Cloud API key), not a new credential.
+    /**
+     * Base URL for the Yandex AI Studio OpenAI-compatible API. The client
+     * appends `/chat/completions` (and `/models` for listing).
+     */
+    val yandexAiStudioEndpoint: String = "https://ai.api.cloud.yandex.net/v1",
+
     // Service watchdog
     val restartIntervalMs: Long = 15 * 60 * 1000L,
 
@@ -167,8 +177,15 @@ data class ProviderSettings(
     val openAiModel: String,
     /** GigaChat-3 flavor for the native client; one of [GIGACHAT_MODELS]. */
     val gigaChatModel: String = DEFAULT_GIGACHAT_MODEL,
+    /** Yandex AI Studio model; one of [YANDEX_MODELS]. */
+    val yandexModel: String = DEFAULT_YANDEX_MODEL,
+    /**
+     * Optional folder id for Yandex AI Studio. Blank = let the API key's
+     * service account folder be implied (no `x-folder-id` hint is sent).
+     */
+    val yandexFolderId: String = "",
 ) {
-    enum class Type { GIGACHAT, OPENAI_COMPAT }
+    enum class Type { GIGACHAT, OPENAI_COMPAT, YANDEX }
 
     companion object {
         val DEFAULT = ProviderSettings(
@@ -191,5 +208,17 @@ data class ProviderSettings(
         )
 
         const val DEFAULT_GIGACHAT_MODEL: String = "GigaChat-3-Lightning"
+
+        /**
+         * Yandex AI Studio models offered in Settings. `aliceai-llm` is the
+         * default because a voice assistant optimises for latency.
+         */
+        val YANDEX_MODELS: List<String> = listOf(
+            "aliceai-llm",
+            "aliceai-llm-flash",
+            "yandexgpt-5-lite",
+        )
+
+        const val DEFAULT_YANDEX_MODEL: String = "aliceai-llm"
     }
 }

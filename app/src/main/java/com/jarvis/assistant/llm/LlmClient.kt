@@ -80,8 +80,21 @@ suspend fun <T> withLlmRetry(
  * RuntimeException could only be classified by parsing its message): callers
  * can now distinguish fatal 4xx (bad auth / bad request — retrying is
  * pointless) from transient 5xx (upstream overload — worth one retry).
+ *
+ * [detail] carries the provider's own problem description when available (RFC
+ * 7807 `detail`/`title` for Yandex); it is optional so every existing
+ * `LlmHttpException(code)` call site is unchanged.
  */
-class LlmHttpException(val code: Int) : RuntimeException("LLM request failed (HTTP $code)") {
+class LlmHttpException(
+    val code: Int,
+    val detail: String? = null,
+) : RuntimeException(
+    if (detail.isNullOrBlank()) {
+        "LLM request failed (HTTP $code)"
+    } else {
+        "LLM request failed (HTTP $code): $detail"
+    }
+) {
     /** 5xx and 429: the endpoint is alive but struggling — retryable. */
     val isTransient: Boolean get() = code >= 500 || code == 429
 }

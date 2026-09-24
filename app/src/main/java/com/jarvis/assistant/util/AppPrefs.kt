@@ -52,15 +52,25 @@ class AppPrefs(
         get() = prefs.getBoolean(KEY_USER_STOPPED, false)
         set(value) = prefs.edit().putBoolean(KEY_USER_STOPPED, value).apply()
 
+    /**
+     * Persisted with the same wire spelling the settings card uses
+     * ("gigachat" | "openai" | "yandex") so the write and the read below can
+     * never drift. Keep in sync with `SettingsMapping.providerTypeFor`.
+     */
     var providerType: ProviderSettings.Type
-        get() = if (prefs.getString(KEY_PROVIDER, null) == "openai") {
-            ProviderSettings.Type.OPENAI_COMPAT
-        } else {
-            ProviderSettings.Type.GIGACHAT
+        get() = when (prefs.getString(KEY_PROVIDER, null)) {
+            "openai" -> ProviderSettings.Type.OPENAI_COMPAT
+            "yandex" -> ProviderSettings.Type.YANDEX
+            else -> ProviderSettings.Type.GIGACHAT
         }
-        set(value) = prefs.edit()
-            .putString(KEY_PROVIDER, if (value == ProviderSettings.Type.OPENAI_COMPAT) "openai" else "gigachat")
-            .apply()
+        set(value) {
+            val persisted = when (value) {
+                ProviderSettings.Type.OPENAI_COMPAT -> "openai"
+                ProviderSettings.Type.YANDEX -> "yandex"
+                ProviderSettings.Type.GIGACHAT -> "gigachat"
+            }
+            prefs.edit().putString(KEY_PROVIDER, persisted).apply()
+        }
 
     var openAiBaseUrl: String
         get() = prefs.getString(KEY_OPENAI_URL, ProviderSettings.DEFAULT.openAiBaseUrl)!!
@@ -86,6 +96,30 @@ class AppPrefs(
             }
         }
         set(value) = prefs.edit().putString(KEY_GIGACHAT_MODEL, value).apply()
+
+    /**
+     * Yandex AI Studio model — one of [ProviderSettings.YANDEX_MODELS]. An
+     * unrecognized stored value falls back to the default rather than sending
+     * a bogus model id (which the API rejects with HTTP 400).
+     */
+    var yandexModel: String
+        get() {
+            val stored = prefs.getString(KEY_YANDEX_MODEL, null)
+            return if (stored != null && stored in ProviderSettings.YANDEX_MODELS) {
+                stored
+            } else {
+                ProviderSettings.DEFAULT_YANDEX_MODEL
+            }
+        }
+        set(value) = prefs.edit().putString(KEY_YANDEX_MODEL, value).apply()
+
+    /**
+     * Yandex AI Studio folder id. Blank is allowed and means "let the API
+     * key's service-account folder be implied" (no `x-folder-id` is sent).
+     */
+    var yandexFolderId: String
+        get() = prefs.getString(KEY_YANDEX_FOLDER_ID, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_YANDEX_FOLDER_ID, value.trim()).apply()
 
     var openAiApiKey: String
         get() = vault.getString(SecretVault.KEY_OPENAI_API_KEY) ?: ""
@@ -305,6 +339,8 @@ class AppPrefs(
         openAiBaseUrl = openAiBaseUrl,
         openAiModel = openAiModel,
         gigaChatModel = gigaChatModel,
+        yandexModel = yandexModel,
+        yandexFolderId = yandexFolderId,
     )
 
     /**
@@ -338,6 +374,8 @@ class AppPrefs(
         internal const val KEY_OPENAI_URL = "openai_base_url"
         internal const val KEY_OPENAI_MODEL = "openai_model"
         internal const val KEY_GIGACHAT_MODEL = "gigachat_model"
+        internal const val KEY_YANDEX_MODEL = "yandex_model"
+        internal const val KEY_YANDEX_FOLDER_ID = "yandex_folder_id"
         internal const val KEY_WAKE_SENSITIVITY = "wake_sensitivity"
         internal const val KEY_WAKE_MODEL = "wake_word_model"
         internal const val KEY_CUSTOM_WAKE_PATH = "custom_wake_word_path"

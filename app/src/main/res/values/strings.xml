@@ -68,6 +68,7 @@
     <string name="provider_label">Нейросеть (LLM)</string>
     <string name="provider_gigachat">GigaChat (Сбер) — по умолчанию</string>
     <string name="provider_openai_compat">OpenAI-совместимый endpoint (OpenAI, LocalAI, Ollama…)</string>
+    <string name="provider_yandex">Yandex AI Studio</string>
     <string name="provider_restart_hint">Изменения применятся после перезапуска сервиса: Стоп → Запустить на главном экране.</string>
     <string name="base_url_label">Base URL (…/v1)</string>
     <string name="api_key_label">API-ключ</string>
@@ -79,6 +80,15 @@
     <string name="gigachat_model_lightning">GigaChat-3 Lightning — быстрая</string>
     <string name="gigachat_model_pro">GigaChat-3 Pro — сбалансированная</string>
     <string name="gigachat_model_ultra">GigaChat-3 Ultra — самая умная</string>
+
+    <!-- Settings: Yandex AI Studio model + folder (applies after a service restart) -->
+    <string name="yandex_model_label">Модель Yandex</string>
+    <string name="yandex_model_hint">Чем выше модель, тем точнее ответы и дольше ожидание.</string>
+    <string name="yandex_model_aliceai_llm">Alice AI — основная</string>
+    <string name="yandex_model_aliceai_llm_flash">Alice AI Flash — быстрая</string>
+    <string name="yandex_model_yandexgpt_5_lite">YandexGPT 5 Lite — лёгкая</string>
+    <string name="yandex_folder_label">Folder ID (необязательно)</string>
+    <string name="yandex_folder_hint">Можно не заполнять — папка определится по ключу автоматически. Нужен тот же ключ, что и для движка речи, с доступом к Yandex AI Studio.</string>
     <string name="sensitivity_label">Чувствительность wake word</string>
     <string name="sensitivity_value">Чувствительность: %1$.2f</string>
     <string name="apply">Применить и перезапустить</string>

@@ -1,0 +1,30 @@
+data:{"sequence_number":1,"response":{"id":"ff635965-2c99-44f5-aa1e-2d84ffc68733","created_at":1.790262606E9,"error":null,"incomplete_details":null,"instructions":null,"metadata":{},"model":"gpt://b1gxxxxxxxxxxxxxxxxx/yandexgpt-5-lite/latest","object":"response","output":[],"parallel_tool_calls":false,"temperature":0.1,"tool_choice":"auto","tools":[],"top_p":1.0,"background":false,"completed_at":null,"conversation":null,"max_output_tokens":32,"max_tool_calls":null,"previous_response_id":null,"prompt":null,"prompt_cache_key":null,"prompt_cache_retention":null,"reasoning":null,"safety_identifier":null,"service_tier":"default","status":"queued","text":null,"top_logprobs":null,"truncation":null,"usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":0,"valid":true},"user":null,"valid":true,"valid":true},"type":"response.created"}
+event:response.created
+
+data:{"sequence_number":2,"response":{"id":"ff635965-2c99-44f5-aa1e-2d84ffc68733","created_at":1.790262606E9,"error":null,"incomplete_details":null,"instructions":null,"metadata":{},"model":"gpt://b1gxxxxxxxxxxxxxxxxx/yandexgpt-5-lite/latest","object":"response","output":[],"parallel_tool_calls":false,"temperature":0.1,"tool_choice":"auto","tools":[],"top_p":1.0,"background":false,"completed_at":null,"conversation":null,"max_output_tokens":32,"max_tool_calls":null,"previous_response_id":null,"prompt":null,"prompt_cache_key":null,"prompt_cache_retention":null,"reasoning":null,"safety_identifier":null,"service_tier":"default","status":"in_progress","text":null,"top_logprobs":null,"truncation":null,"usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":0,"valid":true},"user":null,"valid":true,"valid":true},"type":"response.in_progress"}
+event:response.in_progress
+
+data:{"sequence_number":3,"output_index":0,"item":{"id":"01fdcf10-0f44-47fc-a098-c9533af6e822","content":[],"role":"assistant","status":"in_progress","type":"message","valid":true},"type":"response.output_item.added"}
+event:response.output_item.added
+
+data:{"sequence_number":4,"item_id":"01fdcf10-0f44-47fc-a098-c9533af6e822","output_index":0,"content_index":0,"part":{"annotations":[],"text":"","type":"output_text","valid":true},"type":"response.content_part.added"}
+event:response.content_part.added
+
+data:{"sequence_number":5,"item_id":"01fdcf10-0f44-47fc-a098-c9533af6e822","output_index":0,"content_index":0,"delta":"Привет","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":6,"item_id":"01fdcf10-0f44-47fc-a098-c9533af6e822","output_index":0,"content_index":0,"delta":", мир!","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":7,"item_id":"01fdcf10-0f44-47fc-a098-c9533af6e822","output_index":0,"content_index":0,"text":"Привет, мир!","type":"response.output_text.done"}
+event:response.output_text.done
+
+data:{"sequence_number":8,"item_id":"01fdcf10-0f44-47fc-a098-c9533af6e822","output_index":0,"content_index":0,"part":{"annotations":[],"text":"Привет, мир!","type":"output_text","logprobs":[],"valid":true},"type":"response.content_part.done"}
+event:response.content_part.done
+
+data:{"sequence_number":9,"output_index":0,"item":{"id":"01fdcf10-0f44-47fc-a098-c9533af6e822","content":[{"annotations":[],"text":"Привет, мир!","type":"output_text","valid":true}],"role":"assistant","status":"completed","type":"message","valid":true},"type":"response.output_item.done"}
+event:response.output_item.done
+
+data:{"sequence_number":10,"response":{"id":"ff635965-2c99-44f5-aa1e-2d84ffc68733","created_at":1.790262606E9,"error":null,"incomplete_details":null,"instructions":null,"metadata":{},"model":"gpt://b1gxxxxxxxxxxxxxxxxx/yandexgpt-5-lite/latest","object":"response","output":[{"id":"01fdcf10-0f44-47fc-a098-c9533af6e822","content":[{"annotations":[],"text":"Привет, мир!","type":"output_text","valid":true}],"role":"assistant","status":"completed","type":"message","valid":true}],"parallel_tool_calls":false,"temperature":0.1,"tool_choice":"auto","tools":[],"top_p":1.0,"background":false,"completed_at":null,"conversation":null,"max_output_tokens":32,"max_tool_calls":null,"previous_response_id":null,"prompt":null,"prompt_cache_key":null,"prompt_cache_retention":null,"reasoning":null,"safety_identifier":null,"service_tier":"default","status":"completed","text":null,"top_logprobs":null,"truncation":null,"usage":{"input_tokens":15,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":4,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":19,"valid":true},"user":null,"valid":true,"valid":true},"type":"response.completed"}
+event:response.completed
+

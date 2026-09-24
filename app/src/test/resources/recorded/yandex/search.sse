@@ -1,0 +1,66 @@
+data:{"sequence_number":1,"response":{"id":"23257a27-1dcc-462e-b4fd-96c71828d82d","created_at":1.790262644E9,"error":null,"incomplete_details":null,"instructions":null,"metadata":{},"model":"gpt://b1gxxxxxxxxxxxxxxxxx/aliceai-llm/latest","object":"response","output":[],"parallel_tool_calls":false,"temperature":0.3,"tool_choice":"auto","tools":[{"type":"web_search","filters":null,"search_context_size":null,"user_location":null,"valid":true,"valid":true}],"top_p":1.0,"background":false,"completed_at":null,"conversation":null,"max_output_tokens":400,"max_tool_calls":null,"previous_response_id":null,"prompt":null,"prompt_cache_key":null,"prompt_cache_retention":null,"reasoning":null,"safety_identifier":null,"service_tier":"default","status":"queued","text":null,"top_logprobs":null,"truncation":null,"usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":0,"valid":true},"user":null,"valid":true,"valid":true},"type":"response.created"}
+event:response.created
+
+data:{"sequence_number":2,"response":{"id":"23257a27-1dcc-462e-b4fd-96c71828d82d","created_at":1.790262644E9,"error":null,"incomplete_details":null,"instructions":null,"metadata":{},"model":"gpt://b1gxxxxxxxxxxxxxxxxx/aliceai-llm/latest","object":"response","output":[],"parallel_tool_calls":false,"temperature":0.3,"tool_choice":"auto","tools":[{"type":"web_search","filters":null,"search_context_size":null,"user_location":null,"valid":true,"valid":true}],"top_p":1.0,"background":false,"completed_at":null,"conversation":null,"max_output_tokens":400,"max_tool_calls":null,"previous_response_id":null,"prompt":null,"prompt_cache_key":null,"prompt_cache_retention":null,"reasoning":null,"safety_identifier":null,"service_tier":"default","status":"in_progress","text":null,"top_logprobs":null,"truncation":null,"usage":{"input_tokens":0,"input_tokens_details":{"cached_tokens":0,"valid":true,"tool_tokens":0},"output_tokens":0,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":0,"valid":true},"user":null,"valid":true,"valid":true},"type":"response.in_progress"}
+event:response.in_progress
+
+data:{"sequence_number":3,"output_index":0,"item":{"id":"e6803108-222c-4b8d-b28a-da7e2d82da0e","action":{"query":"","type":"search","valid":true},"status":"in_progress","type":"web_search_call","valid":true},"type":"response.output_item.added"}
+event:response.output_item.added
+
+data:{"sequence_number":4,"item_id":"e6803108-222c-4b8d-b28a-da7e2d82da0e","output_index":0,"type":"response.web_search_call.in_progress"}
+event:response.web_search_call.in_progress
+
+data:{"sequence_number":5,"item_id":"e6803108-222c-4b8d-b28a-da7e2d82da0e","output_index":0,"type":"response.web_search_call.searching"}
+event:response.web_search_call.searching
+
+data:{"sequence_number":6,"item_id":"e6803108-222c-4b8d-b28a-da7e2d82da0e","output_index":0,"type":"response.web_search_call.completed"}
+event:response.web_search_call.completed
+
+data:{"sequence_number":7,"output_index":0,"item":{"id":"e6803108-222c-4b8d-b28a-da7e2d82da0e","action":{"query":"погода в Москве сейчас","type":"search","valid":true},"status":"completed","type":"web_search_call","valid":true},"type":"response.output_item.done"}
+event:response.output_item.done
+
+data:{"sequence_number":8,"output_index":1,"item":{"id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","content":[],"role":"assistant","status":"in_progress","type":"message","valid":true},"type":"response.output_item.added"}
+event:response.output_item.added
+
+data:{"sequence_number":9,"item_id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","output_index":1,"content_index":0,"part":{"annotations":[],"text":"","type":"output_text","valid":true},"type":"response.content_part.added"}
+event:response.content_part.added
+
+data:{"sequence_number":10,"item_id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","output_index":1,"content_index":0,"delta":" Сейчас","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":11,"item_id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","output_index":1,"content_index":0,"delta":" в Москве пасмурно","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":12,"item_id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","output_index":1,"content_index":0,"delta":".","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":13,"item_id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","output_index":1,"content_index":0,"delta":"\n\nИсточник: Яндекс","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":14,"item_id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","output_index":1,"content_index":0,"delta":" Погода (https","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":15,"item_id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","output_index":1,"content_index":0,"delta":"://yandex.ru","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":16,"item_id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","output_index":1,"content_index":0,"delta":"/pog","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":17,"item_id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","output_index":1,"content_index":0,"delta":"oda/ru","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":18,"item_id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","output_index":1,"content_index":0,"delta":"/moscow)","type":"response.output_text.delta"}
+event:response.output_text.delta
+
+data:{"sequence_number":19,"item_id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","output_index":1,"content_index":0,"text":" Сейчас в Москве пасмурно.\n\nИсточник: Яндекс Погода (https://yandex.ru/pogoda/ru/moscow)","type":"response.output_text.done"}
+event:response.output_text.done
+
+data:{"sequence_number":20,"item_id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","output_index":1,"content_index":0,"part":{"annotations":[],"text":" Сейчас в Москве пасмурно.\n\nИсточник: Яндекс Погода (https://yandex.ru/pogoda/ru/moscow)","type":"output_text","logprobs":[],"valid":true},"type":"response.content_part.done"}
+event:response.content_part.done
+
+data:{"sequence_number":21,"output_index":1,"item":{"id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","content":[{"annotations":[{"end_index":0,"start_index":0,"title":"Погода по часам в Москве сегодня, точный прогноз - Погода Mail","type":"url_citation","url":"https://pogoda.mail.ru/prognoz/moskva/24hours/","valid":true},{"end_index":0,"start_index":0,"title":"Погода в Москве — точный прогноз, температура, ветер, онлайн — 2ГИС","type":"url_citation","url":"https://2gis.ru/moscow/weather","valid":true},{"end_index":0,"start_index":0,"title":"Погода в Москве сегодня - точный прогноз погоды в Москве на завтра, сейчас (Московская область)","type":"url_citation","url":"https://world-weather.ru/pogoda/russia/moscow/","valid":true},{"end_index":0,"start_index":0,"title":"Погода в Москве — Прогноз погоды в Москве","type":"url_citation","url":"https://yandex.ru/pogoda/ru/moscow","valid":true},{"end_index":0,"start_index":0,"title":"GISMETEO: Погода в Москве сейчас, фактическая погода Москва, Москва (город федерального значения), Россия","type":"url_citation","url":"https://www.gismeteo.ru/weather-moscow-4368/now/","valid":true}],"text":" Сейчас в Москве пасмурно.\n\nИсточник: Яндекс Погода (https://yandex.ru/pogoda/ru/moscow)","type":"output_text","valid":true}],"role":"assistant","status":"completed","type":"message","valid":true},"type":"response.output_item.done"}
+event:response.output_item.done
+
+data:{"sequence_number":22,"response":{"id":"23257a27-1dcc-462e-b4fd-96c71828d82d","created_at":1.790262644E9,"error":null,"incomplete_details":null,"instructions":null,"metadata":{},"model":"gpt://b1gxxxxxxxxxxxxxxxxx/aliceai-llm/latest","object":"response","output":[{"id":"e6803108-222c-4b8d-b28a-da7e2d82da0e","action":{"query":"погода в Москве сейчас","type":"search","valid":true},"status":"completed","type":"web_search_call","valid":true},{"id":"fbd4268f-1b3a-4f71-839d-1b6dae97fc29","content":[{"annotations":[{"end_index":0,"start_index":0,"title":"Погода по часам в Москве сегодня, точный прогноз - Погода Mail","type":"url_citation","url":"https://pogoda.mail.ru/prognoz/moskva/24hours/","valid":true},{"end_index":0,"start_index":0,"title":"Погода в Москве — точный прогноз, температура, ветер, онлайн — 2ГИС","type":"url_citation","url":"https://2gis.ru/moscow/weather","valid":true},{"end_index":0,"start_index":0,"title":"Погода в Москве сегодня - точный прогноз погоды в Москве на завтра, сейчас (Московская область)","type":"url_citation","url":"https://world-weather.ru/pogoda/russia/moscow/","valid":true},{"end_index":0,"start_index":0,"title":"Погода в Москве — Прогноз погоды в Москве","type":"url_citation","url":"https://yandex.ru/pogoda/ru/moscow","valid":true},{"end_index":0,"start_index":0,"title":"GISMETEO: Погода в Москве сейчас, фактическая погода Москва, Москва (город федерального значения), Россия","type":"url_citation","url":"https://www.gismeteo.ru/weather-moscow-4368/now/","valid":true}],"text":" Сейчас в Москве пасмурно.\n\nИсточник: Яндекс Погода (https://yandex.ru/pogoda/ru/moscow)","type":"output_text","valid":true}],"role":"assistant","status":"completed","type":"message","valid":true}],"parallel_tool_calls":false,"temperature":0.3,"tool_choice":"auto","tools":[{"type":"web_search","filters":null,"search_context_size":null,"user_location":null,"valid":true,"valid":true}],"top_p":1.0,"background":false,"completed_at":null,"conversation":null,"max_output_tokens":400,"max_tool_calls":null,"previous_response_id":null,"prompt":null,"prompt_cache_key":null,"prompt_cache_retention":null,"reasoning":null,"safety_identifier":null,"service_tier":"default","status":"completed","text":null,"top_logprobs":null,"truncation":null,"usage":{"input_tokens":649,"input_tokens_details":{"cached_tokens":624,"valid":true,"tool_tokens":2102},"output_tokens":59,"output_tokens_details":{"reasoning_tokens":0,"valid":true},"total_tokens":2810,"valid":true},"user":null,"valid":true,"valid":true},"type":"response.completed"}
+event:response.completed
+

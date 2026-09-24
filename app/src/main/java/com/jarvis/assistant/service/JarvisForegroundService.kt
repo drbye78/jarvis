@@ -490,11 +490,7 @@ class JarvisForegroundService : Service() {
 
                 built = AppGraph(
                     this@JarvisForegroundService, config,
-                    com.jarvis.assistant.config.ProviderSettings.DEFAULT.copy(
-                        type = prefs.providerType,
-                        openAiBaseUrl = prefs.openAiBaseUrl,
-                        openAiModel = prefs.openAiModel,
-                    ),
+                    prefs.loadProviderSettings(),
                     onSessionError = { msg -> errorVoice.speak(msg) },
                 ).also { it.start() }
 

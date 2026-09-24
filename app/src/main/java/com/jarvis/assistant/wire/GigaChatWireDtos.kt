@@ -137,20 +137,7 @@ data class GigaChatResponseMessage(
 data class GigaChatResponsePart(
     val text: String? = null,
     @SerialName("function_call") val functionCall: GigaChatFunctionCall? = null,
-    @SerialName("inline_data") val inlineData: GigaChatInlineData? = null,
     @SerialName("tool_execution") val toolExecution: GigaChatToolExecution? = null,
-)
-
-@Serializable
-data class GigaChatInlineData(
-    val sources: Map<String, GigaChatSource>? = null,
-    val images: List<JsonElement> = emptyList(),
-)
-
-@Serializable
-data class GigaChatSource(
-    val url: String? = null,
-    val title: String? = null,
 )
 
 @Serializable

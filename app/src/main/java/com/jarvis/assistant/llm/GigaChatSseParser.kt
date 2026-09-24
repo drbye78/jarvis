@@ -6,7 +6,6 @@ import com.jarvis.assistant.model.ToolCall
 import com.jarvis.assistant.wire.GigaChatChatResponse
 import com.jarvis.assistant.wire.GigaChatFunctionCall
 import com.jarvis.assistant.wire.GigaChatResponsePart
-import com.jarvis.assistant.wire.GigaChatSource
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import java.util.UUID
@@ -22,25 +21,19 @@ import java.util.UUID
  *   router);
  * - `tool_execution` progress (web_search in_progress/completed) is dropped —
  *   it is telemetry, never speech;
- * - `inline_data.sources` are retained on the [sources] side channel for a
- *   future UI card and NEVER enter the text stream, so search citations are
- *   not read aloud.
+ * - `inline_data` (web_search citations/sources) is dropped — citations stay
+ *   internal and are never read aloud (voice-first; no citation consumer).
  *
  * The class is stateful only for the Done latch (exactly one [LlmChunk.Done]
- * per stream) and the sources accumulator; every field parse is pure and
- * JVM-testable. Text deltas are incremental (live-verified) — concatenate,
- * no de-duplication.
+ * per stream); every field parse is pure and JVM-testable. Text deltas are
+ * incremental (live-verified) — concatenate, no de-duplication.
  */
 class GigaChatSseParser(
     private val advertisedToolNames: Set<String>,
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val sourcesById = LinkedHashMap<String, GigaChatSource>()
     private var doneEmitted = false
-
-    /** Sources seen so far, for later UI use — never part of the text lane. */
-    val sources: List<GigaChatSource> get() = sourcesById.values.toList()
 
     /**
      * Parses one `(event, data)` pair. Returns the chunks it contributes
@@ -72,9 +65,9 @@ class GigaChatSseParser(
     private fun appendPart(part: GigaChatResponsePart, out: MutableList<LlmChunk>) {
         part.text?.takeIf { it.isNotEmpty() }?.let { out += LlmChunk.Text(it) }
         appendFunctionCall(part.functionCall, out)
-        // tool_execution is intentionally dropped: it is web_search progress,
-        // not assistant output.
-        part.inlineData?.sources?.let { sourcesById.putAll(it) }
+        // tool_execution and inline_data (web_search citations) are
+        // intentionally dropped: neither is assistant output, so neither may
+        // enter the spoken-text lane.
     }
 
     private fun appendFunctionCall(call: GigaChatFunctionCall?, out: MutableList<LlmChunk>) {

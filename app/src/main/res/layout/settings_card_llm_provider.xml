@@ -59,10 +59,17 @@
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 android:text="@string/provider_openai_compat" />
+
+            <RadioButton
+                android:id="@+id/providerYandex"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/provider_yandex" />
         </RadioGroup>
 
         <!-- GigaChat-3 flavor (visible only while GigaChat is selected).
-             Mirror of the [OI] block below, and the same rule applies: the
+             Mirror of the OpenAI block below, and the same rule applies: the
              client is built from ProviderSettings at service start, so the
              flavor is sealed at graph construction and the restart note
              repeats the provider card's wording. -->
@@ -123,7 +130,95 @@
                 style="@style/TextAppearance.Jarvis.Hint" />
         </LinearLayout>
 
-        <!-- [OI]-compatible endpoint fields (visible only when selected) -->
+        <!-- Yandex AI Studio (visible only while it is selected). Same rule as
+             the two blocks around it: the client is built from ProviderSettings
+             at service start, so the choice is sealed at graph construction.
+             The API key is deliberately NOT repeated here — it lives in the
+             credentials card, where the one key already serves the speech
+             engine too. -->
+        <LinearLayout
+            android:id="@+id/yandexBlock"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/yandex_model_label"
+                style="@style/TextAppearance.Jarvis.SectionHeader"
+                android:accessibilityHeading="true" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/yandex_model_hint"
+                style="@style/TextAppearance.Jarvis.Hint" />
+
+            <RadioGroup
+                android:id="@+id/yandexModelGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp">
+
+                <RadioButton
+                    android:id="@+id/yandexModelAlice"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/yandex_model_aliceai_llm" />
+
+                <RadioButton
+                    android:id="@+id/yandexModelAliceFlash"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/yandex_model_aliceai_llm_flash" />
+
+                <RadioButton
+                    android:id="@+id/yandexModelYandexGpt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/yandex_model_yandexgpt_5_lite" />
+            </RadioGroup>
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:id="@+id/yandexFolderIdLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/yandex_folder_label">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/yandexFolderId"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:imeOptions="actionDone"
+                    android:inputType="text"
+                    android:maxLines="1" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/yandex_folder_hint"
+                style="@style/TextAppearance.Jarvis.Hint" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/provider_restart_hint"
+                style="@style/TextAppearance.Jarvis.Hint" />
+        </LinearLayout>
+
+        <!-- OpenAI-compatible endpoint fields (visible only when selected) -->
         <LinearLayout
             android:id="@+id/openAiBlock"
             android:layout_width="match_parent"

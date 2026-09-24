@@ -22,6 +22,7 @@ import com.jarvis.assistant.llm.GigaChatNativeClient
 import com.jarvis.assistant.llm.LlmClient
 import com.jarvis.assistant.llm.OpenAiCompatClient
 import com.jarvis.assistant.llm.TokenManager
+import com.jarvis.assistant.llm.YandexAiStudioClient
 import com.jarvis.assistant.session.SessionManager
 import com.jarvis.assistant.session.SessionStateMachine
 import com.jarvis.assistant.speech.SpeechBackend
@@ -168,6 +169,20 @@ class AppGraph(
             baseUrl = provider.openAiBaseUrl,
             apiKey = apiKeyFor(),
             defaultModel = provider.openAiModel,
+        )
+
+        ProviderSettings.Type.YANDEX -> YandexAiStudioClient(
+            httpClient = httpClient,
+            // Same Cloud API key as the Yandex speech backend — the live
+            // reader (not a snapshot) so a key entered in Settings lands
+            // without a restart, exactly like [yandexApiKeyProvider].
+            apiKeyProvider = { appPrefs.yandexApiKey },
+            endpoint = config.yandexAiStudioEndpoint,
+            defaultModel = provider.yandexModel,
+            manualFolderId = provider.yandexFolderId,
+            // Product decision: web_search is always-on and model-decided
+            // (no Settings toggle), matching the GigaChat branch.
+            webSearchEnabled = true,
         )
     }
 

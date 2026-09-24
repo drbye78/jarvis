@@ -9,8 +9,9 @@ The default build targets Russian (wake word «Джарвис», ASR/TTS languag
 SaluteSpeech and GigaChat providers are multi-lingual. Streaming-first: live ASR,
 streamed LLM with tool calling,
 sentence-buffered TTS. Alarms and timers that actually ring. Real on-tablet
-device control. Pluggable LLM provider (Sber GigaChat by default — native v2 with
-built-in internet search for fresh facts — or any OpenAI-compatible endpoint).
+device control. Pluggable LLM provider — **Sber GigaChat** (native v2), **Yandex
+AI Studio**, or any [OI]-compatible endpoint; the two native providers also do
+built-in internet search for fresh facts.
 Answers arbitrary questions and holds a conversation on any topic.
 
 ## Prerequisites
@@ -116,6 +117,9 @@ What the live tests do (tiny, quota-aware payloads):
 - **GigaChat**: OAuth fetch, a one-word `chatOnce` prompt capped at 16 tokens,
   a short streaming pass, one live **web-search** turn (a time-sensitive
   question must come back as grounded text), one embeddings call (1024-dim).
+- **Yandex AI Studio LLM**: one plain `chatOnce`, one **web-search** turn (a
+  time-sensitive question must come back as grounded text), and one
+  function-tool turn — all on tiny, quota-aware payloads.
 - **Salute / Yandex ASR**: one round trip on **synthetic silence** — asserts
   PROTOCOL HEALTH only (stream opens, authenticates, closes cleanly); an empty
   transcript is the expected outcome and is documented in the test. The Yandex
@@ -184,18 +188,26 @@ keystore with `keytool` and update `local.properties` accordingly.
   TTS reference) and, with a one-tap system consent, other apps' music —
   experimental, see RUNBOOK for the honest quality expectations and
   validation steps.
-- **Chat**: GigaChat (or OpenAI-compatible provider) with a 20-message context
+- **Chat**: GigaChat, Yandex AI Studio (or any [OI]-compatible provider) with a
+  20-message context
   bounded by a character budget — verbose tool results can no longer overflow
   the model's context window (the newest turn is always kept, truncated if
   needed). The assistant answers general questions from its own knowledge and
   keeps a conversation going on any topic; for fresh or changing facts
-  (news, rates, prices, "what's on now") it uses GigaChat's **built-in
+  (news, rates, prices, "what's on now") it uses the provider's **built-in
   internet search**, which runs server-side and returns cited sources. The
-  search results themselves are never spoken — only the grounded answer.
+  search results and citations themselves are never spoken — only the grounded
+  answer.
 - **GigaChat model** (Settings → «Нейросеть (LLM)»): pick the **GigaChat-3
   flavor** — Lightning (default, fastest), Pro (balanced) or Ultra (most
   capable). Sealed at service start like the speech backend, so it applies
   after a restart (the card says so).
+- **Yandex AI Studio** (Settings → «Нейросеть (LLM)»): choose the Yandex
+  model — **Alice AI** (default), **Alice AI Flash** (fast) or **YGPT 5
+  Lite**. It reuses the **same API key as the Yandex speech engine** (the key
+  needs AI Studio access, not just SpeechKit). The folder id is detected
+  automatically from the key; a manual **Folder ID** override is available if
+  the key cannot list models. Also sealed at service start.
 - **Memory of facts** (Settings → «Память»): a long-term cognitive memory
   that remembers things about you, with semantic search over those facts in
   its own card (Settings → «Семантический поиск по памяти»). Cloud fact
@@ -248,7 +260,8 @@ keystore with `keytool` and update `local.properties` accordingly.
 - Kotlin 2.2.21 · Coroutines · Flow · kotlinx.serialization
 - Picovoice Porcupine + Sherpa-ONNX (hybrid wake word: Porcupine with a Picovoice account, or fully offline Sherpa-ONNX with no account)
 - Sber SaluteSpeech **or** Yandex SpeechKit v3 (streaming ASR + TTS via gRPC)
-- Sber GigaChat (native v2, built-in internet search) or any OpenAI-compatible API (LLM via SSE, tool calling)
+- Sber GigaChat (native v2) **or** Yandex AI Studio — both with built-in internet search —
+  or any [OI]-compatible API (LLM via SSE, tool calling)
 - Room (conversation, alarms, memory/facts) · Open-Meteo (weather)
 - Material 3 UI (teal/amber day+night design system): home screen with a
   live voice orb (breathing/ripple/thinking/speaking animations), chat-style

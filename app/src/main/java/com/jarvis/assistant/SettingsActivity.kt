@@ -20,6 +20,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.jarvis.assistant.audio.WakeWordImport
 import com.jarvis.assistant.cognitive.data.MemoryMetaEntity
+import com.jarvis.assistant.config.ProviderSettings
 import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.llm.CredentialCheck
 import com.jarvis.assistant.llm.CredentialCheckController
@@ -60,7 +61,7 @@ interface SettingsCallbacks {
         yandexApiKey: String,
     )
 
-    /** The LLM backend changed: "gigachat" | "openai". */
+    /** The LLM backend changed: "gigachat" | "openai" | "yandex". */
     fun onLlmProviderSelected(type: String)
 
     /**
@@ -70,8 +71,16 @@ interface SettingsCallbacks {
      */
     fun onSpeechBackendSelected(backend: SpeechBackend)
 
-    /** Persist the OpenAI-compatible endpoint settings (url/model/key). */
-    suspend fun onSaveLlmProviderSettings(baseUrl: String, model: String, apiKey: String)
+    /**
+     * Persist the OpenAI-compatible endpoint settings (url/model/key) and the
+     * optional Yandex folder id (blank = auto-discover).
+     */
+    suspend fun onSaveLlmProviderSettings(
+        baseUrl: String,
+        model: String,
+        apiKey: String,
+        yandexFolderId: String,
+    )
 
     /** The chosen wake-word model changed (`builtin` | `custom_bundled`). */
     fun onWakeWordSelected(modelId: String)
@@ -125,6 +134,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var llmProviderGroup: RadioGroup
     private lateinit var gigaChatBlock: View
     private lateinit var openAiBlock: View
+    private lateinit var yandexBlock: View
+    private lateinit var yandexFolderId: TextInputEditText
     private lateinit var openAiBaseUrl: TextInputEditText
     private lateinit var openAiModel: TextInputEditText
     private lateinit var openAiApiKey: TextInputEditText
@@ -204,6 +215,8 @@ class SettingsActivity : AppCompatActivity() {
         llmProviderGroup = findViewById(R.id.llmProviderGroup)
         gigaChatBlock = findViewById(R.id.gigaChatBlock)
         openAiBlock = findViewById(R.id.openAiBlock)
+        yandexBlock = findViewById(R.id.yandexBlock)
+        yandexFolderId = findViewById(R.id.yandexFolderId)
         openAiBaseUrl = findViewById(R.id.openAiBaseUrl)
         openAiModel = findViewById(R.id.openAiModel)
         openAiApiKey = findViewById(R.id.openAiApiKey)
@@ -275,49 +288,110 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** A0) LLM provider card: GigaChat default, or any OpenAI-compatible endpoint. */
+    /** A0) LLM provider card: GigaChat, Yandex AI Studio, or any OpenAI-compatible endpoint. */
     private fun setupLlmProviderCard() {
         // A0) LLM provider selection. The graph consumes these prefs at
-        // service start (AppGraph builds GigaChatNativeClient or
-        // OpenAiCompatClient from ProviderSettings), so a change takes effect
-        // after the next service restart — the hint under the fields says
-        // exactly that.
-        val isOpenAi = appPrefs.providerType == com.jarvis.assistant.config.ProviderSettings.Type.OPENAI_COMPAT
-        llmProviderGroup.check(if (isOpenAi) R.id.providerOpenai else R.id.providerGigachat)
+        // service start (AppGraph builds the provider client from
+        // ProviderSettings), so a change takes effect after the next service
+        // restart — the hint under the fields says exactly that. Visibility is
+        // driven from the STORED pref once here and from the listener on every
+        // change (the applySpeechBackendVisibility pattern); driving it from the
+        // listener alone would show the wrong block on an install that already
+        // has Yandex stored, until the user happened to touch the radio.
+        val providerType = appPrefs.providerType
+        llmProviderGroup.check(
+            when (providerType) {
+                ProviderSettings.Type.OPENAI_COMPAT -> R.id.providerOpenai
+                ProviderSettings.Type.YANDEX -> R.id.providerYandex
+                ProviderSettings.Type.GIGACHAT -> R.id.providerGigachat
+            },
+        )
         openAiBaseUrl.setText(appPrefs.openAiBaseUrl)
         openAiModel.setText(appPrefs.openAiModel)
         openAiApiKey.setText(appPrefs.openAiApiKey)
-        applyProviderVisibility(isOpenAi)
+        applyProviderVisibility(providerType)
 
-        // GigaChat-3 flavor: the radio mirrors the stored pref and persists on
-        // selection. Like the provider TYPE, the flavor is baked into the
-        // client at graph construction, so its block carries the same restart
-        // note. State is set BEFORE the listener, so a programmatic check()
-        // can never look like a user edit.
-        val modelGroup = findViewById<RadioGroup>(R.id.gigaChatModelGroup)
-        modelGroup.check(
-            when (SettingsMapping.gigaChatModelIndex(appPrefs.gigaChatModel)) {
-                1 -> R.id.gigaChatModelPro
-                2 -> R.id.gigaChatModelUltra
-                else -> R.id.gigaChatModelLightning
-            },
-        )
-        modelGroup.setOnCheckedChangeListener { _, checkedId ->
-            appPrefs.gigaChatModel = when (checkedId) {
-                R.id.gigaChatModelPro -> SettingsMapping.gigaChatModelAt(1)
-                R.id.gigaChatModelUltra -> SettingsMapping.gigaChatModelAt(2)
-                else -> SettingsMapping.gigaChatModelAt(0)
+        // GigaChat-3 flavor and the Yandex AI Studio model: both are three-way
+        // radios bound to a stored pref, so they share one binder — only the
+        // ids differ. Like the provider TYPE, each model is baked into its
+        // client at graph construction, so both blocks carry the same restart
+        // note.
+        bindModelGroup(
+            findViewById(R.id.gigaChatModelGroup),
+            SettingsMapping.gigaChatModelIndex(appPrefs.gigaChatModel),
+            R.id.gigaChatModelLightning,
+            R.id.gigaChatModelPro,
+            R.id.gigaChatModelUltra,
+        ) { index -> appPrefs.gigaChatModel = SettingsMapping.gigaChatModelAt(index) }
+        bindModelGroup(
+            findViewById(R.id.yandexModelGroup),
+            SettingsMapping.yandexModelIndex(appPrefs.yandexModel),
+            R.id.yandexModelAlice,
+            R.id.yandexModelAliceFlash,
+            R.id.yandexModelYandexGpt,
+        ) { index -> appPrefs.yandexModel = SettingsMapping.yandexModelAt(index) }
+
+        // Folder ID is optional: blank means "discover the folder from the
+        // key". Committed on IME-done / focus loss like the custom voice and
+        // Sherpa keyword fields — NOT per keystroke.
+        yandexFolderId.setText(appPrefs.yandexFolderId)
+        yandexFolderId.setOnEditorActionListener { _, action, _ ->
+            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                appPrefs.yandexFolderId = yandexFolderId.text.toString().trim()
+                true
+            } else {
+                false
             }
+        }
+        yandexFolderId.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) appPrefs.yandexFolderId = yandexFolderId.text.toString().trim()
         }
 
         llmProviderGroup.setOnCheckedChangeListener { _, checkedId ->
-            val type = if (checkedId == R.id.providerOpenai) "openai" else "gigachat"
+            val type = when (checkedId) {
+                R.id.providerOpenai -> "openai"
+                R.id.providerYandex -> "yandex"
+                else -> "gigachat"
+            }
             callbacks.onLlmProviderSelected(type)
-            applyProviderVisibility(type == "openai")
+            applyProviderVisibility(SettingsMapping.providerTypeFor(type))
         }
 
         findViewById<Button>(R.id.saveProviderButton).setOnClickListener {
             saveLlmProviderSettings()
+        }
+    }
+
+    /**
+     * Bind a three-way model `RadioGroup` to a stored pref: check the radio for
+     * [storedIndex] BEFORE attaching the listener (so a programmatic `check()`
+     * can never look like a user edit), then report the picked slot to
+     * [onPicked]. The low/mid/high ids are parameters because the GigaChat and
+     * Yandex groups differ only by their ids.
+     */
+    private fun bindModelGroup(
+        group: RadioGroup,
+        storedIndex: Int,
+        lowId: Int,
+        midId: Int,
+        highId: Int,
+        onPicked: (Int) -> Unit,
+    ) {
+        group.check(
+            when (storedIndex) {
+                1 -> midId
+                2 -> highId
+                else -> lowId
+            },
+        )
+        group.setOnCheckedChangeListener { _, checkedId ->
+            onPicked(
+                when (checkedId) {
+                    midId -> 1
+                    highId -> 2
+                    else -> 0
+                },
+            )
         }
     }
 
@@ -1175,15 +1249,16 @@ class SettingsActivity : AppCompatActivity() {
         renderFieldErrors(FieldValidation.validateLlmProvider(url, key))
         if (url.isEmpty() || key.isEmpty()) return
         lifecycleScope.launch {
-            callbacks.onSaveLlmProviderSettings(url, model, key)
+            callbacks.onSaveLlmProviderSettings(url, model, key, yandexFolderId.text.toString().trim())
             Toast.makeText(this@SettingsActivity, R.string.settings_saved, Toast.LENGTH_SHORT).show()
         }
     }
 
     /** Show only the block belonging to the selected provider. */
-    private fun applyProviderVisibility(isOpenAi: Boolean) {
-        openAiBlock.visibility = if (isOpenAi) View.VISIBLE else View.GONE
-        gigaChatBlock.visibility = if (isOpenAi) View.GONE else View.VISIBLE
+    private fun applyProviderVisibility(type: ProviderSettings.Type) {
+        gigaChatBlock.visibility = if (type == ProviderSettings.Type.GIGACHAT) View.VISIBLE else View.GONE
+        openAiBlock.visibility = if (type == ProviderSettings.Type.OPENAI_COMPAT) View.VISIBLE else View.GONE
+        yandexBlock.visibility = if (type == ProviderSettings.Type.YANDEX) View.VISIBLE else View.GONE
     }
 
     private fun saveCredentials() {
@@ -1543,19 +1618,21 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         override fun onLlmProviderSelected(type: String) {
-            appPrefs.providerType = if (type == "openai") {
-                com.jarvis.assistant.config.ProviderSettings.Type.OPENAI_COMPAT
-            } else {
-                com.jarvis.assistant.config.ProviderSettings.Type.GIGACHAT
-            }
+            appPrefs.providerType = SettingsMapping.providerTypeFor(type)
         }
 
-        override suspend fun onSaveLlmProviderSettings(baseUrl: String, model: String, apiKey: String) {
+        override suspend fun onSaveLlmProviderSettings(
+            baseUrl: String,
+            model: String,
+            apiKey: String,
+            yandexFolderId: String,
+        ) {
             appPrefs.openAiBaseUrl = baseUrl
             appPrefs.openAiModel = model.ifBlank {
                 com.jarvis.assistant.config.ProviderSettings.DEFAULT.openAiModel
             }
             appPrefs.openAiApiKey = apiKey
+            appPrefs.yandexFolderId = yandexFolderId
         }
 
         override fun onWakeWordSelected(modelId: String) {
@@ -1643,7 +1720,12 @@ class SettingsActivity : AppCompatActivity() {
             notReady("onLlmProviderSelected")
         }
 
-        override suspend fun onSaveLlmProviderSettings(baseUrl: String, model: String, apiKey: String) {
+        override suspend fun onSaveLlmProviderSettings(
+            baseUrl: String,
+            model: String,
+            apiKey: String,
+            yandexFolderId: String,
+        ) {
             notReady("onSaveLlmProviderSettings")
         }
 

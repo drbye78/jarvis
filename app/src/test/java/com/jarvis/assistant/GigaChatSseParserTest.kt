@@ -67,15 +67,6 @@ class GigaChatSseParserTest {
     }
 
     @Test
-    fun `sources are retained on the side channel only`() {
-        val parser = GigaChatSseParser(advertisedToolNames = emptySet())
-        replay("recorded/gigachat/search.sse", parser)
-
-        assertEquals(5, parser.sources.size)
-        assertTrue(parser.sources.all { it.url?.startsWith("https://") == true })
-    }
-
-    @Test
     fun `client function call is emitted only for an advertised name`() {
         val funcJson = requireNotNull(
             javaClass.classLoader!!.getResourceAsStream("recorded/gigachat/func.json")
