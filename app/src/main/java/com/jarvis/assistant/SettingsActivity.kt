@@ -1,7 +1,9 @@
 package com.jarvis.assistant
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -11,6 +13,7 @@ import android.widget.RadioGroup
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -81,6 +84,9 @@ interface SettingsCallbacks {
         apiKey: String,
         yandexFolderId: String,
     )
+
+    /** The weather default city changed (blank = auto-detect via GPS). */
+    fun onWeatherLocationSaved(location: String)
 
     /** The chosen wake-word model changed (`builtin` | `custom_bundled`). */
     fun onWakeWordSelected(modelId: String)
@@ -179,6 +185,22 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var yandexVoice: MaterialAutoCompleteTextView
     private lateinit var yandexRole: MaterialAutoCompleteTextView
 
+    // Weather card
+    private lateinit var weatherLocationInput: TextInputEditText
+    private lateinit var weatherLocationPermissionStatus: TextView
+
+    /**
+     * Location-permission prompt. The weather tool runs in the service, which
+     * cannot show a permission dialog, so Settings owns the only affordance.
+     * Registered as a field initializer (before STARTED, the documented safe
+     * point). The manifest entries ship in a separate lane; until they land the
+     * launcher simply reports a denial. Re-reads the grant on return.
+     */
+    private val weatherPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            refreshWeatherPermissionStatus()
+        }
+
     private lateinit var appPrefs: AppPrefs
 
     /**
@@ -226,6 +248,9 @@ class SettingsActivity : AppCompatActivity() {
         yandexCredentialsBlock = findViewById(R.id.yandexCredentialsBlock)
         yandexApiKey = findViewById(R.id.yandexApiKey)
 
+        weatherLocationInput = findViewById(R.id.weatherLocationInput)
+        weatherLocationPermissionStatus = findViewById(R.id.weatherLocationPermissionStatus)
+
         fieldLayouts = mapOf(
             FieldValidation.Field.OPENAI_BASE_URL to findViewById(R.id.openAiBaseUrlLayout),
             FieldValidation.Field.OPENAI_API_KEY to findViewById(R.id.openAiApiKeyLayout),
@@ -250,6 +275,7 @@ class SettingsActivity : AppCompatActivity() {
         // (that is what would stop a live capture lane or rebuild the wake engine).
         setupLlmProviderCard()
         setupMusicCard()
+        setupWeatherCard()
         setupAecCard()
         setupFollowUpCard()
         setupMemoryCard()
@@ -268,6 +294,14 @@ class SettingsActivity : AppCompatActivity() {
         // (bound in setupVoiceCard) unreferenced and the card crashes on an
         // install that already has Yandex stored.
         setupSpeechBackendCard()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // The location grant can change while the app is backgrounded (the user
+        // may grant or revoke it in system settings), so re-read it here rather
+        // than trusting the value captured when the card was first shown.
+        refreshWeatherPermissionStatus()
     }
 
     /**
@@ -490,6 +524,79 @@ class SettingsActivity : AppCompatActivity() {
             appPrefs.preferredMusicPlayer = SettingsMapping.playerPrefFor(player)
         }
     }
+
+    /** Weather card: default city (primary path) + the location-permission affordance. */
+    private fun setupWeatherCard() {
+        // The configured city is the realistic primary path on GMS-free,
+        // WiFi-only devices; GPS auto-detect is the fallback. The pref is read
+        // live per weather turn, so a saved city applies without a restart.
+        weatherLocationInput.setText(appPrefs.weatherLocation)
+        // Commit on the explicit Save button below AND on IME-done / focus
+        // loss — the same free-text commit pattern the voice and Sherpa fields
+        // use, so editing and tapping away does not silently lose the edit.
+        weatherLocationInput.setOnEditorActionListener { _, action, _ ->
+            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                saveWeatherLocation()
+                true
+            } else {
+                false
+            }
+        }
+        weatherLocationInput.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) saveWeatherLocation()
+        }
+        findViewById<Button>(R.id.weatherLocationSaveButton).setOnClickListener {
+            saveWeatherLocation()
+        }
+        findViewById<Button>(R.id.weatherLocationPermissionButton).setOnClickListener {
+            weatherPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Persist the current weather city through the callback layer. Blank means
+     * "auto-detect", which [SettingsMapping.weatherLocationOrDefault] normalizes
+     * so whitespace-only input cannot persist a blank-looking city.
+     */
+    private fun saveWeatherLocation() {
+        callbacks.onWeatherLocationSaved(
+            SettingsMapping.weatherLocationOrDefault(weatherLocationInput.text.toString()),
+        )
+    }
+
+    /**
+     * Re-read the live grant and render the status row. A configured city makes
+     * the GPS path irrelevant, so the row is hidden in that case (the request
+     * button stays available for when the city is cleared).
+     */
+    private fun refreshWeatherPermissionStatus() {
+        val status = SettingsMapping.weatherPermissionStatus(
+            fineGranted = hasLocationPermission(Manifest.permission.ACCESS_FINE_LOCATION),
+            coarseGranted = hasLocationPermission(Manifest.permission.ACCESS_COARSE_LOCATION),
+            configured = appPrefs.weatherLocation,
+        )
+        when (status) {
+            SettingsMapping.WeatherPermissionStatus.GRANTED -> {
+                weatherLocationPermissionStatus.visibility = View.VISIBLE
+                weatherLocationPermissionStatus.setText(R.string.weather_permission_granted)
+            }
+            SettingsMapping.WeatherPermissionStatus.DENIED -> {
+                weatherLocationPermissionStatus.visibility = View.VISIBLE
+                weatherLocationPermissionStatus.setText(R.string.weather_permission_denied)
+            }
+            SettingsMapping.WeatherPermissionStatus.NOT_NEEDED -> {
+                weatherLocationPermissionStatus.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun hasLocationPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
     /** AEC card: OFF / HARDWARE / SOFTWARE, opt-in (rebuilds AudioRecord on next start). */
     private fun setupAecCard() {
@@ -1635,6 +1742,11 @@ class SettingsActivity : AppCompatActivity() {
             appPrefs.yandexFolderId = yandexFolderId
         }
 
+        override fun onWeatherLocationSaved(location: String) {
+            // Pref only: the weather tool reads it live per turn, so no restart.
+            appPrefs.weatherLocation = location
+        }
+
         override fun onWakeWordSelected(modelId: String) {
             appPrefs.wakeWordModel = modelId
             lifecycleScope.launch(Dispatchers.Default) {
@@ -1727,6 +1839,10 @@ class SettingsActivity : AppCompatActivity() {
             yandexFolderId: String,
         ) {
             notReady("onSaveLlmProviderSettings")
+        }
+
+        override fun onWeatherLocationSaved(location: String) {
+            notReady("onWeatherLocationSaved")
         }
 
         override fun onWakeWordSelected(modelId: String) {

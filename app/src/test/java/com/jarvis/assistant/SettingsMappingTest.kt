@@ -3,6 +3,7 @@ package com.jarvis.assistant
 import com.jarvis.assistant.config.ProviderSettings
 import com.jarvis.assistant.ui.SettingsMapping
 import com.jarvis.assistant.ui.SettingsMapping.Player
+import com.jarvis.assistant.ui.SettingsMapping.WeatherPermissionStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -256,5 +257,54 @@ class SettingsMappingTest {
         // Unknown/blank must never crash or produce a null radio selection.
         assertEquals(ProviderSettings.Type.GIGACHAT, SettingsMapping.providerTypeFor(""))
         assertEquals(ProviderSettings.Type.GIGACHAT, SettingsMapping.providerTypeFor("bogus"))
+    }
+
+    // ---- weather ----
+
+    @Test
+    fun `weather city trims and whitespace degrades to auto`() {
+        assertEquals("Москва", SettingsMapping.weatherLocationOrDefault("  Москва "))
+        assertEquals(SettingsMapping.WEATHER_LOCATION_AUTO, SettingsMapping.weatherLocationOrDefault(""))
+        assertEquals(SettingsMapping.WEATHER_LOCATION_AUTO, SettingsMapping.weatherLocationOrDefault("   "))
+    }
+
+    @Test
+    fun `weather permission is granted when either grant is present`() {
+        assertEquals(WeatherPermissionStatus.GRANTED, SettingsMapping.weatherPermissionStatus(true, false, ""))
+        assertEquals(WeatherPermissionStatus.GRANTED, SettingsMapping.weatherPermissionStatus(false, true, ""))
+        assertEquals(WeatherPermissionStatus.GRANTED, SettingsMapping.weatherPermissionStatus(true, true, ""))
+    }
+
+    @Test
+    fun `weather permission is denied only with no grant and no configured city`() {
+        assertEquals(WeatherPermissionStatus.DENIED, SettingsMapping.weatherPermissionStatus(false, false, ""))
+        assertEquals(WeatherPermissionStatus.DENIED, SettingsMapping.weatherPermissionStatus(false, false, "   "))
+    }
+
+    @Test
+    fun `a configured city makes a missing grant not needed`() {
+        // The city always wins, so a missing grant is irrelevant, not "denied".
+        assertEquals(
+            WeatherPermissionStatus.NOT_NEEDED,
+            SettingsMapping.weatherPermissionStatus(false, false, "Москва"),
+        )
+        // A grant still reads as granted, city or not.
+        assertEquals(WeatherPermissionStatus.GRANTED, SettingsMapping.weatherPermissionStatus(true, true, "Москва"))
+        assertEquals(WeatherPermissionStatus.GRANTED, SettingsMapping.weatherPermissionStatus(false, true, "Москва"))
+    }
+
+    @Test
+    fun `weather permission status is total for every input combination`() {
+        for (fine in listOf(true, false)) {
+            for (coarse in listOf(true, false)) {
+                for (city in listOf("", "   ", "Москва")) {
+                    val status = SettingsMapping.weatherPermissionStatus(fine, coarse, city)
+                    assertTrue(
+                        "$fine/$coarse/'$city' -> $status",
+                        status in WeatherPermissionStatus.entries,
+                    )
+                }
+            }
+        }
     }
 }

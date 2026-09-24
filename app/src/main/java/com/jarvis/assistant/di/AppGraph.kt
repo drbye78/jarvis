@@ -421,6 +421,8 @@ class AppGraph(
         alarmScheduler = alarmScheduler,
         // 0.7: ONE AppPrefs instance graph-wide (the router built its own).
         appPrefs = appPrefs,
+        // Weather: Open-Meteo URLs + GPS timing live in the config, not the tool.
+        config = config,
         // COGNITIVE_PLAN 1.5: remember_fact / recall_facts / forget_fact.
         cognitiveTools = { cognitiveCoordinator.tools() },
         // COGNITIVE_PLAN 2.1: command telemetry — every tool execution writes

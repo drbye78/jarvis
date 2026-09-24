@@ -16,7 +16,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
         ├─ StreamingAsrClient (bidi gRPC, provider-neutral: Sber Salute OR Yandex v3; live audio up, partials/EOU down)
        ├─ ConversationManager (Room; 20-msg window, tool-pair-safe)
        ├─ LlmClient (GigaChat native v2 | Yandex AI Studio Responses | [OI]-compatible; SSE; wire DTOs)
-       │    └─ ToolRegistry → alarms/timers · weather · 8 device tools
+       │    └─ ToolRegistry → alarms/timers · weather (+ location) · 8 device tools
        └─ TtsClient (gRPC, cancellable Context, deadline: Sber Salute OR Yandex v3)
             └─ StreamingAudioTrackPlayer (single actor, generation-based flush)
 ```
@@ -32,7 +32,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `speech/tts/` | `TtsClient` (cancellable + deadline) and `TtsPlayer` contract. Implementations: `SaluteSpeechTts` and `YandexSpeechTts` (Yandex v3, 24 kHz `RawAudio`); voice/role packing via `YandexVoiceSpec`. `VoiceCatalog` is the per-backend voice catalog and the single source of truth for the Settings «Голос» card (`SBER_VOICES`, `YANDEX_VOICES`, `yandexRolesFor()`), keyed by backend because the two providers have disjoint voice namespaces. |
 | `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loads BOTH ways per FIXPLAN C — bundled models asset-relative (`newFromAsset`), custom/extracted models from the filesystem (`newFromFile` via `SherpaModelStore`)), player (generations), and the Phase-5 etiquette pair: `AssistantAudioFocus` (duck-during-TTS state machine + `AndroidAudioFocusAdapter`) and `SpeechFeedback` (spoken cascade progress). |
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns (job hand-offs under a monitor, seq-guarded supersede/cancel); TurnRunner (bounded tool loop; error turns end via reportFailure only); `SpeechPhrases` — locale-aware runtime spoken phrases (RU default + resource-backed values/values-en). |
-| `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. |
+| `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. Weather: `WeatherTool` (Open-Meteo, current + 7-day daily) over a `WeatherClient`; `tools/weather/` holds the location subsystem — `WeatherLocationResolver` (configured city wins, else a device fix) and the GMS-free `AndroidLocationProvider` (`LocationManager`, API-29-safe; no Play Services). |
 | `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure capability-gated strategy cascade (structured playFromSearch, MediaBrowser search/token lane, query-aware verification) with rich transport; `MediaBrowserGateway` + `AndroidMediaBrowserGateway` (bind/search/children); `MediaCapabilities`/`VoiceQuery`/`MediaDiagnostics` (pure models). Android adapters: `AndroidMediaGateway` (compat-wrapped controllers), `AndroidMediaBrowserGateway`. Threading invariant: `AndroidMediaBrowserGateway.connect()` must construct `MediaBrowserCompat` on a Looper thread and therefore hops to `Dispatchers.Main` internally — the production tool lane is `Dispatchers.IO`, and without that hop every bind silently returns null (the throw is swallowed by `runCatching`), so the whole browser strategy is dead. Pinned only on-device. |
 | `data/` | Room v2: messages (id-ordered, orphan-safe windowing) + alarms + user_facts (cognitive memory) + extraction_queue + memory_meta (cognitive bookkeeping: schema revision, cursors, counters) + fact_fts (FTS4) + command_events + habit_rules + behavior_log + session_summaries + fact_vectors + entities + fact_entities + ring_sessions (durable ring state, `RingSessionEntity`). |
 | `service/` | Foreground service (permission gate, retryable init, watchdog semantics), boot receiver, ringing activity, notification listener. |
@@ -448,7 +448,7 @@ base URL).
 
 ## Tests
 
-JVM unit suite (1120 tests, all green; runs in CI on every push/PR). The live
+JVM unit suite (1147 tests, all green; runs in CI on every push/PR). The live
 smoke tier (Sber + Yandex + GigaChat, `integration/**/*LiveSmokeTest`) shares
 `src/test` but is excluded from the gate task and runs only through
 `:app:integrationTest`, which self-skips when credentials are absent:
@@ -458,6 +458,9 @@ replays real recorded SSE fixtures, `SseStreamTest`, `GigaChatNativeWireTest`),
 the Yandex AI Studio Responses parser + transport (`YandexSseParserTest` and
 `YandexWireTest` replay real recorded fixtures; folder discovery, `call_id`
 preservation and the one-`Done` latch are pinned),
+weather (`WeatherClientTest` pins `timezone=auto`, index-aligned daily columns,
+the coords-bypasses-geocoding path and the 1–7 day clamp; `WeatherLocationResolverTest`
+pins configured-wins, never-throw and cancellation propagation),
 state machine, sentence splitter, conversation windowing (incl.
 char-budget trim), alarm
 times + notification identity, tool registry (incl. cancellation

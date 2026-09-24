@@ -90,6 +90,28 @@ data class JarvisConfig(
      */
     val yandexAiStudioEndpoint: String = "https://ai.api.cloud.yandex.net/v1",
 
+    // Open-Meteo weather (free, no API key; CC-BY 4.0 attribution in README).
+    //
+    // The forecast host REQUIRES `timezone` whenever `daily=` is requested, or
+    // day boundaries silently shift to GMT; the client always sends
+    // `timezone=auto`. Base URLs live here (not as client constructor defaults)
+    // because they are behavioural constants; the client keeps its own
+    // constructor seams so the JVM tests stay hermetic against MockWebServer.
+    val openMeteoForecastBaseUrl: String = "https://api.open-meteo.com",
+    val openMeteoGeocodingBaseUrl: String = "https://geocoding-api.open-meteo.com",
+    /** Forecast horizon for a weather turn (Open-Meteo max is 16; voice UX caps at a week). */
+    val weatherForecastDays: Int = 7,
+    /** Longest we will wait for a fresh GPS fix before degrading honestly. */
+    val weatherGpsFixTimeoutMs: Long = 6_000,
+    /** A last-known fix older than this is not reported as current position. */
+    val weatherLastKnownMaxAgeMs: Long = 600_000,
+    /**
+     * Per-tool budget for `getWeather`: GPS (≤6 s) + geocode + forecast can
+     * exceed the 15 s registry default. This is the turn hot path — do not
+     * raise without owner sign-off.
+     */
+    val weatherToolTimeoutMs: Long = 20_000,
+
     // Service watchdog
     val restartIntervalMs: Long = 15 * 60 * 1000L,
 

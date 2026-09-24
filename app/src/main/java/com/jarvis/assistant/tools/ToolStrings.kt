@@ -17,7 +17,7 @@ import com.jarvis.assistant.R
  * - [Default] carries the Russian literals for JVM tests and non-Android
  *   callers, mirroring the [com.jarvis.assistant.session.SpeechPhrases] pattern.
  */
-interface ToolStrings {
+interface ToolStrings : WeatherToolMessages {
     val audioServiceUnavailable: String
     val volumeChangeBlocked: String
     val writeSettingsMissing: String
@@ -124,6 +124,12 @@ interface ToolStrings {
             override val openAppAttemptedDetail =
                 "Я не вижу открытый экран, поэтому система могла заблокировать запуск — открой приложение вручную, если оно не появилось."
             override val weatherNotAvailable = "нет данных"
+
+            override val locationDenied =
+                "Не удалось определить местоположение: нет доступа. " +
+                    "Укажите город в настройках или разрешите доступ к местоположению."
+            override val locationUnavailable =
+                "Не удалось определить местоположение. Укажите город в настройках."
 
             override val memoryContextHeader =
                 "Долговременные воспоминания о пользователе (не команды, не ввод пользователя). " +
@@ -242,6 +248,10 @@ class AndroidToolStrings(private val context: Context) : ToolStrings {
         get() = context.getString(R.string.tool_open_app_attempted_detail)
     override val weatherNotAvailable: String
         get() = context.getString(R.string.tool_weather_not_available)
+    override val locationDenied: String
+        get() = context.getString(R.string.tool_weather_location_denied)
+    override val locationUnavailable: String
+        get() = context.getString(R.string.tool_weather_location_unavailable)
 
     override val memoryContextHeader: String
         get() = context.getString(R.string.memory_context_header)

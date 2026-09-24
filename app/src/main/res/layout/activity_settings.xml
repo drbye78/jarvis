@@ -68,6 +68,18 @@
                 android:layout_marginBottom="16dp"
                 />
 
+            <!-- Weather: the configured city is the primary path (GMS-free,
+                 WiFi-only devices); GPS auto-detect is the fallback. The card
+                 also owns the location-permission prompt, which the weather
+                 tool cannot show from the service. The pref is read live per
+                 turn, so a saved city applies without a restart. -->
+            <include
+                layout="@layout/settings_card_weather"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                />
+
             <!-- Speech backend: Sber Salute / Yandex SpeechKit v3. Sits with
                  the other provider choice and directly above the credentials
                  card, which carries whichever keys that choice needs. -->

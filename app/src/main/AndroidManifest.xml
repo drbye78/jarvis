@@ -22,6 +22,19 @@
     <!-- Android 13+ notification runtime permission -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Weather default-location auto-detect. Coarse is enough for Open-Meteo's
+         ~1-11 km grid; both are requested so the user may grant either.
+         NO `location` foreground-service type is declared on purpose: on API 34+
+         reading location while BACKGROUNDED would need it, but (a) passing the
+         type to startForeground requires the permission at that moment — the
+         always-on boot/idle path has none, so it would crash, and (b) revoking
+         the permission can stop a running typed FGS, which would kill the
+         assistant. Weather therefore uses the configured city (primary path, no
+         location access at all) or a GPS fix while the app is visible. The
+         target device (API 29) has no such restriction. See RUNBOOK. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
     <!-- Always-on appliance -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />

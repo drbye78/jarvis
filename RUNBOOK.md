@@ -134,6 +134,26 @@ decides when to search. If grounded answers never appear:
   only the grounded answer is. If you hear "web_search" or a URL, that is a
   parser regression, not a service problem.
 
+### «Какая погода?» — не понимает город / отвечает не для моего города
+Weather questions default to a location: the city set in **Settings → «Погода»**
+always wins; if that is empty, the device location is used.
+
+- **Configured city is the reliable path.** The target tablet is GMS-free
+  (no Play Services) and often WiFi-only, so `NETWORK_PROVIDER` frequently
+  returns nothing — and GPS hardware may be absent entirely. If weather keeps
+  answering for the wrong place, set the city explicitly in Settings.
+- **«Не удалось определить местоположение»** — no city is configured AND
+  location access is denied or no fix was obtained within ~6 s. Either set a
+  city, or grant location access with the card's button (the permission dialog
+  can only appear in Settings — the assistant runs in a service, which cannot
+  prompt).
+- **No city is ever spoken for a GPS position.** Open-Meteo has no reverse
+  geocoding and the app adds no third-party service, so a detected position is
+  reported as «текущее местоположение». That is by design, not a bug.
+- **Forecast days**: the tool returns current conditions plus up to 7 daily
+  rows. A follow-up like «а завтра?» is answered from the previous result — no
+  second call, so it is instant.
+
 ### "Модель иногда подвисает / ошибка сети, но со второй попытки отвечает"
 That is the built-in transient-failure retry doing its job: a failed LLM pass
 that produced **zero output** is retried once automatically (connection

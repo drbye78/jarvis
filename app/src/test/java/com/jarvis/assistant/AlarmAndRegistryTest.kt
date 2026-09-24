@@ -284,10 +284,18 @@ class ToolRegistryTest {
         val entered = CompletableDeferred<Unit>()
         val tool = WeatherTool(
             object : WeatherClient {
-                override suspend fun getWeather(location: String): String {
+                override suspend fun getWeather(
+                    query: com.jarvis.assistant.tools.weather.WeatherQuery,
+                ): String {
                     entered.complete(Unit)
                     kotlinx.coroutines.awaitCancellation()
                 }
+            },
+            // Explicit location: the default-location resolver is not exercised
+            // by this cancellation test (see WeatherClientTest for that path).
+            object : com.jarvis.assistant.tools.weather.WeatherLocationResolver {
+                override suspend fun resolve() =
+                    com.jarvis.assistant.tools.weather.LocationOutcome.Unavailable
             },
         )
         val outcome = CompletableDeferred<Throwable?>()

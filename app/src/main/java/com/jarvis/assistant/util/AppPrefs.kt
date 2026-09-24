@@ -172,6 +172,19 @@ class AppPrefs(
         set(value) = prefs.edit().putString(KEY_MUSIC_PLAYER, value).apply()
 
     /**
+     * Default place for weather questions (Settings «Погода»). Blank — the
+     * default — means "auto-detect": fall back to the device location. A
+     * configured value ALWAYS wins over GPS (owner decision), which is the
+     * realistic primary path on the GMS-free target tablet.
+     *
+     * Read live per weather turn (never snapshotted at graph build), so a
+     * change applies without a service restart.
+     */
+    var weatherLocation: String
+        get() = prefs.getString(KEY_WEATHER_LOCATION, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_WEATHER_LOCATION, value.trim()).apply()
+
+    /**
      * Echo-cancellation mode (Settings «Эхоподавление»): "off" | "hardware" |
      * "software". Default OFF — all AEC modes are opt-in; HARDWARE switches
      * capture to VOICE_COMMUNICATION + platform AEC (Phase A), SOFTWARE runs
@@ -385,6 +398,7 @@ class AppPrefs(
         internal const val KEY_VOICE_STOP = "voice_stop_enabled"
         internal const val KEY_MUSIC_PLAYER = "preferred_music_player"
         internal const val KEY_AEC_MODE = "aec_mode"
+        internal const val KEY_WEATHER_LOCATION = "weather_location"
         internal const val KEY_FOLLOW_UP_ENABLED = "follow_up_enabled"
         internal const val KEY_FOLLOW_UP_WINDOW_MS = "follow_up_window_ms"
         internal const val KEY_TTS_VOICE = "tts_voice"

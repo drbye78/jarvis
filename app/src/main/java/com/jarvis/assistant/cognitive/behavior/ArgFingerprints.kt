@@ -33,7 +33,7 @@ object ArgFingerprints {
         val args = argumentsJson?.let { parsed(it) }
         val value = when (tool) {
             "playMusic", "searchMusic" -> args?.stringArg("query")?.let { "q:${normalize(it)}" }
-            "getWeather" -> args?.stringArg("city")?.let { "city:${normalize(it)}" }
+            "getWeather" -> args?.stringArg("location")?.let { "location:${normalize(it)}" }
             "setVolume" -> args?.intArg("level")?.let { "level:${bucket(it)}" }
             "controlPlayback" -> args?.stringArg("action")?.let { "action:${normalize(it)}" }
             else -> null

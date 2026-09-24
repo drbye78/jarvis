@@ -21,8 +21,11 @@ class ArgFingerprintsTest {
     }
 
     @Test
-    fun `weather fingerprints by city`() {
-        assertEquals("city:москва", ArgFingerprints.of("getWeather", """{"city":"Москва"}"""))
+    fun `weather fingerprints by location`() {
+        assertEquals("location:москва", ArgFingerprints.of("getWeather", """{"location":"Москва"}"""))
+        // The location arg is optional; omitting it produces no slot value and
+        // falls through to the generic projection rather than a bogus "city".
+        assertEquals("all", ArgFingerprints.of("getWeather", "{}"))
     }
 
     @Test

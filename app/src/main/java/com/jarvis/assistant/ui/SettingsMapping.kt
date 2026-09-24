@@ -141,4 +141,37 @@ object SettingsMapping {
         "yandex" -> ProviderSettings.Type.YANDEX
         else -> ProviderSettings.Type.GIGACHAT
     }
+
+    // ---- weather ----
+
+    /** Pref value meaning "no city configured — auto-detect via GPS". */
+    const val WEATHER_LOCATION_AUTO: String = ""
+
+    /**
+     * The city to store: the trimmed input, or [WEATHER_LOCATION_AUTO] when the
+     * field is blank. Total — whitespace-only input degrades to auto-detect
+     * rather than persisting a blank-looking city.
+     */
+    fun weatherLocationOrDefault(raw: String): String =
+        raw.trim().takeIf { it.isNotEmpty() } ?: WEATHER_LOCATION_AUTO
+
+    /** What the weather card's permission status row reads. */
+    enum class WeatherPermissionStatus { GRANTED, DENIED, NOT_NEEDED }
+
+    /**
+     * The permission row's state. A grant (fine OR coarse) always reads as
+     * [WeatherPermissionStatus.GRANTED]. With no grant, a configured city makes
+     * GPS irrelevant, so the state is [WeatherPermissionStatus.NOT_NEEDED] (the
+     * row is hidden) rather than a misleading "denied"; only an unconfigured
+     * install with no grant is a real [WeatherPermissionStatus.DENIED].
+     */
+    fun weatherPermissionStatus(
+        fineGranted: Boolean,
+        coarseGranted: Boolean,
+        configured: String,
+    ): WeatherPermissionStatus = when {
+        fineGranted || coarseGranted -> WeatherPermissionStatus.GRANTED
+        weatherLocationOrDefault(configured).isNotEmpty() -> WeatherPermissionStatus.NOT_NEEDED
+        else -> WeatherPermissionStatus.DENIED
+    }
 }

@@ -223,6 +223,16 @@
     <string name="weather_snow_shower">snow shower</string>
     <string name="weather_thunderstorm">thunderstorm</string>
     <string name="weather_thunderstorm_hail">thunderstorm with hail</string>
+    <!-- Weather settings card + tool fallbacks -->
+    <string name="weather_card_title">Weather</string>
+    <string name="weather_location_label">Default city</string>
+    <string name="weather_location_hint">Leave empty to detect your location automatically. A configured city always takes priority.</string>
+    <string name="weather_permission_request">Allow location access</string>
+    <string name="weather_permission_granted">Location access granted</string>
+    <string name="weather_permission_denied">Location access not granted</string>
+    <string name="weather_location_current">your current location</string>
+    <string name="tool_weather_location_denied">Could not determine your location: access is not granted. Set a city in Settings or allow location access.</string>
+    <string name="tool_weather_location_unavailable">Could not determine your location. Set a city in Settings.</string>
 
     <!-- Device info -->
     <string name="device_time_format">HH:mm, d MMMM</string>

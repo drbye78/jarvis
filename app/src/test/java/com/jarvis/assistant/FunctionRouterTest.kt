@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -52,7 +53,18 @@ class FunctionRouterTest {
     }
 
     private class NoopWeather : WeatherClient {
-        override suspend fun getWeather(location: String): String = "{}"
+        override suspend fun getWeather(
+            query: com.jarvis.assistant.tools.weather.WeatherQuery,
+        ): String = "{}"
+    }
+
+    /**
+     * Resolver that never resolves — these tests pass an EXPLICIT location, so
+     * the default-location path is not exercised here (it is covered by
+     * `WeatherClientTest` and `WeatherLocationResolverTest`).
+     */
+    private val probeResolver = object : com.jarvis.assistant.tools.weather.WeatherLocationResolver {
+        override suspend fun resolve() = com.jarvis.assistant.tools.weather.LocationOutcome.Unavailable
     }
 
     /**
@@ -87,7 +99,7 @@ class FunctionRouterTest {
         val tools: List<ToolContract> = listOf(
             SetAlarmTool(scheduler),
             SetTimerTool(scheduler),
-            WeatherTool(NoopWeather()),
+            WeatherTool(NoopWeather(), probeResolver),
         )
 
         val names = tools.map { it.name }
@@ -111,9 +123,14 @@ class FunctionRouterTest {
 
     @Test
     fun `weather tool validates its arguments before touching the network`() = runBlocking {
-        val tool = WeatherTool(NoopWeather())
+        val tool = WeatherTool(NoopWeather(), probeResolver)
         assertTrue(tool.execute("not json at all").contains("Invalid JSON"))
-        assertTrue(tool.execute("""{"city":"Москва"}""").contains("Missing required parameter"))
+        // `location` is OPTIONAL now: an omitted one falls to the resolver, and
+        // the stale "Missing required parameter" path must be gone.
+        assertFalse(
+            "location is optional — this must not be a required-arg error",
+            tool.execute("""{"days":2}""").contains("Missing required parameter"),
+        )
         assertEquals("{}", tool.execute("""{"location":"Москва"}"""))
     }
 }

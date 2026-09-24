@@ -250,7 +250,10 @@ keystore with `keytool` and update `local.properties` accordingly.
   capability dump.
 - **Alarms & timers**: set/cancel/list by voice or UI; ring over the lock
   screen; survive reboots.
-- **Weather**: current conditions for any city (Open-Meteo).
+- **Weather**: current conditions plus a **daily forecast up to 7 days** for
+  any city (Open-Meteo). Weather questions default to your location: a city
+  set in Settings → «Погода» (always wins), otherwise auto-detected GPS. Follow-up
+  questions work naturally («а завтра?», «а в Сочи?»).
 - **Device control**: volume, brightness, Wi-Fi, Bluetooth, DND, screen off,
   open app, battery/time info.
 

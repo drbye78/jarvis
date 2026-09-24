@@ -6,6 +6,52 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — Weather conversations: forecast + location-aware defaults (Open-Meteo)
+- **Weather questions now cover forecasts, not just current conditions.** The
+  `getWeather` tool returns current conditions **plus up to 7 daily rows**
+  (date, weekday, condition, min/max, precipitation sum + probability, max
+  wind), so «а завтра?», «а в выходные?» and «на неделю?» are answerable.
+- **Location defaults: configured city wins, else GPS.** A new
+  Settings → «Погода» card sets the default city; when it is empty the device
+  location is used. Every failure degrades honestly to a typed outcome
+  (`PermissionDenied` / `Unavailable`) → a spoken hint to set a city or grant
+  access, never an invented city.
+- **GMS-free by necessity.** There is no `play-services-location`, so the
+  location is acquired with the framework `LocationManager` (`AndroidLocationProvider`),
+  API-29-safe (last-known-if-fresh, else a bounded one-shot; `getCurrentLocation`
+  is API 30+, so API 29 uses `requestSingleUpdate` with a guaranteed
+  `removeUpdates`). Cancellation-safe: a barge-in never leaks a listener.
+- **The configured city is the primary path, not a fallback.** The target
+  tablet is GMS-free and often WiFi-only: `NETWORK_PROVIDER` frequently returns
+  nothing and GPS hardware may be absent, so Settings → «Погода» is the
+  reliable route and the card is built as a first-class control.
+- **No reverse geocoding — and no new egress.** Open-Meteo has no reverse
+  endpoint (verified 404); naming a GPS position would require a third-party
+  service, which this app deliberately does not add. A detected position is
+  spoken as «текущее местоположение». The only new network traffic is
+  coordinates/city → `api.open-meteo.com` (free, keyless, CC-BY 4.0).
+- **No `location` foreground-service type — deliberate.** On API 34+ reading
+  location while backgrounded would need it, but passing the type to
+  `startForeground` requires the permission at that instant; the always-on
+  boot/idle path has none, so it would throw and kill the assistant, and
+  revoking the permission can stop a running typed FGS. Weather is a foreground
+  interaction, so permission is requested from the Settings card (the service
+  cannot show a dialog). Access is **coarse + fine**.
+- **Tool surface**: `getWeather` keeps its name (so habit detection and the
+  proactive labels are untouched) but `location` becomes **optional** and a
+  `days` (1–7) parameter is added. Follow-up guidance lives in the tool
+  description, not the system prompt (whose size cap is pinned). The behavior
+  fingerprint also stops reading the never-sent `city` key and now reads
+  `location`.
+- **Protocol details pinned by tests**: `daily=` always sends `timezone=auto`
+  (without it «завтра» shifts to GMT); the column-oriented parallel arrays are
+  parsed by index so a gap cannot mispair a date with another day's value;
+  WMO code **97** (heavy thunderstorm) no longer falls into the «облачно»
+  default. Config gains `openMeteo*` URLs, `weatherForecastDays`,
+  `weatherGpsFixTimeoutMs`, `weatherLastKnownMaxAgeMs` and a per-tool
+  `weatherToolTimeoutMs` (20 s > the 15 s registry default, since a turn may
+  wait for GPS then do geocode + forecast).
+
 ### Added — Yandex AI Studio LLM as a third provider (Responses API + web search)
 - **A third LLM backend: Yandex AI Studio.** Settings → «Нейросеть (LLM)» now
   offers **Sber GigaChat**, **Yandex AI Studio**, or any [OI]-compatible
