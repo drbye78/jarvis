@@ -42,9 +42,13 @@ interface SecretVault {
         const val KEY_OPENAI_API_KEY = "openai_api_key"
 
         /**
-         * Yandex Cloud service-account API key for SpeechKit v3. Unlike the
-         * Sber OAuth pair this key never expires and needs no folder id — see
-         * [com.jarvis.assistant.speech.yandexApiKeyStub].
+         * Yandex Cloud service-account API key. One key drives BOTH SpeechKit
+         * v3 (see [com.jarvis.assistant.speech.yandexApiKeyStub]) and the
+         * Yandex AI Studio LLM (`Authorization: Api-Key`, no OAuth) — the LLM
+         * needs AI Studio access on the key, not just SpeechKit. Unlike the
+         * Sber OAuth pair this key never expires and needs no configured
+         * folder id (SpeechKit implies the SA folder; the LLM discovers it via
+         * `GET /v1/models`).
          */
         const val KEY_YANDEX_API_KEY = "yandex_api_key"
         const val KEY_GIGACHAT_TOKEN = "gigachat_token"

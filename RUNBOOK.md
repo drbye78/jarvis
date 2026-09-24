@@ -66,7 +66,9 @@
   "Integration testing" below.
 - The Yandex key is a **single** value (no folder id, no id/secret pair, never
   expires): Yandex Cloud console → service account → API keys → create, then
-  paste the **secret** into Settings.
+  paste the **secret** into Settings. The **same** key also drives the Yandex
+  AI Studio LLM when that provider is selected — for that it needs AI Studio
+  access, not just SpeechKit (see the Yandex LLM section below).
 
 ### "GigaChat request failed (HTTP ...)"
 The LLM lane talks the **GigaChat native v2 contract** at

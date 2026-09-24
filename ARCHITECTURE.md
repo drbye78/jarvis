@@ -15,7 +15,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
    └─ SessionManager (delegates each turn to TurnRunner)
         ├─ StreamingAsrClient (bidi gRPC, provider-neutral: Sber Salute OR Yandex v3; live audio up, partials/EOU down)
        ├─ ConversationManager (Room; 20-msg window, tool-pair-safe)
-       ├─ LlmClient (GigaChat native v2 w/ web search | [OI]-compatible; SSE; wire DTOs)
+       ├─ LlmClient (GigaChat native v2 | Yandex AI Studio Responses | [OI]-compatible; SSE; wire DTOs)
        │    └─ ToolRegistry → alarms/timers · weather · 8 device tools
        └─ TtsClient (gRPC, cancellable Context, deadline: Sber Salute OR Yandex v3)
             └─ StreamingAudioTrackPlayer (single actor, generation-based flush)
@@ -405,15 +405,18 @@ Porcupine 4.0.2 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Ma
 
 The SaluteSpeech gRPC endpoint is config-driven (`JarvisConfig.saluteGrpcEndpoint`;
 renamed from the misleading `llmEndpoint` — it NEVER drove the LLM lane, which is
-configured by `gigaChatEndpoint` / the OpenAI-compatible base URL).
+configured by `gigaChatNativeEndpoint` / `yandexAiStudioEndpoint` / the [OI]-compatible
+base URL).
 
 ## Security
 
 - **Per-user credentials, no shared secrets.** Provider keys (Picovoice, Sber
-  Salute, GigaChat, Yandex SpeechKit v3 API key) are entered in-app via
+  Salute, GigaChat, Yandex Cloud API key) are entered in-app via
   **Settings** and stored in `KeystoreVault` (AndroidKeyStore AES-256-GCM; the
   deprecated security-crypto library is gone). The Yandex key is a
-  non-expiring API key with no folder id (`SecretVault.KEY_YANDEX_API_KEY`).
+  non-expiring API key with no folder id (`SecretVault.KEY_YANDEX_API_KEY`); the
+  **same** key authenticates both SpeechKit v3 and the AI Studio LLM (which
+  resolves the folder from `GET /v1/models` rather than a header).
   **Nothing secret is baked into `BuildConfig` or `local.properties`** — every
   install uses its owner's own credentials, so the APK is safe to distribute
   to colleagues.

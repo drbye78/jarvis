@@ -44,8 +44,11 @@ Answers arbitrary questions and holds a conversation on any topic.
    - **Sber Salute** client ID + secret (ASR/TTS), **or** a **Yandex
      SpeechKit v3** API key — pick the speech backend in Settings →
      «Движок речи (ASR + TTS)»; one choice drives recognition *and*
-     synthesis
-   - **GigaChat** client ID + secret (LLM)
+     synthesis. The same Yandex key also powers the **Yandex AI Studio** LLM
+     backend (it then needs AI Studio access, not just SpeechKit)
+   - **GigaChat** client ID + secret (LLM), **or** a Yandex Cloud API key for
+     the **Yandex AI Studio** LLM — pick the provider in Settings →
+     «Нейросеть (LLM)»
    The GigaChat pair (and the Salute pair while the Sber backend is active) is
    **validated upfront in the panel as you type** (a live status row: valid /
    invalid / unreachable) and on every «Проверить ключи» press — a typo is
@@ -53,7 +56,8 @@ Answers arbitrary questions and holds a conversation on any topic.
    voice command.    Credentials are stored encrypted in the Android Keystore
    (`KeystoreVault`, AES-256-GCM) on the device — **nothing secret is ever in
    the APK or in `local.properties`**. GigaChat creds are optional if you use
-   the [OI]-compatible provider instead (also configured in Settings).
+   the [OI]-compatible provider or **Yandex AI Studio** instead (both
+   configured in Settings).
    The UI ships in Russian and English (full `values-en`), and the runtime
    spoken phrases follow the locale too (see RUNBOOK for the honest
    English-voice caveat).
@@ -104,7 +108,8 @@ stores credentials only in the Android Keystore.
 cp local.secrets.properties.example local.secrets.properties
 # fill in: Salute Speech (ASR+TTS) and GigaChat (LLM/embeddings) OAuth
 # client id/secret pairs — the same values the app asks for in Settings —
-# and/or a Yandex SpeechKit v3 API key (jarvis.yandex.apiKey).
+# and/or a Yandex Cloud API key (jarvis.yandex.apiKey), which drives the
+# Yandex SpeechKit v3 smokes AND the Yandex AI Studio LLM smoke.
 ./gradlew :app:integrationTest        # live smoke tests (skips with a logged reason if creds are absent)
 ./gradlew :app:recordSaluteFixtures   # re-records the sanitized fixtures below
 ```
