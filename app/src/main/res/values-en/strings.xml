@@ -71,6 +71,13 @@
     <string name="base_url_label">Base URL (…/v1)</string>
     <string name="api_key_label">API key</string>
     <string name="model_label">Model</string>
+
+    <!-- Settings: GigaChat-3 flavor (applies after a service restart) -->
+    <string name="gigachat_model_label">GigaChat model</string>
+    <string name="gigachat_model_hint">Higher models answer more accurately but take longer.</string>
+    <string name="gigachat_model_lightning">GigaChat-3 Lightning — fast</string>
+    <string name="gigachat_model_pro">GigaChat-3 Pro — balanced</string>
+    <string name="gigachat_model_ultra">GigaChat-3 Ultra — smartest</string>
     <string name="sensitivity_label">Wake word sensitivity</string>
     <string name="sensitivity_value">Sensitivity: %1$.2f</string>
     <string name="apply">Apply and restart</string>

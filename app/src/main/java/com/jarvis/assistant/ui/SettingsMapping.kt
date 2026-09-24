@@ -1,5 +1,7 @@
 package com.jarvis.assistant.ui
 
+import com.jarvis.assistant.config.ProviderSettings
+
 /**
  * Pure setting ↔ control mappings (U1).
  *
@@ -75,4 +77,29 @@ object SettingsMapping {
 
     /** Sherpa is the only engine that hides the Porcupine block. */
     fun isSherpaEngine(engine: String): Boolean = engine.trim().lowercase() == "sherpa"
+
+    // ---- GigaChat-3 model flavor ----
+
+    /**
+     * The flavors the Settings radio lists, in display order. Re-exported from
+     * [ProviderSettings] so the control and the client it configures can never
+     * drift apart.
+     */
+    val GIGACHAT_MODELS: List<String> = ProviderSettings.GIGACHAT_MODELS
+
+    /**
+     * The flavor the stored pref selects. An unrecognized value — hand-edited,
+     * or from a build that offered a different list — degrades to the default
+     * (Lightning) instead of leaving the radio group with nothing checked.
+     */
+    fun gigaChatModelForPref(prefValue: String): String =
+        prefValue.trim().takeIf { it in GIGACHAT_MODELS } ?: ProviderSettings.DEFAULT_GIGACHAT_MODEL
+
+    /** Position of the stored flavor in [GIGACHAT_MODELS]; unknown input → the default's slot. */
+    fun gigaChatModelIndex(prefValue: String): Int =
+        GIGACHAT_MODELS.indexOf(gigaChatModelForPref(prefValue))
+
+    /** The flavor at [index], clamped so a stale index can never fall off the list. */
+    fun gigaChatModelAt(index: Int): String =
+        GIGACHAT_MODELS[index.coerceIn(0, GIGACHAT_MODELS.lastIndex)]
 }

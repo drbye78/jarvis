@@ -72,6 +72,13 @@
     <string name="base_url_label">Base URL (…/v1)</string>
     <string name="api_key_label">API-ключ</string>
     <string name="model_label">Модель</string>
+
+    <!-- Settings: GigaChat-3 flavor (applies after a service restart) -->
+    <string name="gigachat_model_label">Модель GigaChat</string>
+    <string name="gigachat_model_hint">Чем выше модель, тем точнее ответы и дольше ожидание.</string>
+    <string name="gigachat_model_lightning">GigaChat-3 Lightning — быстрая</string>
+    <string name="gigachat_model_pro">GigaChat-3 Pro — сбалансированная</string>
+    <string name="gigachat_model_ultra">GigaChat-3 Ultra — самая умная</string>
     <string name="sensitivity_label">Чувствительность wake word</string>
     <string name="sensitivity_value">Чувствительность: %1$.2f</string>
     <string name="apply">Применить и перезапустить</string>

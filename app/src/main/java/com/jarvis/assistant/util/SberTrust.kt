@@ -55,9 +55,12 @@ object SberTrust {
      * Минцифры hierarchy. Covers every default Sber target in
      * [com.jarvis.assistant.config.JarvisConfig]:
      * `ngw.devices.sberbank.ru` (OAuth), `gigachat.devices.sberbank.ru`
-     * (GigaChat) and `smartspeech.sber.ru` (Salute Speech gRPC).
+     * (legacy GigaChat), `api.giga.chat` (the unified GigaChat v2 endpoint —
+     * its leaf chains to the same `Russian Trusted Sub CA`, so without this
+     * apex the native client dies with "Trust anchor not found" on the API-29
+     * wall device) and `smartspeech.sber.ru` (Salute Speech gRPC).
      */
-    private val SBER_APEX_DOMAINS = listOf("sber.ru", "sberbank.ru")
+    private val SBER_APEX_DOMAINS = listOf("sber.ru", "sberbank.ru", "giga.chat")
 
     /** `javax.net.ssl.SNIServerName.SNI_HOST_NAME` (the constant is absent from the API-34 stubs). */
     private const val SNI_HOST_NAME_TYPE = 0

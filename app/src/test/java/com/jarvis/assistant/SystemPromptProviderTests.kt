@@ -114,6 +114,16 @@ class SystemPromptProviderTests {
     }
 
     @Test
+    fun `general knowledge and web search policy present`() {
+        val prompt = promptAt(12)
+        // The assistant must answer arbitrary questions itself...
+        assertTrue("missing general-answer policy: $prompt", prompt.contains("На общие вопросы"))
+        assertTrue("must not refuse open topics", prompt.contains("поддерживай разговор"))
+        // ...and use the built-in search for time-sensitive facts.
+        assertTrue("missing web-search policy", prompt.contains("поиск в интернете"))
+    }
+
+    @Test
     fun `prompt stays a single compact page - no runaway growth`() {
         // ~2K chars ≈ 500-600 tokens: the prompt must not eat the context.
         val len = promptAt(12).length

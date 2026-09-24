@@ -18,7 +18,7 @@ import com.jarvis.assistant.contracts.WakeWordDetector
 import com.jarvis.assistant.contracts.WakeWordRequest
 import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.data.ConversationManager
-import com.jarvis.assistant.llm.GigaChatClient
+import com.jarvis.assistant.llm.GigaChatNativeClient
 import com.jarvis.assistant.llm.LlmClient
 import com.jarvis.assistant.llm.OpenAiCompatClient
 import com.jarvis.assistant.llm.TokenManager
@@ -46,6 +46,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import timber.log.Timber
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 /**
@@ -150,11 +151,16 @@ class AppGraph(
     val tokenManager = TokenManager(appContext, httpClient, config)
 
     val llmClient: LlmClient = when (provider.type) {
-        ProviderSettings.Type.GIGACHAT -> GigaChatClient(
+        ProviderSettings.Type.GIGACHAT -> GigaChatNativeClient(
             tokenManager = tokenManager,
             httpClient = httpClient,
-            endpoint = config.gigaChatEndpoint,
-            defaultModel = config.gigaChatModel,
+            endpoint = config.gigaChatNativeEndpoint,
+            defaultModel = provider.gigaChatModel,
+            // Product decision: web_search is always-on and model-decided
+            // (no Settings toggle); the timezone is resolved per call so the
+            // user_info block follows the device zone.
+            webSearchEnabled = true,
+            timezone = { TimeZone.getDefault().id },
         )
 
         ProviderSettings.Type.OPENAI_COMPAT -> OpenAiCompatClient(

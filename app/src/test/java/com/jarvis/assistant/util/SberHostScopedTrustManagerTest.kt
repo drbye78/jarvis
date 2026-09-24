@@ -157,6 +157,16 @@ class SberHostScopedTrustManagerTest {
     }
 
     @Test
+    fun `api giga chat is validated against the sber anchors`() {
+        // The unified GigaChat v2 endpoint chains to the Минцифры Sub CA; without
+        // giga.chat in the allowlist the native client cannot reach it on API 29.
+        val w = wrapper(acceptingSber, rejectingPlatform)
+        w.checkServerTrusted(chain, "RSA", engineFor("api.giga.chat"))
+        assertEquals(listOf("${chain.size}/RSA"), acceptingSber.serverChecks)
+        assertTrue("platform anchors must not be consulted", rejectingPlatform.serverChecks.isEmpty())
+    }
+
+    @Test
     fun `look-alike host is validated against the platform anchors only`() {
         val w = wrapper(acceptingSber, acceptingPlatform)
         w.checkServerTrusted(chain, "RSA", engineFor("sber.ru.attacker.com"))

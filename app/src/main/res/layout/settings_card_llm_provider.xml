@@ -61,7 +61,69 @@
                 android:text="@string/provider_openai_compat" />
         </RadioGroup>
 
-        <!-- OpenAI-compatible endpoint fields (visible only when selected) -->
+        <!-- GigaChat-3 flavor (visible only while GigaChat is selected).
+             Mirror of the [OI] block below, and the same rule applies: the
+             client is built from ProviderSettings at service start, so the
+             flavor is sealed at graph construction and the restart note
+             repeats the provider card's wording. -->
+        <LinearLayout
+            android:id="@+id/gigaChatBlock"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/gigachat_model_label"
+                style="@style/TextAppearance.Jarvis.SectionHeader"
+                android:accessibilityHeading="true" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/gigachat_model_hint"
+                style="@style/TextAppearance.Jarvis.Hint" />
+
+            <RadioGroup
+                android:id="@+id/gigaChatModelGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp">
+
+                <RadioButton
+                    android:id="@+id/gigaChatModelLightning"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/gigachat_model_lightning" />
+
+                <RadioButton
+                    android:id="@+id/gigaChatModelPro"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/gigachat_model_pro" />
+
+                <RadioButton
+                    android:id="@+id/gigaChatModelUltra"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/gigachat_model_ultra" />
+            </RadioGroup>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/provider_restart_hint"
+                style="@style/TextAppearance.Jarvis.Hint" />
+        </LinearLayout>
+
+        <!-- [OI]-compatible endpoint fields (visible only when selected) -->
         <LinearLayout
             android:id="@+id/openAiBlock"
             android:layout_width="match_parent"

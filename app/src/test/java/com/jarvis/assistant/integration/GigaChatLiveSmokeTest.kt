@@ -2,7 +2,8 @@ package com.jarvis.assistant.integration
 
 import com.jarvis.assistant.cognitive.embed.GigaChatEmbedder
 import com.jarvis.assistant.config.JarvisConfig
-import com.jarvis.assistant.llm.GigaChatClient
+import com.jarvis.assistant.config.ProviderSettings
+import com.jarvis.assistant.llm.GigaChatNativeClient
 import com.jarvis.assistant.llm.TokenManager
 import com.jarvis.assistant.model.ChatRequest
 import com.jarvis.assistant.model.LlmChunk
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -38,6 +40,12 @@ class GigaChatLiveSmokeTest {
         /** 16 output tokens keep the chat smokes negligible on the quota. */
         private const val TINY_MAX_TOKENS = 16
         private const val CHAT_TIMEOUT_MS = 60_000L
+
+        /** Search turns do a server-side round trip; allow more time. */
+        private const val SEARCH_TIMEOUT_MS = 120_000L
+
+        /** Enough for a one-line grounded answer, still tiny on the quota. */
+        private const val SEARCH_MAX_TOKENS = 200
 
         private val tokenManager: TokenManager by lazy {
             liveTokenManager(LiveSecrets.secrets)
@@ -71,11 +79,12 @@ class GigaChatLiveSmokeTest {
 
     @Test
     fun `chatOnce answers a tiny one word prompt`() = runBlocking {
-        val client = GigaChatClient(
+        val client = GigaChatNativeClient(
             tokenManager,
             httpClient,
-            endpoint = JarvisConfig().gigaChatEndpoint,
-            defaultModel = JarvisConfig().gigaChatModel,
+            endpoint = JarvisConfig().gigaChatNativeEndpoint,
+            defaultModel = ProviderSettings.DEFAULT_GIGACHAT_MODEL,
+            webSearchEnabled = false,
         )
         val answer = withTimeout(CHAT_TIMEOUT_MS) {
             client.chatOnce(
@@ -93,11 +102,12 @@ class GigaChatLiveSmokeTest {
 
     @Test
     fun `chatStream emits text chunks and terminates with Done`() = runBlocking {
-        val client = GigaChatClient(
+        val client = GigaChatNativeClient(
             tokenManager,
             httpClient,
-            endpoint = JarvisConfig().gigaChatEndpoint,
-            defaultModel = JarvisConfig().gigaChatModel,
+            endpoint = JarvisConfig().gigaChatNativeEndpoint,
+            defaultModel = ProviderSettings.DEFAULT_GIGACHAT_MODEL,
+            webSearchEnabled = false,
         )
         val chunks = withTimeout(CHAT_TIMEOUT_MS) {
             client.chatStream(
@@ -115,6 +125,40 @@ class GigaChatLiveSmokeTest {
         if (chunks.size < 8) {
             assertTrue("stream must terminate with Done", chunks.last() is LlmChunk.Done)
         }
+    }
+
+    @Test
+    fun `web search answers a time-sensitive question with sources`() = runBlocking {
+        // The feature this build adds: an arbitrary question routes through the
+        // server-executed built-in `web_search` and grounds the answer in real
+        // sources. webSearchEnabled=true here (unlike the tiny smokes above).
+        val client = GigaChatNativeClient(
+            tokenManager,
+            httpClient,
+            endpoint = JarvisConfig().gigaChatNativeEndpoint,
+            defaultModel = ProviderSettings.DEFAULT_GIGACHAT_MODEL,
+            webSearchEnabled = true,
+        )
+        val chunks = withTimeout(SEARCH_TIMEOUT_MS) {
+            client.chatStream(
+                ChatRequest(
+                    messages = listOf(Message.user("Какая сегодня дата? Ответь кратко.")),
+                    tools = emptyList(),
+                    maxTokens = SEARCH_MAX_TOKENS,
+                    temperature = 0.1,
+                ),
+            ).toList()
+        }
+        // It must produce spoken text (not just progress frames), and the
+        // stream must terminate cleanly.
+        assertTrue(
+            "a search turn must yield text, got ${chunks.size} chunks",
+            chunks.any { it is LlmChunk.Text && it.text.isNotBlank() },
+        )
+        assertTrue("stream must terminate with Done", chunks.last() is LlmChunk.Done)
+        // Progress/telemetry frames (tool_execution) must NEVER reach the text lane.
+        val spoken = chunks.filterIsInstance<LlmChunk.Text>().joinToString("") { it.text }
+        assertFalse("raw tool telemetry leaked into speech: $spoken", spoken.contains("tool_execution"))
     }
 
     @Test

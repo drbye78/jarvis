@@ -175,4 +175,36 @@ class SettingsMappingTest {
         assertFalse(SettingsMapping.isSherpaEngine("porcupine"))
         assertFalse(SettingsMapping.isSherpaEngine(""))
     }
+
+    // ---- GigaChat-3 model flavor ----
+
+    @Test
+    fun `known gigachat flavors map to their stored value`() {
+        assertEquals("GigaChat-3-Lightning", SettingsMapping.gigaChatModelForPref("GigaChat-3-Lightning"))
+        assertEquals("GigaChat-3-Pro", SettingsMapping.gigaChatModelForPref("GigaChat-3-Pro"))
+        assertEquals("GigaChat-3-Ultra", SettingsMapping.gigaChatModelForPref("GigaChat-3-Ultra"))
+    }
+
+    @Test
+    fun `unknown or blank gigachat flavor degrades to the default`() {
+        // A hand-edited value or one from a build with a different list must
+        // not leave the radio group with nothing checked.
+        assertEquals("GigaChat-3-Lightning", SettingsMapping.gigaChatModelForPref("gpt-5"))
+        assertEquals("GigaChat-3-Lightning", SettingsMapping.gigaChatModelForPref(""))
+    }
+
+    @Test
+    fun `gigachat flavor index round-trips through every slot`() {
+        SettingsMapping.GIGACHAT_MODELS.forEachIndexed { index, model ->
+            assertEquals(index, SettingsMapping.gigaChatModelIndex(model))
+            assertEquals(model, SettingsMapping.gigaChatModelAt(index))
+        }
+    }
+
+    @Test
+    fun `gigachat flavor index and slot clamp out-of-range input`() {
+        assertEquals(0, SettingsMapping.gigaChatModelIndex("GigaChat-3-Unknown"))
+        assertEquals("GigaChat-3-Lightning", SettingsMapping.gigaChatModelAt(-3))
+        assertEquals("GigaChat-3-Ultra", SettingsMapping.gigaChatModelAt(99))
+    }
 }

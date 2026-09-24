@@ -70,6 +70,23 @@ class AppPrefs(
         get() = prefs.getString(KEY_OPENAI_MODEL, ProviderSettings.DEFAULT.openAiModel)!!
         set(value) = prefs.edit().putString(KEY_OPENAI_MODEL, value).apply()
 
+    /**
+     * GigaChat-3 flavor for the native (`api.giga.chat/v2`) client — one of
+     * [ProviderSettings.GIGACHAT_MODELS]. An unrecognized stored value falls
+     * back to the default rather than sending a bogus model id (which the API
+     * rejects with HTTP 400).
+     */
+    var gigaChatModel: String
+        get() {
+            val stored = prefs.getString(KEY_GIGACHAT_MODEL, null)
+            return if (stored != null && stored in ProviderSettings.GIGACHAT_MODELS) {
+                stored
+            } else {
+                ProviderSettings.DEFAULT_GIGACHAT_MODEL
+            }
+        }
+        set(value) = prefs.edit().putString(KEY_GIGACHAT_MODEL, value).apply()
+
     var openAiApiKey: String
         get() = vault.getString(SecretVault.KEY_OPENAI_API_KEY) ?: ""
         set(value) = vault.putString(SecretVault.KEY_OPENAI_API_KEY, value.trim())
@@ -287,6 +304,7 @@ class AppPrefs(
         type = providerType,
         openAiBaseUrl = openAiBaseUrl,
         openAiModel = openAiModel,
+        gigaChatModel = gigaChatModel,
     )
 
     /**
@@ -319,6 +337,7 @@ class AppPrefs(
         internal const val KEY_PROVIDER = "provider_type"
         internal const val KEY_OPENAI_URL = "openai_base_url"
         internal const val KEY_OPENAI_MODEL = "openai_model"
+        internal const val KEY_GIGACHAT_MODEL = "gigachat_model"
         internal const val KEY_WAKE_SENSITIVITY = "wake_sensitivity"
         internal const val KEY_WAKE_MODEL = "wake_word_model"
         internal const val KEY_CUSTOM_WAKE_PATH = "custom_wake_word_path"

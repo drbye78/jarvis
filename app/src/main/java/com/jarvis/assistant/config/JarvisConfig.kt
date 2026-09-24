@@ -40,7 +40,22 @@ data class JarvisConfig(
     /** Base for the linear retry backoff (first retry waits this long). */
     val llmRetryBackoffMs: Long = 800,
     val gigaChatEndpoint: String = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
-    val gigaChatModel: String = "GigaChat-Pro",
+
+    /**
+     * The unified GigaChat v2 endpoint (`api.giga.chat`, live-verified 2026-09).
+     *
+     * This is a SEPARATE constant from [gigaChatEndpoint] on purpose:
+     * [com.jarvis.assistant.cognitive.embed.GigaChatEmbedder] derives its URL
+     * by stripping `/chat/completions` and appending `/embeddings`, so
+     * repointing the legacy constant would silently move embeddings too.
+     *
+     * The native contract differs from the legacy one on every axis: `content`
+     * is an array of parts, `tools`/`tool_config` replace `functions`/`function_call`,
+     * the response envelope is `messages[]` (not `choices[]`), and the stream
+     * carries named `event:` lines. Server-side built-ins (`web_search`) are
+     * only reachable here.
+     */
+    val gigaChatNativeEndpoint: String = "https://api.giga.chat/v2/chat/completions",
 
     // OAuth
     val oauthEndpoint: String = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
@@ -150,6 +165,8 @@ data class ProviderSettings(
     val type: Type,
     val openAiBaseUrl: String,
     val openAiModel: String,
+    /** GigaChat-3 flavor for the native client; one of [GIGACHAT_MODELS]. */
+    val gigaChatModel: String = DEFAULT_GIGACHAT_MODEL,
 ) {
     enum class Type { GIGACHAT, OPENAI_COMPAT }
 
@@ -159,5 +176,20 @@ data class ProviderSettings(
             openAiBaseUrl = "https://api.openai.com/v1",
             openAiModel = "gpt-4o-mini",
         )
+
+        /**
+         * The GigaChat-3 flavors offered in Settings (live-verified on
+         * `api.giga.chat` 2026-09). Lightning is the default because a voice
+         * assistant optimises for latency; Ultra is the most capable. The
+         * GigaChat-2 family also works (including web search) but is not
+         * offered — this build targets the current generation.
+         */
+        val GIGACHAT_MODELS: List<String> = listOf(
+            "GigaChat-3-Lightning",
+            "GigaChat-3-Pro",
+            "GigaChat-3-Ultra",
+        )
+
+        const val DEFAULT_GIGACHAT_MODEL: String = "GigaChat-3-Lightning"
     }
 }

@@ -1,0 +1,1 @@
+{"model":"GigaChat-3-Lightning","created_at":1790250874,"messages":[{"role":"assistant","content":[{"text":"Да"}]}],"finish_reason":"stop","usage":{"input_tokens":19,"input_tokens_details":{"prompt_tokens":19,"cached_tokens":0},"output_tokens":2,"total_tokens":21}}

@@ -1,0 +1,6 @@
+event: response.message.delta
+data: {"model":"GigaChat-3-Lightning","created_at":1790250876,"messages":[{"role":"assistant","content":[{"text":"Да"}]}]}
+
+event: response.message.done
+data: {"model":"GigaChat-3-Lightning","created_at":1790250876,"finish_reason":"stop","usage":{"input_tokens":19,"input_tokens_details":{"prompt_tokens":19,"cached_tokens":0},"output_tokens":2,"total_tokens":21}}
+

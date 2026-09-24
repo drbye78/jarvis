@@ -123,6 +123,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var sensitivityValue: TextView
 
     private lateinit var llmProviderGroup: RadioGroup
+    private lateinit var gigaChatBlock: View
     private lateinit var openAiBlock: View
     private lateinit var openAiBaseUrl: TextInputEditText
     private lateinit var openAiModel: TextInputEditText
@@ -201,6 +202,7 @@ class SettingsActivity : AppCompatActivity() {
         sensitivityValue = findViewById(R.id.sensitivityValue)
 
         llmProviderGroup = findViewById(R.id.llmProviderGroup)
+        gigaChatBlock = findViewById(R.id.gigaChatBlock)
         openAiBlock = findViewById(R.id.openAiBlock)
         openAiBaseUrl = findViewById(R.id.openAiBaseUrl)
         openAiModel = findViewById(R.id.openAiModel)
@@ -276,15 +278,37 @@ class SettingsActivity : AppCompatActivity() {
     /** A0) LLM provider card: GigaChat default, or any OpenAI-compatible endpoint. */
     private fun setupLlmProviderCard() {
         // A0) LLM provider selection. The graph consumes these prefs at
-        // service start (AppGraph builds GigaChatClient or OpenAiCompatClient
-        // from ProviderSettings), so a change takes effect after the next
-        // service restart — the hint under the fields says exactly that.
+        // service start (AppGraph builds GigaChatNativeClient or
+        // OpenAiCompatClient from ProviderSettings), so a change takes effect
+        // after the next service restart — the hint under the fields says
+        // exactly that.
         val isOpenAi = appPrefs.providerType == com.jarvis.assistant.config.ProviderSettings.Type.OPENAI_COMPAT
         llmProviderGroup.check(if (isOpenAi) R.id.providerOpenai else R.id.providerGigachat)
         openAiBaseUrl.setText(appPrefs.openAiBaseUrl)
         openAiModel.setText(appPrefs.openAiModel)
         openAiApiKey.setText(appPrefs.openAiApiKey)
         applyProviderVisibility(isOpenAi)
+
+        // GigaChat-3 flavor: the radio mirrors the stored pref and persists on
+        // selection. Like the provider TYPE, the flavor is baked into the
+        // client at graph construction, so its block carries the same restart
+        // note. State is set BEFORE the listener, so a programmatic check()
+        // can never look like a user edit.
+        val modelGroup = findViewById<RadioGroup>(R.id.gigaChatModelGroup)
+        modelGroup.check(
+            when (SettingsMapping.gigaChatModelIndex(appPrefs.gigaChatModel)) {
+                1 -> R.id.gigaChatModelPro
+                2 -> R.id.gigaChatModelUltra
+                else -> R.id.gigaChatModelLightning
+            },
+        )
+        modelGroup.setOnCheckedChangeListener { _, checkedId ->
+            appPrefs.gigaChatModel = when (checkedId) {
+                R.id.gigaChatModelPro -> SettingsMapping.gigaChatModelAt(1)
+                R.id.gigaChatModelUltra -> SettingsMapping.gigaChatModelAt(2)
+                else -> SettingsMapping.gigaChatModelAt(0)
+            }
+        }
 
         llmProviderGroup.setOnCheckedChangeListener { _, checkedId ->
             val type = if (checkedId == R.id.providerOpenai) "openai" else "gigachat"
@@ -1156,9 +1180,10 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** Show the OpenAI-compatible fields only when that provider is selected. */
+    /** Show only the block belonging to the selected provider. */
     private fun applyProviderVisibility(isOpenAi: Boolean) {
         openAiBlock.visibility = if (isOpenAi) View.VISIBLE else View.GONE
+        gigaChatBlock.visibility = if (isOpenAi) View.GONE else View.VISIBLE
     }
 
     private fun saveCredentials() {

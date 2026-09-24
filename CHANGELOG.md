@@ -6,8 +6,60 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — GigaChat native API + built-in web search: arbitrary Q&A and open-topic conversation
+- **The assistant now answers arbitrary questions and holds a conversation on
+  any topic, grounded by GigaChat's server-executed `web_search`.** The LLM is
+  already called for every non-blank utterance — what was missing was the
+  *capability*: the legacy contract the app spoke had no web search, so a
+  question about fresh facts got an honest "no internet access" refusal.
+- **Migrated the GigaChat client to the unified native contract** at
+  `https://api.giga.chat/v2/chat/completions` (`GigaChatNativeClient`). This is
+  a different protocol on every axis, verified against the live service:
+  `content` is an **array of parts** (`[{text}]`); tools are
+  `tools:[{"web_search":{}},{"functions":{"specifications":[…]}}]` with
+  `tool_config:{"mode":"auto"}` (the [OI]-style `tools:[{type:"function"}]`
+  shape is rejected with HTTP 400); the response envelope is **`messages[]`**
+  (not `choices[]`); and the stream carries **named `event:` lines**
+  (`response.tool.in_progress` → `response.tool.completed` →
+  `response.message.delta` → `response.message.done`). Sampling moves under
+  `model_options`. The legacy `GigaChatClient` is removed; the
+  [OI]-compatible provider and `SseParser` are untouched.
+- **`web_search` results never reach the speaker.** The built-in runs
+  server-side; results arrive as `inline_data.sources` (url + title) and
+  progress as `tool_execution` parts. `GigaChatSseParser` keeps both on a side
+  channel and emits only real assistant text, so progress narration or URLs
+  can never be spoken. Client function calls still round-trip as
+  `role:"tool"` + `content:[{function_result:{name,result}}]`.
+- **`TurnRunner` needed zero changes**: a search turn arrives as `Text` +
+  `Done` with no pending tool calls, so it takes the existing plain-answer
+  branch. Client-tool loops, `maxToolPasses` and the unknown-function path are
+  unchanged.
+- **Prompt policy** (`SystemPrompt`) now tells the model to answer general
+  questions from its own knowledge, keep any topic going, and use the internet
+  search for fresh or changing facts — while keeping every existing
+  safety / irreversible-action / honesty rule. Still Ru-only and still under
+  the pinned prompt-size cap.
+- **Settings → «Нейросеть (LLM)» gains the GigaChat-3 flavor** (Lightning /
+  Pro / Ultra, default **Lightning** — the fastest search-capable model;
+  ~1.7 s on a search turn). Sealed at graph construction like every other
+  provider choice, so the card carries the same restart note.
+- **`SberTrust` gains `giga.chat`.** `api.giga.chat` chains to the Минцифры
+  Russian Trusted Sub CA, so the bundled anchors must be offered for that host
+  or the device cannot reach the API at all (the system trust store rejects
+  it). Still host-scoped and label-exact.
+- **New tests**: `GigaChatSseParserTest` (replays real recorded SSE
+  fixtures — asserts lane separation, source capture, exactly-one `Done`),
+  `GigaChatNativeWireTest` (MockWebServer: emitted body shape + recorded
+  responses), `SseStreamTest` (transport event capture, `[DONE]`, EOF flush),
+  plus settings-mapping / prompt / trust-scoping cases. A live
+  `web search answers a time-sensitive question` smoke runs in the local
+  integration tier and passed against the real service.
+- **Fixtures** (`app/src/test/resources/recorded/gigachat/`): sanitized real
+  responses (plain / search / function-call, JSON + SSE) with a provenance
+  README. No credentials, no user data, model build suffix stripped.
+
 ### Added — Yandex SpeechKit v3 as a selectable speech backend (ASR + TTS)
-- **Second speech provider.** Settings → «Речь» chooses **Sber SaluteSpeech** or
+- **Second speech provider.** Settings → «Движок речи (ASR + TTS)» chooses **Sber SaluteSpeech** or
   **Yandex SpeechKit v3**; one choice drives recognition *and* synthesis. The
   choice is sealed at graph construction (each provider owns its channel and
   auth scheme), so it applies after a service restart — the card says so, and

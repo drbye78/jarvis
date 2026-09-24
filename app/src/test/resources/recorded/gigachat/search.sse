@@ -1,0 +1,15 @@
+event: response.tool.in_progress
+data: {"model":"GigaChat-3-Lightning","created_at":1790250877,"messages":[{"role":"assistant","content":[{"tool_execution":{"id":"","name":"web_search"}}]}]}
+
+event: response.tool.completed
+data: {"model":"GigaChat-3-Lightning","created_at":1790250878,"messages":[{"role":"assistant","content":[{"tool_execution":{"id":"","name":"web_search","status":"success"}}]}]}
+
+event: response.message.delta
+data: {"model":"GigaChat-3-Lightning","created_at":1790250878,"messages":[{"role":"assistant","content":[{"inline_data":{"images":[],"sources":{"1":{"url":"https://cbr.ru/currency_base/daily?UniDbQuery.Posted=True&UniDbQuery.To=24.09.2026","title":"Официальные курсы валют на заданную дату, устанавливаемые..."},"2":{"url":"https://www.vbr.ru/novosti/kursy-valyut/2026/09/23/kurs-valut-na-24-sentyabrya-2026/","title":"Курс доллара, евро и юаня на 24 сентября 2026 года"},"3":{"url":"https://myfin.by/currency/cb-rf/usd/24-09-2026","title":"Курс доллара США ЦБ РФ на сегодня, архив курса доллара..."},"4":{"url":"https://eadaily.com/ru/news/2026/09/24/kurs-k-eu-i-y-ot-banka-rossii-na-24-sentyabrya","title":"Курс к $, € и ¥ от Банка России на 24 сентября — EADaily, 24 сентября 2026 — Новости экономики, Новости России"},"5":{"url":"https://www.finmarket.ru/news/6712766","title":"ЦБ РФ установил курс доллара США с 24 сентября в размере 84,3969 руб. - ИА \"Финмаркет\""}}}}]}]}
+
+event: response.message.delta
+data: {"model":"GigaChat-3-Lightning","created_at":1790250878,"messages":[{"role":"assistant","content":[{"text":"Сегодня, 24 сентября 2026 года, курс доллара к рублю составляет **84,3969 рубля** [sources=[1, 2, 3, 5]]."}]}]}
+
+event: response.message.done
+data: {"model":"GigaChat-3-Lightning","created_at":1790250878,"messages":[{"role":"assistant","tool_state_id":"01a0d344-8691-7212-b9ed-bcc4d8a9a561"}],"finish_reason":"stop","usage":{"input_tokens":3678,"input_tokens_details":{"prompt_tokens":3678,"cached_tokens":4071},"output_tokens":91,"total_tokens":3769}}
+

@@ -69,11 +69,39 @@
   paste the **secret** into Settings.
 
 ### "GigaChat request failed (HTTP ...)"
+The LLM lane talks the **GigaChat native v2 contract** at
+`https://api.giga.chat/v2/chat/completions`. It differs from the old endpoint
+on every axis (parts-array `content`, `tools`/`tool_config`, `messages[]`
+responses, named `event:` stream lines), so an old-style error usually means
+credentials, not the wire shape.
+
 - Check credentials/scope (`GIGACHAT_API_PERS`) in **Settings**.
-- Or switch Settings → Нейросеть (LLM) → **OpenAI-совместимый endpoint**: pick
-  the radio, fill Base URL / model / API key, press **Сохранить**. The change
-  takes effect after the next service restart (Стоп → Запустить on the home
-  screen) — the provider client is built once, when the service starts.
+- **HTTP 400 on every turn** — almost always the model id. Settings →
+  «Нейросеть (LLM)» → pick one of the offered **GigaChat-3** flavors (the
+  legacy `GigaChat-Pro` is not in the native model list; the selector only
+  offers valid ids).
+- **`Trust anchor for certification path not found`** — `api.giga.chat` chains
+  to the Минцифры Sub CA. `util/SberTrust.kt` bundles those roots and must list
+  `giga.chat` in its host-scoped allowlist; a build that drops that line cannot
+  reach the API on the device (the system trust store rejects the chain).
+- Or switch Settings → Нейросеть (LLM) → **the [OI]-compatible radio**: fill
+  Base URL / model / API key, press **Сохранить**. The change takes effect
+  after the next service restart (Стоп → Запустить on the home screen) — the
+  provider client is built once, when the service starts.
+
+### "Ответы без свежих данных / поиск в интернете не срабатывает"
+Web search is a **server-executed built-in**: the request declares
+`tools:[{"web_search":{}}]` with `tool_config:{"mode":"auto"}` and the model
+decides when to search. If grounded answers never appear:
+
+- The **model must be a native-contract id** (the GigaChat-3 flavors). On a
+  legacy endpoint the same request silently ignores `tools` and the model
+  honestly says it has no real-time access — that is the symptom to look for.
+- Search adds latency (~1.7 s measured) and inflates the request (search
+  results are injected server-side), but the existing 45 s LLM budget covers it.
+- `tool_execution` progress and `inline_data.sources` are **never spoken** —
+  only the grounded answer is. If you hear "web_search" or a URL, that is a
+  parser regression, not a service problem.
 
 ### "Модель иногда подвисает / ошибка сети, но со второй попытки отвечает"
 That is the built-in transient-failure retry doing its job: a failed LLM pass
