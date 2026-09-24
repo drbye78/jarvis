@@ -74,7 +74,7 @@ The full contract:
 - Cognitive coroutines run on the coordinator's own supervised scope, catch only IO/serialization errors, and ALWAYS rethrow `CancellationException`.
 - Never log fact content outside DEBUG; prompt sections have fixed char budgets enforced by the composer.
 - Schema changes require an exported Room schema + migration test + CHANGELOG entry. The turn's hot path is sacred: cognitive reads budget ≤ 40 ms, writes are fire-and-forget into Room-backed queues.
-- Cloud calls are gated, batched, capped, and honestly degradable — `memory.cloudEnabled=false` must yield zero new egress classes (privacy inventory in the plan §9.2).
+- Cloud calls are gated, batched, capped, and honestly degradable — `memory.cloudEnabled=false` must yield zero new egress classes.
 
 ## References
 - `README.md` (setup/usage), `RUNBOOK.md` (troubleshooting + Known limitations), `ARCHITECTURE.md` (data flow, layers, security). This file is the quick-start; those are the spec.

@@ -385,6 +385,8 @@ silent no-op or a crash:
 | LLM stream dies mid-turn | error voice, IDLE; partial sentence already spoken stays | next wake word |
 | LLM times out (45 s) | error voice, IDLE | next wake word |
 | Tool throws / hangs | JSON error result (isError) within 15 s (50 s playMusic) | same turn — LLM reacts |
+| Weather: no location + permission denied | typed `PermissionDenied` → spoken hint to set a city / grant access | grant in Settings → «Погода», or set a city |
+| Weather: no fix within ~6 s (no GPS/net provider) | typed `Unavailable` → spoken hint to set a city (never an invented city) | set a city in Settings |
 | Barge-in during tool | cancellation propagates (never a fake tool error); completed subset persisted | new turn |
 | TTS sentence fails | sentence dropped, rest of the answer still speaks | next turn |
 | TTS drain exceeds 60 s | stragglers cancelled, turn ends | next turn |

@@ -10,7 +10,8 @@
 2. Grant **микрофон** and the **оптимизация батареи** exemption (both
    mandatory). Optionally grant notification-listener access (media
    transport / music control), write-settings (brightness tool), DND access,
-   device admin (screen-off tool).
+   device admin (screen-off tool), and **location access** (weather
+   auto-detect — Settings → «Погода»; a configured city needs no grant).
 3. Press **Запустить Джарвиса**.
 
 ## Common issues
@@ -622,7 +623,8 @@ verdict, plus the opt-in vector path.
 3. Settings → Память → Семантический поиск по памяти → «Проверить качество
    поиска»: the result line shows the local engine numbers and, when the
    account has embeddings entitlement, the cloud branch. STATIC probe strings
-   are sent for the cloud branch — never user facts (§9.2 note on screen).
+   are sent for the cloud branch — never user facts (the on-screen note says
+   so).
 4. Selector «На устройстве» → «Построить векторы памяти» → the dialog
    states on-device-only → accept → progress line counts up to the ACTIVE
    fact count; re-press resumes if interrupted.

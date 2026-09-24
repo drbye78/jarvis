@@ -85,6 +85,13 @@ Answers arbitrary questions and holds a conversation on any topic.
     is running. Custom Sherpa wake words are supported — the app extracts
     models, BPE-tokenizes keywords, and loads via `newFromFile`.
 6. Launch Jarvis and follow the onboarding screen.
+7. **Weather (optional).** Settings → «Погода» sets the default city for weather
+   questions; leave it empty to use the device location instead. A configured
+   city always wins and needs no location access. To use auto-detect, tap
+   **Allow location access** in that card — the permission dialog lives there
+   (weather runs in the background service, which cannot prompt), and access is
+   coarse or fine. On a GMS-free, WiFi-only tablet GPS may yield nothing, so the
+   configured city is the reliable path.
 
 ## Running tests
 ```bash
@@ -260,6 +267,15 @@ keystore with `keytool` and update `local.properties` accordingly.
 ## License
 [MIT](LICENSE)
 
+## Data sources & attribution
+Jarvis talks to a few external services with the credentials **you** supply.
+Weather data comes from [Open-Meteo](https://open-meteo.com/), which is free for
+non-commercial use and licensed [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) —
+attribution is required, hence this notice. Speech and LLM providers (Sber
+SaluteSpeech, Yandex SpeechKit v3, GigaChat, Yandex AI Studio) are used under
+your own accounts and their respective terms. Wake-word and on-device ASR/TTS
+models run locally: Sherpa-ONNX (Apache-2.0) and Porcupine (Picovoice licence).
+
 ## Docs
 - [ARCHITECTURE.md](ARCHITECTURE.md) — component and concurrency model.
 - [RUNBOOK.md](RUNBOOK.md) — troubleshooting, debugging, performance targets.
@@ -270,12 +286,6 @@ keystore with `keytool` and update `local.properties` accordingly.
 - Sber SaluteSpeech **or** Yandex SpeechKit v3 (streaming ASR + TTS via gRPC)
 - Sber GigaChat (native v2) **or** Yandex AI Studio — both with built-in internet search —
   or any [OI]-compatible API (LLM via SSE, tool calling)
-- Room (conversation, alarms, memory/facts) · Open-Meteo (weather)
-- Material 3 UI (teal/amber day+night design system): home screen with a
-  live voice orb (breathing/ripple/thinking/speaking animations), chat-style
-  transcript, permission onboarding with status rows and start gating,
-  settings with a «Музыка» default-player card (Яндекс / Звук / VK)
-
 - Room (conversation, alarms, memory/facts) · Open-Meteo (weather)
 - Material 3 UI (teal/amber day+night design system): home screen with a
   live voice orb (breathing/ripple/thinking/speaking animations), chat-style
