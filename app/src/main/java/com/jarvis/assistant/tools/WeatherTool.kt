@@ -1,10 +1,9 @@
 package com.jarvis.assistant.tools
 
 import com.jarvis.assistant.llm.await
-import com.jarvis.assistant.tools.weather.LocationOutcome
-import com.jarvis.assistant.tools.weather.WeatherLocation
-import com.jarvis.assistant.tools.weather.WeatherLocationResolver
-import com.jarvis.assistant.tools.weather.WeatherQuery
+import com.jarvis.assistant.location.LocationOutcome
+import com.jarvis.assistant.location.LocationResolver
+import com.jarvis.assistant.location.ResolvedLocation
 import com.jarvis.assistant.util.JsonOut
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +28,9 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/** A resolved weather request: where + how many forecast days (1..7). */
+data class WeatherQuery(val location: ResolvedLocation, val days: Int)
+
 interface WeatherClient {
     suspend fun getWeather(query: WeatherQuery): String
 }
@@ -40,8 +42,8 @@ private const val MAX_FORECAST_DAYS = 7
 private const val DEFAULT_FORECAST_DAYS = 7
 
 /**
- * Open-Meteo (free, no key): geocode a [WeatherLocation.Place] and then fetch
- * current conditions PLUS a dated daily forecast. A [WeatherLocation.Coords]
+ * Open-Meteo (free, no key): geocode a [ResolvedLocation.Place] and then fetch
+ * current conditions PLUS a dated daily forecast. A [ResolvedLocation.Coords]
  * request skips geocoding entirely and reports under its own [label]. All
  * output is built with kotlinx.serialization — no string interpolation into
  * JSON (the original produced invalid JSON when the temperature field was
@@ -93,8 +95,8 @@ class OpenMeteoWeatherClient(
     override suspend fun getWeather(query: WeatherQuery): String = withContext(Dispatchers.IO) {
         val days = normalizeDays(query.days)
         when (val location = query.location) {
-            is WeatherLocation.Place -> fromPlace(location, days)
-            is WeatherLocation.Coords -> fromCoords(location, days)
+            is ResolvedLocation.Place -> fromPlace(location, days)
+            is ResolvedLocation.Coords -> fromCoords(location, days)
         }
     }
 
@@ -102,7 +104,7 @@ class OpenMeteoWeatherClient(
     private fun normalizeDays(days: Int): Int =
         (if (days >= 1) days else forecastDays).coerceIn(1, MAX_FORECAST_DAYS)
 
-    private suspend fun fromPlace(place: WeatherLocation.Place, days: Int): String {
+    private suspend fun fromPlace(place: ResolvedLocation.Place, days: Int): String {
         val encoded = URLEncoder.encode(place.name.trim(), "UTF-8")
         val lang = languageTag.ifBlank { "ru" }
         val geoUrl = (
@@ -146,7 +148,7 @@ class OpenMeteoWeatherClient(
     }
 
     /** GPS coordinates: no geocoding, no country — the label is what we report. */
-    private suspend fun fromCoords(coords: WeatherLocation.Coords, days: Int): String =
+    private suspend fun fromCoords(coords: ResolvedLocation.Coords, days: Int): String =
         fetchForecast(coords.latitude.toString(), coords.longitude.toString(), coords.label, null, days)
 
     private suspend fun fetchForecast(
@@ -337,7 +339,7 @@ object DefaultWeatherToolMessages : WeatherToolMessages {
  */
 class WeatherTool(
     private val weatherClient: WeatherClient,
-    private val resolver: WeatherLocationResolver,
+    private val resolver: LocationResolver,
     private val messages: WeatherToolMessages = DefaultWeatherToolMessages,
     /**
      * Per-tool budget: GPS (≤6 s) + geocode + forecast can exceed the 15 s
@@ -374,7 +376,7 @@ class WeatherTool(
             ?: return JsonOut.error("Invalid JSON arguments")
         val days = clampDays(obj.int("days"))
         val explicit = obj.string("location")?.trim()?.takeIf { it.isNotEmpty() }
-        val location = explicit?.let { WeatherLocation.Place(it) }
+        val location = explicit?.let { ResolvedLocation.Place(it) }
             ?: when (val outcome = resolver.resolve()) {
                 is LocationOutcome.Resolved -> outcome.location
                 LocationOutcome.PermissionDenied -> return JsonOut.error(messages.locationDenied)

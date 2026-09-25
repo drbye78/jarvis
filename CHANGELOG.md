@@ -6,6 +6,83 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — Geography: place search + transit/walking routing (Yandex MapKit)
+- **Two new voice tools: `findPlace` (organization/address/place search) and
+  `getRoute` (public transport or walking).** The advertised tool surface grows
+  19 → 21. `getRoute` returns duration, transfers, arrival time and leg-by-leg
+  detail — line name (bus/metro), vehicle type, transfer point and stop count —
+  which the HTTP Maps APIs cannot name; that line-level detail is the entire
+  reason the Yandex MapKit Android SDK
+  (`com.yandex.android:maps.mobile:4.45.0-full`) was chosen. No map is ever
+  rendered: the tools return structured JSON (`GeoJson`) and the LLM speaks the
+  answer. Follow-ups («а пешком?», «а на автобусе?») are handled by conversation
+  history — the LLM re-calls `getRoute` with the same destination and a new mode;
+  the tool description carries that instruction deliberately.
+- **New `geo/` lane: a capability, not a provider.** `GeoToolClient` is a narrow
+  interface with exactly one implementation (`YandexMapKitGeoClient`) and no
+  Settings radio — it mirrors `WeatherClient`/`OpenMeteoWeatherClient`, not the
+  sealed-provider pattern used for user-selectable LLM/speech backends. All
+  `com.yandex.*` imports stay under `geo/mapkit/**`; every MapKit `Error`
+  becomes a typed `GeoResult` (`NO_KEY`/`KEY_CHANGED`/`PERMISSION_DENIED`/
+  `UNAVAILABLE`/`NOT_FOUND`/`FAILED`) so no MapKit type escapes, and
+  `CancellationException` is always rethrown (barge-in never becomes a fake tool
+  error).
+- **The location subsystem was extracted out of `tools/weather/` into a shared
+  `location/` package and made weather-agnostic.** `tools/weather/` no longer
+  exists; `location/` owns `LocationProvider`/`LocationFix`, `ResolvedLocation`,
+  `LocationOutcome`, `LocationResolver`/`DefaultLocationResolver` and the
+  GMS-free `AndroidLocationProvider` (`LocationManager` only). Weather was
+  migrated onto it, and weather and geo share ONE resolver, so the policy is
+  single-sourced: a **configured location always wins** (no GPS/permission),
+  only a blank configured value falls back to a bounded device fix, and every
+  failure degrades to a typed `LocationOutcome` so a tool answers honestly
+  instead of inventing a city.
+- **GMS-FREE is preserved by dependency exclusion.** `-full` transitively pulls
+  `play-services-location` and `play:integrity`, which contradicts the GMS-less
+  Huawei/HarmonyOS target. The AAR embeds no GMS (0 `com/google/android/gms`
+  entries in classes.jar); only 8 classes reference it, all in
+  `com.yandex.runtime.{sensors,attestation_storage}.internal`, and zero in the
+  `search/`/`transport/` packages — so both artifacts are `exclude`d.
+  `proguard-rules.pro` carries `-dontwarn com.google.android.gms.**` /
+  `-dontwarn com.google.android.play.**` for the still-referenced, now-missing
+  classes. `-full` is mandatory: `-lite` ships zero search/transport classes.
+- **Process-scoped MapKit init + a full-restart key rule.** `MapKitFactory.setApiKey`
+  may be called only once per process, and `AppGraph` is rebuilt on every
+  service start — so the initializer lives in a process-level singleton
+  (`MapKitInitializerProvider`, the `AlarmSchedulerProvider`/`RingCoordinatorProvider`
+  idiom), not in the graph. A **changed Maps key applies only after a full
+  app-process restart** — stricter than the "sealed at graph construction"
+  rule for LLM/speech providers. A changed value returns `KEY_CHANGED`, never a
+  crash.
+- **New secret: `SecretVault.KEY_MAPKIT_API_KEY` (`mapkit_api_key`).** The
+  MapKit Mobile SDK key is separate from the Yandex Cloud (SpeechKit / AI
+  Studio) key, stored in the Keystore and read live so it can be set after
+  construction.
+- **ABIs trimmed for size.** MapKit adds `libmaps-mobile.so` (arm64 ≈36 MB) and
+  its consumer ProGuard rules forbid shrinking it, so `ndk.abiFilters` is
+  `arm64-v8a` + `x86_64` only. Measured debug APK: **164 MB → 182 MB** (arm64
+  `.so` 36,094,376 B; x86_64 39,290,992 B).
+- **Privacy/telemetry.** `ArgFingerprints` records only `getRoute`→`mode:*` and
+  `findPlace`→`q:*` — never `origin`/`destination`/`near`, so street addresses
+  do not reach `command_events`. Geo tools are not in `habitEligibleTools`.
+- **New tests**: `GeoToolsTest`, `GeoJsonTest`, `MapKitInitializerTest`,
+  `MapKitInitializerProviderTest`, `MapKitRouteMapperTest` (route narration via
+  the MapKit-free `RouteView`/`SectionView`/`TransportView` projection — MapKit
+  4.45.0 is Java 21 bytecode vs the Java 17 toolchain, so no MapKit class loads
+  in a JVM test), and `DefaultLocationResolverTest` (replaces the removed
+  `WeatherLocationResolverTest`).
+- **Attribution / licensing (owner-accepted residual risk, NOT compliance).**
+  The Yandex Maps terms require the «Open in Maps» button, Terms link, copyright
+  and logo **on the map/screen**; a screen-less assistant cannot satisfy that as
+  written. The shipped mitigation is a Settings attribution block (a Yandex Maps
+  data notice, a Terms link to `https://yandex.ru/legal/maps_termsofuse`, and an
+  "open in Yandex Maps" action to `https://yandex.ru/maps`). The terms also cap
+  free-tier use (1,000 unique users/day) and forbid storing results beyond 30
+  days.
+- **On-device behavior is NOT yet verified.** Native `.so` load, headless init
+  from the Service (no `MapView`), live search/routing with a real key, and the
+  Play Integrity path are all pending the RUNBOOK MapKit smoke checklist.
+
 ### Added — Weather conversations: forecast + location-aware defaults (Open-Meteo)
 - **Weather questions now cover forecasts, not just current conditions.** The
   `getWeather` tool returns current conditions **plus up to 7 daily rows**

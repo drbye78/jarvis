@@ -16,7 +16,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
         ├─ StreamingAsrClient (bidi gRPC, provider-neutral: Sber Salute OR Yandex v3; live audio up, partials/EOU down)
        ├─ ConversationManager (Room; 20-msg window, tool-pair-safe)
        ├─ LlmClient (GigaChat native v2 | Yandex AI Studio Responses | [OI]-compatible; SSE; wire DTOs)
-       │    └─ ToolRegistry → alarms/timers · weather (+ location) · 8 device tools
+       │    └─ ToolRegistry → alarms/timers · weather · geo (findPlace/getRoute) · 8 device tools
        └─ TtsClient (gRPC, cancellable Context, deadline: Sber Salute OR Yandex v3)
             └─ StreamingAudioTrackPlayer (single actor, generation-based flush)
 ```
@@ -32,7 +32,9 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `speech/tts/` | `TtsClient` (cancellable + deadline) and `TtsPlayer` contract. Implementations: `SaluteSpeechTts` and `YandexSpeechTts` (Yandex v3, 24 kHz `RawAudio`); voice/role packing via `YandexVoiceSpec`. `VoiceCatalog` is the per-backend voice catalog and the single source of truth for the Settings «Голос» card (`SBER_VOICES`, `YANDEX_VOICES`, `yandexRolesFor()`), keyed by backend because the two providers have disjoint voice namespaces. |
 | `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loads BOTH ways per FIXPLAN C — bundled models asset-relative (`newFromAsset`), custom/extracted models from the filesystem (`newFromFile` via `SherpaModelStore`)), player (generations), and the Phase-5 etiquette pair: `AssistantAudioFocus` (duck-during-TTS state machine + `AndroidAudioFocusAdapter`) and `SpeechFeedback` (spoken cascade progress). |
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns (job hand-offs under a monitor, seq-guarded supersede/cancel); TurnRunner (bounded tool loop; error turns end via reportFailure only); `SpeechPhrases` — locale-aware runtime spoken phrases (RU default + resource-backed values/values-en). |
-| `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. Weather: `WeatherTool` (Open-Meteo, current + 7-day daily) over a `WeatherClient`; `tools/weather/` holds the location subsystem — `WeatherLocationResolver` (configured city wins, else a device fix) and the GMS-free `AndroidLocationProvider` (`LocationManager`, API-29-safe; no Play Services). |
+| `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. Weather: `WeatherTool` (Open-Meteo, current + 7-day daily) over a `WeatherClient`, with the default location resolved by the shared `location/` subsystem. Geo: `findPlace` / `getRoute` (`GeoTools.kt`) over `geo/GeoToolClient`. |
+| `geo/` | Geography capability: `GeoModels` (`GeoPoint`/`GeoPlace`/`GeoLeg`/`GeoRoute`/`GeoError`/`GeoResult`), `GeoToolClient` (narrow interface, one impl), `GeoJson` (pure domain→JSON), and `geo/mapkit/**` (`MapKitFactoryBridge`, `MapKitInitializer` + `MapKitInitializerProvider`, `MapKitSearch`, `MapKitRouting`, `MapKitRouteMapper`, `YandexMapKitGeoClient`). `com.yandex.*` imports exist ONLY under `geo/mapkit/**`; no MapKit type escapes. |
+| `location/` | Shared, weather-agnostic location subsystem (extracted from the former `tools/weather/`): `LocationProvider`/`LocationFix`, `ResolvedLocation`, `LocationOutcome`, `LocationResolver`/`DefaultLocationResolver` (configured location wins, else a bounded device fix), and the GMS-free `AndroidLocationProvider` (framework `LocationManager` only). Weather and geo share ONE resolver. |
 | `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure capability-gated strategy cascade (structured playFromSearch, MediaBrowser search/token lane, query-aware verification) with rich transport; `MediaBrowserGateway` + `AndroidMediaBrowserGateway` (bind/search/children); `MediaCapabilities`/`VoiceQuery`/`MediaDiagnostics` (pure models). Android adapters: `AndroidMediaGateway` (compat-wrapped controllers), `AndroidMediaBrowserGateway`. Threading invariant: `AndroidMediaBrowserGateway.connect()` must construct `MediaBrowserCompat` on a Looper thread and therefore hops to `Dispatchers.Main` internally — the production tool lane is `Dispatchers.IO`, and without that hop every bind silently returns null (the throw is swallowed by `runCatching`), so the whole browser strategy is dead. Pinned only on-device. |
 | `data/` | Room v2: messages (id-ordered, orphan-safe windowing) + alarms + user_facts (cognitive memory) + extraction_queue + memory_meta (cognitive bookkeeping: schema revision, cursors, counters) + fact_fts (FTS4) + command_events + habit_rules + behavior_log + session_summaries + fact_vectors + entities + fact_entities + ring_sessions (durable ring state, `RingSessionEntity`). |
 | `service/` | Foreground service (permission gate, retryable init, watchdog semantics), boot receiver, ringing activity, notification listener. |
@@ -100,6 +102,65 @@ and bounded (`maxToolPasses = 5`);
 each tool execution has a 15 s default timeout — a tool may override it via
 `ToolContract.timeoutMs` (playMusic uses 50 s: cold-starting a player and
 verifying playback takes that long).
+
+## Geography lane (Yandex MapKit)
+
+`findPlace` and `getRoute` answer place/organization search and public-transport
++ walking routes by voice. **No map is ever rendered** — the assistant is
+screen-less, so the tools return structured JSON (via `GeoJson`) that the LLM
+turns into speech. The backend is the Yandex MapKit Android SDK
+(`com.yandex.android:maps.mobile:4.45.0-full`). Transit answers carry leg-by-leg
+detail — the line (bus/metro), the vehicle type, the transfer point and the
+number of stops — which the HTTP Maps APIs cannot name; that line-level detail
+is the entire reason MapKit was chosen over them.
+
+Lane flow: `TurnRunner` → tool (`tools/GeoTools.kt`) → `geo/GeoToolClient`
+(narrow interface) → `geo/mapkit/YandexMapKitGeoClient` → `MapKitSearch` /
+`MapKitRouting` → `MapKitRouteMapper` → domain `GeoRoute` → `GeoJson`.
+
+- **A narrow interface with one impl, not a sealed provider.** `GeoToolClient`
+  mirrors `WeatherClient`/`OpenMeteoWeatherClient`: exactly one implementation
+  and no Settings radio, because the user does not choose a geo backend.
+  Contrast the LLM/speech backends, which ARE sealed `when` providers (a new one
+  is a compile error until wired) — that machinery is deliberately not spent on
+  a capability with a single provider.
+- **The location subsystem was extracted out of the weather lane.** The former
+  `tools/weather/` package is gone; `location/` now owns `LocationProvider`,
+  `LocationFix`, `ResolvedLocation`, `LocationOutcome`, `LocationResolver`,
+  `DefaultLocationResolver` and the GMS-free `AndroidLocationProvider`
+  (`LocationManager` only — no Play Services, no `FusedLocationProviderClient`).
+  Weather was migrated onto it, and weather and geo share ONE resolver instance,
+  so the default-location policy is single-sourced.
+- **Configured location wins — no GPS, no permission needed.** Only a blank
+  configured value falls back to a bounded device fix, and every failure
+  degrades to a typed `LocationOutcome` (`Resolved`/`PermissionDenied`/
+  `Unavailable`) so a tool answers honestly instead of inventing a city.
+  `findPlace` is deliberately lenient: an unresolved default degenerates to an
+  unconstrained search, because a query that names its own place («аптека в
+  Москве») stays answerable. `getRoute` is strict: a route genuinely needs an
+  origin, so an unresolved location is an honest error.
+- **Reverse-geocoding asymmetry — honest, and per-subsystem.** MapKit has a
+  reverse-geocode seam (`GeoToolClient.resolveLabel` → `MapKitSearch.reverse`),
+  so a coordinate CAN be named; Open-Meteo has none and the app adds no
+  third-party egress, so weather must always say «текущее местоположение» for a
+  GPS fix. The same device fix may therefore be nameable for a route and unnamed
+  for weather — the subsystems' real capability difference, not a bug.
+- **Egress is the SDK's own calls, and attribution is a known limitation.** The
+  only new egress is MapKit's requests to Yandex (search, routing); no new HTTP
+  client was added. The Yandex Maps terms require the «Open in Maps» button, the
+  Terms link, the copyright notice and the logo **on the map/screen**; a
+  screen-less assistant cannot satisfy that as written, so the owner accepted
+  the residual legal risk and shipped a Settings attribution block (a Yandex
+  Maps data notice, a Terms link to `https://yandex.ru/legal/maps_termsofuse`,
+  and an "open in Yandex Maps" action to `https://yandex.ru/maps`). Record this
+  as a **known limitation / legal risk the owner accepted**, not as compliance.
+  The terms also cap free-tier use (1,000 unique users/day) and forbid storing
+  results beyond 30 days.
+- **GMS-FREE is preserved by dependency exclusion.** `play-services-location`
+  and `play:integrity` are `exclude`d; the AAR embeds no GMS and the
+  search/transport call paths reference none (see AGENTS.md). `-full` is
+  mandatory — `-lite` ships zero search/transport classes. `assembleRelease`
+  needs the `-dontwarn` rules for the two excluded groups.
 
 ## System prompt & dialogue policy
 
@@ -387,6 +448,11 @@ silent no-op or a crash:
 | Tool throws / hangs | JSON error result (isError) within 15 s (50 s playMusic) | same turn — LLM reacts |
 | Weather: no location + permission denied | typed `PermissionDenied` → spoken hint to set a city / grant access | grant in Settings → «Погода», or set a city |
 | Weather: no fix within ~6 s (no GPS/net provider) | typed `Unavailable` → spoken hint to set a city (never an invented city) | set a city in Settings |
+| Geo: no MapKit key configured | typed `GeoError.NO_KEY` → spoken hint to add the key in Settings («Карты») | add a MapKit key |
+| Geo: key changed after init | typed `GeoError.KEY_CHANGED` → spoken hint to **fully restart the app** | full app-process restart |
+| Geo: route with no usable location | typed `PERMISSION_DENIED`/`UNAVAILABLE` → spoken hint to set a city / grant access | set a city or grant access |
+| Geo: nothing found | typed `NOT_FOUND` → tool-specific "nothing found" answer (place vs route) | refine the query |
+| Geo: MapKit native/service failure | typed `FAILED` → generic "map service unavailable" | retry next turn |
 | Barge-in during tool | cancellation propagates (never a fake tool error); completed subset persisted | new turn |
 | TTS sentence fails | sentence dropped, rest of the answer still speaks | next turn |
 | TTS drain exceeds 60 s | stragglers cancelled, turn ends | next turn |
@@ -403,7 +469,7 @@ silent no-op or a crash:
 
 Gradle 8.14.2 · AGP 8.11.1 · Kotlin 2.2.21 · KSP 2.2.21-2.0.5 · Room 2.8.4
 gRPC 1.83.1 · protobuf-gradle-plugin 0.10.0 · OkHttp 4.12.0
-Porcupine 4.0.2 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Material Components · compileSdk 36 · minSdk 29 · targetSdk 36
+Porcupine 4.0.2 · Sherpa-ONNX 1.13.6 (bundled AAR + gigaspeech KWS model) · Yandex MapKit 4.45.0-full (GEO lane) · Material Components · compileSdk 36 · minSdk 29 · targetSdk 36
 
 The SaluteSpeech gRPC endpoint is config-driven (`JarvisConfig.saluteGrpcEndpoint`;
 renamed from the misleading `llmEndpoint` — it NEVER drove the LLM lane, which is
@@ -421,7 +487,11 @@ base URL).
   resolves the folder from `GET /v1/models` rather than a header).
   **Nothing secret is baked into `BuildConfig` or `local.properties`** — every
   install uses its owner's own credentials, so the APK is safe to distribute
-  to colleagues.
+  to colleagues. The **MapKit Mobile SDK key** is a separate secret
+  (`SecretVault.KEY_MAPKIT_API_KEY`, `mapkit_api_key`) — not the Yandex Cloud
+  key — read live so it can be set after construction; a changed value returns
+  `GeoError.KEY_CHANGED` rather than crashing, and only a full app-process
+  restart applies it (MapKit cannot be re-keyed in-process).
 - OAuth uses `Authorization: Basic base64(client_id:client_secret)` per
   Sber's spec; tokens are cached encrypted; secrets/tokens are never logged.
 - HTTPS only (`usesCleartextTraffic=false`)
@@ -461,8 +531,16 @@ the Yandex AI Studio Responses parser + transport (`YandexSseParserTest` and
 `YandexWireTest` replay real recorded fixtures; folder discovery, `call_id`
 preservation and the one-`Done` latch are pinned),
 weather (`WeatherClientTest` pins `timezone=auto`, index-aligned daily columns,
-the coords-bypasses-geocoding path and the 1–7 day clamp; `WeatherLocationResolverTest`
+the coords-bypasses-geocoding path and the 1–7 day clamp; `DefaultLocationResolverTest`
 pins configured-wins, never-throw and cancellation propagation),
+geography (`GeoToolsTest` pins the typed `GeoError` → message mapping, the
+lenient `findPlace` origin and the strict `getRoute` origin; `GeoJsonTest` pins
+the JSON shape; `MapKitInitializerTest` + `MapKitInitializerProviderTest` pin the
+once-per-process `KEY_CHANGED` semantics and the process-scoped memoization;
+`MapKitRouteMapperTest` covers route narration through the MapKit-free
+projection — MapKit 4.45.0 is Java 21 bytecode and CANNOT be loaded in a JVM
+unit test, so the SDK bindings in `MapKitRouteMapper.map(List<Route>)` are
+device-smoke-only),
 state machine, sentence splitter, conversation windowing (incl.
 char-budget trim), alarm
 times + notification identity, tool registry (incl. cancellation

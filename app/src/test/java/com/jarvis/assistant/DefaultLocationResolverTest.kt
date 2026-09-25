@@ -1,10 +1,10 @@
 package com.jarvis.assistant
 
-import com.jarvis.assistant.tools.weather.DefaultWeatherLocationResolver
-import com.jarvis.assistant.tools.weather.LocationFix
-import com.jarvis.assistant.tools.weather.LocationOutcome
-import com.jarvis.assistant.tools.weather.LocationProvider
-import com.jarvis.assistant.tools.weather.WeatherLocation
+import com.jarvis.assistant.location.DefaultLocationResolver
+import com.jarvis.assistant.location.LocationFix
+import com.jarvis.assistant.location.LocationOutcome
+import com.jarvis.assistant.location.LocationProvider
+import com.jarvis.assistant.location.ResolvedLocation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -12,19 +12,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The location precedence seam for weather, pinned on the already-written
- * [DefaultWeatherLocationResolver] with a fake [LocationProvider]:
+ * The shared location precedence seam, pinned on the already-written
+ * [DefaultLocationResolver] with a fake [LocationProvider]:
  *
  * - a configured location ALWAYS wins and the provider is never consulted;
  * - a missing permission degrades to `PermissionDenied` without a fix request;
  * - a usable fix resolves to coordinates with the localized label;
  * - every provider failure (null or a thrown non-cancellation exception)
- *   degrades to `Unavailable` — a weather turn must never crash;
+ *   degrades to `Unavailable` — a lookup must never crash;
  * - `CancellationException` (barge-in) propagates rather than turning into
  *   `Unavailable`;
  * - the configured value is trimmed (whitespace-only counts as blank).
  */
-class WeatherLocationResolverTest {
+class DefaultLocationResolverTest {
 
     /** Scriptable provider: records how often a fix was requested. */
     private class FakeProvider(
@@ -49,7 +49,7 @@ class WeatherLocationResolverTest {
         configured: String,
         provider: LocationProvider,
         label: String = "текущее местоположение",
-    ) = DefaultWeatherLocationResolver(
+    ) = DefaultLocationResolver(
         configuredLocation = { configured },
         provider = provider,
         coordsLabel = { label },
@@ -63,7 +63,7 @@ class WeatherLocationResolverTest {
         val provider = FakeProvider(granted = true, fix = LocationFix(1.0, 2.0, 10L, "gps"))
         val outcome = resolver("Сочи", provider).resolve()
 
-        assertEquals(LocationOutcome.Resolved(WeatherLocation.Place("Сочи")), outcome)
+        assertEquals(LocationOutcome.Resolved(ResolvedLocation.Place("Сочи")), outcome)
         assertEquals(0, provider.fixCalls)
     }
 
@@ -82,7 +82,7 @@ class WeatherLocationResolverTest {
         val outcome = resolver("", provider, label = "текущее местоположение").resolve()
 
         assertEquals(
-            LocationOutcome.Resolved(WeatherLocation.Coords(43.5855, 39.7231, "текущее местоположение")),
+            LocationOutcome.Resolved(ResolvedLocation.Coords(43.5855, 39.7231, "текущее местоположение")),
             outcome,
         )
         assertEquals(1, provider.fixCalls)
@@ -125,7 +125,7 @@ class WeatherLocationResolverTest {
         val provider = FakeProvider(granted = false)
         val outcome = resolver("  Сочи ", provider).resolve()
 
-        assertEquals(LocationOutcome.Resolved(WeatherLocation.Place("Сочи")), outcome)
+        assertEquals(LocationOutcome.Resolved(ResolvedLocation.Place("Сочи")), outcome)
         assertEquals(0, provider.fixCalls)
     }
 

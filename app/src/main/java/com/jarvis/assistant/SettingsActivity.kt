@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -152,6 +153,11 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var yandexCredentialsBlock: View
     private lateinit var yandexApiKey: TextInputEditText
 
+    // Maps card (Yandex MapKit). A SEPARATE Maps key from the SpeechKit /
+    // AI Studio key above; read once per app PROCESS, so a change needs a full
+    // app restart (not the service restart the provider cards mention).
+    private lateinit var mapKitApiKey: TextInputEditText
+
     private lateinit var playerGroup: RadioGroup
 
     private lateinit var engineGroup: RadioGroup
@@ -251,6 +257,8 @@ class SettingsActivity : AppCompatActivity() {
         weatherLocationInput = findViewById(R.id.weatherLocationInput)
         weatherLocationPermissionStatus = findViewById(R.id.weatherLocationPermissionStatus)
 
+        mapKitApiKey = findViewById(R.id.mapKitApiKey)
+
         fieldLayouts = mapOf(
             FieldValidation.Field.OPENAI_BASE_URL to findViewById(R.id.openAiBaseUrlLayout),
             FieldValidation.Field.OPENAI_API_KEY to findViewById(R.id.openAiApiKeyLayout),
@@ -276,6 +284,7 @@ class SettingsActivity : AppCompatActivity() {
         setupLlmProviderCard()
         setupMusicCard()
         setupWeatherCard()
+        setupMapsCard()
         setupAecCard()
         setupFollowUpCard()
         setupMemoryCard()
@@ -597,6 +606,58 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun hasLocationPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+    /** Maps card (geo lane): the process-scoped MapKit key + the Yandex Maps attribution links. */
+    private fun setupMapsCard() {
+        // The key is committed on the explicit Save button and, like the other
+        // free-text fields, on IME-done / focus loss so tapping away does not
+        // silently drop an edit. It is OPTIONAL and validated at use time (the
+        // geo lane reports a missing key honestly), so a blank value is stored
+        // as-is — deliberately no entry in [fieldLayouts].
+        mapKitApiKey.setOnEditorActionListener { _, action, _ ->
+            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                commitMapKitKey()
+                true
+            } else {
+                false
+            }
+        }
+        mapKitApiKey.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) commitMapKitKey()
+        }
+        findViewById<Button>(R.id.mapKitApiKeySaveButton).setOnClickListener {
+            commitMapKitKey()
+            Toast.makeText(this, R.string.maps_saved, Toast.LENGTH_SHORT).show()
+        }
+
+        findViewById<Button>(R.id.mapKitTermsButton).setOnClickListener {
+            openExternalUrl(MAPKIT_TERMS_URL)
+        }
+        findViewById<Button>(R.id.mapKitOpenMapsButton).setOnClickListener {
+            openExternalUrl(MAPKIT_MAPS_URL)
+        }
+    }
+
+    /** Persist the MapKit key to the vault slot the geo lane reads (blank = not configured). */
+    private fun commitMapKitKey() {
+        CredentialsStore.get().mapKitApiKey = mapKitApiKey.text.toString().trim()
+    }
+
+    /**
+     * Open an external URL, degrading honestly when nothing can handle it.
+     * startActivity is wrapped (the [com.jarvis.assistant.media.AndroidMediaGateway]
+     * precedent) rather than pre-checked with resolveActivity: on API 30+
+     * package visibility can hide a browser from resolveActivity while the
+     * start itself would still succeed, so a pre-check could show a false
+     * "no app" message on a device that has one.
+     */
+    private fun openExternalUrl(url: String) {
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+            .onFailure { error ->
+                Timber.w(error, "Settings: no activity for %s", url)
+                Toast.makeText(this, R.string.maps_link_unavailable, Toast.LENGTH_SHORT).show()
+            }
+    }
 
     /** AEC card: OFF / HARDWARE / SOFTWARE, opt-in (rebuilds AudioRecord on next start). */
     private fun setupAecCard() {
@@ -1133,6 +1194,9 @@ class SettingsActivity : AppCompatActivity() {
         gigaChatId.setText(CredentialsStore.get().gigaChatClientId)
         gigaChatSecret.setText(CredentialsStore.get().gigaChatClientSecret)
         yandexApiKey.setText(CredentialsStore.get().yandexApiKey)
+        // Maps card: same vault-backed load as the credentials above (the maps
+        // card's own setup only wires its input + attribution links).
+        mapKitApiKey.setText(CredentialsStore.get().mapKitApiKey)
 
         // A2) Upfront validation of the mandatory credential pairs. The
         // controller debounces typing, dedupes confirmed-Ok pairs and discards
@@ -1874,6 +1938,12 @@ class SettingsActivity : AppCompatActivity() {
         const val PPN_REQUEST = 1002
         const val SETTINGS_COLUMN_MAX_WIDTH_DP = 760
         const val CAPTURE_REQUEST = 1003
+
+        /** Yandex Maps legal terms, opened by the attribution block's link. */
+        const val MAPKIT_TERMS_URL = "https://yandex.ru/legal/maps_termsofuse"
+
+        /** Yandex Maps entry point, opened by the attribution block's action button. */
+        const val MAPKIT_MAPS_URL = "https://yandex.ru/maps"
 
         /**
          * Bounded wait for the graph bootstrap (~1 min worst case on

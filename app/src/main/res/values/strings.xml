@@ -232,6 +232,23 @@
     <string name="tool_weather_location_denied">Не удалось определить местоположение: нет доступа. Укажите город в настройках или разрешите доступ к местоположению.</string>
     <string name="tool_weather_location_unavailable">Не удалось определить местоположение. Укажите город в настройках.</string>
 
+    <!-- GEO lane (findPlace / getRoute): Yandex MapKit-backed map search + routing -->
+    <string name="tool_geo_no_key">Не настроен ключ Яндекс.Карт (MapKit). Укажите ключ в настройках Джарвиса, раздел «Карты».</string>
+    <string name="tool_geo_key_changed">Ключ Яндекс.Карт изменился. Полностью перезапустите приложение Джарвис — MapKit нельзя переключить на новый ключ без перезапуска.</string>
+    <string name="tool_geo_place_not_found">Не нашёл такое место. Уточните название и попробуйте снова.</string>
+    <string name="tool_geo_route_not_found">Не удалось построить маршрут. Проверьте начальную и конечную точки.</string>
+    <string name="tool_geo_service_failed">Сервис карт временно недоступен. Попробуйте позже.</string>
+
+    <!-- Maps settings card: MapKit key (process-scoped) + Yandex Maps attribution -->
+    <string name="maps_card_title">Карты</string>
+    <string name="maps_api_key_label">Ключ Яндекс.Карт (MapKit)</string>
+    <string name="maps_api_key_hint">Ключ MapKit Mobile SDK из кабинета разработчика Яндекс.Карт. Изменение ключа применится после полного перезапуска приложения — MapKit настраивается один раз за запуск. Без ключа поиск мест и маршруты недоступны.</string>
+    <string name="maps_saved">Ключ Яндекс.Карт сохранён</string>
+    <string name="maps_attribution">Данные карт предоставлены Яндекс.Картами.</string>
+    <string name="maps_terms_link">Условия использования Яндекс.Карт</string>
+    <string name="maps_open_maps">Открыть Яндекс.Карты</string>
+    <string name="maps_link_unavailable">Не удалось открыть ссылку: на устройстве нет подходящего приложения.</string>
+
     <!-- Device info -->
     <string name="device_time_format">HH:mm, d MMMM</string>
     <string name="device_battery_na">н/д</string>
@@ -293,6 +310,8 @@
     <string name="activity_tool_get_now_playing">Смотрю, что играет…</string>
     <string name="activity_tool_list_playlists">Смотрю плейлисты…</string>
     <string name="activity_tool_search_library">Ищу в фонотеке…</string>
+    <string name="activity_tool_find_place">Ищу место…</string>
+    <string name="activity_tool_get_route">Строю маршрут…</string>
     <string name="activity_tool_unknown">Выполняю команду…</string>
 
     <!-- Voice selection (Y6): live-appliable TTS voice from the Settings card -->

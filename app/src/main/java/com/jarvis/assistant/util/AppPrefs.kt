@@ -289,6 +289,15 @@ class AppPrefs(
         set(value) = vault.putString(SecretVault.KEY_YANDEX_API_KEY, value.trim())
 
     /**
+     * Yandex MapKit Mobile SDK key, routed to the Keystore vault like every
+     * other secret. NOT the same credential as [yandexApiKey] (SpeechKit / AI
+     * Studio): MapKit needs its own Maps API key, so it gets its own slot.
+     */
+    var mapKitApiKey: String
+        get() = vault.getString(SecretVault.KEY_MAPKIT_API_KEY) ?: ""
+        set(value) = vault.putString(SecretVault.KEY_MAPKIT_API_KEY, value.trim())
+
+    /**
      * Yandex TTS voice ID (e.g. `marina`). Read PER SENTENCE by the session
      * lane's voice source, so a change applies to the next spoken sentence
      * without a restart. Blank falls back to the config default.

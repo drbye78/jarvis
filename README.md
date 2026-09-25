@@ -85,7 +85,15 @@ Answers arbitrary questions and holds a conversation on any topic.
     is running. Custom Sherpa wake words are supported — the app extracts
     models, BPE-tokenizes keywords, and loads via `newFromFile`.
 6. Launch Jarvis and follow the onboarding screen.
-7. **Weather (optional).** Settings → «Погода» sets the default city for weather
+7. **Maps & routes (optional).** Settings → «Карты» takes a **Yandex MapKit
+   Mobile SDK key** — a different credential from the Yandex Cloud API key
+   (SpeechKit / AI Studio). Get it in the Yandex developer cabinet → **MapKit
+   Mobile SDK**; it is bound to the app's package/SHA, so a debug build and a
+   release build need their own key. It is stored in the Keystore like every
+   other secret and read live, but **changing it requires a FULL app-process
+   restart** — MapKit cannot be re-keyed inside a running process, and Стоп →
+   Запустить is not enough.
+8. **Weather (optional).** Settings → «Погода» sets the default city for weather
    questions; leave it empty to use the device location instead. A configured
    city always wins and needs no location access. To use auto-detect, tap
    **Allow location access** in that card — the permission dialog lives there
@@ -261,6 +269,13 @@ keystore with `keytool` and update `local.properties` accordingly.
   any city (Open-Meteo). Weather questions default to your location: a city
   set in Settings → «Погода» (always wins), otherwise auto-detected GPS. Follow-up
   questions work naturally («а завтра?», «а в Сочи?»).
+- **Maps & routes**: «Джарвис, найди аптеку рядом», «построй маршрут до
+  Шереметьева» — organization/address search and public-transport or walking
+  routes via **Yandex MapKit**. Transit answers include the line (bus/metro),
+  the vehicle type, transfer points and stop counts, and «а пешком?» /
+  «а на автобусе?» are follow-ups to the same route. No map is shown — Jarvis
+  speaks the answer. Needs a MapKit key in Settings → «Карты». (Device
+  verification is pending — see RUNBOOK.)
 - **Device control**: volume, brightness, Wi-Fi, Bluetooth, DND, screen off,
   open app, battery/time info.
 
@@ -276,6 +291,14 @@ SaluteSpeech, Yandex SpeechKit v3, GigaChat, Yandex AI Studio) are used under
 your own accounts and their respective terms. Wake-word and on-device ASR/TTS
 models run locally: Sherpa-ONNX (Apache-2.0) and Porcupine (Picovoice licence).
 
+Map and route data comes from **Yandex MapKit**, used under your own MapKit key
+and the [Yandex Maps terms](https://yandex.ru/legal/maps_termsofuse). Those
+terms require on-screen attribution (the logo, an "Open in Maps" button and a
+Terms link) that a screen-less voice assistant cannot render; Jarvis ships an
+in-app attribution block instead, which is a known limitation rather than
+compliance. The terms also cap free-tier use (1,000 unique users/day) and forbid
+storing results beyond 30 days.
+
 ## Docs
 - [ARCHITECTURE.md](ARCHITECTURE.md) — component and concurrency model.
 - [RUNBOOK.md](RUNBOOK.md) — troubleshooting, debugging, performance targets.
@@ -286,7 +309,9 @@ models run locally: Sherpa-ONNX (Apache-2.0) and Porcupine (Picovoice licence).
 - Sber SaluteSpeech **or** Yandex SpeechKit v3 (streaming ASR + TTS via gRPC)
 - Sber GigaChat (native v2) **or** Yandex AI Studio — both with built-in internet search —
   or any [OI]-compatible API (LLM via SSE, tool calling)
-- Room (conversation, alarms, memory/facts) · Open-Meteo (weather)
+- Room (conversation, alarms, memory/facts) · Open-Meteo (weather) · Yandex
+  MapKit (`com.yandex.android:maps.mobile:4.45.0-full`) — place search +
+  transit/walking routing (GMS excluded; see AGENTS.md)
 - Material 3 UI (teal/amber day+night design system): home screen with a
   live voice orb (breathing/ripple/thinking/speaking animations), chat-style
   transcript, permission onboarding with status rows and start gating,

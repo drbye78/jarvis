@@ -3,13 +3,15 @@ package com.jarvis.assistant.tools
 import android.content.Context
 import android.os.Build
 import com.jarvis.assistant.config.JarvisConfig
+import com.jarvis.assistant.geo.GeoToolClient
+import com.jarvis.assistant.location.AndroidLocationProvider
+import com.jarvis.assistant.location.DefaultLocationResolver
+import com.jarvis.assistant.location.LocationProvider
+import com.jarvis.assistant.location.LocationResolver
 import com.jarvis.assistant.media.AndroidMediaGateway
 import com.jarvis.assistant.media.MusicPlaybackOrchestrator
 import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.model.ToolDefinition
-import com.jarvis.assistant.tools.weather.AndroidLocationProvider
-import com.jarvis.assistant.tools.weather.DefaultWeatherLocationResolver
-import com.jarvis.assistant.tools.weather.LocationProvider
 import okhttp3.OkHttpClient
 
 /**
@@ -59,6 +61,13 @@ class FunctionRouter(
      */
     private val alarmScheduler: AndroidAlarmScheduler,
     /**
+     * GEO lane: the single geography capability (MapKit-backed). REQUIRED, with
+     * no silent null default — findPlace/getRoute must ALWAYS appear in the
+     * advertised surface. "No Maps key configured" is a runtime [GeoError], not
+     * a tool that silently vanishes from the LLM's view.
+     */
+    private val geoClient: GeoToolClient,
+    /**
      * Weather/GPS timing + Open-Meteo base URLs. Injected so the values stay in
      * the one config file rather than being hardcoded in the tool.
      */
@@ -75,6 +84,21 @@ class FunctionRouter(
     /** GMS-free: framework LocationManager only (see AndroidLocationProvider). */
     private val weatherLocationProvider: LocationProvider =
         locationProvider ?: AndroidLocationProvider(appContext)
+
+    /**
+     * ONE shared default-location policy for weather AND geo: configured city
+     * wins (read LIVE, so a Settings change applies to the next turn), else a
+     * bounded GPS fix, else an honest typed failure each tool interprets for
+     * its own situation (weather speaks it; a place search degrades to an
+     * unconstrained query; a route treats it as fatal).
+     */
+    private val locationResolver: LocationResolver = DefaultLocationResolver(
+        configuredLocation = { appPrefs.weatherLocation },
+        provider = weatherLocationProvider,
+        coordsLabel = { appContext.getString(com.jarvis.assistant.R.string.weather_location_current) },
+        maxAgeMs = config.weatherLastKnownMaxAgeMs,
+        timeoutMs = config.weatherGpsFixTimeoutMs,
+    )
 
     // Preferred default music player from Settings («Музыка» card): a package
     // name, or null for "auto" (Яндекс Музыка first). Read lazily on every
@@ -120,18 +144,25 @@ class FunctionRouter(
                 // Configured city wins (read LIVE, so a Settings change applies
                 // to the next turn); else a bounded GPS fix; else an honest
                 // typed failure the tool turns into a spoken hint.
-                resolver = DefaultWeatherLocationResolver(
-                    configuredLocation = { appPrefs.weatherLocation },
-                    provider = weatherLocationProvider,
-                    coordsLabel = { appContext.getString(com.jarvis.assistant.R.string.weather_location_current) },
-                    maxAgeMs = config.weatherLastKnownMaxAgeMs,
-                    timeoutMs = config.weatherGpsFixTimeoutMs,
-                ),
+                resolver = locationResolver,
                 // Locale-aware phrases via the SAME ToolStrings seam every other
                 // tool uses (ToolStrings extends WeatherToolMessages).
                 messages = toolStrings,
                 // GPS + geocode + forecast can exceed the 15 s registry default.
                 budgetMs = config.weatherToolTimeoutMs,
+            ),
+            GeoPlaceTool(
+                client = geoClient,
+                // Same resolver instance as weather — one location policy.
+                resolver = locationResolver,
+                messages = toolStrings,
+                budgetMs = config.geoSearchTimeoutMs,
+            ),
+            GeoRouteTool(
+                client = geoClient,
+                resolver = locationResolver,
+                messages = toolStrings,
+                budgetMs = config.geoRouteTimeoutMs,
             ),
         ) + DeviceTools(appContext, toolStrings).all() +
             MusicTools(

@@ -54,17 +54,17 @@ class FunctionRouterTest {
 
     private class NoopWeather : WeatherClient {
         override suspend fun getWeather(
-            query: com.jarvis.assistant.tools.weather.WeatherQuery,
+            query: com.jarvis.assistant.tools.WeatherQuery,
         ): String = "{}"
     }
 
     /**
      * Resolver that never resolves — these tests pass an EXPLICIT location, so
      * the default-location path is not exercised here (it is covered by
-     * `WeatherClientTest` and `WeatherLocationResolverTest`).
+     * `WeatherClientTest` and `DefaultLocationResolverTest`).
      */
-    private val probeResolver = object : com.jarvis.assistant.tools.weather.WeatherLocationResolver {
-        override suspend fun resolve() = com.jarvis.assistant.tools.weather.LocationOutcome.Unavailable
+    private val probeResolver = object : com.jarvis.assistant.location.LocationResolver {
+        override suspend fun resolve() = com.jarvis.assistant.location.LocationOutcome.Unavailable
     }
 
     /**
@@ -74,8 +74,9 @@ class FunctionRouterTest {
      * and compile-verified by the router gate.
      */
     private val expectedSurface = listOf(
-        // Alarm/weather lane (FunctionRouter's explicit list)
+        // Alarm/weather/geo lane (FunctionRouter's explicit list)
         "setAlarm", "cancelAlarm", "listAlarms", "setTimer", "cancelTimer", "getWeather",
+        "findPlace", "getRoute",
         // DeviceTools(appContext).all()
         "setVolume", "setBrightness", "setWifi", "setBluetooth", "setDnd", "lockScreen",
         "openApp", "getDeviceInfo",
@@ -85,7 +86,7 @@ class FunctionRouterTest {
 
     @Test
     fun `advertised tool surface is complete and has no duplicates`() {
-        assertEquals(19, expectedSurface.size)
+        assertEquals(21, expectedSurface.size)
         assertEquals(
             "duplicate tool names would silently shadow each other in the registry",
             expectedSurface.size,

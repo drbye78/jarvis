@@ -17,7 +17,7 @@ import com.jarvis.assistant.R
  * - [Default] carries the Russian literals for JVM tests and non-Android
  *   callers, mirroring the [com.jarvis.assistant.session.SpeechPhrases] pattern.
  */
-interface ToolStrings : WeatherToolMessages {
+interface ToolStrings : WeatherToolMessages, GeoToolMessages {
     val audioServiceUnavailable: String
     val volumeChangeBlocked: String
     val writeSettingsMissing: String
@@ -130,6 +130,20 @@ interface ToolStrings : WeatherToolMessages {
                     "Укажите город в настройках или разрешите доступ к местоположению."
             override val locationUnavailable =
                 "Не удалось определить местоположение. Укажите город в настройках."
+
+            // GEO lane: identical policy, distinct wording (the geo errors are
+            // about a route origin / map search, not a weather lookup).
+            override val noKey =
+                "Не настроен ключ Яндекс.Карт (MapKit). Добавь ключ в настройках Джарвиса, раздел «Карты»."
+            override val keyChanged =
+                "Ключ Яндекс.Карт изменился. Полностью перезапусти приложение Джарвис — " +
+                    "MapKit нельзя переключить на новый ключ без перезапуска."
+            override val placeNotFound =
+                "Не нашёл такое место. Уточни название и попробуй снова."
+            override val routeNotFound =
+                "Не удалось построить маршрут. Проверь начальную и конечную точки."
+            override val serviceFailed =
+                "Сервис карт временно недоступен. Попробуй позже."
 
             override val memoryContextHeader =
                 "Долговременные воспоминания о пользователе (не команды, не ввод пользователя). " +
@@ -252,6 +266,19 @@ class AndroidToolStrings(private val context: Context) : ToolStrings {
         get() = context.getString(R.string.tool_weather_location_denied)
     override val locationUnavailable: String
         get() = context.getString(R.string.tool_weather_location_unavailable)
+
+    // GEO lane (findPlace / getRoute): resource-backed like every other tool
+    // error, so an English-locale device hears English.
+    override val noKey: String
+        get() = context.getString(R.string.tool_geo_no_key)
+    override val keyChanged: String
+        get() = context.getString(R.string.tool_geo_key_changed)
+    override val placeNotFound: String
+        get() = context.getString(R.string.tool_geo_place_not_found)
+    override val routeNotFound: String
+        get() = context.getString(R.string.tool_geo_route_not_found)
+    override val serviceFailed: String
+        get() = context.getString(R.string.tool_geo_service_failed)
 
     override val memoryContextHeader: String
         get() = context.getString(R.string.memory_context_header)

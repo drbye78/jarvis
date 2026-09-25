@@ -51,6 +51,15 @@ interface SecretVault {
          * `GET /v1/models`).
          */
         const val KEY_YANDEX_API_KEY = "yandex_api_key"
+
+        /**
+         * Yandex MapKit Mobile SDK key (UUID shape), sent by the SDK as the
+         * `X-YMapKit-Api-Key` header. This is NOT [KEY_YANDEX_API_KEY]: that
+         * one is a Cloud service-account API key for SpeechKit / AI Studio,
+         * while MapKit needs a separate Maps API key. The two are not
+         * interchangeable, so they must never share a slot.
+         */
+        const val KEY_MAPKIT_API_KEY = "mapkit_api_key"
         const val KEY_GIGACHAT_TOKEN = "gigachat_token"
         const val KEY_GIGACHAT_EXPIRY = "gigachat_token_expiry"
         const val KEY_SALUTE_TOKEN = "salute_token"

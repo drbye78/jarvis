@@ -50,6 +50,15 @@ class CredentialsStore(private val vault: SecretVault) {
         set(v) { vault.putString(SecretVault.KEY_YANDEX_API_KEY, v.trim()) }
 
     /**
+     * Yandex MapKit Mobile SDK key. A DIFFERENT credential from
+     * [yandexApiKey]: MapKit needs a Maps API key, not a Cloud
+     * service-account key, so neither can be substituted for the other.
+     */
+    var mapKitApiKey: String
+        get() = vault.getString(SecretVault.KEY_MAPKIT_API_KEY) ?: ""
+        set(v) { vault.putString(SecretVault.KEY_MAPKIT_API_KEY, v.trim()) }
+
+    /**
      * The MANDATORY keys: SaluteSpeech (ASR+TTS) and GigaChat (LLM).
      *
      * Audit #16: the old `hasRequiredSber()` also demanded the Picovoice key,

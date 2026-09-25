@@ -1,13 +1,13 @@
 package com.jarvis.assistant
 
+import com.jarvis.assistant.location.LocationOutcome
+import com.jarvis.assistant.location.LocationResolver
+import com.jarvis.assistant.location.ResolvedLocation
 import com.jarvis.assistant.tools.OpenMeteoWeatherClient
 import com.jarvis.assistant.tools.WeatherClient
+import com.jarvis.assistant.tools.WeatherQuery
 import com.jarvis.assistant.tools.WeatherTool
 import com.jarvis.assistant.tools.WeatherToolMessages
-import com.jarvis.assistant.tools.weather.LocationOutcome
-import com.jarvis.assistant.tools.weather.WeatherLocation
-import com.jarvis.assistant.tools.weather.WeatherLocationResolver
-import com.jarvis.assistant.tools.weather.WeatherQuery
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -27,8 +27,8 @@ import org.junit.Test
  * FIXPLAN A6: locale-aware geocoding + exact-name disambiguation +
  * injected not-available placeholder.
  *
- * FORECAST lane: a [WeatherLocation.Place] is geocoded then forecast at those
- * coordinates; a [WeatherLocation.Coords] request skips geocoding entirely.
+ * FORECAST lane: a [ResolvedLocation.Place] is geocoded then forecast at those
+ * coordinates; a [ResolvedLocation.Coords] request skips geocoding entirely.
  * `daily` is column-oriented and MUST be paired by index, and the request MUST
  * pin `timezone=auto` (Open-Meteo otherwise shifts day boundaries to GMT).
  *
@@ -79,7 +79,7 @@ class WeatherClientTest {
         forecastBaseUrl = server.url("/").toString().trimEnd('/'),
     )
 
-    private fun query(location: WeatherLocation, days: Int) = WeatherQuery(location, days)
+    private fun query(location: ResolvedLocation, days: Int) = WeatherQuery(location, days)
 
     private fun enqueueGeoWithTwoCities() {
         // Two candidates: the exact requested name is SECOND (the old
@@ -103,7 +103,7 @@ class WeatherClientTest {
     @Test
     fun `exact-name candidate wins over the raw first hit`() = runBlocking {
         enqueueGeoWithTwoCities()
-        val out = client().getWeather(query(WeatherLocation.Place("Москва"), 3))
+        val out = client().getWeather(query(ResolvedLocation.Place("Москва"), 3))
 
         // Request order: geocoding, then the forecast for the SECOND
         // candidate's coords (the exact-name match).
@@ -118,7 +118,7 @@ class WeatherClientTest {
     fun `geocoding url carries the injected language and count of 5`() {
         runBlocking {
             enqueueGeoWithTwoCities()
-            client(language = "en").getWeather(query(WeatherLocation.Place("Москва"), 1))
+            client(language = "en").getWeather(query(ResolvedLocation.Place("Москва"), 1))
             val geo = server.takeRequest()
             assertTrue(geo.path!!.contains("count=5"))
             assertTrue(geo.path!!.contains("language=en"))
@@ -139,7 +139,7 @@ class WeatherClientTest {
                 """{"current":{"weather_code":"0"}}""", // no temp/feels/wind
             ),
         )
-        val out = client(language = "en").getWeather(query(WeatherLocation.Place("Berlin"), 1))
+        val out = client(language = "en").getWeather(query(ResolvedLocation.Place("Berlin"), 1))
         assertFalse(out.contains("н/д"))
         assertTrue(out.contains("N/A"))
     }
@@ -151,7 +151,7 @@ class WeatherClientTest {
     @Test
     fun `daily request pins timezone=auto and the requested day count`() = runBlocking {
         enqueueGeoWithTwoCities()
-        client().getWeather(query(WeatherLocation.Place("Москва"), 3))
+        client().getWeather(query(ResolvedLocation.Place("Москва"), 3))
 
         server.takeRequest() // geocoding
         val forecast = server.takeRequest()
@@ -166,7 +166,7 @@ class WeatherClientTest {
     fun `coords skip geocoding and use the label without a country`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(200).setBody(FORECAST_WITH_DAILY))
         val out = client().getWeather(
-            query(WeatherLocation.Coords(43.59699, 39.72477, "текущее местоположение"), 2),
+            query(ResolvedLocation.Coords(43.59699, 39.72477, "текущее местоположение"), 2),
         )
 
         assertEquals("exactly one request: the forecast", 1, server.requestCount)
@@ -181,7 +181,7 @@ class WeatherClientTest {
     @Test
     fun `place geocodes before forecasting`() = runBlocking {
         enqueueGeoWithTwoCities()
-        client().getWeather(query(WeatherLocation.Place("Москва"), 1))
+        client().getWeather(query(ResolvedLocation.Place("Москва"), 1))
 
         assertEquals("geocoding + forecast", 2, server.requestCount)
         assertTrue(server.takeRequest().path!!.contains("/v1/search"))
@@ -191,7 +191,7 @@ class WeatherClientTest {
     fun `daily columns stay paired when one column has a gap`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(200).setBody(DOCUMENTED_GAPPED_DAILY))
 
-        val out = defaultClient().getWeather(query(WeatherLocation.Coords(1.0, 2.0, "lbl"), 3))
+        val out = defaultClient().getWeather(query(ResolvedLocation.Coords(1.0, 2.0, "lbl"), 3))
         val daily = Json.parseToJsonElement(out).jsonObject["daily"]!!.jsonArray
         assertEquals("three dated days survive a short column", 3, daily.size)
         fun row(i: Int) = daily[i].jsonObject
@@ -220,11 +220,11 @@ class WeatherClientTest {
     fun `weekday names follow the language locale`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(200).setBody(FORECAST_WITH_DAILY))
         val en = defaultClient(language = "en")
-            .getWeather(query(WeatherLocation.Coords(1.0, 2.0, "lbl"), 3))
+            .getWeather(query(ResolvedLocation.Coords(1.0, 2.0, "lbl"), 3))
 
         server.enqueue(MockResponse().setResponseCode(200).setBody(FORECAST_WITH_DAILY))
         val ru = defaultClient(language = "ru")
-            .getWeather(query(WeatherLocation.Coords(1.0, 2.0, "lbl"), 3))
+            .getWeather(query(ResolvedLocation.Coords(1.0, 2.0, "lbl"), 3))
 
         fun weekday(raw: String) =
             Json.parseToJsonElement(raw).jsonObject["daily"]!!.jsonArray[0]
@@ -238,7 +238,7 @@ class WeatherClientTest {
     fun `geocoding not-found returns a structured error without crashing`() = runBlocking {
         // Open-Meteo returns HTTP 200 with NO `results` key for a miss.
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"generationtime_ms":0.11}"""))
-        val out = client(language = "en").getWeather(query(WeatherLocation.Place("Атлантида"), 1))
+        val out = client(language = "en").getWeather(query(ResolvedLocation.Place("Атлантида"), 1))
 
         assertTrue(out.contains("\"error\""))
         assertTrue(out.contains("Location not found"))
@@ -248,7 +248,7 @@ class WeatherClientTest {
     @Test
     fun `days are clamped to the 1-7 window`() = runBlocking {
         enqueueGeoWithTwoCities()
-        client().getWeather(query(WeatherLocation.Place("Москва"), 99))
+        client().getWeather(query(ResolvedLocation.Place("Москва"), 99))
 
         server.takeRequest() // geocoding
         assertTrue(server.takeRequest().path!!.contains("forecast_days=7"))
@@ -257,7 +257,7 @@ class WeatherClientTest {
     @Test
     fun `a non-positive day count falls back to the configured default`() = runBlocking {
         enqueueGeoWithTwoCities()
-        client(forecastDays = 5).getWeather(query(WeatherLocation.Place("Москва"), 0))
+        client(forecastDays = 5).getWeather(query(ResolvedLocation.Place("Москва"), 0))
 
         server.takeRequest() // geocoding
         assertTrue(server.takeRequest().path!!.contains("forecast_days=5"))
@@ -266,7 +266,7 @@ class WeatherClientTest {
     @Test
     fun `wmo 97 maps to the hail thunderstorm group not the else bucket`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"current":{"weather_code":"97"}}"""))
-        val out = defaultClient().getWeather(query(WeatherLocation.Coords(1.0, 2.0, "lbl"), 1))
+        val out = defaultClient().getWeather(query(ResolvedLocation.Coords(1.0, 2.0, "lbl"), 1))
 
         assertTrue("97 must map to «гроза с градом», got $out", out.contains("гроза с градом"))
         assertFalse("97 must not fall through to the else bucket", out.contains("\"condition\":\"облачно\""))
@@ -284,7 +284,7 @@ class WeatherClientTest {
         }
     }
 
-    private class FixedResolver(private val outcome: LocationOutcome) : WeatherLocationResolver {
+    private class FixedResolver(private val outcome: LocationOutcome) : LocationResolver {
         override suspend fun resolve(): LocationOutcome = outcome
     }
 
@@ -310,13 +310,13 @@ class WeatherClientTest {
         val client = CapturingWeatherClient()
         val tool = WeatherTool(
             client,
-            FixedResolver(LocationOutcome.Resolved(WeatherLocation.Place("Казань"))),
+            FixedResolver(LocationOutcome.Resolved(ResolvedLocation.Place("Казань"))),
             messages,
         )
         val out = tool.execute("""{"days":3}""")
 
         assertFalse("no «Missing required parameter» path anymore", out.contains("\"error\""))
-        assertEquals(WeatherLocation.Place("Казань"), client.lastQuery!!.location)
+        assertEquals(ResolvedLocation.Place("Казань"), client.lastQuery!!.location)
         assertEquals(3, client.lastQuery!!.days)
     }
 
@@ -326,7 +326,7 @@ class WeatherClientTest {
         val tool = WeatherTool(client, FixedResolver(LocationOutcome.PermissionDenied), messages)
         tool.execute("""{"location":"Сочи"}""")
 
-        assertEquals(WeatherLocation.Place("Сочи"), client.lastQuery!!.location)
+        assertEquals(ResolvedLocation.Place("Сочи"), client.lastQuery!!.location)
     }
 
     @Test

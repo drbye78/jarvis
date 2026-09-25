@@ -36,6 +36,14 @@ object ArgFingerprints {
             "getWeather" -> args?.stringArg("location")?.let { "location:${normalize(it)}" }
             "setVolume" -> args?.intArg("level")?.let { "level:${bucket(it)}" }
             "controlPlayback" -> args?.stringArg("action")?.let { "action:${normalize(it)}" }
+            // GEO lane: fingerprint only the NON-private slots. An address or a
+            // place name is user content and must never reach command_events;
+            // the travel mode and the search query are the clustering keys. The
+            // query IS fingerprinted because a place search mirrors playMusic's
+            // "q:" rule (the same slot, the same clustering need) — origin/
+            // destination/near are deliberately NOT fingerprinted.
+            "getRoute" -> args?.stringArg("mode")?.let { "mode:${normalize(it)}" }
+            "findPlace" -> args?.stringArg("query")?.let { "q:${normalize(it)}" }
             else -> null
         }
         if (value != null) return value.take(MAX_FINGERPRINT)

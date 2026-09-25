@@ -50,6 +50,32 @@ class ArgFingerprintsTest {
     }
 
     @Test
+    fun `geo route fingerprints only the travel mode`() {
+        assertEquals("mode:transit", ArgFingerprints.of("getRoute", """{"mode":"transit"}"""))
+        assertEquals("mode:walking", ArgFingerprints.of("getRoute", """{"mode":"Walking"}"""))
+    }
+
+    @Test
+    fun `geo fingerprints never contain the origin destination or near`() {
+        // Addresses are user content: only the mode/query slots may reach
+        // command_events, never the endpoint strings themselves.
+        val route = ArgFingerprints.of(
+            "getRoute",
+            """{"destination":"Тверская 1","origin":"Ленинградский проспект 5","mode":"transit"}""",
+        )
+        assertEquals("mode:transit", route)
+        assertFalse(route.contains("тверск"))
+        assertFalse(route.contains("ленинградск"))
+
+        val place = ArgFingerprints.of(
+            "findPlace",
+            """{"query":"аптека","near":"Москва"}""",
+        )
+        assertEquals("q:аптека", place)
+        assertFalse(place.contains("москв"))
+    }
+
+    @Test
     fun `unknown tools get a stable sorted projection`() {
         val a = ArgFingerprints.of("someTool", """{"b":"2","a":"1"}""")
         val b = ArgFingerprints.of("someTool", """{"a":"1","b":"2"}""")

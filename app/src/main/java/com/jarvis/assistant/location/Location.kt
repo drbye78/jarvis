@@ -1,28 +1,7 @@
-package com.jarvis.assistant.tools.weather
+package com.jarvis.assistant.location
 
 import kotlinx.coroutines.CancellationException
 import timber.log.Timber
-
-/**
- * Where a weather query points. Either an explicit/configured place name (which
- * the Open-Meteo client geocodes) or raw coordinates from the device GPS.
- *
- * [Coords.label] is what the assistant may SAY for a position it cannot name:
- * Open-Meteo has no reverse geocoding and we deliberately add no third-party
- * egress, so a GPS fix is reported as «текущее местоположение» rather than a
- * city (see ARCHITECTURE.md, privacy/egress notes).
- */
-sealed interface WeatherLocation {
-    data class Place(val name: String) : WeatherLocation
-    data class Coords(
-        val latitude: Double,
-        val longitude: Double,
-        val label: String,
-    ) : WeatherLocation
-}
-
-/** A resolved weather request: where + how many forecast days (1..7). */
-data class WeatherQuery(val location: WeatherLocation, val days: Int)
 
 /** A device position. [ageMs] is how stale the fix is; [source] is e.g. "gps". */
 data class LocationFix(
@@ -49,9 +28,28 @@ interface LocationProvider {
     suspend fun getFix(maxAgeMs: Long, timeoutMs: Long): LocationFix?
 }
 
+/**
+ * Where a resolved request points. Either an explicit/configured place name
+ * (which a consumer resolves further — e.g. the weather client geocodes it) or
+ * raw coordinates from the device GPS.
+ *
+ * [Coords.label] is what the assistant may SAY for a position it cannot name:
+ * Open-Meteo has no reverse geocoding and we deliberately add no third-party
+ * egress, so a GPS fix is reported as «текущее местоположение» rather than a
+ * city (see ARCHITECTURE.md, privacy/egress notes).
+ */
+sealed interface ResolvedLocation {
+    data class Place(val name: String) : ResolvedLocation
+    data class Coords(
+        val latitude: Double,
+        val longitude: Double,
+        val label: String,
+    ) : ResolvedLocation
+}
+
 /** Outcome of resolving the default location — explicit, never an exception. */
 sealed interface LocationOutcome {
-    data class Resolved(val location: WeatherLocation) : LocationOutcome
+    data class Resolved(val location: ResolvedLocation) : LocationOutcome
 
     /** No configured location and the user has not granted location access. */
     data object PermissionDenied : LocationOutcome
@@ -61,7 +59,7 @@ sealed interface LocationOutcome {
 }
 
 /** Resolves the location used when the model omits an explicit one. */
-interface WeatherLocationResolver {
+interface LocationResolver {
     suspend fun resolve(): LocationOutcome
 }
 
@@ -75,7 +73,7 @@ interface WeatherLocationResolver {
  * WiFi-only, so `NETWORK_PROVIDER` frequently yields nothing and GPS hardware
  * may be absent — the configured location is the realistic primary path.
  */
-class DefaultWeatherLocationResolver(
+class DefaultLocationResolver(
     /** Live read of the Settings value; blank ⇒ auto-detect. */
     private val configuredLocation: () -> String,
     private val provider: LocationProvider,
@@ -83,11 +81,11 @@ class DefaultWeatherLocationResolver(
     private val coordsLabel: () -> String,
     private val maxAgeMs: Long,
     private val timeoutMs: Long,
-) : WeatherLocationResolver {
+) : LocationResolver {
 
     override suspend fun resolve(): LocationOutcome {
         val configured = configuredLocation().trim()
-        if (configured.isNotEmpty()) return LocationOutcome.Resolved(WeatherLocation.Place(configured))
+        if (configured.isNotEmpty()) return LocationOutcome.Resolved(ResolvedLocation.Place(configured))
 
         if (!provider.hasPermission()) return LocationOutcome.PermissionDenied
 
@@ -98,12 +96,12 @@ class DefaultWeatherLocationResolver(
         } catch (e: Exception) {
             // An unavailable/broken provider is "no fix", not a crash — but log
             // it so a silently-degrading location lane is diagnosable.
-            Timber.w(e, "Weather location provider failed; treating as no fix")
+            Timber.w(e, "Location provider failed; treating as no fix")
             null
         } ?: return LocationOutcome.Unavailable
 
         return LocationOutcome.Resolved(
-            WeatherLocation.Coords(fix.latitude, fix.longitude, coordsLabel()),
+            ResolvedLocation.Coords(fix.latitude, fix.longitude, coordsLabel()),
         )
     }
 }

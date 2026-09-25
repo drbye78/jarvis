@@ -155,6 +155,30 @@ always wins; if that is empty, the device location is used.
   rows. A follow-up like «а завтра?» is answered from the previous result — no
   second call, so it is instant.
 
+### «Найди аптеку» / «Построй маршрут» — не находит или отвечает ошибкой
+The geo tools are backed by **Yandex MapKit** (not the Yandex Cloud key) and
+none of this path is device-verified yet — see the MapKit smoke checklist below.
+First checks:
+
+- **No key:** Jarvis says «Не настроен ключ Яндекс.Карт (MapKit)…». Add a
+  **MapKit Mobile SDK key** in Settings → «Карты» (Yandex developer cabinet →
+  MapKit Mobile SDK). The SpeechKit/AI Studio key does NOT work here — MapKit
+  has its own key, and it is bound to the app's package/SHA (a debug build and a
+  release build need their own).
+- **Key changed / “key already set”:** MapKit allows `setApiKey` only ONCE per
+  process, so a changed key answers «Ключ Яндекс.Карт изменился…». Стоп →
+  Запустить is NOT enough — fully kill and relaunch the app process.
+- **No location for a route:** «Построй маршрут» needs an origin. With no
+  configured city and no location permission/fix the tool answers honestly
+  («Укажи город в настройках»). Set a city or grant location access; the
+  configured city needs no GPS and is the reliable path on the GMS-free,
+  WiFi-only tablet. (`findPlace` is lenient — a query that names its own place,
+  e.g. «аптека в Москве», is searched even without a default location.)
+- **Transit answer has no line names:** check `adb logcat | grep -iE
+  "MapKit|UnsatisfiedLink"` — a native/library failure surfaces there. Line
+  names (bus/metro) come from the SDK's masstransit data; an answer without
+  them means the mapper never read the SDK.
+
 ### "Модель иногда подвисает / ошибка сети, но со второй попытки отвечает"
 That is the built-in transient-failure retry doing its job: a failed LLM pass
 that produced **zero output** is retried once automatically (connection
@@ -640,8 +664,92 @@ vector-build wall time per 100 facts and the gather-latency delta with a
 populated `fact_vectors` table — measure on the MatePad and record in the
 CHANGELOG Phase 3 performance block.
 
+## Geography (MapKit) — on-device smoke checklist
+
+**Honest status: the geo lane is implemented and unit-tested, but NONE of the
+device items below has been run yet.** Treat this as REQUIRED before the
+capability is considered shipped. The JVM suite cannot cover it: MapKit 4.45.0
+ships Java 21 bytecode while the toolchain is Java 17, so no MapKit class can be
+loaded in a unit test (`UnsupportedClassVersionError`) and the SDK bindings are
+smoke-only.
+
+Prereqs: a **MapKit Mobile SDK key** in Settings → «Карты» (Yandex developer
+cabinet → MapKit Mobile SDK); the Yandex Cloud key does NOT work here. MapKit
+keys are bound to the app's package/SHA, so a debug build and a release build
+need separate keys. To watch the lane:
+
+```bash
+adb logcat -c
+adb logcat | grep -iE "MapKit|maps-mobile|UnsatisfiedLink|Geo|dalvikvm"
+```
+
+1. **Native `.so` load (no `UnsatisfiedLinkError`).** Trigger one `findPlace`.
+   Expected: no `UnsatisfiedLinkError`, no native abort, the service stays
+   alive, and `libmaps-mobile.so` is in the loaded list.
+2. **Headless init from the Service (no `MapView`).** MapKit is normally
+   initialized by an app that then shows a `MapView`; this app is screen-less
+   and calls only `setLocale` → `setApiKey` → `initialize`. This path is
+   **undocumented upstream** and must be confirmed: a search and a route must
+   both work from the foreground service with no Activity/MapView ever created.
+3. **`onStart()` / `onStop()` lifecycle.** MapKit's documented lifecycle pairs
+   `MapKitFactory.getInstance().onStart()` with `onStop()` around map display.
+   This app never renders a map and never calls `onStart()` (the bridge exposes
+   it but nothing invokes it). Confirm search/routing work without it; if a
+   future change adds `onStart()`, it MUST NOT be called without a matching
+   `onStop()`.
+4. **Play Integrity / attestation on a GMS-less device.** The target
+   (Huawei/HarmonyOS) has no Play Services, and the dependency EXCLUDES
+   `com.google.android.play:integrity`. Confirm the backend does not require
+   attestation — the residual risk is `requestAttestKey()` failing if it ever
+   does.
+5. **Set-once key across a SERVICE restart.** Start, run a search (key applied),
+   then Стоп → Запустить (same process, graph rebuilt). Search must still work
+   and logcat must NOT say «API key is already set».
+6. **`KeyChanged` path (full APP restart applies the new key).** Change the key
+   in Settings: the next geo call must answer the «restart the app» message
+   (`GeoError.KEY_CHANGED`), NOT crash. Kill the app process fully and relaunch —
+   the new key must now be live.
+7. **Live organization search.** «Джарвис, найди аптеку рядом» → a real
+   organization/address with coordinates.
+8. **Live transit route with line names/transfers.** «Джарвис, построй маршрут
+   до <место> на транспорте» → duration, transfers, arrival and leg-by-leg line
+   names (bus/metro), vehicle type, stop count. This is the whole reason for
+   MapKit — an answer without line names means the mapper is not reading the
+   SDK.
+9. **Walking route.** «а пешком?» → a walking route (pedestrian router), no
+   transit legs.
+10. **Release build + R8.** `./gradlew :app:assembleRelease` must succeed and
+    the release APK must run search/routing — the `-dontwarn` rules cover the
+    two excluded GMS artifacts; a release-only `NoClassDefFoundError` means the
+    exclusions/ProGuard rules drifted.
+11. **APK size / ABI check.** If you change ABIs or the MapKit version:
+    ```bash
+    unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -E "lib/.+maps-mobile.so"
+    unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -E "lib/(arm64-v8a|x86_64|armeabi-v7a|x86)/"
+    ```
+    Expected: `libmaps-mobile.so` only under `arm64-v8a` + `x86_64`; debug APK
+    ≈182 MB (was ≈164 MB before MapKit; arm64 `.so` 36,094,376 B, x86_64
+    39,290,992 B).
+
 ## Known limitations
 
+- **Yandex Maps attribution is voice-only — a known legal risk the owner
+  accepted (NOT compliance).** The Yandex Maps terms require the "Open in Maps"
+  button, a Terms link, the copyright notice and the logo **on the map/screen**;
+  a screen-less voice assistant cannot render any of them. The shipped
+  mitigation is a Settings attribution block (a Yandex Maps data notice, a Terms
+  link to `https://yandex.ru/legal/maps_termsofuse`, and an "open in Yandex
+  Maps" action to `https://yandex.ru/maps`). Note also the terms' caching limit
+  (results must not be stored beyond 30 days) and the free-tier cap (1,000
+  unique users/day).
+- **MapKit key validity is not yet proven on device.** The Maps key is stored in
+  the vault (`SecretVault.KEY_MAPKIT_API_KEY`) and read live, but no real key
+  has been exercised end-to-end: the key format, the per-app (package/SHA)
+  binding and the debug-vs-release key difference are all pending the smoke
+  checklist above.
+- **The geo lane's on-device behavior is unverified.** Native `.so` load,
+  headless init from the Service (no `MapView`), live search/routing and the
+  Play Integrity path are all pending; see the MapKit smoke checklist above.
 - **Voice stop on-device validation (FIXPLAN B).** The stop phrase (`▁ST O P`)
   is BPE-canonical for the bundled model, but its false-accept/false-reject
   behavior at speaker volume is a hardware question. Ladder: (1) wake word,

@@ -234,6 +234,23 @@
     <string name="tool_weather_location_denied">Could not determine your location: access is not granted. Set a city in Settings or allow location access.</string>
     <string name="tool_weather_location_unavailable">Could not determine your location. Set a city in Settings.</string>
 
+    <!-- GEO lane (findPlace / getRoute): Yandex MapKit-backed map search + routing -->
+    <string name="tool_geo_no_key">No Yandex Maps (MapKit) key is configured. Add the key in Jarvis Settings, section “Maps”.</string>
+    <string name="tool_geo_key_changed">The Yandex Maps key has changed. Fully restart the Jarvis app — MapKit cannot switch to a new key without a restart.</string>
+    <string name="tool_geo_place_not_found">I could not find that place. Refine the name and try again.</string>
+    <string name="tool_geo_route_not_found">I could not build a route. Check the start and destination.</string>
+    <string name="tool_geo_service_failed">The map service is temporarily unavailable. Try again later.</string>
+
+    <!-- Maps settings card: MapKit key (process-scoped) + Yandex Maps attribution -->
+    <string name="maps_card_title">Maps</string>
+    <string name="maps_api_key_label">Yandex Maps (MapKit) key</string>
+    <string name="maps_api_key_hint">A MapKit Mobile SDK key from the Yandex Maps developer cabinet. A changed key applies only after a full app restart — MapKit is set up once per launch. Without a key, place search and routes are unavailable.</string>
+    <string name="maps_saved">Yandex Maps key saved</string>
+    <string name="maps_attribution">Map data is provided by Yandex Maps.</string>
+    <string name="maps_terms_link">Yandex Maps Terms of Use</string>
+    <string name="maps_open_maps">Open Yandex Maps</string>
+    <string name="maps_link_unavailable">Could not open the link: no app on the device can handle it.</string>
+
     <!-- Device info -->
     <string name="device_time_format">HH:mm, d MMMM</string>
     <string name="device_battery_na">n/a</string>
@@ -294,6 +311,8 @@
     <string name="activity_tool_get_now_playing">Checking what\'s playing…</string>
     <string name="activity_tool_list_playlists">Browsing playlists…</string>
     <string name="activity_tool_search_library">Searching the library…</string>
+    <string name="activity_tool_find_place">Finding a place…</string>
+    <string name="activity_tool_get_route">Building a route…</string>
     <string name="activity_tool_unknown">Working on it…</string>
 
     <!-- Voice selection (Y6): live-appliable TTS voice from the Settings card -->

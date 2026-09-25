@@ -16,6 +16,7 @@ class TurnActivityLabelsTest {
         "getWeather", "getDeviceInfo", "setBrightness", "setVolume", "setWifi",
         "setBluetooth", "setDnd", "lockScreen", "openApp", "playMusic",
         "controlPlayback", "getNowPlaying", "listPlaylists", "searchLibrary",
+        "findPlace", "getRoute",
     )
 
     @Test

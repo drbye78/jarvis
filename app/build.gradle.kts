@@ -35,7 +35,11 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
-        ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
+        // ABI trim (owner decision): arm64-v8a = the target Huawei tablet,
+        // x86_64 = the nightly gradle-managed emulator, so
+        // `connectedDebugAndroidTest` keeps working. The 32-bit ABIs ship no
+        // device we support.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     // Release signing is OPTIONAL (audit P1-B#2). The keystore exists only on the
@@ -170,6 +174,17 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.okhttp)
+
+    // Yandex MapKit (GEO lane): geocoding + masstransit routing. The Key is a
+    // MapKit API key (separate SecretVault slot), never the Cloud API key.
+    implementation(libs.mapkit) {
+        // -full is MANDATORY: -lite ships 0 search + 0 masstransit classes.
+        // GMS is NOT embedded (0 gms/play entries in classes.jar); only 8 classes in
+        // runtime/sensors/internal + runtime/attestation_storage/internal reference it,
+        // and ZERO in search/ or transport/ — so this keeps the GMS-free Huawei target working.
+        exclude(group = "com.google.android.gms", module = "play-services-location")
+        exclude(group = "com.google.android.play", module = "integrity")
+    }
 
     // gRPC for Sber Salute Speech (ASR + TTS streaming)
     implementation(libs.grpc.okhttp)

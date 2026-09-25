@@ -421,6 +421,17 @@ class AppGraph(
         alarmScheduler = alarmScheduler,
         // 0.7: ONE AppPrefs instance graph-wide (the router built its own).
         appPrefs = appPrefs,
+        // GEO lane: findPlace / getRoute. The initializer MUST be process-scoped,
+        // not graph-scoped: MapKit allows setApiKey only ONCE per process and
+        // this graph is rebuilt on every service start / watchdog revive, so a
+        // per-graph MapKitInitializer would reset its once-guard and re-set the
+        // key (log "already set", potential crash). MapKitInitializerProvider
+        // memoizes the one instance for the whole process.
+        geoClient = com.jarvis.assistant.geo.mapkit.YandexMapKitGeoClient(
+            appContext,
+            com.jarvis.assistant.geo.mapkit.MapKitInitializerProvider.get(),
+            apiKey = { appPrefs.mapKitApiKey },
+        ),
         // Weather: Open-Meteo URLs + GPS timing live in the config, not the tool.
         config = config,
         // COGNITIVE_PLAN 1.5: remember_fact / recall_facts / forget_fact.

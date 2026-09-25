@@ -80,6 +80,17 @@
                 android:layout_marginBottom="16dp"
                 />
 
+            <!-- Maps: Yandex MapKit key for the geo lane (findPlace / getRoute).
+                 The key is read once per app PROCESS, so the card states a full
+                 app restart rather than the service restart the provider cards
+                 use. Also carries the Yandex Maps attribution block. -->
+            <include
+                layout="@layout/settings_card_maps"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                />
+
             <!-- Speech backend: Sber Salute / Yandex SpeechKit v3. Sits with
                  the other provider choice and directly above the credentials
                  card, which carries whichever keys that choice needs. -->

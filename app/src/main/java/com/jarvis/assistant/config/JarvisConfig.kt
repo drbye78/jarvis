@@ -112,6 +112,14 @@ data class JarvisConfig(
      */
     val weatherToolTimeoutMs: Long = 20_000,
 
+    // GEO lane (findPlace / getRoute). Both run geocoding via MapKit, whose
+    // FIRST call also loads the native libraries — so the route budget is
+    // generous enough to absorb that one-off init on a low-end device.
+    /** Per-tool budget for `findPlace` (a single online search, or two when geocoding `near`). */
+    val geoSearchTimeoutMs: Long = 15_000,
+    /** Per-tool budget for `getRoute`: geocode + route, possibly including native init. */
+    val geoRouteTimeoutMs: Long = 25_000,
+
     // Service watchdog
     val restartIntervalMs: Long = 15 * 60 * 1000L,
 

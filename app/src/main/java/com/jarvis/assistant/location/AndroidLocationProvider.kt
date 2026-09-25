@@ -1,4 +1,4 @@
-package com.jarvis.assistant.tools.weather
+package com.jarvis.assistant.location
 
 import android.Manifest
 import android.annotation.SuppressLint

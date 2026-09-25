@@ -42,3 +42,11 @@
 -keep class android.support.v4.media.** { *; }
 -keep class androidx.media.** { *; }
 -dontwarn android.support.v4.media.**
+
+# Yandex MapKit: the dependency declaration excludes GMS (play-services-location
+# + play integrity), and the AAR does not embed them. Eight classes under
+# com.yandex.runtime.{sensors,attestation_storage}.internal still reference those
+# types in their constant pools, though, so R8 warns about the now-missing
+# classes even though the search/routing call paths never touch them.
+-dontwarn com.google.android.gms.**
+-dontwarn com.google.android.play.**
