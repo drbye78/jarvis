@@ -153,14 +153,6 @@ class AppPrefs(
         set(value) = prefs.edit().putString(KEY_WAKE_ENGINE, value).apply()
 
     /**
-     * Absolute path to a user-supplied Sherpa-ONNX model directory. Blank means
-     * "use the bundled model" (extracted from assets by the graph builder).
-     */
-    var sherpaOnnxPath: String
-        get() = prefs.getString(KEY_SHERPA_ONNX, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_SHERPA_ONNX, value).apply()
-
-    /**
      * The user's preferred default music player: "auto" (Яндекс Музыка first,
      * the project default) or a package name — com.zvooq.openplay (Звук),
      * ru.yandex.music, com.uma.musicvk. Set from the Settings «Музыка» card;
@@ -402,7 +394,6 @@ class AppPrefs(
         internal const val KEY_WAKE_MODEL = "wake_word_model"
         internal const val KEY_CUSTOM_WAKE_PATH = "custom_wake_word_path"
         internal const val KEY_WAKE_ENGINE = "wake_word_engine"
-        internal const val KEY_SHERPA_ONNX = "sherpa_onnx_path"
         internal const val KEY_SHERPA_KEYWORD = "sherpa_custom_keyword"
         internal const val KEY_VOICE_STOP = "voice_stop_enabled"
         internal const val KEY_MUSIC_PLAYER = "preferred_music_player"

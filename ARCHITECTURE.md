@@ -383,9 +383,9 @@ was verified in `libsherpa-onnx-jni.so`. Filesystem models work.
 - A validated keyword is turned into a generated keywords file
   (`SherpaKeywords.toKeywordsFileContent`) and applied live via
   `reconfigureWakeWord()`. Blank = the bundled «Jarvis».
-- User-supplied model directories (`sherpaOnnxPath` pref) are honored the
-  same way (default CPU provider, generated keywords never written into the
-  user's directory).
+- The custom-keyword path is the ONLY model source: the `sherpaOnnxPath` pref
+  (user-supplied model directory) was removed by the settings redesign — it had
+  no writer, no UI and no test reference, so the branch was unreachable.
 
 ## UI design system
 
@@ -411,6 +411,52 @@ mandatory rows. Settings gained the «Музыка» card
 There is no XML-inflated custom-styled programmatic widget: row
 controls in onboarding are framework TextViews with theme ripples
 (programmatic MaterialButtons cannot take styles after construction).
+
+### Settings screen architecture (category list → detail)
+
+The 1955-line single-scroll `SettingsActivity` was split by a strangler
+rewrite into a **category LIST host** plus ONE reusable **detail host**:
+
+- **`SettingsActivity`** (`activity_settings.xml`) is the entry point
+  `MainActivity`/`OnboardingActivity` already launch: a header, the
+  pending-restart banner, a `RecyclerView` of `SettingsCategory.entries`
+  and an About row (a dialog, not a screen). It owns no setting.
+- **`SettingsDetailActivity`** (`activity_settings_detail.xml`) inflates
+  one `screen_settings_<id>.xml` into `settingsDetailContent`, selected by
+  a `SettingsCategory` extra, and binds that screen's controller. It is the
+  ONLY `SettingsHost` implementor, so navigation, permission launchers, the
+  `.ppn`/playback-capture results, the 45 s bounded `awaitAssistantGraph()`
+  wait, the column cap and the banner all live in one place.
+
+**`SettingsCategory` IS the screen registry.** The enum's `.entries` is the
+list the adapter renders; each entry carries its `titleRes`/`subtitleRes`
+and `layoutRes`, and its `id` doubles as the `screen_settings_<id>.xml`
+filename and the `settings_cat_<id>` string suffix, so the three names
+cannot drift. `SettingsControllerFactory.create(category, callbacks, prefs,
+host)` is a pure dispatch over an **exhaustive `when` with NO `else`** — a
+new category is a compile error until its controller is wired, the same
+idiom as the LLM-provider `when` in `AppGraph`. Each of the eight
+controllers (`settings/controller/`) is a small class over the frozen 3-arg
+seam `(callbacks, prefs, host)`; it binds its own root and reaches the
+outside world only through the narrow `SettingsHost` interface — it must
+not call `findViewById` outside its screen, start an Intent, or touch a
+permission API.
+
+**When a change applies** is stated once, by `settings/ApplyPolicy` +
+`ApplyPolicies` (key→policy) instead of scattered hint strings: `LIVE`
+(applied on next use, no banner), `SERVICE_RESTART` (sealed at `AppGraph`
+construction — LLM provider type/model/URLs, speech backend, AEC mode, the
+[OI] key), and `APP_RESTART` (the MapKit key, settable once per process).
+`PendingChanges` is the in-memory (deliberately NOT persisted) set that
+drives the banner; the strongest pending policy wins, and **V1 is
+instruction-only — the banner never relaunches the process**.
+
+The split is guarded structurally: `SettingsLayoutTest` closes
+registry↔layout↔include↔controller ids and forbids duplicate/orphan screen
+layouts; `SettingsInventoryTest` reflects over `AppPrefs` +
+`CredentialsStore` and fails the build if any persisted setting is neither
+in `SettingsInventory.entries` nor the explicit `nonSettingsKeys`
+allow-list.
 
 ## Alarms
 

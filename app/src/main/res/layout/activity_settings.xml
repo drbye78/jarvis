@@ -1,4 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Settings LIST host (settings redesign, FLIP lane). This is the new "category
+  list" screen: a header, the apply-restart banner slot, the eight category rows
+  and a tappable About row. It is the CONTENT of `SettingsActivity` and the
+  entry point every caller already points at.
+
+  Migrated from the designer's `settings_list_host.xml` (which is deleted so
+  there is exactly one list host). The body is unchanged except for the two ids
+  the nightly device suite hardcodes (`LayoutBoundsTest.kt`):
+    - root   `settingsListRoot` -> `settingsRoot`
+    - column `settingsListColumn` -> `settingsColumn`
+
+  The 760 dp reading column is owned HERE by `settingsColumn`: the host applies
+  `SETTINGS_COLUMN_MAX_WIDTH_DP` to that id so every row is capped and centred
+  on tablets. Do not add full-bleed children outside `settingsColumn`.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/settingsRoot"
@@ -7,7 +23,7 @@
     android:background="?android:attr/colorBackground"
     android:orientation="vertical">
 
-    <!-- Header (NoActionBar theme: we draw our own) -->
+    <!-- Header (NoActionBar theme: we draw our own), same idiom as the old host. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -18,7 +34,7 @@
         android:paddingEnd="8dp">
 
         <ImageButton
-            android:id="@+id/closeButton"
+            android:id="@+id/settingsCloseButton"
             android:layout_width="@dimen/touch_target_min"
             android:layout_height="@dimen/touch_target_min"
             android:background="?attr/selectableItemBackgroundBorderless"
@@ -34,126 +50,70 @@
             style="@style/TextAppearance.Jarvis.ScreenTitle" />
     </LinearLayout>
 
-    <ScrollView
+    <!-- Capped, centred reading column. Height 0dp + weight 1 so it fills the
+         root under the header. -->
+    <LinearLayout
+        android:id="@+id/settingsColumn"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_gravity="center_horizontal"
+        android:orientation="vertical">
 
-        <!-- Comfortable reading column on tablets: match_parent so it always
-             fits the window; on windows wider than 760dp it is width-capped
-             and centered in code (capColumnWidthOnWideScreens). -->
+        <!-- Restart-needed notice. GONE until the host observes a pending
+             ApplyPolicy; see settings_apply_banner.xml for the v1 rule (the
+             banner instructs, it never relaunches the process). -->
+        <include
+            layout="@layout/settings_apply_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/settingsCategoryList"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingTop="4dp"
+            android:paddingBottom="8dp"
+            app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+        <!-- The About row is NOT a category: it lives outside the RecyclerView so
+             the adapter stays a pure projection of SettingsCategory.entries. -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="4dp"
+            android:background="?attr/colorSurfaceVariant" />
+
         <LinearLayout
-            android:id="@+id/settingsColumn"
+            android:id="@+id/settingsAboutRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:orientation="vertical"
+            android:minHeight="56dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
             android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:paddingBottom="28dp">
+            android:paddingEnd="16dp">
 
-            <!-- A0) LLM PROVIDER (GigaChat default, any OpenAI-compatible endpoint) -->
-            <include
-                layout="@layout/settings_card_llm_provider"
-                android:layout_width="match_parent"
+            <TextView
+                android:id="@+id/settingsAboutTitle"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:layout_marginBottom="16dp"
-                />
+                android:layout_weight="1"
+                android:text="@string/settings_about_title"
+                style="@style/TextAppearance.Material3.TitleMedium" />
 
-            <!-- A1) MUSIC: preferred default player -->
-            <include
-                layout="@layout/settings_card_music"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                />
-
-            <!-- Weather: the configured city is the primary path (GMS-free,
-                 WiFi-only devices); GPS auto-detect is the fallback. The card
-                 also owns the location-permission prompt, which the weather
-                 tool cannot show from the service. The pref is read live per
-                 turn, so a saved city applies without a restart. -->
-            <include
-                layout="@layout/settings_card_weather"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                />
-
-            <!-- Maps: Yandex MapKit key for the geo lane (findPlace / getRoute).
-                 The key is read once per app PROCESS, so the card states a full
-                 app restart rather than the service restart the provider cards
-                 use. Also carries the Yandex Maps attribution block. -->
-            <include
-                layout="@layout/settings_card_maps"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                />
-
-            <!-- Speech backend: Sber Salute / Yandex SpeechKit v3. Sits with
-                 the other provider choice and directly above the credentials
-                 card, which carries whichever keys that choice needs. -->
-            <include
-                layout="@layout/settings_card_speech_backend"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                />
-
-            <!-- A) PROVIDER CREDENTIALS -->
-            <include
-                layout="@layout/settings_card_credentials"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                />
-
-            <!-- B) WAKE WORD -->
-            <include
-                layout="@layout/settings_card_wake_word"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                />
-
-            <!-- AEC: Phase A (hardware) + Phase B (software), opt-in -->
-            <include
-                layout="@layout/settings_card_aec"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                />
-
-            <!-- Voice: TTS voice selection (applies live, no restart) -->
-            <include
-                layout="@layout/settings_card_voice"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                />
-
-            <!-- Follow-up window: continue the dialogue without the wake word -->
-            <include
-                layout="@layout/settings_card_followup"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                />
-
-            <!-- COGNITIVE_PLAN 1.8: the «Память» card — §12.4: every cognitive
-                 default is the initial value of a user-visible switch. -->
-            <include
-                layout="@layout/settings_card_memory"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                />
-
-            <!-- COGNITIVE_PLAN 2.6: the behaviour card (§12.4-1: the proactive
-                 layer ships DEFAULT OFF; quiet hours + quota are user-tunable). -->
-            <include
-                layout="@layout/settings_card_behavior"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:layout_marginBottom="16dp"
-                />
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginStart="12dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/material_ic_keyboard_arrow_right_black_24dp"
+                app:tint="?attr/colorOnSurfaceVariant" />
         </LinearLayout>
-    </ScrollView>
+    </LinearLayout>
 </LinearLayout>

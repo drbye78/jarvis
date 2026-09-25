@@ -38,17 +38,17 @@ Answers arbitrary questions and holds a conversation on any topic.
    ./gradlew assembleDebug
    adb install app/build/outputs/apk/debug/app-debug.apk
    ```
-4. **Enter provider credentials in-app.** On first launch, open **Settings**
-   (gear button) and enter your own:
+4. **Enter provider credentials in-app.** On first launch, open
+   **Настройки → Аккаунты и ключи** (gear button) and enter your own:
    - **Picovoice access key** (wake word)
    - **Sber Salute** client ID + secret (ASR/TTS), **or** a **Yandex
-     SpeechKit v3** API key — pick the speech backend in Settings →
-     «Движок речи (ASR + TTS)»; one choice drives recognition *and*
+     SpeechKit v3** API key — pick the speech backend in
+     **Настройки → Речь**; one choice drives recognition *and*
      synthesis. The same Yandex key also powers the **Yandex AI Studio** LLM
      backend (it then needs AI Studio access, not just SpeechKit)
    - **GigaChat** client ID + secret (LLM), **or** a Yandex Cloud API key for
-     the **Yandex AI Studio** LLM — pick the provider in Settings →
-     «Нейросеть (LLM)»
+     the **Yandex AI Studio** LLM — pick the provider in
+     **Настройки → Помощник**
    The GigaChat pair (and the Salute pair while the Sber backend is active) is
    **validated upfront in the panel as you type** (a live status row: valid /
    invalid / unreachable) and on every «Проверить ключи» press — a typo is
@@ -57,11 +57,12 @@ Answers arbitrary questions and holds a conversation on any topic.
    (`KeystoreVault`, AES-256-GCM) on the device — **nothing secret is ever in
    the APK or in `local.properties`**. GigaChat creds are optional if you use
    the [OI]-compatible provider or **Yandex AI Studio** instead (both
-   configured in Settings).
+   configured in **Настройки → Помощник**).
    The UI ships in Russian and English (full `values-en`), and the runtime
    spoken phrases follow the locale too (see RUNBOOK for the honest
    English-voice caveat).
-5. **Wake word — two engines (hybrid).** In Settings → Wake word you choose
+5. **Wake word — two engines (hybrid).** In **Настройки → Слушание →
+    Дополнительно** you choose
     the engine:
     - **Sherpa-ONNX (recommended, no account):** a fully on-device wake word
       using the bundled `gigaspeech` model that detects «Jarvis» — or any
@@ -85,7 +86,8 @@ Answers arbitrary questions and holds a conversation on any topic.
     is running. Custom Sherpa wake words are supported — the app extracts
     models, BPE-tokenizes keywords, and loads via `newFromFile`.
 6. Launch Jarvis and follow the onboarding screen.
-7. **Maps & routes (optional).** Settings → «Карты» takes a **Yandex MapKit
+7. **Maps & routes (optional).** **Настройки → Погода и карты →
+   Дополнительно** takes a **Yandex MapKit
    Mobile SDK key** — a different credential from the Yandex Cloud API key
    (SpeechKit / AI Studio). Get it in the Yandex developer cabinet → **MapKit
    Mobile SDK**; it is bound to the app's package/SHA, so a debug build and a
@@ -93,10 +95,10 @@ Answers arbitrary questions and holds a conversation on any topic.
    other secret and read live, but **changing it requires a FULL app-process
    restart** — MapKit cannot be re-keyed inside a running process, and Стоп →
    Запустить is not enough.
-8. **Weather (optional).** Settings → «Погода» sets the default city for weather
+8. **Weather (optional).** **Настройки → Погода и карты** sets the default city for weather
    questions; leave it empty to use the device location instead. A configured
    city always wins and needs no location access. To use auto-detect, tap
-   **Allow location access** in that card — the permission dialog lives there
+   **Allow location access** in that screen — the permission dialog lives there
    (weather runs in the background service, which cannot prompt), and access is
    coarse or fine. On a GMS-free, WiFi-only tablet GPS may yield nothing, so the
    configured city is the reliable path.
@@ -202,7 +204,7 @@ keystore with `keytool` and update `local.properties` accordingly.
   actions, and harm-refusal rules. Transient LLM failures (5xx, connection
   resets, zero-output timeouts) are retried once automatically — partial
   answers are never re-emitted, so nothing is ever spoken twice.
-- **Echo cancellation** (opt-in, Settings → «Эхоподавление»): *hardware*
+- **Echo cancellation** (opt-in, **Настройки → Слушание → Дополнительно**): *hardware*
   mode routes the mic through the tablet's comms DSP; *software* mode runs a
   built-in adaptive canceller against the assistant's own voice (electrical
   TTS reference) and, with a one-tap system consent, other apps' music —
@@ -218,30 +220,30 @@ keystore with `keytool` and update `local.properties` accordingly.
   internet search**, which runs server-side and returns cited sources. The
   search results and citations themselves are never spoken — only the grounded
   answer.
-- **GigaChat model** (Settings → «Нейросеть (LLM)»): pick the **GigaChat-3
+- **GigaChat model** (**Настройки → Помощник**): pick the **GigaChat-3
   flavor** — Lightning (default, fastest), Pro (balanced) or Ultra (most
   capable). Sealed at service start like the speech backend, so it applies
   after a restart (the card says so).
-- **Yandex AI Studio** (Settings → «Нейросеть (LLM)»): choose the Yandex
+- **Yandex AI Studio** (**Настройки → Помощник**): choose the Yandex
   model — **Alice AI** (default), **Alice AI Flash** (fast) or **YGPT 5
   Lite**. It reuses the **same API key as the Yandex speech engine** (the key
   needs AI Studio access, not just SpeechKit). The folder id is detected
   automatically from the key; a manual **Folder ID** override is available if
   the key cannot list models. Also sealed at service start.
-- **Memory of facts** (Settings → «Память»): a long-term cognitive memory
+- **Memory of facts** (**Настройки → Память**): a long-term cognitive memory
   that remembers things about you, with semantic search over those facts in
-  its own card (Settings → «Семантический поиск по памяти»). Cloud fact
+  its own section (**Настройки → Память → Дополнительно**). Cloud fact
   extraction is opt-in (`memory.autoExtract`, default off), and the whole
   subsystem can be switched off.
-- **Proactive suggestions** (Settings → «Проактивность»): opt-in spoken
+- **Proactive suggestions** (**Настройки → Инициатива**): opt-in spoken
   suggestions based on what Jarvis remembers — **off by default**.
-- **Speech backend** (Settings → «Движок речи (ASR + TTS)»): **Sber
+- **Speech backend** (**Настройки → Речь**): **Sber
   SaluteSpeech** or **Yandex SpeechKit v3** — one choice covers
   recognition *and* synthesis. The two providers have separate credential
   fields and separate voice lists, and the selection takes effect after a
   service restart (each provider owns its own channel and auth scheme, so
   there is no live switch — the card says so).
-- **Voice picker** (Settings → «Голос»): the controls follow the selected
+- **Voice picker** (**Настройки → Речь**): the controls follow the selected
   speech backend. Sber: Mila by default, any other Salute voice ID by hand.
   Yandex: a dropdown of the documented v3 voices plus an optional role
   (neutral / good / strict / friendly / whisper / evil, or free text). Both
@@ -267,14 +269,15 @@ keystore with `keytool` and update `local.properties` accordingly.
   screen; survive reboots.
 - **Weather**: current conditions plus a **daily forecast up to 7 days** for
   any city (Open-Meteo). Weather questions default to your location: a city
-  set in Settings → «Погода» (always wins), otherwise auto-detected GPS. Follow-up
+  set in **Настройки → Погода и карты** (always wins), otherwise auto-detected GPS. Follow-up
   questions work naturally («а завтра?», «а в Сочи?»).
 - **Maps & routes**: «Джарвис, найди аптеку рядом», «построй маршрут до
   Шереметьева» — organization/address search and public-transport or walking
   routes via **Yandex MapKit**. Transit answers include the line (bus/metro),
   the vehicle type, transfer points and stop counts, and «а пешком?» /
   «а на автобусе?» are follow-ups to the same route. No map is shown — Jarvis
-  speaks the answer. Needs a MapKit key in Settings → «Карты». (Device
+  speaks the answer. Needs a MapKit key in **Настройки → Погода и карты →
+  Дополнительно**. (Device
   verification is pending — see RUNBOOK.)
 - **Device control**: volume, brightness, Wi-Fi, Bluetooth, DND, screen off,
   open app, battery/time info.
@@ -315,4 +318,7 @@ storing results beyond 30 days.
 - Material 3 UI (teal/amber day+night design system): home screen with a
   live voice orb (breathing/ripple/thinking/speaking animations), chat-style
   transcript, permission onboarding with status rows and start gating,
-  settings with a «Музыка» default-player card (Яндекс / Звук / VK)
+  settings organized as a category list («Помощник», «Речь», «Слушание»,
+  «Погода и карты», «Память», «Инициатива», «Музыка», «Аккаунты и ключи») with
+  a per-category detail screen (including a «Музыка» default-player screen:
+  Яндекс / Звук / VK)

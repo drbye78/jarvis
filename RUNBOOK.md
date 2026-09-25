@@ -11,7 +11,7 @@
    mandatory). Optionally grant notification-listener access (media
    transport / music control), write-settings (brightness tool), DND access,
    device admin (screen-off tool), and **location access** (weather
-   auto-detect — Settings → «Погода»; a configured city needs no grant).
+   auto-detect — Настройки → Погода и карты; a configured city needs no grant).
 3. Press **Запустить Джарвиса**.
 
 ## Common issues
@@ -21,7 +21,7 @@
 - Release builds: `adb shell run-as com.jarvis.assistant cat files/logs/jarvis.log`
   (debug builds: plain `adb logcat`; tags are class names, so
   `| grep -i <Class>` narrows it).
-   - **Engine:** Settings → Wake word. The **default is Sherpa-ONNX** (bundled,
+   - **Engine:** Настройки → Слушание → Дополнительно. The **default is Sherpa-ONNX** (bundled,
      offline, no account, zero configuration) — a fresh install hears "Джарвис"
      out of the box. **Picovoice Porcupine** is opt-in and needs a free
      Picovoice key plus a keyword model.
@@ -41,23 +41,25 @@
      must be present in the APK.
 - Detector errors are SPOKEN (system TTS) and logged — a deaf-but-silent
   assistant is no longer possible.
-- Sensitivity adjustable live in Settings (0–1 slider; applies immediately).
+- Sensitivity adjustable live in **Настройки → Слушание → Дополнительно** (0–1 slider; applies immediately).
 
 ### "OAuth token request failed (HTTP 401)"
-- Verify Sber credentials entered in **Settings** (gear button). The settings
-  panel validates them upfront as you type: a red **«Неверные ключи»** status
+- Verify Sber credentials entered in **Настройки → Аккаунты и ключи** (gear
+  button). The panel validates them upfront as you type: a red **«Неверные ключи»** status
   row under the Salute/GigaChat fields means the pair really is wrong — fix it
   there instead of debugging the runtime error.
-- Or switch Settings → provider to an OpenAI-compatible endpoint.
+- Or switch **Настройки → Помощник** and pick the OpenAI-compatible endpoint.
 
 ### Yandex SpeechKit selected but the assistant stays silent / errors
-- Settings → «Движок речи (ASR + TTS)» → **Yandex**. The choice is SEALED
+- **Настройки → Речь** → **Yandex**. The choice is SEALED
   when the service starts
   (each provider owns its own channel and auth scheme), so after switching you
-  must restart: Стоп → Запустить on the home screen. The card states this.
-- The Salute card is **hidden and not probed** while Yandex is active — the
-  probe is stopped, not merely hidden, so your Sber OAuth credentials are no
-  longer sent to Sber's token endpoint. Switching back to Sber re-probes.
+  must restart: Стоп → Запустить on the home screen. The screen states this.
+- «Аккаунты и ключи» is now the single home for every credential (all keys are
+  shown directly, deliberately with no disclosure), so the Sber Salute pair is
+  validated whenever it is filled — the old «hidden and not probed while Yandex
+  is active» gating no longer applies. A pair with a blank side is never probed,
+  so clearing the Salute fields stops its probe.
 - A wrong/expired key surfaces as gRPC **`UNAUTHENTICATED`** (16); a key whose
   service account lacks `ai.speechkit-stt.user` / `ai.speechkit-tts.user`
   surfaces as **`PERMISSION_DENIED`** (7); exhausted quota is
@@ -78,17 +80,18 @@ on every axis (parts-array `content`, `tools`/`tool_config`, `messages[]`
 responses, named `event:` stream lines), so an old-style error usually means
 credentials, not the wire shape.
 
-- Check credentials/scope (`GIGACHAT_API_PERS`) in **Settings**.
-- **HTTP 400 on every turn** — almost always the model id. Settings →
-  «Нейросеть (LLM)» → pick one of the offered **GigaChat-3** flavors (the
+- Check credentials/scope (`GIGACHAT_API_PERS`) in **Настройки → Аккаунты и ключи**.
+- **HTTP 400 on every turn** — almost always the model id. **Настройки →
+  Помощник** → pick one of the offered **GigaChat-3** flavors (the
   legacy `GigaChat-Pro` is not in the native model list; the selector only
   offers valid ids).
 - **`Trust anchor for certification path not found`** — `api.giga.chat` chains
   to the Минцифры Sub CA. `util/SberTrust.kt` bundles those roots and must list
   `giga.chat` in its host-scoped allowlist; a build that drops that line cannot
   reach the API on the device (the system trust store rejects the chain).
-- Or switch Settings → Нейросеть (LLM) → **the [OI]-compatible radio**: fill
-  Base URL / model / API key, press **Сохранить**. The change takes effect
+- Or switch **Настройки → Помощник** → **the [OI]-compatible radio**: fill
+  the Base URL / model there and the API key on **Настройки → Аккаунты и
+  ключи**, press **Сохранить**. The change takes effect
   after the next service restart (Стоп → Запустить on the home screen) — the
   provider client is built once, when the service starts.
 
@@ -106,17 +109,17 @@ The Yandex LLM lane talks the **AI Studio Responses API** at
   role (add `ai.assistants.editor` for web search).
 - **HTTP 400 `Invalid model URI` / `Unknown folder`** — the folder could not be
   resolved. The client normally discovers it from `GET /v1/models`; if the key
-  cannot list models, set **Settings → Нейросеть (LLM) → Folder ID** manually.
+  cannot list models, set **Настройки → Помощник → Дополнительно → Folder ID** manually.
   The folder must be the **service account's own folder**.
 - **No trust-store error expected**: `ai.api.cloud.yandex.net` chains to a
   **public GlobalSign** root, so Yandex is deliberately NOT in
   `SberTrust.SBER_APEX_DOMAINS` (unlike `giga.chat`). A trust error here means
   something else rewrote the trust config.
-- Or switch Settings → Нейросеть (LLM) → **GigaChat** or the [OI]-compatible
+- Or switch **Настройки → Помощник** → **GigaChat** or the [OI]-compatible
   radio; the choice takes effect after the next service restart.
 
 ### "Модель Yandex отвечает не тем / хочу другую"
-Settings → Нейросеть (LLM) → **Yandex AI Studio** offers Alice AI (default),
+**Настройки → Помощник** → **Yandex AI Studio** offers Alice AI (default),
 Alice AI Flash (fast) and YandexGPT 5 Lite. The model list is what the
 **service** publishes per folder (`GET /v1/models`); a stored id the folder no
 longer serves falls back to the default rather than failing the turn.
@@ -136,17 +139,17 @@ decides when to search. If grounded answers never appear:
   parser regression, not a service problem.
 
 ### «Какая погода?» — не понимает город / отвечает не для моего города
-Weather questions default to a location: the city set in **Settings → «Погода»**
-always wins; if that is empty, the device location is used.
+Weather questions default to a location: the city set in **Настройки → Погода и
+карты** always wins; if that is empty, the device location is used.
 
 - **Configured city is the reliable path.** The target tablet is GMS-free
   (no Play Services) and often WiFi-only, so `NETWORK_PROVIDER` frequently
   returns nothing — and GPS hardware may be absent entirely. If weather keeps
-  answering for the wrong place, set the city explicitly in Settings.
+  answering for the wrong place, set the city explicitly in **Настройки → Погода и карты**.
 - **«Не удалось определить местоположение»** — no city is configured AND
   location access is denied or no fix was obtained within ~6 s. Either set a
-  city, or grant location access with the card's button (the permission dialog
-  can only appear in Settings — the assistant runs in a service, which cannot
+  city, or grant location access with the screen's button (the permission dialog
+  can only appear in Настройки → Погода и карты — the assistant runs in a service, which cannot
   prompt).
 - **No city is ever spoken for a GPS position.** Open-Meteo has no reverse
   geocoding and the app adds no third-party service, so a detected position is
@@ -161,7 +164,8 @@ none of this path is device-verified yet — see the MapKit smoke checklist belo
 First checks:
 
 - **No key:** Jarvis says «Не настроен ключ Яндекс.Карт (MapKit)…». Add a
-  **MapKit Mobile SDK key** in Settings → «Карты» (Yandex developer cabinet →
+  **MapKit Mobile SDK key** in **Настройки → Погода и карты → Дополнительно**
+  (Yandex developer cabinet →
   MapKit Mobile SDK). The SpeechKit/AI Studio key does NOT work here — MapKit
   has its own key, and it is bound to the app's package/SHA (a debug build and a
   release build need their own).
@@ -189,7 +193,7 @@ transient-failure retry». A turn still fails with the spoken error phrase
 after the retry budget is exhausted; the user just re-invokes the wake word.
 
 ### "Не удалось проверить: нет связи с сервером" (settings validation)
-The settings panel probes the Sber OAuth endpoint live while you type (debounced,
+The panel on **Настройки → Аккаунты и ключи** probes the Sber OAuth endpoint live while you type (debounced,
 ~1 probe per pause, plus the **«Проверить ключи»** button and a probe on every
 open/save). The amber status means *no verdict*, not *bad credentials*:
 
@@ -205,6 +209,20 @@ open/save). The amber status means *no verdict*, not *bad credentials*:
 Offline note: the automatic credential probe is the only *background* network
 call the settings panel makes (the memory benchmark and «Проверить голос» are
 user-triggered); the app itself works offline with cached tokens.
+
+### "A settings change did nothing until I restarted"
+
+The redesigned Settings states *when* a change applies; the restart banner at the
+top of the list (and of every detail screen) appears while a stored change has
+not taken effect yet. It is instruction-only (no button) and tells you which
+restart is needed:
+
+- **Service restart** (`Стоп → Запустить` on the home screen) — the LLM
+  provider type/model/URLs, the speech backend, the AEC mode and the
+  [OI]-compatible key are sealed when the service builds its graph.
+- **Full app-process restart** — the **MapKit key** only: MapKit allows
+  `setApiKey` once per process, so kill and relaunch the app. Toggling the
+  service (Стоп → Запустить) is NOT enough.
 
 ### "Service keeps getting killed"
 - Huawei PowerGenie: Settings → Apps → App launch → Jarvis → Manage manually
@@ -408,11 +426,11 @@ Common issues:
 
 ## Echo cancellation (Phase A + Phase B)
 
-All modes are **opt-in, default OFF** (Settings → «Эхоподавление»).
+All modes are **opt-in, default OFF** (**Настройки → Слушание → Дополнительно**).
 
 ### Phase A — hardware mode
 
-1. Settings → Эхоподавление → «Аппаратное». The probe row tells you whether
+1. **Настройки → Слушание → Дополнительно** → «Аппаратное». The probe row tells you whether
    `AcousticEchoCanceler.isAvailable()` on THIS device is true.
    (For the first seconds after Start the service bootstraps on a background
    thread — the row may show «service not running» until the graph is up;
@@ -448,14 +466,14 @@ echo path is 20–35 dB; cheap tablet speakers add nonlinearity the filter
 cannot model. The `EchoCanceller` interface is the drop-in slot if a native
 AEC3 becomes linkable.
 
-1. Settings → Эхоподавление → «Программное», restart the service.
+1. **Настройки → Слушание → Дополнительно** → «Программное», restart the service.
 2. Verify the own-TTS lane: say the wake word; while the answer SPEAKS,
    say «Джарвис» (barge-in). With the tap working, the wake word should be
    recognisable during playback; without it, the answer's own echo masks it.
    The canceller's internal convergence stats (delay estimate, residual
    error, divergence flag) are NOT logged, so convergence cannot be watched
    from logcat — judge it by this barge-in behaviour.
-3. **Music lane (optional, experimental):** Settings → «Захват музыки» →
+3. **Music lane (optional, experimental):** Настройки → Слушание → Дополнительно → «Захват музыки» →
    «Разрешить захват звука» → system consent dialog (once per service run).
    Start music in a player, then:
    ```
@@ -486,7 +504,7 @@ AEC3 becomes linkable.
 
 ### Follow-up window (Продолжение диалога)
 
-Settings → «Продолжение диалога»: toggle + window length 2–12 s (default 5 s,
+**Настройки → Слушание** (toggle) / **Слушание → Дополнительно** (window length): 2–12 s (default 5 s,
 applies LIVE, no restart). After each spoken reply the orb switches to
 ripples + a shrinking countdown arc; just keep talking — no wake word needed.
 The window closes after silence; the wake word always works too (and
@@ -499,8 +517,8 @@ tail. Chained conversation: every spoken reply re-opens the window.
 
 ### Voice selection (Голос)
 
-Settings → «Голос» shows the controls for the **active speech backend**
-(Settings → «Движок речи (ASR + TTS)»):
+**Настройки → Речь** shows the voice controls for the **active speech backend**
+(the backend is selected on the same screen):
 
 - **Sber:** Mila (`May_24000`) is the only voice ID verified against the Salute
   synthesis pool by this project; the card also accepts a free-text Salute
@@ -542,7 +560,7 @@ Streaming ASR means these numbers no longer grow with utterance length.
 ## Recovery procedures
 
 1. **App not responding** — kill from system settings, relaunch.
-2. **Provider misconfigured** — Settings → switch back to GigaChat → Apply.
+2. **Provider misconfigured** — **Настройки → Помощник** → switch back to GigaChat.
 3. **Conversation history corrupted** — Settings → Apps → Jarvis → Storage →
    Clear Data (wipes history and alarms; destructive by design).
 
@@ -554,7 +572,7 @@ scripted, reproducible scenarios and the fixture-based extraction gate.
 ### E2E scenario: memory basics (Appendix D)
 
 Precondition: fresh `jarvis.db` (uninstall or «Забыть всё» after backing up),
-Sherpa engine, voice stop enabled, memory ON in Settings → Память.
+Sherpa engine, voice stop enabled, memory ON in **Настройки → Память**.
 
 1. Say «Джарвис, меня зовут Алексей, я люблю фильмы Тарковского» → the
    assistant acknowledges. `remember_fact` fires (pill «Запоминаю…»); the
@@ -571,7 +589,7 @@ Sherpa engine, voice stop enabled, memory ON in Settings → Память.
    deleted).
 6. Repeat (3) for the forgotten fact → the assistant states it does not
    remember that particular thing (honest refusal; the name still works).
-7. Settings → Память → Показать память → both rows visible with marks →
+7. Настройки → Память → Показать память → both rows visible with marks →
    «Забыть всё» + confirm → repeat (4) → honest «ничего не помню».
 
 Pass: all seven observations hold, no crashes, and the stop-phrase behavior
@@ -582,7 +600,7 @@ snapshot-tested).
 
 ### E2E scenario: proactive suggestion, accept and reject paths (Phase 2)
 
-Precondition: Settings → «Проактивность» switch ON (default OFF — flipping
+Precondition: **Настройки → Инициатива** switch ON (default OFF — flipping
 it is the point of the scenario), quiet hours as shipped (23:00–08:00),
 quota 2/day, battery charging or > 15%, no headphones/media playing.
 
@@ -611,9 +629,9 @@ device within the last 4 hours:
 4. **Busy guard:** start music manually in Яндекс Музыка, force a rule
    evaluation (wait for the next tick) — the decision must be DEFERRED
    (`media`), and the suggestion must NOT fire while playback is active.
-5. **Quiet hours:** temporarily set quiet 20:00–21:00 in Settings, wait for
+5. **Quiet hours:** temporarily set quiet 20:00–21:00 in Настройки → Инициатива → Дополнительно, wait for
    a tick at 20:30 — `BLOCKED(quiet_hours)`, nothing spoken.
-6. **Live toggle:** flip «Проактивность» OFF — the next tick is a no-op
+6. **Live toggle:** flip «Инициатива» OFF — the next tick is a no-op
    (one flow read), regardless of table contents.
 
 Pass: all six observations; the assistant NEVER auto-executes a tool from a
@@ -634,7 +652,7 @@ the set, add `app/src/test/resources/cognitive/eval/fixtures/fixture_NNN.json`
 ### E2E scenario: semantic recall + relation questions (Phase 3)
 
 Precondition: fresh `jarvis.db` or an existing store; Sherpa engine;
-Settings → Память → memory enabled. The eval gate already decided the
+Настройки → Память → memory enabled. The eval gate already decided the
 DEFAULT (vectors OFF — see CHANGELOG, the §10.2 negative result); this
 scenario exercises the shipped features that do NOT depend on that
 verdict, plus the opt-in vector path.
@@ -644,7 +662,7 @@ verdict, plus the opt-in vector path.
 2. «Джарвис, кто мой начальник?» → the answer names Иванов (the
    relation-question boost promotes the fact even with zero lexical
    overlap between «начальник» and the stored value).
-3. Settings → Память → Семантический поиск по памяти → «Проверить качество
+3. Настройки → Память → Дополнительно → «Семантический поиск по памяти» → «Проверить качество
    поиска»: the result line shows the local engine numbers and, when the
    account has embeddings entitlement, the cloud branch. STATIC probe strings
    are sent for the cloud branch — never user facts (the on-screen note says
@@ -686,7 +704,7 @@ This smoke earned its keep: it found FOUR defects the JVM suite could not, three
 of which would have shipped (wrong init thread, a native crash from no-arg
 `RouteOptions()`, and transit sections fanned out into sequential rides).
 
-Prereqs: a **MapKit Mobile SDK key** in Settings → «Карты» (Yandex developer
+Prereqs: a **MapKit Mobile SDK key** in **Настройки → Погода и карты → Дополнительно** (Yandex developer
 cabinet → MapKit Mobile SDK); the Yandex Cloud key does NOT work here. MapKit
 keys are bound to the app's package/SHA, so a debug build and a release build
 need separate keys. To watch the lane:
@@ -721,7 +739,7 @@ adb logcat | grep -iE "MapKit|maps-mobile|UnsatisfiedLink|Geo|dalvikvm"
    then Стоп → Запустить (same process, graph rebuilt). Search must still work
    and logcat must NOT say «API key is already set».
 6. **`KeyChanged` path (full APP restart applies the new key).** Change the key
-   in Settings: the next geo call must answer the «restart the app» message
+   in Настройки → Погода и карты → Дополнительно: the next geo call must answer the «restart the app» message
    (`GeoError.KEY_CHANGED`), NOT crash. Kill the app process fully and relaunch —
    the new key must now be live.
 7. **Live organization search.** «Джарвис, найди аптеку рядом» → a real
@@ -825,7 +843,7 @@ adb logcat | grep -iE "MapKit|maps-mobile|UnsatisfiedLink|Geo|dalvikvm"
   test `browserConnect_worksFromLooperlessProductionThread` pins this.
 - **Acoustic echo cancellation is opt-in, default OFF (wake word vs loud
   music).** The mic otherwise hears the speaker: loud external playback can
-  mask the wake word entirely. Enable it in Settings → «Эхоподавление», or
+  mask the wake word entirely. Enable it in **Настройки → Слушание → Дополнительно**, or
   use `pauseMusicOnWake` (config, default off, no auto-resume).
 - **Rich transport is player-dependent.** seek/like/repeat/shuffle/speed are
   gated on the session's action mask and rating type; media-key fallback only

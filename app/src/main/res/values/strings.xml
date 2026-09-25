@@ -476,4 +476,36 @@
     <string name="settings_semantic_vectors_failed">Не удалось построить векторы: %1$s</string>
     <string name="settings_semantic_vectors_no_engine">Сначала выберите движок поиска выше (или включите память)</string>
     <string name="settings_memory_export_failed">Не удалось экспортировать память</string>
+
+    <!-- Settings redesign (foundation): category list + apply-policy banners -->
+    <string name="settings_cat_brain">Помощник</string>
+    <string name="settings_cat_brain_sub">Модель и ключи</string>
+    <string name="settings_cat_speech">Речь</string>
+    <string name="settings_cat_speech_sub">Голос и произношение</string>
+    <string name="settings_cat_listening">Слушание</string>
+    <string name="settings_cat_listening_sub">Активация и диалог</string>
+    <string name="settings_cat_weather_maps">Погода и карты</string>
+    <string name="settings_cat_weather_maps_sub">Город и ключ карт</string>
+    <string name="settings_cat_memory">Память</string>
+    <string name="settings_cat_memory_sub">Память и поиск</string>
+    <string name="settings_cat_proactivity">Инициатива</string>
+    <string name="settings_cat_proactivity_sub">Инициатива и тишина</string>
+    <string name="settings_cat_music">Музыка</string>
+    <string name="settings_cat_music_sub">Плеер по умолчанию</string>
+    <string name="settings_cat_accounts">Аккаунты и ключи</string>
+    <string name="settings_cat_accounts_sub">Ключи доступа</string>
+    <string name="settings_advanced_show">Дополнительно · %1$d параметров</string>
+    <string name="settings_apply_service_restart">Изменения вступят в силу после перезапуска службы.</string>
+    <string name="settings_apply_app_restart">Изменения вступят в силу только после полного перезапуска приложения.</string>
+    <string name="settings_apply_restart_action">Перезапустить</string>
+
+    <!-- Settings redesign (D1): list host + pattern screens -->
+    <string name="back">Назад</string>
+    <string name="settings_about_title">О приложении</string>
+    <string name="settings_about_version">Версия %1$s</string>
+    <string name="settings_listening_dialogue_section">Диалог</string>
+    <string name="settings_listening_activation_section">Активация</string>
+    <string name="settings_brain_key_set">Ключ задан</string>
+    <string name="settings_brain_key_missing">Ключ не задан</string>
+    <string name="settings_brain_key_manage">Управление ключами</string>
 </resources>

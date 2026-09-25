@@ -10,7 +10,6 @@
     <ID>CyclomaticComplexMethod:LlmClients.kt$SseLlmClient$override fun chatStream(request: ChatRequest): Flow&lt;LlmChunk&gt;</ID>
     <ID>CyclomaticComplexMethod:MusicTools.kt$MusicTools.ControlPlaybackTool$override suspend fun execute(arguments: String): String</ID>
     <ID>CyclomaticComplexMethod:NlmsEchoCanceller.kt$NlmsEchoCanceller$override fun process(micFrame: ShortArray): ShortArray</ID>
-    <ID>CyclomaticComplexMethod:SettingsActivity.kt$SettingsActivity$override fun onCreate(savedInstanceState: Bundle?)</ID>
     <ID>CyclomaticComplexMethod:SseParser.kt$SseParser$fun parseChunk(json: Json, data: String): ParsedChunk?</ID>
     <ID>CyclomaticComplexMethod:TransportControl.kt$TransportControl$suspend fun control( spec: MusicPlaybackOrchestrator.ControlSpec, appHint: String?, ): MusicPlaybackOrchestrator.Outcome</ID>
     <ID>CyclomaticComplexMethod:TurnActivity.kt$TurnActivityLabels$fun toolRes(tool: String): Int?</ID>
@@ -31,10 +30,8 @@
     <ID>EmptyFunctionBlock:SessionManagerTest.kt$FakeWakeWord${}</ID>
     <ID>EmptyFunctionBlock:SessionManagerTest.kt$GatedPlayer${}</ID>
     <ID>EmptyFunctionBlock:SessionManagerTest.kt$PumpAudioSource${}</ID>
-    <ID>EmptyFunctionBlock:SettingsActivity.kt$SettingsActivity.&lt;no name provided&gt;${}</ID>
     <ID>LargeClass:MusicOrchestratorTest.kt$MusicOrchestratorTest</ID>
     <ID>LargeClass:SessionManagerTest.kt$SessionManagerTest</ID>
-    <ID>LongMethod:SettingsActivity.kt$SettingsActivity$override fun onCreate(savedInstanceState: Bundle?)</ID>
     <ID>LoopWithTooManyJumpStatements:AlarmScheduler.kt$AndroidAlarmScheduler$for</ID>
     <ID>LoopWithTooManyJumpStatements:BpeTokenizer.kt$BpeTokenizer$for</ID>
     <ID>LoopWithTooManyJumpStatements:ConversationManager.kt$ConversationManager$for</ID>

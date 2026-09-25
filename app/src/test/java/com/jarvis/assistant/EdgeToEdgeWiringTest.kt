@@ -74,7 +74,7 @@ class EdgeToEdgeWiringTest {
             file.name to (text to match)
         }
 
-        assertEquals("expected the six edge-to-edge screens", 6, screens.size)
+        assertEquals("expected the seven edge-to-edge screens", 7, screens.size)
 
         for ((name, pair) in screens) {
             val (text, match) = pair
@@ -103,7 +103,9 @@ class EdgeToEdgeWiringTest {
             .map { it.name }
             .sorted()
 
-        // Settings is the only screen with text fields; MainActivity has none.
-        assertEquals(listOf("SettingsActivity.kt"), imeActivities)
+        // Both settings hosts keep the IME reservation: the LIST host (the old
+        // single screen, now a category picker) and the DETAIL host, where the
+        // text fields actually live. MainActivity has none.
+        assertEquals(listOf("SettingsActivity.kt", "SettingsDetailActivity.kt"), imeActivities)
     }
 }

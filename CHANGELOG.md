@@ -6,6 +6,67 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Changed — Settings redesign: category list + reusable detail screens
+- **The 1955-line single-scroll Settings screen is now a category LIST →
+  detail flow.** `SettingsActivity` is a thin host (header, pending-restart
+  banner, a `RecyclerView` of eight `SettingsCategory` rows and an About row),
+  and ONE reusable `SettingsDetailActivity` inflates a category's
+  `screen_settings_<id>.xml` and binds its controller. The old 12
+  `settings_card_*.xml` and the intermediate `settings_list_host.xml` are
+  deleted. Adding a screen now touches only the registry + the factory, so the
+  screen stops growing with every new setting — the point of the split.
+- **Eight controllers replace the inline `setup*` methods.** `Brain`,
+  `Speech`, `Listening`, `WeatherMaps`, `Memory`, `Proactivity`, `Music`,
+  `Accounts` each became a small class under `settings/controller/` over a
+  frozen 3-arg seam `(callbacks, prefs, host)`, wired by
+  `SettingsControllerFactory` with an **exhaustive `when` with no `else`** — a
+  new category is a compile error until its controller exists (the same idiom
+  as the LLM-provider `when` in `AppGraph`). `AppPrefs`/`CredentialsStore` are
+  read/written by the controller; every lifecycle, navigation, permission or
+  Activity-result consequence goes through the narrow `SettingsHost` (the only
+  host implementor is `SettingsDetailActivity`), so those stay in one place.
+- **Advanced settings move behind «Дополнительно».** Each detail screen shows
+  its essential controls and hides the long tail behind a disclosure row
+  (`settingsAdvancedToggle`/`settings_advanced_show`). On «Слушание» the row is
+  always present (7 entries — engine, model, imported `.ppn`, Sherpa keyword,
+  sensitivity, AEC mode, follow-up window); on «Помощник»/«Речь» it appears
+  only when the active provider/backend actually has advanced entries; on
+  «Аккаунты и ключи» there is deliberately NO disclosure, because the whole
+  screen is access keys and hiding them would empty it.
+- **When a change applies is now stated once, by `ApplyPolicy`.** The old
+  screen explained restart semantics in four ad-hoc hint strings with no single
+  source of truth. `settings/ApplyPolicy` (`LIVE` / `SERVICE_RESTART` /
+  `APP_RESTART`) + `ApplyPolicies` (the key→policy map) replace them, and
+  `PendingChanges` (process-lifetime, deliberately NOT persisted) drives the
+  shared restart banner; the strongest pending policy wins (`APP_RESTART` >>
+  `SERVICE_RESTART`). **V1 is instruction-only: the banner tells the user a
+  restart is needed and never relaunches the process** (there is intentionally
+  no action button). There is deliberately no async/later policy — recording a
+  fire-and-forget action (vector build, extraction backfill) as a pending
+  restart would instruct the user to restart for something a restart cannot
+  affect.
+- **The [OI]-compatible API key lives on «Аккаунты и ключи» while its URL/model
+  live on «Помощник».** This mirrors GigaChat (whose secret already lived with
+  the keys): the «Помощник» screen shows a read-only «Ключ задан / Ключ не
+  задан» status row per provider that taps through to the keys screen. Because
+  the shared `onSaveLlmProviderSettings` writes all four values, each screen
+  passes the OTHER screen's stored values back unchanged — a blank would
+  silently erase the sibling field.
+- **Dead code removed.** The `sherpaOnnxPath` pref (no writer, no UI, no test
+  reference — an unreachable branch) and the unused `ApplyPolicy.ASYNC` value
+  (nothing maps to it) are gone.
+- **Test guards re-specified for the split.** `SettingsLayoutTest` now asserts
+  per-screen id closure, no duplicate/global ids across screens and hosts,
+  explicit `<include>` sizing, host-completeness and no orphan
+  `screen_settings_*.xml`; new `SettingsCategoryTest` pins the registry and
+  `SettingsInventoryTest` reflects over `AppPrefs` + `CredentialsStore` so a
+  dropped setting fails the build. `SettingsActivity` went 1955 → ~195 lines.
+  There is no Settings instrumentation test; the nightly `androidTest`
+  `LayoutBoundsTest` still hardcodes the list host's `settingsRoot`/
+  `settingsColumn` ids and the 760 dp cap (preserved), while
+  `llmProviderGroup`/`speechBackendGroup` moved to the BRAIN/SPEECH detail
+  screens.
+
 ### Added — Geography: place search + transit/walking routing (Yandex MapKit)
 - **Two new voice tools: `findPlace` (organization/address/place search) and
   `getRoute` (public transport or walking).** The advertised tool surface grows

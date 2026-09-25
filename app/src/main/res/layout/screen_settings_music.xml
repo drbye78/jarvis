@@ -1,50 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Settings card extracted from activity_settings.xml (U1). The card keeps its own
-  android:layout_width/layout_height so this file is a valid, standalone layout, and
-  the per-card margins live on the <include> tag in the host (they legitimately differ
-  per card). Every id declared here is checked by SettingsLayoutTest, which ties the
-  host, these includes and SettingsActivity's findViewById calls together.
+  «Музыка» / MUSIC detail screen (settings redesign, F-C).
+
+  Replaces the placeholder. Source material: settings_card_music.xml.
+
+  All content is ESSENTIAL (contract table: `preferredMusicPlayer` is the only
+  row and it is essential), so there is deliberately NO disclosure here — see
+  SETTINGS_SCREEN_PATTERN.md §6/§8.
+
+  FROZEN IDS (must not be renamed): playerGroup, playerAuto, playerYandex,
+  playerZvuk, playerVk. No new ids are introduced by this screen.
+
+  The change is read lazily by the composition root on every resolve, so it
+  applies to the NEXT voice command — LIVE, no restart, no banner.
 -->
-<com.google.android.material.card.MaterialCardView
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    style="@style/Widget.Jarvis.SettingsCard"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/settingsMusicScreen"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content">
+    android:layout_height="match_parent"
+    android:clipToPadding="false">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="28dp">
 
-        <LinearLayout
-            android:layout_width="match_parent"
+        <TextView
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_music_note"
-                app:tint="?attr/colorPrimary" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:text="@string/music_section"
-                style="@style/TextAppearance.Jarvis.SectionHeader"
-                android:accessibilityHeading="true" />
-        </LinearLayout>
+            android:text="@string/music_section"
+            style="@style/TextAppearance.Jarvis.SectionHeader"
+            android:accessibilityHeading="true" />
 
         <RadioGroup
             android:id="@+id/playerGroup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp">
+            android:layout_marginTop="12dp">
 
             <RadioButton
                 android:id="@+id/playerAuto"
@@ -78,8 +74,8 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="8dp"
             android:text="@string/player_hint"
             style="@style/TextAppearance.Jarvis.Hint" />
     </LinearLayout>
-</com.google.android.material.card.MaterialCardView>
+</ScrollView>

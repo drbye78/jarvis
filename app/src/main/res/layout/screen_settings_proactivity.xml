@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  «Инициатива» / PROACTIVITY detail screen (settings redesign, F-D).
+
+  Replaces the placeholder. Source material: settings_card_behavior.xml.
+
+  ORDERING (essential -> advanced), see SETTINGS_SCREEN_PATTERN.md:
+    1. «Проактивность» section (essential): the master switch + its hint
+    2. «Дополнительно» disclosure (count = 3: quiet start, quiet end, quota)
+    3. advanced container: the quiet-hour steppers and the daily-quota stepper
+
+  All three steppers are advanced per the frozen contract table. The wrapping
+  and clamping arithmetic lives in SettingsMapping.quietHour/quota — the
+  controller must not hand-roll it.
+
+  FROZEN IDS (must not be renamed): behaviorEnabledSwitch,
+  behaviorQuietStartMinus, behaviorQuietStartValue, behaviorQuietStartPlus,
+  behaviorQuietEndMinus, behaviorQuietEndValue, behaviorQuietEndPlus,
+  behaviorQuotaMinus, behaviorQuotaValue, behaviorQuotaPlus.
+
+  NEW ID introduced by this screen (controller contract):
+  settingsProactivityAdvanced. Disclosure ids come from settings_disclosure.xml.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/settingsProactivityScreen"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipToPadding="false">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="28dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_behavior_section"
+            style="@style/TextAppearance.Jarvis.SectionHeader"
+            android:accessibilityHeading="true" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/behaviorEnabledSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/settings_behavior_toggle" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/settings_behavior_hint"
+            style="@style/TextAppearance.Jarvis.Hint" />
+
+        <!-- Advanced: quiet hours + daily quota. -->
+        <include
+            layout="@layout/settings_disclosure"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp" />
+
+        <LinearLayout
+            android:id="@+id/settingsProactivityAdvanced"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/settings_behavior_quiet" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/settings_behavior_quiet_start" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/behaviorQuietStartMinus"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="@dimen/touch_target_min"
+                    android:minHeight="@dimen/touch_target_min"
+                    android:contentDescription="@string/settings_behavior_quiet_start_minus_cd"
+                    android:text="@string/settings_behavior_minus" />
+
+                <TextView
+                    android:id="@+id/behaviorQuietStartValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:text="23:00" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/behaviorQuietStartPlus"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="@dimen/touch_target_min"
+                    android:minHeight="@dimen/touch_target_min"
+                    android:contentDescription="@string/settings_behavior_quiet_start_plus_cd"
+                    android:text="@string/settings_behavior_plus" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/settings_behavior_quiet_end" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/behaviorQuietEndMinus"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="@dimen/touch_target_min"
+                    android:minHeight="@dimen/touch_target_min"
+                    android:contentDescription="@string/settings_behavior_quiet_end_minus_cd"
+                    android:text="@string/settings_behavior_minus" />
+
+                <TextView
+                    android:id="@+id/behaviorQuietEndValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:text="08:00" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/behaviorQuietEndPlus"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="@dimen/touch_target_min"
+                    android:minHeight="@dimen/touch_target_min"
+                    android:contentDescription="@string/settings_behavior_quiet_end_plus_cd"
+                    android:text="@string/settings_behavior_plus" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/settings_behavior_quota" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/behaviorQuotaMinus"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="@dimen/touch_target_min"
+                    android:minHeight="@dimen/touch_target_min"
+                    android:contentDescription="@string/settings_behavior_quota_minus_cd"
+                    android:text="@string/settings_behavior_minus" />
+
+                <TextView
+                    android:id="@+id/behaviorQuotaValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:text="2" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/behaviorQuotaPlus"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="@dimen/touch_target_min"
+                    android:minHeight="@dimen/touch_target_min"
+                    android:contentDescription="@string/settings_behavior_quota_plus_cd"
+                    android:text="@string/settings_behavior_plus" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

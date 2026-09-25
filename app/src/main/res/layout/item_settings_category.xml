@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One row of the settings category list (settings redesign, D1).
+
+  M3 list idiom: a flat, full-width tappable row (NOT a card) on the screen
+  surface, 72 dp minimum height, ripple background, a one-line summary under the
+  title and a trailing chevron so the row reads as navigation.
+
+  IDS (bound by the list adapter, no renames):
+    settingsCategoryTitle   — SettingsCategory.titleRes
+    settingsCategorySummary — SettingsCategory.subtitleRes, single line, ellipsised
+    settingsCategoryChevron — decorative, no content description
+
+  Leading icon: intentionally DISABLED in v1. The app ships ic_logo / ic_mic /
+  ic_music_note, which cannot distinguish eight categories, and the design brief
+  forbids authoring new glyphs. The commented block below is the exact slot to
+  re-enable once a per-category glyph set exists; the row is designed to stay
+  balanced with or without it.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/settingsCategoryRow"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="72dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true"
+    android:paddingStart="20dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="12dp">
+
+    <!--
+    <ImageView
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginEnd="20dp"
+        android:importantForAccessibility="no"
+        app:tint="?attr/colorPrimary" />
+    -->
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/settingsCategoryTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            style="@style/TextAppearance.Material3.TitleMedium"
+            tools:text="Помощник" />
+
+        <TextView
+            android:id="@+id/settingsCategorySummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            style="@style/TextAppearance.Jarvis.Hint"
+            tools:text="Модель и ключи" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/settingsCategoryChevron"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginStart="12dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/material_ic_keyboard_arrow_right_black_24dp"
+        app:tint="?attr/colorOnSurfaceVariant" />
+</LinearLayout>

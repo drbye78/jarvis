@@ -1,10 +1,12 @@
 package com.jarvis.assistant
 
 import android.app.Activity
+import android.content.Intent
 import android.view.View
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.jarvis.assistant.settings.SettingsCategory
 import com.jarvis.assistant.util.AppPrefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,16 +16,23 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Device-level guard for the "reading column" invariant on BOTH the home screen
- * ([MainActivity]) and [SettingsActivity].
+ * Device-level guard for the "reading column" invariant on the home screen
+ * ([MainActivity]) and the two settings hosts
+ * ([SettingsActivity] list + [SettingsDetailActivity] detail).
  *
  * The regression class this pins: `android:maxWidth` is TextView-only and is
  * silently ignored on a `LinearLayout`, and a fixed-dp `layout_width` on a
- * `layout_gravity="center_horizontal"` child of a `FrameLayout`/`ScrollView` is
- * NOT clamped — it centres at `left = (parentWidth - childWidth) / 2`, which goes
- * negative and spills the child off both edges. Production now caps the column at
- * runtime in `onCreate`, so this test measures ABSOLUTE on-screen bounds and
- * checks [MainActivity] and [SettingsActivity] both honour it.
+ * `layout_gravity="center_horizontal"` child is NOT clamped — it centres at
+ * `left = (parentWidth - childWidth) / 2`, which goes negative and spills the
+ * child off both edges. Production caps the column at runtime in `onCreate`, so
+ * this test measures ABSOLUTE on-screen bounds.
+ *
+ * FLIP note (settings redesign): the old single screen became a category LIST
+ * host, so its wide provider `RadioGroup`s no longer exist on the entry screen —
+ * `llmProviderGroup` moved to the BRAIN detail screen and `speechBackendGroup`
+ * to the SPEECH detail screen. The wide-control assertions therefore launch the
+ * relevant DETAIL screens; the list host keeps the column assertions over its
+ * own full-width children (the category list + About row).
  *
  * This file is instrumentation-only: it never reads, asserts on or logs any
  * credential field content, and it touches no production code.
@@ -59,20 +68,58 @@ class LayoutBoundsTest {
     }
 
     @Test
-    fun settingsActivity_readingColumn_isCappedAndContained() {
-        // SettingsActivity has no onboarding gate; it launches standalone.
-        // Wide children: the provider RadioGroup and the speech-backend
-        // RadioGroup (both match_parent) — the latter is what catches the
-        // Yandex card spilling past the reading column.
+    fun settingsListActivity_readingColumn_isCappedAndContained() {
+        // The list host has no onboarding gate; it launches standalone. Its
+        // full-width children are the category list and the About row.
         ActivityScenario.launch(SettingsActivity::class.java).use { scenario ->
             val layout = captureLayout(
                 scenario = scenario,
                 rootId = R.id.settingsRoot,
                 columnId = R.id.settingsColumn,
-                controlIds = listOf(R.id.llmProviderGroup, R.id.speechBackendGroup),
+                controlIds = listOf(R.id.settingsCategoryList, R.id.settingsAboutRow),
             )
             assertReadingColumn(layout, SETTINGS_COLUMN_MAX_WIDTH_DP, "settingsColumn")
-            assertControlsInsideWindow(layout, "settings")
+            assertControlsInsideWindow(layout, "settingsList")
+        }
+    }
+
+    @Test
+    fun settingsBrainDetail_readingColumn_isCappedAndContained() {
+        // The provider RadioGroup now lives on the BRAIN detail screen; assert
+        // it stays inside the window under the same 760 dp column cap.
+        assertDetailScreen(
+            category = SettingsCategory.BRAIN,
+            controlIds = listOf(R.id.llmProviderGroup),
+            name = "settingsBrainDetail",
+        )
+    }
+
+    @Test
+    fun settingsSpeechDetail_readingColumn_isCappedAndContained() {
+        // Same for the speech-backend RadioGroup on the SPEECH detail screen.
+        assertDetailScreen(
+            category = SettingsCategory.SPEECH,
+            controlIds = listOf(R.id.speechBackendGroup),
+            name = "settingsSpeechDetail",
+        )
+    }
+
+    /** Launch a category detail screen and assert its column + controls fit. */
+    private fun assertDetailScreen(
+        category: SettingsCategory,
+        controlIds: List<Int>,
+        name: String,
+    ) {
+        val intent: Intent = SettingsDetailActivity.intent(context, category)
+        ActivityScenario.launch<SettingsDetailActivity>(intent).use { scenario ->
+            val layout = captureLayout(
+                scenario = scenario,
+                rootId = R.id.settingsDetailRoot,
+                columnId = R.id.settingsDetailColumn,
+                controlIds = controlIds,
+            )
+            assertReadingColumn(layout, SETTINGS_COLUMN_MAX_WIDTH_DP, "settingsDetailColumn")
+            assertControlsInsideWindow(layout, name)
         }
     }
 

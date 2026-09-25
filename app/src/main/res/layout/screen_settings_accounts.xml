@@ -1,22 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Settings card extracted from activity_settings.xml (U1). The card keeps its own
-  android:layout_width/layout_height so this file is a valid, standalone layout, and
-  the per-card margins live on the <include> tag in the host (they legitimately differ
-  per card). Every id declared here is checked by SettingsLayoutTest, which ties the
-  host, these includes and SettingsActivity's findViewById calls together.
+  «Аккаунты и ключи» / ACCOUNTS detail screen (settings redesign, F-E).
+
+  Replaces the placeholder. Source material: settings_card_credentials.xml
+  (all provider keys) PLUS the [OI]-compatible API key relocated here from
+  settings_card_llm_provider.xml (its URL + model stay on BRAIN).
+
+  NO DISCLOSURE on this screen (frozen design decision): a disclosure is used
+  only when a screen has BOTH essential and advanced content, and every row
+  here is an access key — hiding them would empty the screen.
+
+  Keys are grouped by provider, each under a section heading:
+    1. Picovoice (optional; needed only by the Porcupine engine)
+    2. Sber Salute  — client id + secret (validated live)
+    3. Yandex       — one Cloud API key (shared speech + AI Studio LLM)
+    4. GigaChat     — client id + secret (validated live)
+    5. [OI]-compatible endpoint API key (URL/model live on BRAIN)
+    6. check + save actions
+
+  FROZEN IDS (must not be renamed): picovoiceKeyLayout, picovoiceKey,
+  sberCredentialsBlock, saluteIdLayout, saluteId, saluteSecretLayout,
+  saluteSecret, yandexCredentialsBlock, yandexApiKeyLayout, yandexApiKey,
+  gigaChatIdLayout, gigaChatId, gigaChatSecretLayout, gigaChatSecret,
+  gigaChatCheckStatus, checkCredentialsButton, saveCredentialsButton,
+  openAiApiKeyLayout, openAiApiKey.
+
+  NEW ID introduced by this screen (controller contract): saluteCheckStatus
+  (the live Salute verdict row, symmetric with gigaChatCheckStatus).
 -->
-<com.google.android.material.card.MaterialCardView
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    style="@style/Widget.Jarvis.SettingsCard"
+    android:id="@+id/settingsAccountsScreen"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content">
+    android:layout_height="match_parent"
+    android:clipToPadding="false">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="28dp">
 
         <TextView
             android:layout_width="wrap_content"
@@ -25,7 +51,6 @@
             style="@style/TextAppearance.Jarvis.SectionHeader"
             android:accessibilityHeading="true" />
 
-        <!-- Which credentials are mandatory, and what gets validated -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -33,7 +58,7 @@
             android:text="@string/credentials_hint"
             style="@style/TextAppearance.Jarvis.Hint" />
 
-        <!-- Picovoice access key (normal text, not a password) -->
+        <!-- Picovoice (optional; only the Porcupine engine consumes it). -->
         <com.google.android.material.textfield.TextInputLayout
             style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
             android:id="@+id/picovoiceKeyLayout"
@@ -49,15 +74,21 @@
                 android:inputType="text" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- Sber Salute: Client ID + Client Secret. Needed only while the Sber
-             speech backend is active, so the whole pair is gated: with Yandex
-             selected these are neither used nor validated, and leaving them
-             editable would invite the user to "fix" keys nothing reads. -->
+        <!-- Sber SaluteSpeech: client id + secret. The live verdict renders
+             under the pair (split-field write-back keeps the halves honest). -->
         <LinearLayout
             android:id="@+id/sberCredentialsBlock"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="@string/speech_backend_sber"
+                style="@style/TextAppearance.Jarvis.SectionHeader"
+                android:accessibilityHeading="true" />
 
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
@@ -90,7 +121,6 @@
                     android:inputType="textPassword" />
             </com.google.android.material.textfield.TextInputLayout>
 
-            <!-- Live validation status for the Salute pair -->
             <TextView
                 android:id="@+id/saluteCheckStatus"
                 android:layout_width="match_parent"
@@ -100,15 +130,21 @@
                 style="@style/TextAppearance.Jarvis.Hint" />
         </LinearLayout>
 
-        <!-- Yandex SpeechKit: a single API key (no folder id, no OAuth pair —
-             the service-account key never expires once issued). Shown only
-             while the Yandex speech backend is active. -->
+        <!-- Yandex Cloud: one API key (shared with the AI Studio LLM). No
+             folder id here — it lives on BRAIN. -->
         <LinearLayout
             android:id="@+id/yandexCredentialsBlock"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone">
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="@string/provider_yandex"
+                style="@style/TextAppearance.Jarvis.SectionHeader"
+                android:accessibilityHeading="true" />
 
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
@@ -134,7 +170,15 @@
                 style="@style/TextAppearance.Jarvis.Hint" />
         </LinearLayout>
 
-        <!-- GigaChat: Client ID + Client Secret -->
+        <!-- GigaChat (LLM): client id + secret, validated live. -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/provider_gigachat"
+            style="@style/TextAppearance.Jarvis.SectionHeader"
+            android:accessibilityHeading="true" />
+
         <com.google.android.material.textfield.TextInputLayout
             style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
             android:id="@+id/gigaChatIdLayout"
@@ -166,7 +210,6 @@
                 android:inputType="textPassword" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- Live validation status for the GigaChat pair -->
         <TextView
             android:id="@+id/gigaChatCheckStatus"
             android:layout_width="match_parent"
@@ -175,7 +218,34 @@
             android:visibility="gone"
             style="@style/TextAppearance.Jarvis.Hint" />
 
-        <!-- Immediate re-validation of both mandatory pairs -->
+        <!-- [OI]-compatible endpoint API key. Its URL + model live on BRAIN;
+             this screen owns ONLY the key, so saving must reuse the stored
+             URL/model/folder rather than blanking them. -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/provider_openai_compat"
+            style="@style/TextAppearance.Jarvis.SectionHeader"
+            android:accessibilityHeading="true" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:id="@+id/openAiApiKeyLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:hint="@string/api_key_label"
+            app:endIconMode="password_toggle">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/openAiApiKey"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textPassword" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Immediate re-validation of both mandatory pairs. -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/checkCredentialsButton"
             style="@style/Widget.Material3.Button.OutlinedButton"
@@ -191,4 +261,4 @@
             android:layout_marginTop="18dp"
             android:text="@string/save" />
     </LinearLayout>
-</com.google.android.material.card.MaterialCardView>
+</ScrollView>

@@ -477,4 +477,36 @@
     <string name="settings_semantic_vectors_failed">Failed to build vectors: %1$s</string>
     <string name="settings_semantic_vectors_no_engine">Pick a search mode above first (or enable memory)</string>
     <string name="settings_memory_export_failed">Could not export memory</string>
+
+    <!-- Settings redesign (foundation): category list + apply-policy banners -->
+    <string name="settings_cat_brain">Assistant</string>
+    <string name="settings_cat_brain_sub">Model &amp; keys</string>
+    <string name="settings_cat_speech">Speech</string>
+    <string name="settings_cat_speech_sub">Voice &amp; delivery</string>
+    <string name="settings_cat_listening">Listening</string>
+    <string name="settings_cat_listening_sub">Activation &amp; dialogue</string>
+    <string name="settings_cat_weather_maps">Weather &amp; maps</string>
+    <string name="settings_cat_weather_maps_sub">City &amp; maps key</string>
+    <string name="settings_cat_memory">Memory</string>
+    <string name="settings_cat_memory_sub">Memory &amp; search</string>
+    <string name="settings_cat_proactivity">Proactivity</string>
+    <string name="settings_cat_proactivity_sub">Proactivity &amp; quiet hours</string>
+    <string name="settings_cat_music">Music</string>
+    <string name="settings_cat_music_sub">Default player</string>
+    <string name="settings_cat_accounts">Accounts &amp; keys</string>
+    <string name="settings_cat_accounts_sub">Access keys</string>
+    <string name="settings_advanced_show">Advanced · %1$d settings</string>
+    <string name="settings_apply_service_restart">Changes will take effect after the service restarts.</string>
+    <string name="settings_apply_app_restart">Changes will take effect only after a full app restart.</string>
+    <string name="settings_apply_restart_action">Restart</string>
+
+    <!-- Settings redesign (D1): list host + pattern screens -->
+    <string name="back">Back</string>
+    <string name="settings_about_title">About</string>
+    <string name="settings_about_version">Version %1$s</string>
+    <string name="settings_listening_dialogue_section">Dialogue</string>
+    <string name="settings_listening_activation_section">Activation</string>
+    <string name="settings_brain_key_set">Key set</string>
+    <string name="settings_brain_key_missing">Key not set</string>
+    <string name="settings_brain_key_manage">Manage keys</string>
 </resources>

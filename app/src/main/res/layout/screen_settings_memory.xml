@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  «Память» / MEMORY detail screen (settings redesign, F-E).
+
+  Replaces the placeholder. Source material: settings_card_memory.xml.
+
+  ORDERING (essential -> advanced), see SETTINGS_SCREEN_PATTERN.md:
+    1. «Память» section                               (essential)
+       - memoryEnabledSwitch                          (essential)
+    2. «Дополнительно» disclosure                     (count = 4 advanced
+       settings: memoryAutoExtract, memoryCloudEnabled,
+       memorySensitiveVisible, memoryEmbedder)
+    3. advanced container:
+       - the three remaining memory switches
+       - the memory inspector + extraction-backfill actions
+       - «Семантический поиск» section: embedder selector + status, the
+         on-device benchmark action and the opt-in vector-build action.
+         The actions are NOT persisted settings, so they are not counted in
+         the disclosure label; they live here because the whole semantic
+         section (its only setting is the advanced embedder) is advanced.
+
+  FROZEN IDS (must not be renamed): memoryEnabledSwitch,
+  memoryAutoExtractSwitch, memoryCloudSwitch, memorySensitiveSwitch,
+  embedderSelectorButton, embedderStatusText, semanticBenchmarkButton,
+  semanticBenchmarkResult, semanticVectorsButton, semanticVectorsStatus,
+  memoryInspectorButton, memoryBackfillButton, memoryBackfillStatus.
+
+  NEW ID introduced by this screen (controller contract): settingsMemoryAdvanced.
+  Disclosure ids come from settings_disclosure.xml.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/settingsMemoryScreen"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipToPadding="false">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="28dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_memory_section"
+            style="@style/TextAppearance.Jarvis.SectionHeader"
+            android:accessibilityHeading="true" />
+
+        <!-- The one essential control: the master memory toggle. The three
+             remaining prefs are advanced and sit behind the disclosure. -->
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/memoryEnabledSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/settings_memory_toggle" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/settings_memory_hint"
+            style="@style/TextAppearance.Jarvis.Hint" />
+
+        <include
+            layout="@layout/settings_disclosure"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp" />
+
+        <LinearLayout
+            android:id="@+id/settingsMemoryAdvanced"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/memoryAutoExtractSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/settings_memory_auto_extract" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/settings_memory_auto_extract_hint"
+                style="@style/TextAppearance.Jarvis.Hint" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/memoryCloudSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/settings_memory_cloud" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/settings_memory_cloud_hint"
+                style="@style/TextAppearance.Jarvis.Hint" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/memorySensitiveSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/settings_memory_sensitive" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/settings_memory_sensitive_hint"
+                style="@style/TextAppearance.Jarvis.Hint" />
+
+            <!-- Memory actions (not settings): browse facts / backfill extraction. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/memoryInspectorButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/settings_memory_inspector" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/memoryBackfillButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/settings_memory_backfill" />
+
+            <TextView
+                android:id="@+id/memoryBackfillStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/settings_memory_backfill_hint"
+                style="@style/TextAppearance.Jarvis.Hint" />
+
+            <!-- Semantic recall (COGNITIVE_PLAN Phase 3). Its only setting is the
+                 advanced embedder selector; the rest are actions/status rows. -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="@string/settings_semantic_section"
+                style="@style/TextAppearance.Jarvis.SectionHeader"
+                android:accessibilityHeading="true" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/settings_semantic_hint"
+                style="@style/TextAppearance.Jarvis.Hint" />
+
+            <Button
+                android:id="@+id/embedderSelectorButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/settings_semantic_embedder_auto" />
+
+            <TextView
+                android:id="@+id/embedderStatusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                style="@style/TextAppearance.Jarvis.Hint" />
+
+            <Button
+                android:id="@+id/semanticBenchmarkButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/settings_semantic_benchmark" />
+
+            <TextView
+                android:id="@+id/semanticBenchmarkResult"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                style="@style/TextAppearance.Jarvis.Hint" />
+
+            <Button
+                android:id="@+id/semanticVectorsButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/settings_semantic_vectors" />
+
+            <TextView
+                android:id="@+id/semanticVectorsStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                style="@style/TextAppearance.Jarvis.Hint" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

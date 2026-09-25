@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Settings DETAIL host (settings redesign, D1). One Activity instance shows one
+  category at a time: its controller's `screen_settings_*.xml` is inflated into
+  `settingsDetailContent`.
+
+  ADD-ONLY PHASE: new file, not yet referenced by any Activity. At the FLIP,
+  `SettingsDetailActivity` uses this layout, sets `settingsDetailTitle` from
+  `SettingsCategory.titleRes`, and wires `settingsDetailBack` to finish().
+
+  The 760 dp reading column is owned HERE by `settingsDetailColumn`: the Activity
+  applies `SETTINGS_COLUMN_MAX_WIDTH_DP` to it (and to `settingsListColumn` in
+  settings_list_host.xml), so every screen is capped and centred on tablets.
+  The banner sits inside the capped column, above the scrolled content.
+
+  Manifest note (flip lane): the detail Activity must pin
+  `windowSoftInputMode="adjustResize"` and reserve the IME via EdgeToEdge.pad on
+  `settingsDetailRoot`, exactly like SettingsActivity does today.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/settingsDetailRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground"
+    android:orientation="vertical">
+
+    <!-- Header: back + category title (NoActionBar theme). -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="?attr/actionBarSize"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="8dp">
+
+        <ImageButton
+            android:id="@+id/settingsDetailBack"
+            android:layout_width="@dimen/touch_target_min"
+            android:layout_height="@dimen/touch_target_min"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/back"
+            android:src="@drawable/material_ic_keyboard_arrow_left_black_24dp"
+            app:tint="?attr/colorOnSurface" />
+
+        <TextView
+            android:id="@+id/settingsDetailTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            style="@style/TextAppearance.Jarvis.ScreenTitle" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/settingsDetailColumn"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <!-- Restart-needed notice: instruct-only in v1. -->
+        <include
+            layout="@layout/settings_apply_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <!-- The category controller's screen root is inflated here. -->
+        <FrameLayout
+            android:id="@+id/settingsDetailContent"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+    </LinearLayout>
+</LinearLayout>

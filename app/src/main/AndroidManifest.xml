@@ -110,6 +110,14 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- Settings redesign (FLIP): the ONE reusable category-detail host.
+             Selected by a SettingsCategory extra; the same IME reasoning as
+             SettingsActivity above applies to its text-field screens. -->
+        <activity
+            android:name=".SettingsDetailActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- COGNITIVE_PLAN 1.8: Memory Inspector (view/delete/export/wipe). -->
         <activity
             android:name=".MemoryInspectorActivity"

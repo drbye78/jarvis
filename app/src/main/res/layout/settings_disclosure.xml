@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The «Дополнительно» affordance (settings redesign, D1). A full-width tappable
+  row that expands/collapses the screen's advanced section.
+
+  It is a SEPARATE include from the section it reveals: the controller places
+  this row immediately above a sibling container (e.g. `settingsBrainAdvanced`)
+  and toggles that container's visibility. Include this file with explicit
+  layout_width/layout_height.
+
+  CONTROLLER CONTRACT (see SETTINGS_SCREEN_PATTERN.md §disclosure):
+    - default visibility here is GONE; the controller shows the row only when
+      the current screen/provider has advanced settings, and sets
+      `settingsAdvancedLabel` to `settings_advanced_show` with that count.
+    - on tap: toggle the advanced container and rotate `settingsAdvancedChevron`
+      by 180° (a single `animate().rotation()` or an immediate `rotation` set).
+    - the chevron points DOWN when collapsed, UP when expanded.
+
+  State styling: primary-coloured label + chevron so the row reads as an action,
+  never as a missing block.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/settingsAdvancedToggle"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="48dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true"
+    android:visibility="gone"
+    android:paddingStart="20dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp"
+    tools:visibility="visible">
+
+    <TextView
+        android:id="@+id/settingsAdvancedLabel"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        style="@style/TextAppearance.Material3.LabelLarge"
+        android:textColor="?attr/colorPrimary"
+        tools:text="Дополнительно · 7 параметров" />
+
+    <ImageView
+        android:id="@+id/settingsAdvancedChevron"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_marginStart="8dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/material_ic_menu_arrow_down_black_24dp"
+        app:tint="?attr/colorPrimary" />
+</LinearLayout>

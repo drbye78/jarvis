@@ -605,22 +605,26 @@ class AppGraph(
     private val sherpaModelStore by lazy { com.jarvis.assistant.audio.SherpaModelStore(appContext) }
 
     /**
-     * FIXPLAN C: build the Sherpa engine for a request, resolving custom
-     * keywords and model directories. Runs OFF the main thread inside the
+     * FIXPLAN C: build the Sherpa engine for a request, resolving a custom
+     * keyword against the bundled model. Runs OFF the main thread inside the
      * detector's build path; any failure throws → the detector surfaces
      * [com.jarvis.assistant.contracts.DetectorState.Failed] with the reason.
      *
-     * Resolution order:
-     * 1. No custom keyword, no user model dir → bundled assets (zero-config,
-     *    `newFromAsset`) with wake + stop phrases.
-     * 2. Custom keyword and/or user model dir → [SherpaModelStore] extraction
-     *    (or the user dir), BPE-tokenize the keyword with THAT model's vocab,
-     *    generate the keywords file, build via `newFromFile`.
+     * Resolution:
+     * 1. No custom keyword → bundled assets (zero-config, `newFromAsset`)
+     *    with wake + stop phrases.
+     * 2. Custom keyword → [SherpaModelStore] extraction of the bundled model,
+     *    BPE-tokenize the keyword with THAT model's vocab, generate the
+     *    keywords file, build via `newFromFile` — the supported FIXPLAN C flow.
+     *
+     * Dormant-knob removal (settings-redesign foundation): the old "user model
+     * directory" branch read `appPrefs.sherpaOnnxPath`, a pref with NO writer,
+     * NO UI and NO test reference (only ever blank). It is deleted here so the
+     * custom-keyword path above stays the single, supported model source.
      */
     private fun buildSherpaEngine(req: WakeWordRequest): com.jarvis.assistant.audio.SherpaKwsEngine {
         val customKeyword = req.sherpaCustomKeyword?.trim().orEmpty()
-        val userModelDir = appPrefs.sherpaOnnxPath.trim()
-        if (customKeyword.isEmpty() && userModelDir.isEmpty()) {
+        if (customKeyword.isEmpty()) {
             val entries = buildList {
                 add(com.jarvis.assistant.audio.SherpaKeywords.wake())
                 if (req.stopPhraseEnabled) add(com.jarvis.assistant.audio.SherpaKeywords.stop())
@@ -633,12 +637,7 @@ class AppGraph(
             )
         }
 
-        val usingUserModel = userModelDir.isNotEmpty()
-        val modelDir = if (usingUserModel) {
-            java.io.File(userModelDir)
-        } else {
-            sherpaModelStore.ensureExtracted()
-        }
+        val modelDir = sherpaModelStore.ensureExtracted()
         val tokenizer = com.jarvis.assistant.audio.BpeTokenizer.fromModelFile(
             java.io.File(modelDir, "bpe.model"),
         ) ?: throw IllegalStateException(
@@ -661,23 +660,17 @@ class AppGraph(
             )
             if (req.stopPhraseEnabled) add(com.jarvis.assistant.audio.SherpaKeywords.stop())
         }
-        val provider = if (usingUserModel) "" else "xnnpack" // unknown models → default CPU
         return com.jarvis.assistant.audio.SherpaKwsEngine(
             context = appContext,
             sensitivity = req.sensitivity,
             entries = entries,
             modelSource = com.jarvis.assistant.audio.SherpaModelSource.Directory(
                 dir = modelDir.absolutePath,
-                provider = provider,
+                provider = "xnnpack", // the bundled model ships an xnnpack provider
             ),
             generatedKeywordsContent =
             com.jarvis.assistant.audio.SherpaKeywords.toKeywordsFileContent(entries),
-            workDir = if (usingUserModel) {
-                // Never write into a user-supplied directory.
-                java.io.File(appContext.filesDir, "sherpa_generated")
-            } else {
-                modelDir // our own extraction — writable by construction
-            },
+            workDir = modelDir, // our own extraction — writable by construction
         )
     }
 
