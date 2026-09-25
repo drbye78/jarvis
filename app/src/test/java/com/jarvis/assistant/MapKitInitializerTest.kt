@@ -28,7 +28,7 @@ class MapKitInitializerTest {
     private fun initializer(bridge: MapKitFactoryBridge) =
         // Unconfined mirrors the app's engineBuildDispatcher test seam: it
         // makes the IO hop synchronous so call-order assertions are exact.
-        MapKitInitializer(bridge, ioDispatcher = Dispatchers.Unconfined)
+        MapKitInitializer(bridge, mainDispatcher = Dispatchers.Unconfined)
 
     @Test
     fun `blank key returns NoKey and leaves the bridge untouched`() = runTest {
@@ -47,8 +47,10 @@ class MapKitInitializerTest {
         val result = initializer(bridge).ensureInitialized(context, "uuid-key")
 
         assertEquals(MapKitInitResult.Ready, result)
+        // onStart() is the documented remedy for LATE init (our lazy Service
+        // path) — it must come after initialize(), exactly once.
         assertEquals(
-            listOf("setLocale:ru_RU", "setApiKey:uuid-key", "initialize"),
+            listOf("setLocale:ru_RU", "setApiKey:uuid-key", "initialize", "onStart"),
             bridge.calls,
         )
     }
@@ -106,6 +108,7 @@ class MapKitInitializerTest {
                 "setLocale:ru_RU",
                 "setApiKey:uuid-key",
                 "initialize",
+                "onStart",
             ),
             bridge.calls,
         )

@@ -180,4 +180,68 @@ class MapKitRouteMapperTest {
         assertEquals(2520.0, result.durationSeconds!!, 1e-9)
         assertEquals("800 м", result.walkingDistanceText)
     }
+
+    /**
+     * Live device data (2026-09-25) showed ONE section carrying «м2, м7, н2»
+     * with identical stop counts: `transports` are the lines that can serve the
+     * section (alternatives), NOT consecutive rides. Emitting each as its own
+     * leg told the user to board three buses in a row.
+     */
+    @Test
+    fun `a section with several lines yields exactly one transport leg`() {
+        val result = mapRouteViews(
+            listOf(
+                route(
+                    sections = listOf(
+                        section(
+                            transports = listOf(
+                                TransportView("м2", "bus"),
+                                TransportView("м7", "bus"),
+                                TransportView("н2", "bus"),
+                            ),
+                            stopCount = 8,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val legs = result.single().legs
+        assertEquals("one section must not fan out into sequential rides", 1, legs.size)
+        assertEquals("м2", (legs.single() as GeoLeg.Transport).line)
+    }
+
+    @Test
+    fun `the recommended line is preferred within a section`() {
+        val result = mapRouteViews(
+            listOf(
+                route(
+                    sections = listOf(
+                        section(
+                            transports = listOf(
+                                TransportView("м2", "bus", recommended = false),
+                                TransportView("м7", "bus", recommended = true),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals("м7", (result.single().legs.single() as GeoLeg.Transport).line)
+    }
+
+    /**
+     * A section can carry a transfer with no resolvable stop name. Emitting
+     * `Transfer(to = "")` put an empty string into the LLM's JSON (observed
+     * live as `Transfer(to=)`), so a blank name degrades to a walking leg.
+     */
+    @Test
+    fun `a blank transfer name is not emitted as a named transfer`() {
+        val blank = mapRouteViews(listOf(route(sections = listOf(section(transferTo = "")))))
+        val whitespace = mapRouteViews(listOf(route(sections = listOf(section(transferTo = "   ")))))
+
+        assertTrue(blank.single().legs.single() is GeoLeg.Walk)
+        assertTrue(whitespace.single().legs.single() is GeoLeg.Walk)
+    }
 }

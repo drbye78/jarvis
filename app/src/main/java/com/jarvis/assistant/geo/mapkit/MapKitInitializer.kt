@@ -31,9 +31,12 @@ sealed interface MapKitInitResult {
  *
  * MapKit's init rules are unforgiving and invisible to the JVM suite unless
  * they are isolated here:
- * - `initialize()` loads native libraries → MUST NOT run on the main thread
- *   (the app targets a Kirin 710A-class tablet; an ANR here is unacceptable),
- *   hence [ioDispatcher].
+ * - `initialize()` MUST run on the **UI thread**: the native runtime rejects any
+ *   other thread with "Runtime could only be initialized from ui thread"
+ *   (VERIFIED on-device 2026-09-25). An earlier revision ran this on
+ *   `Dispatchers.IO` on the wrong assumption that the native load had to stay
+ *   off the main thread to avoid an ANR — the device smoke caught it. Hence
+ *   [mainDispatcher]; the cost is a one-time native load on the UI thread.
  * - `setLocale` / `setApiKey` / `initialize` must run in that order, and
  *   `setApiKey` may be called only ONCE per process (a second call logs
  *   "already set" and can crash).
@@ -43,8 +46,15 @@ sealed interface MapKitInitResult {
  */
 class MapKitInitializer(
     private val bridge: MapKitFactoryBridge,
-    /** Test seam, mirroring `HybridWakeWordDetector.engineBuildDispatcher`. */
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /**
+     * Test seam, mirroring `HybridWakeWordDetector.engineBuildDispatcher`.
+     * NULL means "resolve the UI dispatcher at use time". It is deliberately not
+     * a direct `Dispatchers.Main.immediate` default: that would be evaluated at
+     * CONSTRUCTION, so merely building the initializer (e.g. the identity test
+     * for [MapKitInitializerProvider], or any DI wiring) would touch
+     * `Dispatchers.Main` and throw on a JVM with no Android main looper.
+     */
+    private val mainDispatcher: CoroutineDispatcher? = null,
 ) {
     private val mutex = Mutex()
 
@@ -78,12 +88,24 @@ class MapKitInitializer(
             if (normalizedKey.isEmpty()) return@withLock MapKitInitResult.NoKey
 
             try {
-                withContext(ioDispatcher) {
+                // Resolved at use time: a null seam means the real UI thread.
+                val dispatcher = mainDispatcher ?: Dispatchers.Main.immediate
+                withContext(dispatcher) {
                     // Order is load-bearing (mapkit-android-demo#221): locale,
                     // then key, then initialize.
                     bridge.setLocale(LOCALE)
                     bridge.setApiKey(normalizedKey)
                     bridge.initialize(context)
+                    // `onStart()` is a foreground notification, NOT the request
+                    // pipeline: `initialize()` already ran Runtime.init + set the
+                    // key. But upstream documents the rule for LATE initialization
+                    // (anything other than Application.onCreate — exactly our lazy
+                    // Service path): "if you initialize MapKit in a method
+                    // different from didFinishLaunching, call onStart() after".
+                    // So call it once here, and NEVER call onStop(): this is an
+                    // always-on assistant, and with no MapView a "backgrounded"
+                    // state would only risk stalling an in-flight request.
+                    bridge.onStart()
                 }
                 initializedKey = normalizedKey
                 MapKitInitResult.Ready

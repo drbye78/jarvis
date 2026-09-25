@@ -64,6 +64,9 @@ object MapKitRouteMapper {
             // shortName is the user-facing one («Метро»), but it is often blank.
             line = line?.shortName?.takeIf { it.isNotBlank() } ?: line?.name,
             vehicle = line?.vehicleTypes?.firstOrNull(),
+            // MapKit marks the thread the traveller should board; it is how the
+            // "one section, several lines" case is disambiguated.
+            recommended = transports?.any { it.isRecommended } == true,
         )
     }
 }
@@ -86,21 +89,30 @@ internal fun mapRouteViews(views: List<RouteView>): List<GeoRoute> = views.map {
 }
 
 private fun SectionView.toLegs(): List<GeoLeg> = when {
-    // Non-empty transports win over a transfer: MapKit models a section as
-    // exactly one variant, but being explicit keeps the precedence stable if
-    // the SDK ever surfaces both.
-    transports.isNotEmpty() -> transports.map { transport ->
-        GeoLeg.Transport(
-            line = transport.line.orEmpty(),
-            vehicle = transport.vehicle,
-            stops = stopCount,
-            durationText = durationText,
+    // A SECTION is ONE continuous movement, and its `transports` are the LINES
+    // THAT CAN SERVE IT — alternatives, not a sequence. Live data showed a
+    // single section carrying «м2, м7, н2» (all stops=8); emitting them as
+    // consecutive rides would tell the user to board three buses in a row.
+    // So a section yields exactly ONE transport leg, preferring the thread
+    // MapKit marked recommended. Sequential rides arrive as separate sections.
+    transports.isNotEmpty() -> {
+        val chosen = transports.firstOrNull { it.recommended } ?: transports.first()
+        listOf(
+            GeoLeg.Transport(
+                line = chosen.line.orEmpty(),
+                vehicle = chosen.vehicle,
+                stops = stopCount,
+                durationText = durationText,
+            ),
         )
     }
 
-    transferTo != null -> listOf(GeoLeg.Transfer(to = transferTo, durationText = durationText))
+    // A blank transfer name is treated as "no named transfer": an unnamed
+    // change point is just walking between stops, and emitting a `to:""`
+    // would put an empty string into the LLM's JSON.
+    !transferTo.isNullOrBlank() -> listOf(GeoLeg.Transfer(to = transferTo, durationText = durationText))
 
-    // No transports and no transfer: MapKit's only remaining variant is a
+    // No transports and no named transfer: MapKit's only remaining variant is a
     // walking leg. It must be kept, not dropped.
     else -> listOf(GeoLeg.Walk(durationText = durationText))
 }
@@ -130,4 +142,6 @@ internal data class SectionView(
 internal data class TransportView(
     val line: String?,
     val vehicle: String?,
+    /** True when MapKit marked this line's thread as the one to board. */
+    val recommended: Boolean = false,
 )

@@ -54,9 +54,13 @@ class MapKitSearch {
                 .setSearchTypes(SearchType.GEO.value or SearchType.BIZ.value)
                 .setResultPageSize(limit)
             near?.let { options.setUserPosition(Point(it.latitude, it.longitude)) }
-            // The area is deliberately the whole world; `near` disambiguates by
-            // RANKING (setUserPosition), not by clipping the search to a point.
-            awaitSearch { listener -> manager.submit(query, WORLD_AREA, options, listener) }.toPlaces()
+            // `setUserPosition` alone is only a weak RANKING hint: "аптека" with a
+            // Moscow position still returned Almaty/Murmansk/Naro-Fominsk
+            // (verified on-device 2026-09-25). The search area is the `geometry`
+            // argument, so an explicit `near` must also become a BOUNDED box;
+            // only an omitted `near` falls back to the world box.
+            val area = near?.let { nearArea(it) } ?: WORLD_AREA
+            awaitSearch { listener -> manager.submit(query, area, options, listener) }.toPlaces()
         }
 
     /** Reverse geocode: a human label for a coordinate, or null when MapKit has none. */
@@ -98,6 +102,14 @@ class MapKitSearch {
         const val REVERSE_ZOOM = 16
 
         /**
+         * Half-width of the bounded search box around an explicit `near`, in
+         * degrees (~55 km of latitude). Large enough to cover a city and its
+         * suburbs, small enough that "аптека рядом с Москвой" cannot resolve to
+         * another region of the country.
+         */
+        const val NEAR_AREA_DEGREES = 0.5
+
+        /**
          * Unconstrained search area. `SearchManager.submit` requires a
          * NON-NULL Geometry, so a null `near` must still send one; the world
          * bounding box is the honest "no area limit" value.
@@ -106,6 +118,14 @@ class MapKitSearch {
             BoundingBox(Point(-90.0, -180.0), Point(90.0, 180.0)),
         )
     }
+
+    /** Bounded search box centred on [near]. */
+    private fun nearArea(near: GeoPoint): Geometry = Geometry.fromBoundingBox(
+        BoundingBox(
+            Point(near.latitude - NEAR_AREA_DEGREES, near.longitude - NEAR_AREA_DEGREES),
+            Point(near.latitude + NEAR_AREA_DEGREES, near.longitude + NEAR_AREA_DEGREES),
+        ),
+    )
 }
 
 @Suppress("TooGenericExceptionCaught")

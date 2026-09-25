@@ -7,6 +7,7 @@ import com.yandex.mapkit.RequestPoint
 import com.yandex.mapkit.RequestPointType
 import com.yandex.mapkit.geometry.Point
 import com.yandex.mapkit.transport.TransportFactory
+import com.yandex.mapkit.transport.masstransit.FitnessOptions
 import com.yandex.mapkit.transport.masstransit.Route
 import com.yandex.mapkit.transport.masstransit.RouteOptions
 import com.yandex.mapkit.transport.masstransit.Session
@@ -38,18 +39,33 @@ class MapKitRouting {
                     // avoid = 0: the FilterVehicleTypes enum -> bitmask mapping is
                     // UNVERIFIED, so NO vehicle type is filtered out.
                     awaitRoutes { listener ->
-                        router.requestRoutes(points, TransitOptions(0, TimeOptions()), RouteOptions(), listener)
+                        router.requestRoutes(
+                            points,
+                            TransitOptions(0, TimeOptions()),
+                            routeOptions(),
+                            listener,
+                        )
                     }
                 }
 
                 TravelMode.WALKING -> {
                     val router = TransportFactory.getInstance().createPedestrianRouter()
                     awaitRoutes { listener ->
-                        router.requestRoutes(points, TimeOptions(), RouteOptions(), listener)
+                        router.requestRoutes(points, TimeOptions(), routeOptions(), listener)
                     }
                 }
             }
         }
+
+    /**
+     * `RouteOptions()` (no-arg) leaves `fitnessOptions` NULL, and the native
+     * binding immediately reads a boolean field off it — which aborts the whole
+     * process with `JNI DETECTED ERROR IN APPLICATION: obj == null` inside
+     * `PedestrianRouterBinding_requestRoutes` (VERIFIED on-device 2026-09-25,
+     * tombstone). A real [FitnessOptions] with both flags false is the
+     * documented "no preference" value and is what native expects.
+     */
+    private fun routeOptions(): RouteOptions = RouteOptions(FitnessOptions())
 
     private fun GeoPoint.toRequestPoint(): RequestPoint =
         RequestPoint(Point(latitude, longitude), RequestPointType.WAYPOINT, null, null, null)
