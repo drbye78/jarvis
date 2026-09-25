@@ -9,7 +9,7 @@ semver (pre-1.0: breaking changes bump the minor).
 ### Added — Geography: place search + transit/walking routing (Yandex MapKit)
 - **Two new voice tools: `findPlace` (organization/address/place search) and
   `getRoute` (public transport or walking).** The advertised tool surface grows
-  19 → 21. `getRoute` returns duration, transfers, arrival time and leg-by-leg
+  19 → 21. `getRoute` returns duration, transfers and leg-by-leg
   detail — line name (bus/metro), vehicle type, transfer point and stop count —
   which the HTTP Maps APIs cannot name; that line-level detail is the entire
   reason the Yandex MapKit Android SDK
@@ -79,9 +79,20 @@ semver (pre-1.0: breaking changes bump the minor).
   "open in Yandex Maps" action to `https://yandex.ru/maps`). The terms also cap
   free-tier use (1,000 unique users/day) and forbid storing results beyond 30
   days.
-- **On-device behavior is NOT yet verified.** Native `.so` load, headless init
-  from the Service (no `MapView`), live search/routing with a real key, and the
-  Play Integrity path are all pending the RUNBOOK MapKit smoke checklist.
+- **On-device behavior VERIFIED (AGS6-W09, real key, 2026-09-25).** Native `.so`
+  load, headless init from the Service with no `MapView`, live organization
+  search, pedestrian routing and masstransit routing (with real bus/metro line
+  numbers, stop counts and transfer points) all pass through the new
+  `MapKitLiveSmokeTest` in the androidTest tier (4/4, self-skips without a key).
+  That smoke found four defects the JVM suite could not, three of which would
+  have shipped: `initialize()` must run on the UI thread (it had run on IO), the
+  no-arg `RouteOptions()`/`TransitOptions()` constructors abort the process
+  (`GetBooleanField(null)`), a masstransit section's `transports` are the
+  alternative lines that serve it (emitting each as a sequential ride told the
+  user to board three buses in a row), and a blank transfer name became
+  `Transfer(to="")`. `near` is now also a bounded search area — as a ranking hint
+  alone, «аптека» near Moscow resolved to Almaty. Route responses carry no
+  arrival time: MapKit left `TravelEstimation` empty on every live route.
 
 ### Added — Weather conversations: forecast + location-aware defaults (Open-Meteo)
 - **Weather questions now cover forecasts, not just current conditions.** The

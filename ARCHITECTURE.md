@@ -540,7 +540,8 @@ once-per-process `KEY_CHANGED` semantics and the process-scoped memoization;
 `MapKitRouteMapperTest` covers route narration through the MapKit-free
 projection — MapKit 4.45.0 is Java 21 bytecode and CANNOT be loaded in a JVM
 unit test, so the SDK bindings in `MapKitRouteMapper.map(List<Route>)` are
-device-smoke-only),
+covered by `MapKitLiveSmokeTest` in the androidTest tier instead — 4/4 on the
+target device with a real key),
 state machine, sentence splitter, conversation windowing (incl.
 char-budget trim), alarm
 times + notification identity, tool registry (incl. cancellation

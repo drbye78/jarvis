@@ -194,8 +194,12 @@ class GeoRouteTool(
 ) : ToolContract {
     override val name = "getRoute"
     override val description: String =
-        "Build a route between two points with Yandex Maps and return duration, transfers, " +
-            "arrival time and leg-by-leg details. `mode` is 'transit' (default) or 'walking'; " +
+        // Deliberately does NOT promise an arrival time: MapKit leaves
+        // TravelEstimation empty on this device (all six live routes had a null
+        // arrival), so the model must not claim one. Duration + transfers +
+        // leg detail are the fields that are actually populated.
+        "Build a route between two points with Yandex Maps and return duration, transfers " +
+            "and leg-by-leg details. `mode` is 'transit' (default) or 'walking'; " +
             "transit legs include the line name (bus/metro), the vehicle type, the transfer " +
             "point and the number of stops. `origin` defaults to the user's location when " +
             "omitted. For follow-ups like «а пешком?» or «а на автобусе?», call getRoute AGAIN " +

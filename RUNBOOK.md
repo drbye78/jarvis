@@ -666,12 +666,25 @@ CHANGELOG Phase 3 performance block.
 
 ## Geography (MapKit) — on-device smoke checklist
 
-**Honest status: the geo lane is implemented and unit-tested, but NONE of the
-device items below has been run yet.** Treat this as REQUIRED before the
-capability is considered shipped. The JVM suite cannot cover it: MapKit 4.45.0
-ships Java 21 bytecode while the toolchain is Java 17, so no MapKit class can be
-loaded in a unit test (`UnsupportedClassVersionError`) and the SDK bindings are
-smoke-only.
+**Status: PASSED on device (2026-09-25, AGS6-W09, real MapKit key).** Items 1-9 and
+11 are covered by the automated `MapKitLiveSmokeTest`
+(`app/src/androidTest/java/com/jarvis/assistant/geo/MapKitLiveSmokeTest.kt`,
+4/4 pass, self-skips when no key is entered) plus the release/R8 `-dontwarn`
+check. It lives in `androidTest`, NOT the JVM suite, because MapKit 4.45.0 ships
+Java 21 bytecode while the toolchain is Java 17 — no MapKit class can be loaded
+in a unit test (`UnsupportedClassVersionError`).
+
+```bash
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb shell am instrument -w -e class com.jarvis.assistant.geo.MapKitLiveSmokeTest \
+  com.jarvis.assistant.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+This smoke earned its keep: it found FOUR defects the JVM suite could not, three
+of which would have shipped (wrong init thread, a native crash from no-arg
+`RouteOptions()`, and transit sections fanned out into sequential rides).
 
 Prereqs: a **MapKit Mobile SDK key** in Settings → «Карты» (Yandex developer
 cabinet → MapKit Mobile SDK); the Yandex Cloud key does NOT work here. MapKit
@@ -691,12 +704,14 @@ adb logcat | grep -iE "MapKit|maps-mobile|UnsatisfiedLink|Geo|dalvikvm"
    and calls only `setLocale` → `setApiKey` → `initialize`. This path is
    **undocumented upstream** and must be confirmed: a search and a route must
    both work from the foreground service with no Activity/MapView ever created.
-3. **`onStart()` / `onStop()` lifecycle.** MapKit's documented lifecycle pairs
-   `MapKitFactory.getInstance().onStart()` with `onStop()` around map display.
-   This app never renders a map and never calls `onStart()` (the bridge exposes
-   it but nothing invokes it). Confirm search/routing work without it; if a
-   future change adds `onStart()`, it MUST NOT be called without a matching
-   `onStop()`.
+3. **`onStart()` / `onStop()` lifecycle.** `onStart()` IS now called exactly once,
+   immediately after `initialize()`. Upstream documents it as the remedy for LATE
+   initialization (anything other than `Application.onCreate` — exactly this lazy
+   Service path); it is a foreground notification, not the request pipeline, so it
+   is harmless if unnecessary. `onStop()` is deliberately NEVER called: this is an
+   always-on assistant, and with no `MapView` a "backgrounded" state would only
+   risk stalling an in-flight request. Do not add an `onStop()` without a paired
+   `onStart()`.
 4. **Play Integrity / attestation on a GMS-less device.** The target
    (Huawei/HarmonyOS) has no Play Services, and the dependency EXCLUDES
    `com.google.android.play:integrity`. Confirm the backend does not require
@@ -712,7 +727,7 @@ adb logcat | grep -iE "MapKit|maps-mobile|UnsatisfiedLink|Geo|dalvikvm"
 7. **Live organization search.** «Джарвис, найди аптеку рядом» → a real
    organization/address with coordinates.
 8. **Live transit route with line names/transfers.** «Джарвис, построй маршрут
-   до <место> на транспорте» → duration, transfers, arrival and leg-by-leg line
+   до <место> на транспорте» → duration, transfers and leg-by-leg line
    names (bus/metro), vehicle type, stop count. This is the whole reason for
    MapKit — an answer without line names means the mapper is not reading the
    SDK.
@@ -742,14 +757,19 @@ adb logcat | grep -iE "MapKit|maps-mobile|UnsatisfiedLink|Geo|dalvikvm"
   Maps" action to `https://yandex.ru/maps`). Note also the terms' caching limit
   (results must not be stored beyond 30 days) and the free-tier cap (1,000
   unique users/day).
-- **MapKit key validity is not yet proven on device.** The Maps key is stored in
-  the vault (`SecretVault.KEY_MAPKIT_API_KEY`) and read live, but no real key
-  has been exercised end-to-end: the key format, the per-app (package/SHA)
-  binding and the debug-vs-release key difference are all pending the smoke
-  checklist above.
-- **The geo lane's on-device behavior is unverified.** Native `.so` load,
-  headless init from the Service (no `MapView`), live search/routing and the
-  Play Integrity path are all pending; see the MapKit smoke checklist above.
+- **MapKit key validity is PROVEN for the debug build.** A real key was exercised
+  on-device (init `Ready`, live search, walking and transit routing). Still
+  untested: a RELEASE-build key (MapKit binds keys per package/SHA, so a release
+  key may differ) and the `KeyChanged` path after a key swap.
+- **Play Integrity attestation is untested by construction.** The device has no
+  Play Services at all (`com.google.android.play` absent), and the dependency
+  excludes the artifact, so `requestAttestKey()` can never fire here — the
+  residual risk is that the backend might one day *require* it. Everything on the
+  search/routing path works without it.
+- **Route responses carry no arrival time.** MapKit left `TravelEstimation` empty
+  on every live route, so `arrival_text` is null and `getRoute` does not promise
+  one. Duration, transfers, line names, vehicle types, stop counts and transfer
+  points are populated.
 - **Voice stop on-device validation (FIXPLAN B).** The stop phrase (`▁ST O P`)
   is BPE-canonical for the bundled model, but its false-accept/false-reject
   behavior at speaker volume is a hardware question. Ladder: (1) wake word,
