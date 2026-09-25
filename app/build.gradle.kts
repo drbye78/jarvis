@@ -114,6 +114,32 @@ kotlin {
     }
 }
 
+// Memory budget (see gradle.properties): Gradle's Test task passes no -Xmx by
+// default, so each forked test JVM would take its own ergonomic max — ~1.6 GiB
+// on this 6.8 GiB host. Pin every Test task (testDebugUnitTest, integrationTest,
+// future variants) to an explicit heap.
+//
+// maxParallelForks = 2, not 1: the suite is 1207 tests and is wall-clock-bound,
+// NOT memory-bound. Measured on this host with a 384m fork heap (identical
+// 1207/0/0 results every run, 3 consecutive runs):
+//     1 fork  → 85s      2 forks → 47s      4 forks → 45s
+// Two forks therefore halve the suite at zero correctness cost; four adds
+// nothing while doubling peak fork memory, so 2 is the sweet spot. Peak host
+// usage during a 2-fork run stayed ~3.8 GB, well inside budget.
+//
+// This is ALSO capped by org.gradle.workers.max=2 (gradle.properties): do not
+// raise maxParallelForks beyond 2 without raising max-workers, or the extra
+// forks silently do nothing.
+//
+// NOTE: several tests are real-time budgeted (bounded waits on latches/polling,
+// e.g. the wedged-engine release test). Parallel forks run independent test
+// classes in separate JVMs, so this is safe — but re-run the suite a few times
+// after touching the fork count.
+tasks.withType<Test>().configureEach {
+    maxHeapSize = "384m"
+    maxParallelForks = 2
+}
+
 // COGNITIVE_PLAN 0.6: static analysis. buildUponDefaultConfig + the focused
 // config/detekt/detekt.yml; the checked-in baseline absorbs legacy findings
 // so every NEW violation fails the build. detekt-formatting = ktlint rules.
