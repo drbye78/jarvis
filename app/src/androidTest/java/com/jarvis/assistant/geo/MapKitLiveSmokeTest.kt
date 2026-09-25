@@ -6,7 +6,23 @@ import com.jarvis.assistant.geo.mapkit.MapKitInitResult
 import com.jarvis.assistant.geo.mapkit.MapKitInitializerProvider
 import com.jarvis.assistant.geo.mapkit.YandexMapKitGeoClient
 import com.jarvis.assistant.util.CredentialsStore
+import com.yandex.mapkit.RequestPoint
+import com.yandex.mapkit.RequestPointType
+import com.yandex.mapkit.geometry.Point
+import com.yandex.mapkit.transport.TransportFactory
+import com.yandex.mapkit.transport.masstransit.FitnessOptions
+import com.yandex.mapkit.transport.masstransit.Route
+import com.yandex.mapkit.transport.masstransit.RouteOptions
+import com.yandex.mapkit.transport.masstransit.Session
+import com.yandex.mapkit.transport.masstransit.TimeOptions
+import com.yandex.mapkit.transport.masstransit.TransitOptions
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -142,6 +158,103 @@ class MapKitLiveSmokeTest {
         assertTrue(
             "a walking route must not contain transport legs",
             routes.flatMap { it.legs }.none { it is GeoLeg.Transport },
+        )
+    }
+
+    /**
+     * Smoke-checklist item 6: after the key is changed in Settings, the next geo
+     * call must report [MapKitInitResult.KeyChanged] rather than crash or silently
+     * keep using the old key (MapKit cannot be re-keyed inside a process).
+     *
+     * Safe by construction: only the REAL key is ever handed to a successful
+     * init. The differing key is compared and rejected BEFORE the bridge is
+     * touched, so this can never poison the other tests in this process.
+     */
+    @Test
+    fun aChangedKeyIsReportedNotApplied() {
+        val key = configuredKey()
+        assumeTrue("no MapKit key configured in Settings → «Карты»", key != null)
+
+        val initializer = MapKitInitializerProvider.get()
+        val first = runBlocking { initializer.ensureInitialized(context, key!!) }
+        assertTrue("expected the real key to initialize, got $first", first is MapKitInitResult.Ready)
+
+        val changed = runBlocking { initializer.ensureInitialized(context, "$key-changed") }
+        println("MAPKIT_KEYCHANGED=$changed")
+        assertTrue(
+            "a changed key must be reported as KeyChanged, got $changed",
+            changed is MapKitInitResult.KeyChanged,
+        )
+
+        // The original key must still be the one in effect.
+        val stillReady = runBlocking { initializer.ensureInitialized(context, key!!) }
+        assertTrue("the original key must remain in effect, got $stillReady", stillReady is MapKitInitResult.Ready)
+    }
+
+    /**
+     * Pins the transit ETA situation, which the docs call out: MapKit does NOT
+     * populate `TravelEstimation` for masstransit routes on this device — the
+     * object itself is absent (`route.estimation=false`, `section.estimation=false`),
+     * not merely its `text`. The mapper therefore reads `.text` of an absent
+     * object and correctly yields null, and `getRoute`'s description must not
+     * promise an arrival time.
+     *
+     * The assertion is deliberately the INVARIANT (the request succeeds; nothing
+     * throws), not a hard `arrival == null`, so this keeps passing if Yandex ever
+     * starts returning ETAs — which would be an improvement, not a regression.
+     * The raw fields are printed so a future run can tell which way it went.
+     */
+    @Test
+    fun diagnostic_rawArrivalFields() {
+        val key = configuredKey()
+        assumeTrue("no MapKit key configured in Settings → «Карты»", key != null)
+        val initialized = runBlocking { MapKitInitializerProvider.get().ensureInitialized(context, key!!) }
+        assumeTrue("MapKit not initialized: $initialized", initialized is MapKitInitResult.Ready)
+
+        val raw = runBlocking {
+            withContext(Dispatchers.Main.immediate) {
+                withTimeoutOrNull(25_000) {
+                    suspendCancellableCoroutine<String> { cont ->
+                        val done = AtomicBoolean(false)
+                        val router = TransportFactory.getInstance().createMasstransitRouter()
+                        val points = listOf(moscow, transitDestination).map {
+                            RequestPoint(Point(it.latitude, it.longitude), RequestPointType.WAYPOINT, null, null, null)
+                        }
+                        val listener = object : Session.RouteListener {
+                            override fun onMasstransitRoutes(routes: List<Route>) {
+                                if (done.compareAndSet(false, true) && cont.isActive) {
+                                    val route = routes.firstOrNull()
+                                    val est = route?.metadata?.estimation
+                                    val sEst = route?.sections?.firstOrNull()?.metadata?.estimation
+                                    cont.resume(
+                                        "route.estimation=${est != null} " +
+                                            "dep=${est?.departureTime?.value}/${est?.departureTime?.text} " +
+                                            "arr=${est?.arrivalTime?.value}/${est?.arrivalTime?.text} | " +
+                                            "section.estimation=${sEst != null} " +
+                                            "arr=${sEst?.arrivalTime?.value}/${sEst?.arrivalTime?.text}",
+                                    )
+                                }
+                            }
+
+                            override fun onMasstransitRoutesError(error: com.yandex.runtime.Error) {
+                                if (done.compareAndSet(false, true) && cont.isActive) cont.resume("ERROR $error")
+                            }
+                        }
+                        val session = router.requestRoutes(
+                            points,
+                            TransitOptions(0, TimeOptions()),
+                            RouteOptions(FitnessOptions()),
+                            listener,
+                        )
+                        cont.invokeOnCancellation { runCatching { session.cancel() } }
+                    }
+                } ?: "TIMEOUT"
+            }
+        }
+        println("MAPKIT_RAW_ARRIVAL=$raw")
+        assertTrue(
+            "the transit request must complete without error or timeout, got: $raw",
+            raw != "TIMEOUT" && !raw.startsWith("ERROR"),
         )
     }
 }
