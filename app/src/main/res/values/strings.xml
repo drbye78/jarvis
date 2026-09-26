@@ -41,6 +41,7 @@
 
     <!-- Home: redesign -->
     <string name="wake_hint">Скажите «Джарвис» и команду — например, «Джарвис, включи музыку»</string>
+    <string name="transcript_empty_hint">Тишина. Скажите «Джарвис», и я отвечу.</string>
 
     <!-- Onboarding -->
     <string name="onboarding_title">Настройка Джарвиса</string>

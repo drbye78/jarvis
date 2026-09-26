@@ -29,25 +29,24 @@
     <!-- Semantic status colors (VoiceOrb + status pill).
          WCAG-checked in StatusContrastTest: each is a large graphic (>= 3:1)
          against jarvis_background; listening/thinking double as Settings status
-         text on jarvis_surface, where they must reach 4.5:1. -->
-    <color name="jarvis_status_idle">#5F6967</color>
+         text on jarvis_surface, where they must reach 4.5:1. The day
+         listening/speaking pair separates by LIGHTNESS (L* 45 vs 31), not hue
+         alone, so the states are tellable apart at a 2-4 m glance. -->
+    <color name="jarvis_status_idle">#4E6B66</color>
     <color name="jarvis_status_listening">#00796B</color>
     <color name="jarvis_status_thinking">#8A5600</color>
-    <color name="jarvis_status_speaking">#006A8A</color>
+    <color name="jarvis_status_speaking">#054987</color>
+
+    <!-- Thinking-state accent: 2dp border drawn around the status pill while
+         the assistant is thinking (day/night twins; >= 3:1 vs the pill's
+         primaryContainer fill in both themes — pinned in StatusContrastTest). -->
+    <color name="jarvis_accent_thinking_border">#8A5600</color>
 
     <!-- Alarm ringing screen: deep, calm, high-contrast -->
     <color name="jarvis_night_scrim">#EE0E1514</color>
     <color name="jarvis_ringing_surface">#0E1514</color>
 
-    <!-- Launcher icon background (adaptive icon solid fallback) -->
-    <color name="ic_launcher_background">#0F766E</color>
-
-    <!-- Brand palette used across the icon design -->
-    <color name="brand_cyan">#06B6D4</color>
-    <color name="brand_cyan_deep">#0E7490</color>
-    <color name="brand_cyan_light">#A5F3FC</color>
-    <color name="brand_orange">#F97316</color>
-    <color name="brand_orange_light">#FDBA74</color>
-    <color name="brand_dark_teal">#134E4A</color>
-    <color name="brand_teal_950">#042F2E</color>
+    <!-- Launcher icon background (adaptive icon solid fallback) — converged
+         onto jarvis_primary so the icon and the app read as one palette. -->
+    <color name="ic_launcher_background">#00695C</color>
 </resources>

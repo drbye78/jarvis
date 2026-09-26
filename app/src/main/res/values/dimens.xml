@@ -9,4 +9,16 @@
 
     <!-- Prominent primary/secondary action height; a minimum, not a cap. -->
     <dimen name="button_min_height">56dp</dimen>
+
+    <!-- Spacing table (UI remediation wave 1): vertical rhythm tokens so
+         screens stop carrying ad-hoc margin values. -->
+    <dimen name="space_section">24dp</dimen>
+    <dimen name="space_control_gap">4dp</dimen>
+    <dimen name="space_before_action">16dp</dimen>
+
+    <!-- Voice orb footprint (UI remediation wave 2): the idle orb grows so the
+         assistant's resting face fills more of the room; active states shrink
+         it to hand space back to the transcript. -->
+    <dimen name="orb_size_idle">200dp</dimen>
+    <dimen name="orb_size_active">168dp</dimen>
 </resources>

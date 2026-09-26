@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -179,10 +180,12 @@ class SettingsActivity : AppCompatActivity() {
 
             private val title: TextView = row.findViewById(R.id.settingsCategoryTitle)
             private val summary: TextView = row.findViewById(R.id.settingsCategorySummary)
+            private val icon: ImageView = row.findViewById(R.id.settingsCategoryIcon)
 
             fun bind(category: SettingsCategory) {
                 title.setText(category.titleRes)
                 summary.setText(category.subtitleRes)
+                icon.setImageResource(category.iconRes)
                 itemView.setOnClickListener { onOpen(category) }
             }
         }

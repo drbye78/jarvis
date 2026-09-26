@@ -77,7 +77,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:text="@string/settings_behavior_quiet" />
+                android:text="@string/settings_behavior_quiet"
+                style="@style/TextAppearance.Material3.TitleSmall"
+                android:textStyle="bold" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -90,7 +92,9 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="@string/settings_behavior_quiet_start" />
+                    android:text="@string/settings_behavior_quiet_start"
+                    style="@style/TextAppearance.Material3.TitleSmall"
+                    android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/behaviorQuietStartMinus"
@@ -106,6 +110,8 @@
                     android:id="@+id/behaviorQuietStartValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minWidth="56dp"
+                    android:gravity="center"
                     android:paddingStart="8dp"
                     android:paddingEnd="8dp"
                     android:text="23:00" />
@@ -132,7 +138,9 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="@string/settings_behavior_quiet_end" />
+                    android:text="@string/settings_behavior_quiet_end"
+                    style="@style/TextAppearance.Material3.TitleSmall"
+                    android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/behaviorQuietEndMinus"
@@ -148,6 +156,8 @@
                     android:id="@+id/behaviorQuietEndValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minWidth="56dp"
+                    android:gravity="center"
                     android:paddingStart="8dp"
                     android:paddingEnd="8dp"
                     android:text="08:00" />
@@ -167,7 +177,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:text="@string/settings_behavior_quota" />
+                android:text="@string/settings_behavior_quota"
+                style="@style/TextAppearance.Material3.TitleSmall"
+                android:textStyle="bold" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -175,6 +187,11 @@
                 android:layout_marginTop="4dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/behaviorQuotaMinus"
@@ -190,6 +207,8 @@
                     android:id="@+id/behaviorQuotaValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minWidth="56dp"
+                    android:gravity="center"
                     android:paddingStart="8dp"
                     android:paddingEnd="8dp"
                     android:text="2" />

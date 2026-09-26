@@ -40,6 +40,7 @@
 
     <!-- Home: redesign -->
     <string name="wake_hint">Say “Jarvis” and a command — for example, “Jarvis, play music”</string>
+    <string name="transcript_empty_hint">All quiet. Say “Jarvis” and I’ll respond.</string>
 
     <!-- Onboarding -->
     <string name="onboarding_title">Jarvis setup</string>

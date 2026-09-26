@@ -85,7 +85,7 @@
             android:paddingTop="7dp"
             android:paddingBottom="7dp"
             android:text="@string/state_idle_full"
-            style="@style/TextAppearance.Jarvis.Status" />
+            style="@style/TextAppearance.Jarvis.StatusAmbient" />
 
         <TextView
             android:id="@+id/wakeHintText"
@@ -97,17 +97,33 @@
             style="@style/TextAppearance.Jarvis.Hint" />
 
         <!-- Conversation transcript -->
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/transcript"
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:layout_marginTop="10dp"
-            android:clipToPadding="false"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:paddingBottom="8dp"
-            android:scrollbars="vertical" />
+            android:layout_marginTop="10dp">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/transcript"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="8dp"
+                android:scrollbars="vertical" />
+
+            <!-- Empty transcript state: the resting screen answers "did it
+                 hear me?" even before the first turn. -->
+            <TextView
+                android:id="@+id/transcriptEmpty"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="@string/transcript_empty_hint"
+                style="@style/TextAppearance.Jarvis.Hint"
+                android:visibility="gone" />
+        </FrameLayout>
 
         <!-- Live ASR partial: an "in progress" echo of what is being heard -->
         <TextView
@@ -141,7 +157,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/micButton"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+                style="@style/Widget.Jarvis.Button.Outlined"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
@@ -150,7 +166,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/toggleButton"
-                style="@style/Widget.Material3.Button"
+                style="@style/Widget.Jarvis.MainButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="12dp"

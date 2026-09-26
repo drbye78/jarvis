@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Thinking-state variant of the status pill: same fill, plus the amber
+     thinking accent as a border (jarvis_accent_thinking_border, day/night
+     twins; contrast pinned in StatusContrastTest vs colorPrimaryContainer). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="?attr/colorPrimaryContainer" />
+    <corners android:radius="28dp" />
+    <stroke
+        android:width="2dp"
+        android:color="@color/jarvis_accent_thinking_border" />
+</shape>

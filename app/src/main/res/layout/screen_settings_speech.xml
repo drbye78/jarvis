@@ -65,7 +65,7 @@
             android:id="@+id/speechBackendGroup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp">
+            android:layout_marginTop="@dimen/space_control_gap">
 
             <RadioButton
                 android:id="@+id/speechBackendSber"
@@ -85,7 +85,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="@dimen/space_section"
             android:text="@string/voice_section"
             style="@style/TextAppearance.Jarvis.SectionHeader"
             android:accessibilityHeading="true" />
@@ -225,7 +225,7 @@
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="@dimen/space_before_action"
             android:text="@string/voice_test_button" />
     </LinearLayout>
 </ScrollView>

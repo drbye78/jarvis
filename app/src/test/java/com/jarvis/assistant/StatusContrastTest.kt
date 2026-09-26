@@ -148,6 +148,7 @@ class StatusContrastTest {
             ColorPair("jarvis_status_thinking", "jarvis_background", "orb thinking arcs"),
             ColorPair("jarvis_status_speaking", "jarvis_background", "orb speaking core"),
             ColorPair("jarvis_status_thinking", "jarvis_surface_variant", "ringing alarm icon chip"),
+            ColorPair("jarvis_accent_thinking_border", "jarvis_primary_container", "thinking pill border"),
         )
     }
 }

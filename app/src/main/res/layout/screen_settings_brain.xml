@@ -56,7 +56,7 @@
             android:id="@+id/llmProviderGroup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp">
+            android:layout_marginTop="@dimen/space_control_gap">
 
             <RadioButton
                 android:id="@+id/providerGigachat"
@@ -87,7 +87,7 @@
             android:id="@+id/gigaChatBlock"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="@dimen/space_section"
             android:orientation="vertical">
 
             <TextView
@@ -109,7 +109,7 @@
                 android:id="@+id/gigaChatModelGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp">
+                android:layout_marginTop="@dimen/space_control_gap">
 
                 <RadioButton
                     android:id="@+id/gigaChatModelLightning"
@@ -163,7 +163,7 @@
             android:id="@+id/yandexBlock"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="@dimen/space_section"
             android:orientation="vertical"
             android:visibility="gone">
 
@@ -341,7 +341,7 @@
             android:id="@+id/saveProviderButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="@dimen/space_before_action"
             android:text="@string/save" />
     </LinearLayout>
 </ScrollView>

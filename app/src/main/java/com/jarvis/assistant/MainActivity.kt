@@ -59,6 +59,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var partialText: TextView
     private lateinit var voiceOrb: VoiceOrbView
     private lateinit var transcript: RecyclerView
+    private lateinit var transcriptEmpty: TextView
+    private lateinit var wakeHintText: TextView
 
     /** Captured so reduced motion can drop insert animations and restore them. */
     private var defaultItemAnimator: RecyclerView.ItemAnimator? = null
@@ -86,6 +88,8 @@ class MainActivity : AppCompatActivity() {
         partialText = findViewById(R.id.partialText)
         voiceOrb = findViewById(R.id.voiceOrb)
         transcript = findViewById(R.id.transcript)
+        transcriptEmpty = findViewById(R.id.transcriptEmpty)
+        wakeHintText = findViewById(R.id.wakeHintText)
         adapter = TranscriptAdapter()
 
         transcript.apply {
@@ -104,7 +108,17 @@ class MainActivity : AppCompatActivity() {
                     Motion.animationsEnabled() -> transcript.smoothScrollToPosition(target)
                     else -> transcript.scrollToPosition(target)
                 }
+                updateEmptyState()
             }
+
+            override fun onItemRangeRemoved(positionStart: Int, itemCount: Int) = updateEmptyState()
+
+            override fun onItemRangeChanged(positionStart: Int, itemCount: Int) = updateEmptyState()
+
+            override fun onItemRangeMoved(fromPosition: Int, toPosition: Int, itemCount: Int) =
+                updateEmptyState()
+
+            override fun onChanged() = updateEmptyState()
         })
         applyMotionPolicy()
 
@@ -535,19 +549,50 @@ class MainActivity : AppCompatActivity() {
         if (!Motion.animationsEnabled() || statusText.text?.toString() == label) {
             statusText.alpha = 1f
             statusText.text = label
-            return
+        } else {
+            statusText.animate()
+                .alpha(0f)
+                .setDuration(Motion.PILL_CROSSFADE_MS / 2)
+                .withEndAction {
+                    statusText.text = label
+                    statusText.animate()
+                        .alpha(1f)
+                        .setDuration(Motion.PILL_CROSSFADE_MS / 2)
+                        .start()
+                }
+                .start()
         }
-        statusText.animate()
-            .alpha(0f)
-            .setDuration(Motion.PILL_CROSSFADE_MS / 2)
-            .withEndAction {
-                statusText.text = label
-                statusText.animate()
-                    .alpha(1f)
-                    .setDuration(Motion.PILL_CROSSFADE_MS / 2)
-                    .start()
-            }
-            .start()
+        renderIdlePresence()
+    }
+
+    /**
+     * State-driven dressing around the pill, rendered on the SAME single path
+     * as the label so neither can drift from the other:
+     *
+     *  - Wake hint: the 13sp close-range line under the orb is hidden while the
+     *    screen is at rest (stopped or IDLE) — the tinted, breathing orb and the
+     *    status pill carry idle; prime glance space stays clean. Every other
+     *    state shows it, since a first-time voice user may need the prompt
+     *    exactly when the assistant wakes up.
+     *
+     *  - Thinking border: THINKING is the state where the household waits
+     *    without knowing whether the request landed — the pill gains a 2dp amber
+     *    border (jarvis_accent_thinking_border, day/night twins) as a far-field
+     *    "working on it" cue. All other states get the plain pill back.
+     */
+    private fun renderIdlePresence() {
+        val idleLike = currentState == null || currentState == AssistantState.IDLE
+        wakeHintText.visibility = if (idleLike) View.GONE else View.VISIBLE
+        val thinking = currentState == AssistantState.THINKING
+        statusText.setBackgroundResource(
+            if (thinking) R.drawable.bg_status_pill_thinking else R.drawable.bg_status_pill,
+        )
+    }
+
+    /** Empty transcript: show the resting prompt until the first turn lands. */
+    private fun updateEmptyState() {
+        transcriptEmpty.visibility =
+            if (adapter.itemCount == 0) View.VISIBLE else View.GONE
     }
 
     /**

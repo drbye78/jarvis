@@ -2,7 +2,7 @@
 <resources>
     <!-- Shared text appearances. Referenced as style="@style/TextAppearance..." -->
     <style name="TextAppearance.Jarvis.AppTitle" parent="TextAppearance.Material3.TitleLarge">
-        <item name="android:textSize">22sp</item>
+        <item name="android:textSize">24sp</item>
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:textColor">?attr/colorOnSurface</item>
         <item name="android:letterSpacing">0.01</item>
@@ -16,7 +16,7 @@
 
     <!-- Compact section label inside cards: primary-colored, tracked-out caps feel -->
     <style name="TextAppearance.Jarvis.SectionHeader" parent="TextAppearance.Material3.LabelLarge">
-        <item name="android:textSize">14sp</item>
+        <item name="android:textSize">16sp</item>
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:textColor">?attr/colorPrimary</item>
         <item name="android:letterSpacing">0.04</item>
@@ -31,6 +31,14 @@
     <style name="TextAppearance.Jarvis.Hint" parent="TextAppearance.Material3.BodySmall">
         <item name="android:textSize">13sp</item>
         <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <!-- Ambient status line (home pill): larger than the old Status tier so
+         the state reads at arm's length, onSurface like a primary label. -->
+    <style name="TextAppearance.Jarvis.StatusAmbient" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textSize">18sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
     </style>
 
     <!--
@@ -49,5 +57,26 @@
         <item name="cardCornerRadius">16dp</item>
         <item name="cardElevation">1dp</item>
         <item name="contentPadding">18dp</item>
+    </style>
+
+    <!-- Button tiers (UI remediation wave 1). Every tier pins the 48dp touch
+         minimum so font-scale growth starts from an accessible base; the
+         theme wires them as the default filled/outlined/text styles. -->
+    <style name="Widget.Jarvis.Button" parent="Widget.Material3.Button">
+        <item name="android:minHeight">@dimen/touch_target_min</item>
+    </style>
+
+    <style name="Widget.Jarvis.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:minHeight">@dimen/touch_target_min</item>
+    </style>
+
+    <style name="Widget.Jarvis.Button.Text" parent="Widget.Material3.Button.TextButton">
+        <item name="android:minHeight">@dimen/touch_target_min</item>
+    </style>
+
+    <!-- Prominent action tier (home control bar): taller than the standard
+         buttons, per button_min_height. -->
+    <style name="Widget.Jarvis.MainButton" parent="Widget.Material3.Button">
+        <item name="android:minHeight">@dimen/button_min_height</item>
     </style>
 </resources>

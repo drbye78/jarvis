@@ -10,9 +10,9 @@
   anything would be worse than no button. When a real relaunch lands, add the
   action as a trailing MaterialButton inside THIS row.
 
-  Tone: calm. The band uses `colorSurfaceVariant` (a quiet surface, NOT
-  error/warning colour) with `colorOnSurface` text, so it reads as information,
-  not as an alarm.
+  Tone: calm-informational on the primary container (NOT error/warning colour):
+  `colorPrimaryContainer` band with `colorOnPrimaryContainer` text and a tinted
+  leading info icon, so it reads as information, not as an alarm.
 
   Text is set by the host from the strongest pending policy:
     - ApplyPolicy.APP_RESTART      -> settings_apply_app_restart
@@ -20,23 +20,33 @@
   (APP_RESTART wins when both are pending, because it subsumes the service one.)
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/settingsApplyBanner"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:background="?attr/colorSurfaceVariant"
+    android:background="?attr/colorPrimaryContainer"
     android:visibility="gone"
     android:paddingStart="20dp"
     android:paddingEnd="20dp"
     android:paddingTop="12dp"
     android:paddingBottom="12dp">
 
+    <ImageView
+        android:id="@+id/settingsApplyBannerIcon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginEnd="12dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_info_24"
+        app:tint="?attr/colorOnPrimaryContainer" />
+
     <TextView
         android:id="@+id/settingsApplyBannerText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/settings_apply_service_restart"
-        style="@style/TextAppearance.Jarvis.Hint"
-        android:textColor="?attr/colorOnSurface" />
+        android:textAppearance="?attr/textAppearanceTitleSmall"
+        android:textColor="?attr/colorOnPrimaryContainer" />
 </LinearLayout>

@@ -11,11 +11,14 @@
     settingsCategorySummary — SettingsCategory.subtitleRes, single line, ellipsised
     settingsCategoryChevron — decorative, no content description
 
-  Leading icon: intentionally DISABLED in v1. The app ships ic_logo / ic_mic /
-  ic_music_note, which cannot distinguish eight categories, and the design brief
-  forbids authoring new glyphs. The commented block below is the exact slot to
-  re-enable once a per-category glyph set exists; the row is designed to stay
-  balanced with or without it.
+  IDS (bound by the list adapter, no renames):
+    settingsCategoryTitle   — SettingsCategory.titleRes
+    settingsCategorySummary — SettingsCategory.subtitleRes, single line, ellipsised
+    settingsCategoryIcon    — SettingsCategory.iconRes, decorative
+    settingsCategoryChevron — decorative, no content description
+
+  Leading icon: ENABLED (v2 pass) — each SettingsCategory carries its own
+  `ic_cat_*` glyph, bound by the adapter; the slot below was pre-reserved in v1.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -23,6 +26,7 @@
     android:id="@+id/settingsCategoryRow"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:layout_marginTop="4dp"
     android:minHeight="72dp"
     android:gravity="center_vertical"
     android:orientation="horizontal"
@@ -34,14 +38,14 @@
     android:paddingTop="12dp"
     android:paddingBottom="12dp">
 
-    <!--
     <ImageView
+        android:id="@+id/settingsCategoryIcon"
         android:layout_width="24dp"
         android:layout_height="24dp"
         android:layout_marginEnd="20dp"
         android:importantForAccessibility="no"
-        app:tint="?attr/colorPrimary" />
-    -->
+        app:tint="?attr/colorPrimary"
+        tools:src="@drawable/ic_cat_brain" />
 
     <LinearLayout
         android:layout_width="0dp"

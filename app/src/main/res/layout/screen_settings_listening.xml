@@ -51,7 +51,7 @@
         <!-- Voice stop lives OUTSIDE the engine-conditional blocks: the pref
              drives both engines, so it must be visible either way. It is also
              essential, so it stays above the disclosure. -->
-        <com.google.android.material.switchmaterial.SwitchMaterial
+        <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/voiceStopSwitch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -118,7 +118,7 @@
                 android:id="@+id/engineGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp">
+                android:layout_marginTop="@dimen/space_control_gap">
 
                 <RadioButton
                     android:id="@+id/enginePorcupine"
@@ -244,17 +244,23 @@
                 android:layout_marginTop="4dp"
                 style="@style/TextAppearance.Jarvis.Hint" />
 
-            <SeekBar
+            <!-- MaterialSlider (not framework SeekBar): the framework bar is
+                 ~20dp tall and was the worst touch target in the app. Range
+                 0..100 mirrors the old android:max; the controller keeps
+                 seeding android:value from prefs. -->
+            <com.google.android.material.slider.Slider
                 android:id="@+id/sensitivityBar"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:max="100" />
+                android:valueFrom="0"
+                android:valueTo="100"
+                android:stepSize="1" />
 
             <!-- Section: ECHO CANCELLATION. -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
+                android:layout_marginTop="@dimen/space_section"
                 android:text="@string/aec_section"
                 style="@style/TextAppearance.Jarvis.SectionHeader"
                 android:accessibilityHeading="true" />
@@ -346,7 +352,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
+                android:layout_marginTop="@dimen/space_section"
                 android:text="@string/followup_section"
                 style="@style/TextAppearance.Jarvis.SectionHeader"
                 android:accessibilityHeading="true" />
@@ -358,11 +364,13 @@
                 android:layout_marginTop="8dp"
                 style="@style/TextAppearance.Jarvis.Hint" />
 
-            <SeekBar
+            <com.google.android.material.slider.Slider
                 android:id="@+id/followUpBar"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:max="10" />
+                android:valueFrom="0"
+                android:valueTo="10"
+                android:stepSize="1" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

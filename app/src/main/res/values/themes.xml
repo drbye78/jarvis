@@ -24,6 +24,10 @@
         <item name="colorErrorContainer">@color/jarvis_error_container</item>
         <item name="colorOnErrorContainer">@color/jarvis_on_error_container</item>
 
+        <item name="materialButtonStyle">@style/Widget.Jarvis.Button</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.Jarvis.Button.Outlined</item>
+        <item name="borderlessButtonStyle">@style/Widget.Jarvis.Button.Text</item>
+
         <item name="android:colorBackground">@color/jarvis_background</item>
         <item name="android:statusBarColor">@color/jarvis_surface</item>
         <item name="android:windowLightStatusBar">@bool/jarvis_light_bars</item>

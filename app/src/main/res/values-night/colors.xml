@@ -24,10 +24,13 @@
     <color name="jarvis_error_container">#93000A</color>
     <color name="jarvis_on_error_container">#FFDAD6</color>
 
-    <color name="jarvis_status_idle">#899390</color>
+    <color name="jarvis_status_idle">#6E8D88</color>
     <color name="jarvis_status_listening">#4FDAC5</color>
     <color name="jarvis_status_thinking">#FFC169</color>
     <color name="jarvis_status_speaking">#8FD3FF</color>
+
+    <!-- Night twin of the thinking-state pill border (day: #8A5600). -->
+    <color name="jarvis_accent_thinking_border">#FFC169</color>
 
     <color name="jarvis_night_scrim">#EE000000</color>
     <color name="jarvis_ringing_surface">#0E1514</color>

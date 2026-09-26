@@ -81,7 +81,7 @@
             android:id="@+id/weatherLocationSaveButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="@dimen/space_before_action"
             android:text="@string/save" />
 
         <!-- The weather tool runs in the service and cannot show a permission
@@ -110,7 +110,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="@dimen/space_section"
             android:text="@string/maps_card_title"
             style="@style/TextAppearance.Jarvis.SectionHeader"
             android:accessibilityHeading="true" />

@@ -130,8 +130,29 @@ class VoiceOrbView @JvmOverloads constructor(
         // (e.g. the follow-up window) starts from a calm orb instead of the
         // tail of the previous utterance's level.
         if (next != OrbState.LISTENING && next != OrbState.FOLLOW_UP) level = 0f
+        applyOrbSize()
         restartAnimators()
         invalidate()
+    }
+
+    /**
+     * Idle presence: the resting orb grows to [R.dimen.orb_size_idle] so the
+     * assistant's "face in the room" fills more of the screen; every active
+     * state hands the space back to the transcript at [R.dimen.orb_size_active].
+     * A snap, not an animation — the size change coincides with the state's own
+     * visual transition, and reduced-motion users get no added movement either
+     * way. No-op when the view is not yet attached (no LayoutParams yet).
+     */
+    private fun applyOrbSize() {
+        val params = layoutParams ?: return
+        val sizeRes = if (state == OrbState.IDLE) R.dimen.orb_size_idle else R.dimen.orb_size_active
+        val px = resources.getDimensionPixelSize(sizeRes)
+        if (params.width != px || params.height != px) {
+            layoutParams = params.apply {
+                width = px
+                height = px
+            }
+        }
     }
 
     /**
@@ -293,6 +314,10 @@ class VoiceOrbView @JvmOverloads constructor(
         // (config change, back navigation) would otherwise sit frozen until
         // the next setState. This also starts IDLE breathing on first attach.
         restartAnimators()
+        // First-attach size: the initial state may already equal the field
+        // default (IDLE), and setState early-returns on an unchanged state —
+        // so the idle/active footprint must be applied here too.
+        applyOrbSize()
     }
 
     override fun onDetachedFromWindow() {

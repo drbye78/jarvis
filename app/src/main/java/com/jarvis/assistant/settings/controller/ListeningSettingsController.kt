@@ -6,12 +6,11 @@ import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.RadioButton
 import android.widget.RadioGroup
-import android.widget.SeekBar
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.materialswitch.MaterialSwitch
-import com.google.android.material.switchmaterial.SwitchMaterial
+import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
 import com.jarvis.assistant.R
 import com.jarvis.assistant.WakeWordModelUi
@@ -84,7 +83,7 @@ class ListeningSettingsController(
     private lateinit var context: Context
 
     // --- Essential (above the disclosure) ---
-    private lateinit var voiceStopSwitch: SwitchMaterial
+    private lateinit var voiceStopSwitch: MaterialSwitch
     private lateinit var followUpSwitch: MaterialSwitch
 
     // --- Активация (activation) ---
@@ -96,7 +95,7 @@ class ListeningSettingsController(
     private lateinit var sherpaKeywordInput: TextInputEditText
     private lateinit var sherpaKeywordStatus: TextView
     private lateinit var sensitivityValue: TextView
-    private lateinit var sensitivityBar: SeekBar
+    private lateinit var sensitivityBar: Slider
 
     // --- Эхоподавление (echo cancellation) ---
     private lateinit var aecGroup: RadioGroup
@@ -107,7 +106,7 @@ class ListeningSettingsController(
 
     // --- Продолжение диалога (follow-up window length) ---
     private lateinit var followUpValue: TextView
-    private lateinit var followUpBar: SeekBar
+    private lateinit var followUpBar: Slider
 
     // --- Disclosure ---
     private lateinit var advancedContainer: View
@@ -161,7 +160,7 @@ class ListeningSettingsController(
         try {
             voiceStopSwitch.isChecked = prefs.voiceStopEnabled
             followUpSwitch.isChecked = prefs.followUpEnabled
-            followUpBar.progress = windowProgress()
+            followUpBar.value = windowProgress().toFloat()
             updateFollowUpLabel(windowSeconds())
             // The host-owned .ppn import writes wakeWordModel/customWakeWordPath;
             // re-check the radio so the imported word is not shown as "builtin".
@@ -209,19 +208,20 @@ class ListeningSettingsController(
 
         followUpValue = root.findViewById(R.id.followUpValue)
         followUpBar = root.findViewById(R.id.followUpBar)
-        followUpBar.progress = windowProgress()
+        followUpBar.value = windowProgress().toFloat()
         updateFollowUpLabel(windowSeconds())
-        followUpBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
-                updateFollowUpLabel(value + WINDOW_OFFSET_SECONDS)
+        followUpBar.addOnChangeListener(object : Slider.OnChangeListener {
+            override fun onValueChange(bar: Slider, value: Float, fromUser: Boolean) {
+                updateFollowUpLabel(value.toInt() + WINDOW_OFFSET_SECONDS)
             }
+        })
+        followUpBar.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(bar: Slider) {}
 
-            override fun onStartTrackingTouch(bar: SeekBar?) {}
-
-            override fun onStopTrackingTouch(bar: SeekBar?) {
+            override fun onStopTrackingTouch(bar: Slider) {
                 // Persist only on release: the label follows the drag live, but
                 // the pref/binder write happens once (SettingsMapping clamps).
-                prefs.followUpWindowMs = SettingsMapping.followUpSeconds(followUpBar.progress)
+                prefs.followUpWindowMs = SettingsMapping.followUpSeconds(followUpBar.value.toInt())
                 applyFollowUpLive()
             }
         })
@@ -264,22 +264,22 @@ class ListeningSettingsController(
             host.importCustomPpn()
         }
 
-        // SeekBar 0..100 → engine 0.0..1.0. The expensive native rebuild is
+        // Slider 0..100 → engine 0.0..1.0. The expensive native rebuild is
         // deferred to onStopTrackingTouch so it runs once per gesture.
         sensitivityValue = root.findViewById(R.id.sensitivityValue)
         sensitivityBar = root.findViewById(R.id.sensitivityBar)
-        sensitivityBar.max = SENSITIVITY_MAX
-        sensitivityBar.progress = (prefs.wakeSensitivity * SENSITIVITY_MAX).toInt()
+        sensitivityBar.value = prefs.wakeSensitivity * SENSITIVITY_MAX
         updateSensitivityLabel(prefs.wakeSensitivity)
-        sensitivityBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
+        sensitivityBar.addOnChangeListener(object : Slider.OnChangeListener {
+            override fun onValueChange(bar: Slider, value: Float, fromUser: Boolean) {
                 updateSensitivityLabel(value / SENSITIVITY_MAX.toFloat())
             }
+        })
+        sensitivityBar.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(bar: Slider) {}
 
-            override fun onStartTrackingTouch(bar: SeekBar?) {}
-
-            override fun onStopTrackingTouch(bar: SeekBar?) {
-                callbacks.onSensitivityChanged(sensitivityBar.progress / SENSITIVITY_MAX.toFloat())
+            override fun onStopTrackingTouch(bar: Slider) {
+                callbacks.onSensitivityChanged(sensitivityBar.value / SENSITIVITY_MAX)
             }
         })
     }
@@ -391,7 +391,7 @@ class ListeningSettingsController(
         AecMode.OFF -> R.id.aecOff
     }
 
-    /** SeekBar progress for the stored window: 0..10 ⇒ 2..12 s. */
+    /** Slider position for the stored window: 0..10 ⇒ 2..12 s. */
     private fun windowProgress(): Int = windowSeconds() - WINDOW_OFFSET_SECONDS
 
     /** Stored follow-up window in whole seconds, clamped to the slider's 2..12 s range. */
@@ -499,7 +499,7 @@ class ListeningSettingsController(
      */
     private fun applyFollowUpLive() {
         val enabled = followUpSwitch.isChecked
-        val windowMs = SettingsMapping.followUpSeconds(followUpBar.progress)
+        val windowMs = SettingsMapping.followUpSeconds(followUpBar.value.toInt())
         scope.launch {
             host.awaitAssistantGraph()?.sessionManager?.setFollowUpWindow(enabled, windowMs)
         }
@@ -547,7 +547,7 @@ class ListeningSettingsController(
         /** Relative asset path of the bundled BPE vocab used for keyword validation. */
         const val KEYWORD_ASSET = "sherpa_kws/bpe.model"
 
-        /** SeekBar range for the sensitivity slider (0..100 → 0.0..1.0). */
+        /** Slider range for the sensitivity control (0..100 → 0.0..1.0). */
         const val SENSITIVITY_MAX = 100
 
         /** Slider position 0..10 maps to 2..12 s; this is the 2 s offset. */
