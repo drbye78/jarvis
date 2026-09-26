@@ -398,8 +398,22 @@ color hex outside the token files: bubbles/pills are shape drawables
 referencing `?attr/*`, so day/night is automatic everywhere.
 
 Screens: home is the voice orb (`VoiceOrbView` — custom Canvas view,
-four cheap animators: idle-breathe / listening-ripple / thinking-arcs /
-speaking-glow, muted-flat; animators cancelled on detach) + a chat
+state-driven animators: idle-breathe / listening-ripple / thinking-arcs /
+speaking-glow, muted-flat; animators cancelled on detach). While the mic is
+actually open the orb also PULSES WITH THE SPEAKER'S VOICE, and a wake-word
+detection plays a brief expand-and-flash cue. Both are fed by signals that
+already existed — `AudioPipeline.frames` (one 20 ms PCM frame per emission) and
+`Detection.WakeWord` — so nothing in the capture loop, AEC or wake-word path
+changed. The envelope maths lives in `ui/AudioLevel` (pure, pinned by
+`AudioLevelTest`): a perceptual dBFS map so a quiet room reads as a true zero,
+plus a fast-attack/slow-release filter so it tracks syllables instead of
+flickering between them. The cue is keyed off the DETECTION, not the
+IDLE→LISTENING edge — the follow-up window and VAD also enter LISTENING, so a
+state edge would acknowledge a wake word that was never spoken. Cost and
+reduced motion are both gated: metering is subscribed only for capture states,
+skipped while the window is not started, posted at ~30 fps rather than the
+50 fps capture rate, and with animators disabled the level pins to zero and the
+cue is skipped entirely. + a chat
 transcript (`TranscriptAdapter` on `ListAdapter`/DiffUtil, system
 prompt filtered, tool traffic as compact pills, auto-scroll on insert)
 + a control bar (mic mute / start-stop). The transcript owns its

@@ -6,6 +6,32 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — The home orb reacts to your voice and to the wake word
+- **The orb now mirrors how loudly you are speaking.** While the mic is open it
+  pulses and glows with the speaker's voice, so a silent room reads as a calm
+  orb and speech drives it visibly. It is fed by `AudioPipeline.frames` — the
+  pipeline already publishes one 20 ms PCM frame per emission — so the capture
+  loop, the AEC and the wake-word path are untouched.
+- **A wake word answers back.** On `Detection.WakeWord` the orb expands and
+  flashes toward its listening colour, then settles into the plain listening
+  look. It is keyed off the detection rather than the IDLE→LISTENING edge,
+  because the follow-up window and VAD also enter LISTENING — a state edge would
+  acknowledge a wake word nobody spoke. The envelope is zero at both ends, so
+  the cue can never leave the orb stuck mid-animation.
+- **Why it reads as speech rather than as noise.** `ui/AudioLevel` holds the
+  maths (pure, and pinned by `AudioLevelTest`): RMS → dBFS normalised over a
+  −55…−12 window, so a quiet room is a genuine zero instead of a glowing floor,
+  followed by a one-pole envelope with a fast attack and a ~5× slower release —
+  the VU/limiter shape, which jumps on a syllable onset and bridges the gaps
+  *between* syllables instead of strobing between words.
+- **It costs nothing when idle, and honours reduced motion.** Metering is
+  subscribed only while the mic is actually open (LISTENING and the follow-up
+  window), skipped entirely while the window is not started, and posted to the
+  orb at ~30 fps rather than the 50 fps capture rate — an always-on assistant on
+  a low-end tablet should not pay per frame while idle. With animators disabled
+  (or scale 0) the level pins to zero and the cue is skipped, leaving the calm
+  static listening frame.
+
 ### Changed — Settings redesign: category list + reusable detail screens
 - **The 1955-line single-scroll Settings screen is now a category LIST →
   detail flow.** `SettingsActivity` is a thin host (header, pending-restart
