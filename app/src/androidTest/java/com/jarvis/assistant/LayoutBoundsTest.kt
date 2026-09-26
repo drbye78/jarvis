@@ -3,6 +3,7 @@ package com.jarvis.assistant
 import android.app.Activity
 import android.content.Intent
 import android.view.View
+import android.view.ViewGroup
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -102,6 +103,62 @@ class LayoutBoundsTest {
             controlIds = listOf(R.id.speechBackendGroup),
             name = "settingsSpeechDetail",
         )
+    }
+
+    /**
+     * Launch EVERY category detail screen and assert each one inflates and lays
+     * out inside the reading column.
+     *
+     * The JVM layout guard reads these screens statically (declared ids, include
+     * sizing), which cannot see a runtime-only failure: an attribute the platform
+     * rejects at inflation, or a `findViewById<T>` cast that does not match the
+     * real view class. Both compile, pass every unit test, and crash the moment
+     * the screen is opened. Inflating all of them here turns that class of defect
+     * into a test failure instead of a crash on the user's tablet.
+     *
+     * Driven by [SettingsCategory.entries] rather than a hand-written list, so a
+     * new category is covered the moment it joins the registry — a hardcoded
+     * list would silently skip it.
+     */
+    @Test
+    fun everyCategoryDetailScreen_inflatesAndFitsTheReadingColumn() {
+        val failures = mutableListOf<String>()
+        SettingsCategory.entries.forEach { category ->
+            try {
+                assertDetailScreenInflates(category)
+            } catch (t: Throwable) {
+                // Collect every failure instead of stopping at the first, so one
+                // run names all the broken screens.
+                failures += "${category.id}: ${t.message ?: t::class.java.simpleName}"
+            }
+        }
+        assertEquals(
+            "category detail screens that failed to inflate or fit: $failures",
+            emptyList<String>(),
+            failures,
+        )
+    }
+
+    /** One category: inflate it, then assert content is present and column-capped. */
+    private fun assertDetailScreenInflates(category: SettingsCategory) {
+        val intent: Intent = SettingsDetailActivity.intent(context, category)
+        ActivityScenario.launch<SettingsDetailActivity>(intent).use { scenario ->
+            val layout = captureLayout(
+                scenario = scenario,
+                rootId = R.id.settingsDetailRoot,
+                columnId = R.id.settingsDetailColumn,
+                controlIds = emptyList(),
+            )
+            assertReadingColumn(layout, SETTINGS_COLUMN_MAX_WIDTH_DP, "detail[${category.id}]")
+            scenario.onActivity { activity ->
+                val content = activity.findViewById<ViewGroup>(R.id.settingsDetailContent)
+                assertTrue(
+                    "detail[${category.id}] put no screen into settingsDetailContent — " +
+                        "the layout failed to inflate, or the host skipped it",
+                    content.childCount > 0,
+                )
+            }
+        }
     }
 
     /** Launch a category detail screen and assert its column + controls fit. */
