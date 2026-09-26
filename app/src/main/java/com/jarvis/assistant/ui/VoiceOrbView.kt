@@ -3,13 +3,16 @@ package com.jarvis.assistant.ui
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
 import com.jarvis.assistant.R
 import com.jarvis.assistant.model.AssistantState
+import kotlin.math.abs
 import kotlin.math.min
 
 /**
@@ -44,6 +47,21 @@ class VoiceOrbView @JvmOverloads constructor(
     /** Remaining follow-up window fraction (0..1); drives the countdown arc. */
     private var followUpProgress = 0f
 
+    /**
+     * Mic loudness, 0..1, published by [setLevel] (see [AudioLevel]). Only
+     * consulted while LISTENING or in the follow-up window — the two states
+     * where the mic is actually open.
+     */
+    private var level = 0f
+
+    /**
+     * Wake-cue progress, 0..1 (1 = settled, the normal LISTENING look). Driven
+     * by [playWakeCue]; the drawn envelope is [listeningWakeOvershoot], which is
+     * ZERO at both ends, so a cue always completes cleanly and can never leave
+     * the orb frozen part-way.
+     */
+    private var wakeCue = 1f
+
     // Animator-driven phases (all 0f..1f or degrees).
     private var breathePhase = 0f
     private var ripplePhase = 0f
@@ -65,6 +83,15 @@ class VoiceOrbView @JvmOverloads constructor(
     private var rippleAnimator: ValueAnimator? = null
     private var rotationAnimator: ValueAnimator? = null
     private var pulseAnimator: ValueAnimator? = null
+
+    /**
+     * One-shot wake acknowledgement (see [playWakeCue]). Kept OUT of
+     * [stopAnimators]: a state change must not cancel it mid-flight — a wake
+     * fires essentially together with the IDLE -> LISTENING transition, and
+     * cancelling on that very transition is exactly how the cue would never
+     * get to play. It is stopped only on detach and on a reduced-motion flip.
+     */
+    private var wakeAnimator: ValueAnimator? = null
 
     /**
      * Re-runs the animator decision when the system reduced-motion setting
@@ -99,8 +126,68 @@ class VoiceOrbView @JvmOverloads constructor(
         val next = OrbShape.of(state, muted, deaf)
         if (next == this.state) return
         this.state = next
+        // Leaving a capture state discards the loudness so re-entering LISTENING
+        // (e.g. the follow-up window) starts from a calm orb instead of the
+        // tail of the previous utterance's level.
+        if (next != OrbState.LISTENING && next != OrbState.FOLLOW_UP) level = 0f
         restartAnimators()
         invalidate()
+    }
+
+    /**
+     * Mic loudness, 0..1 (see [AudioLevel]). Drives the loudness glow and core
+     * while LISTENING or in the follow-up window.
+     *
+     * Two cost guards, because this is fed ~50 frames/s on an always-on,
+     * low-end device: reduced motion pins the value to 0 (a voice-driven pulse
+     * is movement, and the orb must stay the calm static listening look), and a
+     * change smaller than [LEVEL_VISIBLE_EPSILON] is dropped — it cannot be
+     * seen, so it must not cost a redraw. The caller additionally throttles
+     * posts to display rate.
+     */
+    fun setLevel(level: Float) {
+        val next = if (Motion.animationsEnabled()) level.coerceIn(0f, 1f) else 0f
+        if (abs(next - this.level) < LEVEL_VISIBLE_EPSILON) return
+        this.level = next
+        if (state == OrbState.LISTENING || state == OrbState.FOLLOW_UP) invalidate()
+    }
+
+    /**
+     * Wake word heard: a brief expand + colour flash that lands back into the
+     * plain LISTENING look. The envelope ([listeningWakeOvershoot]) returns to
+     * zero by itself, so this is safe to call from any state, while muted, or
+     * repeatedly — it can never strand the orb mid-animation.
+     *
+     * Reduced motion: no cue at all. The orb simply shows the static listening
+     * frame, which is the one honest end state.
+     */
+    fun playWakeCue() {
+        wakeAnimator?.cancel()
+        wakeAnimator = null
+        if (!Motion.animationsEnabled()) {
+            wakeCue = 1f
+            return
+        }
+        wakeCue = 0f
+        wakeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = WAKE_CUE_MS
+            interpolator = LinearInterpolator()
+            addUpdateListener { animator ->
+                wakeCue = animator.animatedValue as Float
+                if (state == OrbState.LISTENING || state == OrbState.FOLLOW_UP) {
+                    postInvalidateOnAnimation()
+                }
+            }
+            start()
+        }
+        invalidate()
+    }
+
+    /** End any in-flight wake cue and pin it settled (detach / reduced motion). */
+    private fun stopWakeCue() {
+        wakeAnimator?.cancel()
+        wakeAnimator = null
+        wakeCue = 1f
     }
 
     /** Update the follow-up countdown arc (call from the progress collector). */
@@ -116,6 +203,10 @@ class VoiceOrbView @JvmOverloads constructor(
     private fun restartAnimators() {
         stopAnimators()
         if (!Motion.animationsEnabled()) {
+            // A reduced-motion flip can land mid-cue: end the cue and drop the
+            // loudness rather than leaving a half-expanded, half-bright orb.
+            stopWakeCue()
+            level = 0f
             applyStaticFrame()
             return
         }
@@ -209,6 +300,7 @@ class VoiceOrbView @JvmOverloads constructor(
         // by the Motion observer.
         Motion.removeListener(motionListener)
         stopAnimators()
+        stopWakeCue()
         super.onDetachedFromWindow()
     }
 
@@ -221,8 +313,13 @@ class VoiceOrbView @JvmOverloads constructor(
         val cx = width / 2f
         val cy = height / 2f
         val radius = min(cx, cy)
-        val core = radius * 0.16f
-        val ring = radius * 0.46f
+        // The wake cue expands the WHOLE orb — core, ring and the ripples
+        // derived from them — so it blooms and settles back into the plain
+        // LISTENING look. Scaled here rather than inside drawListening so the
+        // follow-up window's countdown arc grows with it too.
+        val wakeScale = 1f + WAKE_EXPAND * listeningWakeOvershoot()
+        val core = radius * 0.16f * wakeScale
+        val ring = radius * 0.46f * wakeScale
         val stroke = radius * 0.045f
         ringPaint.strokeWidth = stroke
         ringPaint.strokeCap = Paint.Cap.ROUND
@@ -249,16 +346,17 @@ class VoiceOrbView @JvmOverloads constructor(
     }
 
     private fun drawListening(canvas: Canvas, cx: Float, cy: Float, core: Float, ring: Float) {
-        // Bright core + two offset ripples expanding past the ring.
-        corePaint.color = listeningColor
-        canvas.drawCircle(cx, cy, core, corePaint)
-        ringPaint.color = withAlpha(listeningColor, 0.7f)
+        val cue = listeningWakeOvershoot()
+        // Loudness/wake layer first (glow behind, then core) so the ring and
+        // ripples read on top of it.
+        drawLoudness(canvas, cx, cy, core, ring, listeningCoreTint())
+        ringPaint.color = withAlpha(listeningColor, 0.7f + 0.25f * cue)
         canvas.drawCircle(cx, cy, ring, ringPaint)
 
         for (i in 0..1) {
             val phase = (ripplePhase + i * 0.5f) % 1f
             val rippleRadius = core + (ring - core) * phase + ring * 0.25f * phase
-            val alpha = (1f - phase) * 0.35f
+            val alpha = (1f - phase) * (0.35f + 0.2f * cue)
             if (alpha > 0.01f) {
                 ringPaint.color = withAlpha(listeningColor, alpha)
                 canvas.drawCircle(cx, cy, rippleRadius, ringPaint)
@@ -304,15 +402,16 @@ class VoiceOrbView @JvmOverloads constructor(
      * so it reads as "the assistant just spoke, mic re-opened".
      */
     private fun drawFollowUp(canvas: Canvas, cx: Float, cy: Float, core: Float, ring: Float) {
-        // Ripple base, exactly like LISTENING.
-        corePaint.color = listeningColor
-        canvas.drawCircle(cx, cy, core, corePaint)
-        ringPaint.color = withAlpha(listeningColor, 0.35f)
+        val cue = listeningWakeOvershoot()
+        // Ripple base, exactly like LISTENING (plus the loudness layer — the
+        // mic is open in this window too).
+        drawLoudness(canvas, cx, cy, core, ring, listeningCoreTint())
+        ringPaint.color = withAlpha(listeningColor, 0.35f + 0.25f * cue)
         canvas.drawCircle(cx, cy, ring, ringPaint)
         for (i in 0..1) {
             val phase = (ripplePhase + i * 0.5f) % 1f
             val rippleRadius = core + (ring - core) * phase + ring * 0.25f * phase
-            val alpha = (1f - phase) * 0.3f
+            val alpha = (1f - phase) * (0.3f + 0.2f * cue)
             if (alpha > 0.01f) {
                 ringPaint.color = withAlpha(listeningColor, alpha)
                 canvas.drawCircle(cx, cy, rippleRadius, ringPaint)
@@ -368,4 +467,72 @@ class VoiceOrbView @JvmOverloads constructor(
 
     private fun withAlpha(color: Int, alpha: Float): Int =
         (color and 0x00FFFFFF) or ((alpha.coerceIn(0f, 1f) * 255).toInt() shl 24)
+
+    /**
+     * The mic-reactive layer shared by LISTENING and FOLLOW_UP: a soft glow
+     * whose radius and alpha grow with the loudness [level], plus a core that
+     * swells with it. During the wake cue the cue's overshoot drives the same
+     * layer, so the orb lights up on the acknowledgement even before the first
+     * syllable has been smoothed in.
+     */
+    private fun drawLoudness(canvas: Canvas, cx: Float, cy: Float, core: Float, ring: Float, color: Int) {
+        val cue = listeningWakeOvershoot()
+        val intensity = if (cue > level) cue else level
+        if (intensity > LEVEL_VISIBLE_EPSILON) {
+            glowPaint.color = withAlpha(color, 0.10f + 0.30f * intensity)
+            canvas.drawCircle(cx, cy, ring * (1.15f + 0.55f * intensity), glowPaint)
+        }
+        corePaint.color = color
+        canvas.drawCircle(cx, cy, core * (1f + 0.5f * level), corePaint)
+    }
+
+    /**
+     * The colour the LISTENING/FOLLOW_UP core and glow draw with: the plain
+     * listening accent, flashed lighter by the wake cue.
+     *
+     * The blend target is white because the palette has no role that is
+     * "brighter than listening" in BOTH themes — `primary_container` lightens in
+     * the day theme but darkens in night, and vice versa for the other
+     * containers. Blending toward white only ever lightens, so the same code
+     * reads as a flash of life in either theme.
+     */
+    private fun listeningCoreTint(): Int {
+        val cue = listeningWakeOvershoot()
+        return if (cue <= 0f) {
+            listeningColor
+        } else {
+            ColorUtils.blendARGB(listeningColor, Color.WHITE, WAKE_HIGHLIGHT * cue)
+        }
+    }
+
+    /**
+     * Wake-cue envelope: 0 at both ends, 1 at the midpoint, so the orb expands
+     * and brightens then SETTLES BACK into the unmodified LISTENING look — the
+     * cue can never leave it stuck mid-animation. Zero when no cue is running
+     * or the orb is not in a capture state, so an idle/thinking/speaking orb is
+     * untouched by a cue that arrived at the wrong moment.
+     */
+    private fun listeningWakeOvershoot(): Float {
+        if (state != OrbState.LISTENING && state != OrbState.FOLLOW_UP) return 0f
+        if (wakeCue <= 0f || wakeCue >= 1f) return 0f
+        return 4f * wakeCue * (1f - wakeCue)
+    }
+
+    private companion object {
+        /**
+         * Smallest loudness/wake change worth a redraw. 0.01 of a 168 dp orb is
+         * far under a pixel, so anything smaller would burn a frame for no
+         * visible change.
+         */
+        const val LEVEL_VISIBLE_EPSILON = 0.01f
+
+        /** Wake cue length: a brief acknowledgement, not a set-piece. */
+        const val WAKE_CUE_MS = 560L
+
+        /** Peak extra scale at the middle of the wake cue (~8 dp on the home orb). */
+        const val WAKE_EXPAND = 0.2f
+
+        /** How far the wake cue flashes the core toward white, at its peak. */
+        const val WAKE_HIGHLIGHT = 0.45f
+    }
 }

@@ -2,6 +2,7 @@ package com.jarvis.assistant
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.View
 import android.widget.ImageButton
 import android.widget.TextView
@@ -11,6 +12,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.SimpleItemAnimator
 import com.google.android.material.button.MaterialButton
+import com.jarvis.assistant.audio.AudioPipeline
+import com.jarvis.assistant.contracts.Detection
 import com.jarvis.assistant.contracts.DetectorState
 import com.jarvis.assistant.data.AppDatabase
 import com.jarvis.assistant.data.ConversationManager
@@ -21,6 +24,8 @@ import com.jarvis.assistant.session.TurnActivity
 import com.jarvis.assistant.tools.AlarmSchedulerProvider
 import com.jarvis.assistant.tools.AlertPermissionReconciler
 import com.jarvis.assistant.tools.canScheduleExactAlarms
+import com.jarvis.assistant.ui.AudioLevel
+import com.jarvis.assistant.ui.AudioLevelMeter
 import com.jarvis.assistant.ui.EdgeToEdge
 import com.jarvis.assistant.ui.Motion
 import com.jarvis.assistant.ui.StateLabel
@@ -28,6 +33,7 @@ import com.jarvis.assistant.ui.TranscriptAdapter
 import com.jarvis.assistant.ui.VoiceOrbView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -193,6 +199,7 @@ class MainActivity : AppCompatActivity() {
         // this activity owns its lifecycle.
         Motion.start(this)
         Motion.addListener(motionListener)
+        windowStarted = true
         applyMotionPolicy()
         val scheduler = AlarmSchedulerProvider.get(this)
         lifecycleScope.launch(Dispatchers.IO) {
@@ -210,6 +217,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
+        // Stop paying for the orb's loudness response while the window is not
+        // visible; the metering loop reads this on every frame.
+        windowStarted = false
         Motion.removeListener(motionListener)
         Motion.stop()
         super.onStop()
@@ -276,6 +286,8 @@ class MainActivity : AppCompatActivity() {
             var activityJob: kotlinx.coroutines.Job? = null
             var muteJob: kotlinx.coroutines.Job? = null
             var deafJob: kotlinx.coroutines.Job? = null
+            var levelJob: kotlinx.coroutines.Job? = null
+            var wakeJob: kotlinx.coroutines.Job? = null
             while (isActive) {
                 // Stop-on-dead fix: the toggle must track the REAL service
                 // state every poll tick, not only onResume/click — after an
@@ -289,6 +301,10 @@ class MainActivity : AppCompatActivity() {
                     activityJob?.cancel()
                     muteJob?.cancel()
                     deafJob?.cancel()
+                    levelJob?.cancel()
+                    wakeJob?.cancel()
+                    levelJob = null
+                    wakeJob = null
                     collectedGraph = graph
                     micButton.isEnabled = true
                     // Deaf-engine fix: seed from the detector's synchronous
@@ -300,6 +316,19 @@ class MainActivity : AppCompatActivity() {
                         graph.stateMachine.state.collectLatest { state ->
                             currentState = state
                             voiceOrb.setState(state, micMuted, deaf)
+                            // Loudness metering is subscribed ONLY while the mic
+                            // actually captures (LISTENING / follow-up); in every
+                            // other state the frame flow is untouched, so an
+                            // idle-or-speaking assistant costs nothing per frame.
+                            if (AudioLevel.capturesAudio(state)) {
+                                if (levelJob?.isActive != true) {
+                                    levelJob = launch { meterLevels(graph) }
+                                }
+                            } else {
+                                levelJob?.cancel()
+                                levelJob = null
+                                voiceOrb.setLevel(0f)
+                            }
                             renderStatus()
                         }
                     }
@@ -343,6 +372,17 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     }
+                    // Wake-word cue: the detector's OWN event, not a state edge.
+                    // LISTENING is entered by the follow-up window and by VAD too,
+                    // so keying the acknowledgement off the state transition would
+                    // fire it when no wake word was spoken. Detections are cheap
+                    // and event-driven, so this collector is effectively free while
+                    // the assistant sits idle.
+                    wakeJob = launch {
+                        graph.wakeWordDetector.detections().collect { detection ->
+                            if (detection is Detection.WakeWord) voiceOrb.playWakeCue()
+                        }
+                    }
                 } else if (graph == null) {
                     if (collectedGraph != null) {
                         // Service stopped: reset the orb to idle-gray so the
@@ -373,6 +413,68 @@ class MainActivity : AppCompatActivity() {
      * recreation can no longer desync the button from the pipeline.
      */
     private var micMuted = false
+
+    /**
+     * True between [onStart] and [onStop]. The collectors below live in
+     * `lifecycleScope`, which only cancels at DESTROY — so a backgrounded window
+     * would otherwise keep metering mic frames for a screen nobody can see. For
+     * an always-on assistant that is the common case (LISTENING while the app is
+     * in the background), so the metering loop checks this and skips its
+     * per-frame work while the window is not started.
+     */
+    private var windowStarted = false
+
+    /**
+     * Loudness meter behind the orb's pulse. One instance reused across capture
+     * sessions ([AudioLevelMeter.reset] clears it at the start of each), so the
+     * metering path allocates nothing per frame.
+     */
+    private val audioMeter = AudioLevelMeter()
+
+    /**
+     * Pump mic frames into the orb's loudness response while the assistant is
+     * capturing. Subscribed ONLY for the states where the mic is actually open
+     * (the `AudioLevel.capturesAudio` gate at the state collector) and cancelled
+     * the moment capture stops, so an idle or speaking assistant does no
+     * per-frame work at all — this runs on an always-on, low-end device.
+     *
+     * The maths (RMS -> perceptual dB mapping -> attack/release envelope) lives
+     * in [AudioLevel] and is pinned by `AudioLevelTest`; this loop only decides
+     * the RATE. Every frame still folds into the envelope, but the UI is posted
+     * at [LEVEL_UPDATE_MS] rather than at the 50 fps capture rate, because the
+     * frames in between cannot be seen and would only add invalidates.
+     *
+     * The per-frame work stays on the collecting (main) dispatcher deliberately:
+     * a 320-sample pass is microseconds, and moving it to a background
+     * dispatcher would just add a hop back to the main thread to reach the orb —
+     * more cost than the arithmetic it would save.
+     *
+     * `windowStarted` short-circuits the whole pass while the window is hidden:
+     * `lifecycleScope` cancels only at DESTROY, so without this check a
+     * backgrounded LISTENING assistant would keep running the meter at 50 fps for
+     * a view that cannot be drawn.
+     */
+    private suspend fun meterLevels(graph: com.jarvis.assistant.di.AppGraph) {
+        audioMeter.reset()
+        var lastPost = 0L
+        graph.audioPipeline.frames.collect { frame ->
+            if (!windowStarted) {
+                // Back to calm while hidden: the level must not be stale when
+                // the window returns mid-utterance.
+                if (audioMeter.level != 0f) {
+                    audioMeter.reset()
+                    voiceOrb.setLevel(0f)
+                }
+                return@collect
+            }
+            audioMeter.onFrame(frame, AudioPipeline.FRAME_MS.toFloat())
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastPost >= LEVEL_UPDATE_MS) {
+                lastPost = now
+                voiceOrb.setLevel(audioMeter.level)
+            }
+        }
+    }
 
     /**
      * Deaf-engine fix: true while the wake-word detector reports
@@ -465,6 +567,13 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         /** UI poll for service/graph state (cheap StateFlow read). */
         const val SERVICE_STATE_POLL_MS = 500L
+
+        /**
+         * Orb loudness post interval. Capture runs at 50 fps ([AudioPipeline.FRAME_MS]
+         * = 20 ms); the orb is repainted at ~30 fps instead, the rate above which
+         * the extra frames stop being visible and only cost invalidates.
+         */
+        const val LEVEL_UPDATE_MS = 33L
 
         /** Reading-column cap on wide windows; narrower windows fill the width. */
         const val HOME_COLUMN_MAX_WIDTH_DP = 840
