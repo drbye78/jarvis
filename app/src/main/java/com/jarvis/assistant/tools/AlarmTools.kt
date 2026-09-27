@@ -44,6 +44,7 @@ class SetAlarmTool(
     private val defaultLabel: () -> String = { "Будильник" },
 ) : ToolContract {
     override val name = "setAlarm"
+    override val risk = ToolRisk.STATEFUL
     override val description =
         "Set an alarm for a specific time of day (HH:mm, 24-hour). Use for wake-up alarms and reminders tied to a clock time."
     override val parametersJson = schema(
@@ -82,6 +83,7 @@ class SetAlarmTool(
  */
 class CancelAlarmTool(private val context: Context, private val scheduler: AndroidAlarmScheduler) : ToolContract {
     override val name = "cancelAlarm"
+    override val risk = ToolRisk.IRREVERSIBLE
     override val description =
         "Cancel an alarm by its label, or cancel all alarms. Use after listing alarms if the user asks to remove one."
     override val parametersJson = schema(
@@ -112,6 +114,7 @@ class CancelAlarmTool(private val context: Context, private val scheduler: Andro
  */
 class CancelTimerTool(private val context: Context, private val scheduler: AndroidAlarmScheduler) : ToolContract {
     override val name = "cancelTimer"
+    override val risk = ToolRisk.IRREVERSIBLE
     override val description =
         "Cancel a countdown timer by its label, or cancel all timers."
     override val parametersJson = schema(
@@ -140,6 +143,7 @@ class CancelTimerTool(private val context: Context, private val scheduler: Andro
 /** m16: lists ALL alerts (alarms + timers, enabled AND disabled) with status. */
 class ListAlarmsTool(private val context: Context) : ToolContract {
     override val name = "listAlarms"
+    override val risk = ToolRisk.READ_ONLY
     override val description = "List all alarms and timers currently set, with times, labels and enabled/disabled status."
     override val parametersJson = schema(emptyMap())
 
@@ -159,6 +163,7 @@ class SetTimerTool(
     private val defaultLabel: () -> String = { "Таймер" },
 ) : ToolContract {
     override val name = "setTimer"
+    override val risk = ToolRisk.STATEFUL
     override val description =
         "Start a countdown timer. Use for 'напомни через 10 минут', 'таймер на 5 минут' and similar. NOT for clock-time alarms."
     override val parametersJson = schema(

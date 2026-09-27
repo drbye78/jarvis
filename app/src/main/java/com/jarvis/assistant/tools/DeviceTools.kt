@@ -47,6 +47,7 @@ class DeviceTools(
 
     inner class SetVolumeTool : ToolContract {
         override val name = "setVolume"
+        override val risk = ToolRisk.STATEFUL
         override val description =
             "Set a system volume level (0–100) for a stream: music, ring, alarm or system."
         override val parametersJson = schema(
@@ -90,6 +91,7 @@ class DeviceTools(
 
     inner class SetBrightnessTool : ToolContract {
         override val name = "setBrightness"
+        override val risk = ToolRisk.STATEFUL
         override val description = "Set screen brightness (0–100). Requires one-time 'modify system settings' access."
         override val parametersJson = schema(
             mapOf(
@@ -137,6 +139,7 @@ class DeviceTools(
 
     inner class SetWifiTool : ToolContract {
         override val name = "setWifi"
+        override val risk = ToolRisk.STATEFUL
         override val description =
             "Turn Wi-Fi on or off. On Android 10+ the system may only open the Wi-Fi settings panel instead of toggling directly."
         override val parametersJson = schema(
@@ -194,6 +197,7 @@ class DeviceTools(
 
     inner class SetBluetoothTool : ToolContract {
         override val name = "setBluetooth"
+        override val risk = ToolRisk.STATEFUL
         override val description = "Turn Bluetooth on or off."
         override val parametersJson = schema(
             mapOf(
@@ -257,6 +261,7 @@ class DeviceTools(
 
     inner class SetDndTool : ToolContract {
         override val name = "setDnd"
+        override val risk = ToolRisk.STATEFUL
         override val description =
             "Turn Do-Not-Disturb on or off. Requires one-time 'Do Not Disturb access' in settings."
         override val parametersJson = schema(
@@ -328,6 +333,7 @@ class DeviceTools(
 
     inner class LockScreenTool : ToolContract {
         override val name = "lockScreen"
+        override val risk = ToolRisk.STATEFUL
         override val description =
             "Turn the tablet screen off immediately. Requires device-admin access (offered during onboarding)."
         override val parametersJson = schema(emptyMap())
@@ -351,6 +357,7 @@ class DeviceTools(
 
     inner class OpenAppTool : ToolContract {
         override val name = "openApp"
+        override val risk = ToolRisk.STATEFUL
         override val description = "Open an installed app by name, e.g. YouTube, браузер, камера."
         override val parametersJson = schema(
             mapOf(
@@ -398,6 +405,7 @@ class DeviceTools(
 
     inner class GetDeviceInfoTool : ToolContract {
         override val name = "getDeviceInfo"
+        override val risk = ToolRisk.READ_ONLY
         override val description =
             "Get device status: battery level, charging state, current time. Useful before answering questions about the tablet."
         override val parametersJson = schema(emptyMap())

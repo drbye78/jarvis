@@ -229,6 +229,12 @@ open class FakeTools(var result: String = """{"status":"ok"}""") : ToolExecutor 
         )
     )
 
+    /** Explicit no-op: this fake does not enforce the boundary. */
+    override fun setAuthorizationContext(
+        sessionId: Int,
+        context: com.jarvis.assistant.tools.TurnAuthorization?,
+    ) {}
+
     // 'override' members are open by default, so HangOnNthTools can re-execute.
     override suspend fun executeResult(call: FunctionCall): ToolResult {
         executed.add(call)

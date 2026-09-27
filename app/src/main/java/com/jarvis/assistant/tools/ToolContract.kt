@@ -23,6 +23,15 @@ interface ToolContract {
     val parametersJson: String
 
     /**
+     * How dangerous this tool is (see [ToolRisk]). DELIBERATELY ABSTRACT — a
+     * newly registered tool is a COMPILE error until it declares its class, so
+     * no tool can slip into the registry unclassified. There is NO default:
+     * defaulting everything to READ_ONLY would erase the boundary (the same
+     * no-`else` idiom as the LLM-provider `when` in the graph).
+     */
+    val risk: ToolRisk
+
+    /**
      * Optional per-tool execution timeout override (MUSIC lane). Null →
      * the registry default. `playMusic` legitimately needs ~30 s: cold-start
      * the player, wait for its media session, playFromSearch, verify.
@@ -43,6 +52,19 @@ data class ToolResult(val content: String, val isError: Boolean = false)
 interface ToolExecutor {
     fun getToolDefinitions(): List<ToolDefinition>
     suspend fun executeResult(call: FunctionCall): ToolResult
+
+    /**
+     * Bind the provenance of the turn [sessionId] to this executor, or clear
+     * it ([context] = null). Called at turn start/end by the session layer —
+     * the model can NEVER pass this as a tool argument, which is the whole
+     * point of the boundary.
+     *
+     * DELIBERATELY ABSTRACT (no no-op default): a default would let an
+     * executor silently enforce nothing. Every implementation must state its
+     * behavior; a test fake that genuinely does not enforce still has to say
+     * so explicitly.
+     */
+    fun setAuthorizationContext(sessionId: Int, context: TurnAuthorization?)
 }
 
 /**
@@ -61,6 +83,41 @@ class ToolRegistry(
      */
     private val onExecuted: (suspend (FunctionCall, ToolResult, Long) -> Unit)? = null,
 ) {
+
+    /**
+     * The turn currently authorized to run tools. Held with the originating
+     * session id so a superseded turn's end-of-turn clear cannot wipe the
+     * context a newer turn has just bound (the turn hand-off races).
+     */
+    @Volatile
+    private var authorizedTurn: AuthorizedTurn? = null
+
+    private data class AuthorizedTurn(val sessionId: Int, val context: TurnAuthorization)
+
+    init {
+        // Canonical-risk agreement check: the abstract `risk` property stops an
+        // UNCLASSIFIED tool, but not a silently RECLASSIFIED one. Every tool
+        // whose name is in the canonical table must match it, so drift is loud
+        // at construction instead of quiet at execution.
+        tools.forEach { tool ->
+            val expected = ToolRisks.byName[tool.name] ?: return@forEach
+            check(tool.risk == expected) {
+                "Tool '${tool.name}' declares ${tool.risk} but ToolRisks says $expected"
+            }
+        }
+    }
+
+    /**
+     * Bind or clear the active turn's provenance. Clearing only takes effect
+     * when [sessionId] is still the bound turn; setting always overwrites.
+     */
+    fun setAuthorizationContext(sessionId: Int, context: TurnAuthorization?) {
+        authorizedTurn = if (context == null) {
+            authorizedTurn?.takeUnless { it.sessionId == sessionId }
+        } else {
+            AuthorizedTurn(sessionId, context)
+        }
+    }
 
     fun available(): List<ToolContract> = tools
 
@@ -91,6 +148,12 @@ class ToolRegistry(
      * would keep running and persist a bogus tool error instead of being
      * cancelled). [TimeoutCancellationException] is re-caught first: it is
      * a CancellationException subclass, but the per-tool timeout is OURS.
+     *
+     * AUTHORIZATION (single enforcement point): every tool call passes through
+     * here, so this is where the LLM/tool boundary lives. A denied call is an
+     * honest error [ToolResult] — never a throw, never a silent success — and
+     * [ToolContract.execute] is NOT invoked. The model-facing text is
+     * content-free; the real reason is logged (tool name + rule, no payload).
      */
     suspend fun executeResult(call: FunctionCall): ToolResult {
         val tool = tools.find { it.name == call.name }
@@ -100,6 +163,16 @@ class ToolRegistry(
                 }.toString(),
                 isError = true,
             )
+        val decision = ToolAuthorization.decide(call.name, tool.risk, authorizedTurn?.context)
+        if (decision is AuthorizationDecision.Deny) {
+            Timber.w("Tool %s denied by authorization (%s)", call.name, decision.reason)
+            return ToolResult(
+                buildJsonObject {
+                    put("error", "Action not permitted in this context")
+                }.toString(),
+                isError = true,
+            )
+        }
         val timeout = tool.timeoutMs ?: perToolTimeoutMs
         val startedAt = System.nanoTime()
         val result = try {

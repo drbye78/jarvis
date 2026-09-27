@@ -564,17 +564,38 @@ class AppGraph(
 
             override fun noteTurnStart(turnId: Int) =
                 cognitiveCoordinator.noteTurnStart(turnId)
+
+            override fun noteUserUtterance(turnId: Int, utterance: String) =
+                cognitiveCoordinator.noteUserUtterance(turnId, utterance)
         },
         // Phase 5 (M7): pause-on-wake reuses the real tool lane — the same
         // capability-gated control path the LLM uses, incl. the media-key
         // fallback for the app that owns audio focus.
+        //
+        // AUTHORIZATION: this is an OFF-TURN, app-authored call. STATEFUL now
+        // fails closed on an absent context, so bind an explicit system context
+        // around it (sentinel id — cannot collide with or clear a live turn's
+        // binding). This runs BEFORE runTurn for the same session, so there is
+        // no user turn context to disturb. Cleared in `finally` so a later
+        // off-turn call cannot inherit it.
         externalMusicPauser = {
-            functionRouter.executeResult(
-                com.jarvis.assistant.model.FunctionCall(
-                    "controlPlayback",
-                    """{"action":"pause"}""",
-                ),
+            functionRouter.setAuthorizationContext(
+                com.jarvis.assistant.tools.ToolAuthorization.SYSTEM_TURN_ID,
+                com.jarvis.assistant.tools.TurnAuthorization.system(),
             )
+            try {
+                functionRouter.executeResult(
+                    com.jarvis.assistant.model.FunctionCall(
+                        "controlPlayback",
+                        """{"action":"pause"}""",
+                    ),
+                )
+            } finally {
+                functionRouter.setAuthorizationContext(
+                    com.jarvis.assistant.tools.ToolAuthorization.SYSTEM_TURN_ID,
+                    null,
+                )
+            }
         },
     ).also { it.setOnError(onSessionError) }
 

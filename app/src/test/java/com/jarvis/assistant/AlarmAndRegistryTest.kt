@@ -5,6 +5,7 @@ import com.jarvis.assistant.tools.AlarmReceiver
 import com.jarvis.assistant.tools.AlarmTimes
 import com.jarvis.assistant.tools.ToolContract
 import com.jarvis.assistant.tools.ToolRegistry
+import com.jarvis.assistant.tools.ToolRisk
 import com.jarvis.assistant.tools.WeatherClient
 import com.jarvis.assistant.tools.WeatherTool
 import com.jarvis.assistant.util.NotificationIds
@@ -137,6 +138,7 @@ class ToolRegistryTest {
 
     private class OkTool : ToolContract {
         override val name = "ok"
+        override val risk = ToolRisk.READ_ONLY
         override val description = "ok tool"
         override val parametersJson = """{"type":"object","properties":{}}"""
         override suspend fun execute(arguments: String) = """{"status":"ok"}"""
@@ -144,6 +146,7 @@ class ToolRegistryTest {
 
     private class ThrowingTool : ToolContract {
         override val name = "boom"
+        override val risk = ToolRisk.READ_ONLY
         override val description = "throws"
         override val parametersJson = """{"type":"object","properties":{}}"""
         override suspend fun execute(arguments: String): String = throw IllegalStateException("kaput")
@@ -151,6 +154,7 @@ class ToolRegistryTest {
 
     private class HangingTool : ToolContract {
         override val name = "hang"
+        override val risk = ToolRisk.READ_ONLY
         override val description = "hangs"
         override val parametersJson = """{"type":"object","properties":{}}"""
         override suspend fun execute(arguments: String): String {
@@ -199,6 +203,7 @@ class ToolRegistryTest {
      *  the old substring sniffing misclassified this as an error (m1). */
     private class ErrorWordTool : ToolContract {
         override val name = "errword"
+        override val risk = ToolRisk.READ_ONLY
         override val description = "payload mentions error"
         override val parametersJson = """{"type":"object","properties":{}}"""
         override suspend fun execute(arguments: String) =
@@ -227,6 +232,7 @@ class ToolRegistryTest {
      *  (playMusic legitimately needs ~30 s for the cold-start cascade). */
     private class SlowButOverrideTool : ToolContract {
         override val name = "slowOverride"
+        override val risk = ToolRisk.READ_ONLY
         override val description = "slow but allowed"
         override val parametersJson = """{"type":"object","properties":{}}"""
         override val timeoutMs: Long = 60_000
@@ -252,6 +258,7 @@ class ToolRegistryTest {
     /** Audit #4: cancellation must propagate, never become a tool error. */
     private class AwaitingTool(val entered: CompletableDeferred<Unit>) : ToolContract {
         override val name = "awaitForever"
+        override val risk = ToolRisk.READ_ONLY
         override val description = "suspends until cancelled"
         override val parametersJson = """{"type":"object","properties":{}}"""
         override suspend fun execute(arguments: String): String {

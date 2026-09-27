@@ -95,6 +95,7 @@ class GeoPlaceTool(
     private val budgetMs: Long = 15_000,
 ) : ToolContract {
     override val name = "findPlace"
+    override val risk = ToolRisk.READ_ONLY
     override val description: String =
         "Find an organization, address or place on the map by name or a descriptive query. " +
             "Returns the matching places with their names, addresses and coordinates. Use it to " +
@@ -193,6 +194,7 @@ class GeoRouteTool(
     private val budgetMs: Long = 25_000,
 ) : ToolContract {
     override val name = "getRoute"
+    override val risk = ToolRisk.READ_ONLY
     override val description: String =
         // Deliberately does NOT promise an arrival time: MapKit leaves
         // TravelEstimation empty on this device (all six live routes had a null

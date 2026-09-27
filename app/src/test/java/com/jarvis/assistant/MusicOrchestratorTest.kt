@@ -1033,6 +1033,7 @@ class MusicOrchestratorTest {
     fun `per-tool timeout override beats the registry default`() = runTest {
         val slow = object : com.jarvis.assistant.tools.ToolContract {
             override val name = "slow"
+            override val risk = com.jarvis.assistant.tools.ToolRisk.READ_ONLY
             override val description = ""
             override val parametersJson = "{}"
             override val timeoutMs: Long? = 60_000

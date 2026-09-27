@@ -17,7 +17,9 @@ import com.jarvis.assistant.speech.asr.AsrStream
 import com.jarvis.assistant.speech.asr.StreamingAsrClient
 import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
+import com.jarvis.assistant.tools.IrreversibleCommand
 import com.jarvis.assistant.tools.ToolExecutor
+import com.jarvis.assistant.tools.TurnAuthorization
 import com.jarvis.assistant.util.SentenceBuffer
 import com.jarvis.assistant.util.toByteArray
 import kotlinx.coroutines.CancellationException
@@ -165,6 +167,13 @@ class TurnRunner(
         // STRICTLY LATER turn to honor `confirmed=true`, so the model can
         // never confirm its own candidate listing inside the same turn.
         cognitive?.noteTurnStart(sessionId)
+        // AUTHORIZATION BOUNDARY: bind a FAIL-CLOSED baseline context BEFORE
+        // any tool work (voice turn, no explicit command yet — the utterance
+        // is not known). The utterance-derived rebind happens the moment ASR
+        // finalizes (below), and processLlm can only run after that, so no
+        // tool can ever be dispatched against this baseline. The model can
+        // never pass this as a tool argument.
+        functionRouter.setAuthorizationContext(sessionId, TurnAuthorization.voice())
         val turn = TurnState()
         try {
             onStateEvent(TurnEvent(sessionId, SessionEvent.WakeWordOrBargeIn)) // -> LISTENING
@@ -209,6 +218,20 @@ class TurnRunner(
                     // content outside DEBUG). INFO keeps a content-free summary.
                     Timber.i("ASR final (len=%d)", outcome.text.length)
                     Timber.d("ASR final: %s", outcome.text)
+                    // AUTHORIZATION: now that the user's OWN utterance is
+                    // known, derive whether it commanded an irreversible
+                    // removal and REBIND. This supersedes the fail-closed
+                    // baseline above and is guaranteed to run before
+                    // processLlm (the only tool-dispatch path), so
+                    // IRREVERSIBLE tools are permitted only on a turn whose
+                    // own text asked for the action. The flag is derived from
+                    // ASR text here — never model-supplied.
+                    functionRouter.setAuthorizationContext(
+                        sessionId,
+                        TurnAuthorization.voice(
+                            explicitUserCommand = IrreversibleCommand.isCommand(outcome.text),
+                        ),
+                    )
                     // COGNITIVE_PLAN 1.7: persist, then fire-and-forget ingest
                     // keyed by the row id (exactly-once per message).
                     // Audit fix: check-then-write UNDER NonCancellable — a seq
@@ -216,6 +239,11 @@ class TurnRunner(
                     // row land after the superseding turn's rows.
                     val messageId = persistUserMessage(sessionId, outcome.text)
                     if (messageId != null) {
+                        // COGNITIVE_PLAN §6.4 (forget hardening): bind the
+                        // finalized utterance to THIS turn before any tool can
+                        // run, so the forget gate can require an explicit
+                        // affirmative from the immediately-next user turn.
+                        cognitive?.noteUserUtterance(sessionId, outcome.text)
                         cognitive?.ingest(outcome.text, messageId, TurnOrigin.VOICE)
                         // COGNITIVE_PLAN 2.4: the reject half of the accept/reject
                         // loop — a follow-up utterance right after a proactive
@@ -281,6 +309,9 @@ class TurnRunner(
             // Defensive: same sentence-stop discipline as the IO path.
             cancelSpeechChildren(turn)
             reportFailure(sessionId, phrases.genericError)
+        } finally {
+            // Clear ONLY this turn's binding; a newer turn's context survives.
+            functionRouter.setAuthorizationContext(sessionId, null)
         }
     }
 

@@ -191,6 +191,10 @@ class FunctionRouter(
     override fun getToolDefinitions(): List<ToolDefinition> =
         toolRegistry.getToolDefinitions()
 
+    /** Threads the turn's authorization provenance to the enforcing registry. */
+    override fun setAuthorizationContext(sessionId: Int, context: TurnAuthorization?) =
+        toolRegistry.setAuthorizationContext(sessionId, context)
+
     /** Structured outcome (m1): classification via [ToolResult.isError]. */
     override suspend fun executeResult(call: FunctionCall): ToolResult =
         toolRegistry.executeResult(call)

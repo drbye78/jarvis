@@ -30,6 +30,7 @@ class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
 
     inner class PlayMusicTool : ToolContract {
         override val name = "playMusic"
+        override val risk = ToolRisk.STATEFUL
         override val description =
             "Search for music in the installed player app and play it. The default player is " +
                 "Яндекс Музыка unless the user configured another one or names it explicitly " +
@@ -89,6 +90,7 @@ class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
 
     inner class ControlPlaybackTool : ToolContract {
         override val name = "controlPlayback"
+        override val risk = ToolRisk.STATEFUL
         override val description =
             "Control music playback: play (resume), pause, toggle, next track, previous track, stop, " +
                 "seek (rewind/fast-forward), restart track, like (heart), repeat mode, shuffle, playback speed. " +
@@ -181,6 +183,7 @@ class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
 
     inner class GetNowPlayingTool : ToolContract {
         override val name = "getNowPlaying"
+        override val risk = ToolRisk.READ_ONLY
         override val description =
             "Get what is currently playing in the active player: track title, artist, album, " +
                 "playing/paused state, position, queue placement (e.g. '3 of 12'), speed, repeat, shuffle. " +
@@ -204,6 +207,7 @@ class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
 
     inner class ListPlaylistsTool : ToolContract {
         override val name = "listPlaylists"
+        override val risk = ToolRisk.READ_ONLY
         override val description =
             "List the playlists and library sections of the default player. " +
                 "Use for \"какие плейлисты есть\", \"что послушать\", \"покажи библиотеку\". " +
@@ -224,6 +228,7 @@ class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
 
     inner class SearchLibraryTool : ToolContract {
         override val name = "searchLibrary"
+        override val risk = ToolRisk.READ_ONLY
         override val description =
             "Search the player's own library (different from playMusic: this RETURNS found items " +
                 "instead of playing). Use for \"найди в музыке\", \"что есть по запросу X\" or when the " +

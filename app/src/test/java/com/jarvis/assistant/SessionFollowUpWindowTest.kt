@@ -114,6 +114,11 @@ class SessionFollowUpWindowTest {
                 override fun getToolDefinitions() = emptyList<com.jarvis.assistant.model.ToolDefinition>()
                 override suspend fun executeResult(call: com.jarvis.assistant.model.FunctionCall) =
                     com.jarvis.assistant.tools.ToolResult("{}", isError = false)
+
+                override fun setAuthorizationContext(
+                    sessionId: Int,
+                    context: com.jarvis.assistant.tools.TurnAuthorization?,
+                ) {}
             },
             conversationManager = ConversationManager(FakeMessageDao(), maxMessages = 20),
             stateMachine = stateMachine,

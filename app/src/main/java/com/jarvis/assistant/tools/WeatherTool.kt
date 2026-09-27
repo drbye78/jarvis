@@ -349,6 +349,7 @@ class WeatherTool(
     private val budgetMs: Long = 20_000,
 ) : ToolContract {
     override val name = "getWeather"
+    override val risk = ToolRisk.READ_ONLY
     override val description: String =
         "Get the current weather and a daily forecast (1-7 days) for a city or place. " +
             "The result contains dated daily entries; use them to answer follow-ups like " +
