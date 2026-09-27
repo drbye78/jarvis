@@ -28,8 +28,11 @@ import timber.log.Timber
  *    set. A model-invented "fact" without a textual anchor dies here.
  * 5. `messageId` must reference a member of the batch — a hallucinated
  *    reference is dropped (it has no provenance).
- * 6. Unknown `predicate` → OTHER category (kept, but classified honestly).
- * 7. HEALTH/politics/religion patterns → `sensitive=true`.
+ * 6. `subject` must be a sanctioned subject (`ExtractionContract.SUBJECTS`,
+ *    i.e. `user`; blank/absent defaults to `user`) — an unanchored subject is
+ *    dropped, never normalized into storage (audit MEDIUM).
+ * 7. Unknown `predicate` → OTHER category (kept, but classified honestly).
+ * 8. HEALTH/politics/religion patterns → `sensitive=true`.
  */
 class ExtractionParser {
 
@@ -40,9 +43,25 @@ class ExtractionParser {
 
     sealed interface Result {
         /** Parsed + validated candidates, ready for the normalizer. */
-        data class Ok(val facts: List<ValidatedFact>, val droppedCount: Int) : Result
+        data class Ok(
+            val facts: List<ValidatedFact>,
+            val droppedCount: Int,
+            /**
+             * messageIds whose own emitted fact(s) failed validation (empty
+             * value, non-numeric confidence, unanchored evidence). The worker
+             * burns ONLY these rows' attempts and lets the rest of the batch
+             * proceed — one bad row must not poison its batch-mates. A
+             * hallucinated messageId (not a member of the batch) cannot be
+             * attributed and is NOT listed.
+             */
+            val invalidMessageIds: Set<Long> = emptySet(),
+        ) : Result
 
-        /** No JSON object found / schema invalid → quarantine the batch. */
+        /**
+         * No JSON object found / schema invalid → the WHOLE response is
+         * incoherent. This is the one case where the batch legitimately fails
+         * together (the rows' own extractions cannot even be evaluated).
+         */
         data class ParseError(val detail: String) : Result
     }
 
@@ -73,6 +92,7 @@ class ExtractionParser {
 
         val utterancesByMessage = batch.toMap()
         val validated = mutableListOf<ValidatedFact>()
+        val invalidMessageIds = mutableSetOf<Long>()
         var dropped = 0
 
         for (element in factsArray) {
@@ -82,9 +102,14 @@ class ExtractionParser {
                 validated.add(fact)
             } else {
                 dropped++
+                // Attribute the failure to a real batch row when the model
+                // still named one; a hallucinated id has no row to blame.
+                row?.long("messageId")
+                    ?.takeIf { utterancesByMessage.containsKey(it) }
+                    ?.let(invalidMessageIds::add)
             }
         }
-        return Result.Ok(validated, dropped)
+        return Result.Ok(validated, dropped, invalidMessageIds)
     }
 
     /** One row through the full validation gauntlet; null = drop (counted). */
@@ -102,14 +127,12 @@ class ExtractionParser {
         val evidence = row.str("evidence")?.trim().orEmpty()
         if (!evidenceOccursInUtterance(evidence, utterance)) return null
 
-        val confidence = row.double("confidence")?.toFloat()?.coerceIn(0f, 1f) ?: return null
-
-        val subjectRaw = row.str("subject")?.trim().orEmpty()
-        val subject = if (subjectRaw.isBlank()) {
-            "user"
-        } else {
-            com.jarvis.assistant.cognitive.recall.SearchTokenizer.normalize(subjectRaw)
-        }
+        val confidence = row.double("confidence")?.toFloat()?.coerceIn(0f, 1f)
+        // Audit MEDIUM: the subject is anchored like the predicate — outside
+        // the sanctioned vocabulary the row is dropped (never coerced). Blank
+        // keeps the documented `user` default.
+        val subject = ExtractionContract.sanitizeSubject(row.str("subject"))
+        if (confidence == null || subject == null) return null
 
         val predicateRaw = row.str("predicate")
         val (category, sensitive) = ExtractionContract.categorize(predicateRaw, value)

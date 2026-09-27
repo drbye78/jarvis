@@ -41,9 +41,11 @@ sealed interface MemoryOutcome {
      * tool-result JSON to the model, which let it echo the token back with
      * `confirmed=true` inside the SAME turn (the gate was never a user gate).
      * Confirmation is now bound to TURN PROVENANCE in the coordinator: the
-     * candidate listing is armed for this turn, and only a STRICTLY LATER
-     * turn may confirm it. The model must therefore ask the user and wait for
-     * their next utterance.
+     * candidate listing is armed for this turn, and only the IMMEDIATELY-NEXT
+     * user turn may confirm it — and only with an EXPLICIT AFFIRMATIVE
+     * («да» / «подтверждаю» / "yes"), never «нет», a question or an unrelated
+     * remark. The model must therefore show the candidates to the user, ask,
+     * and wait for a genuine yes.
      */
     data class ForgetCandidates(val candidates: List<String>) : MemoryOutcome
 

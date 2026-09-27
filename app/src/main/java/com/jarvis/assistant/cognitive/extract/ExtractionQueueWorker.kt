@@ -26,8 +26,13 @@ import java.io.IOException
  *   the loop backs off [CLOUD_BACKOFF_MS]; attempts persist in the rows.
  * - A row whose attempts exceed [ExtractionQueueEntity.MAX_ATTEMPTS] is
  *   QUARANTINED before the call (poison protection, not blind retried).
- * - Parse/validation failure → the whole batch is QUARANTINED with a
- *   counter (the model output, not the transport, is broken).
+ * - Parse failure of the WHOLE response (no JSON object) → the whole batch is
+ *   QUARANTINED with a counter: the model output is incoherent, so no row can
+ *   be evaluated on its own merits.
+ * - A row whose OWN extraction is invalid (its emitted fact fails strict
+ *   validation) is PER-MESSAGE: only that row's attempt is burned and it is
+ *   released back to PENDING to retry alone; its batch-mates proceed to DONE.
+ *   It quarantines via the existing pre-call check once attempts run out.
  * - A message pruned before extraction: nothing extractable — DONE with
  *   zero facts, logged (expected churn of the retention trim, not an error).
  *
@@ -216,27 +221,42 @@ class ExtractionQueueWorker(
 
             is ExtractionParser.Result.Ok -> {
                 var appliedSize = 0
+                var invalidRetried = 0
                 inTransaction {
                     val applied = writer.writeAll(result.facts)
                     appliedSize = applied.size
                     extractedCount += applied.size
                     droppedCount += result.droppedCount
-                    fresh.forEach {
+                    // PER-MESSAGE failure isolation: a row that emitted only
+                    // invalid fact(s) burns its own attempt and is released to
+                    // retry alone; every other row in the batch is DONE.
+                    val validMessageIds = result.facts.mapTo(mutableSetOf<Long>()) { it.messageId }
+                    fresh.forEach { row ->
+                        val rowInvalid = row.messageId in result.invalidMessageIds &&
+                            row.messageId !in validMessageIds
+                        if (rowInvalid) {
+                            invalidRetried++
+                        }
                         queueDao.updateState(
-                            it.messageId,
-                            ExtractionQueueEntity.STATE_DONE,
-                            it.attempt + 1,
+                            row.messageId,
+                            if (rowInvalid) {
+                                ExtractionQueueEntity.STATE_PENDING
+                            } else {
+                                ExtractionQueueEntity.STATE_DONE
+                            },
+                            row.attempt + 1,
                             null,
                             System.currentTimeMillis(),
                         )
                     }
                 }
                 Timber.i(
-                    "Cognitive: batch %s → %d fact(s) from %d message(s) (%d dropped)",
+                    "Cognitive: batch %s → %d fact(s) from %d message(s) (%d dropped, %d invalid-retried)",
                     batchId,
                     appliedSize,
                     pairs.size,
                     result.droppedCount,
+                    invalidRetried,
                 )
                 ExtractionBatchReport(batchId, pairs.size, appliedSize, result.droppedCount, quarantined = false)
             }

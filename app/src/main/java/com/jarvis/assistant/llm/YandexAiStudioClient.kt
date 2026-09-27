@@ -12,6 +12,8 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.contentOrNull
@@ -23,8 +25,10 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import timber.log.Timber
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 /**
  * Yandex AI Studio **Responses API** client — the LIVE-VERIFIED contract
@@ -46,6 +50,13 @@ import java.io.IOException
  * graph never does I/O. A discovery failure is a typed
  * [YandexFolderResolutionException], never a crash and never an empty answer.
  *
+ * Discovery carries its OWN bounded timeout ([folderDiscoveryTimeoutMs],
+ * applied as the OkHttp call timeout so it spans connect + headers + body)
+ * instead of relying on the shared client defaults, and it is SINGLE-FLIGHT:
+ * a [folderMutex] serializes the first concurrent callers, so N simultaneous
+ * first turns perform ONE `GET /models` and the rest reuse the cached result.
+ * The lock is only taken on a cache miss; the hot (cached) path never locks.
+ *
  * Cancellation mirrors [GigaChatNativeClient] (M4/M5): the blocking read runs
  * in an IO child, `awaitClose` cancels the OkHttp [Call] to unblock it, and
  * [SseStream] rethrows a genuine transport failure while treating a cancelled
@@ -58,6 +69,8 @@ class YandexAiStudioClient(
     private val defaultModel: String,
     private val manualFolderId: String = "",
     private val webSearchEnabled: Boolean = true,
+    /** Dedicated bound for `GET /models`; see the folder-resolution KDoc. */
+    private val folderDiscoveryTimeoutMs: Long = DEFAULT_FOLDER_DISCOVERY_TIMEOUT_MS,
 ) : LlmClient {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -65,6 +78,9 @@ class YandexAiStudioClient(
 
     @Volatile
     private var cachedFolderId: String? = null
+
+    /** Single-flight guard for the FIRST folder discovery (cache-miss path only). */
+    private val folderMutex = Mutex()
 
     override fun chatStream(request: ChatRequest): Flow<LlmChunk> = channelFlow {
         var call: Call? = null
@@ -139,7 +155,16 @@ class YandexAiStudioClient(
             if (!response.isSuccessful) {
                 throw LlmHttpException(response.code, detailFromBody(raw))
             }
-            return extractOutputText(raw)
+            // A 2xx body we cannot decode is a protocol anomaly, NOT "the model
+            // returned no JSON". Silently returning "" here made the extraction
+            // worker quarantine a whole batch over one weird payload; the typed
+            // IOException is classified as a transport/batch-release instead.
+            val parsed = runCatching {
+                json.decodeFromString(YandexResponse.serializer(), raw)
+            }.getOrNull() ?: throw LlmResponseParseException(
+                "Yandex AI Studio returned an undecodable response (HTTP ${response.code})"
+            )
+            return extractOutputText(parsed)
         }
     }
 
@@ -162,7 +187,13 @@ class YandexAiStudioClient(
     private suspend fun resolveFolderId(): String {
         manualFolderId.trim().takeIf { it.isNotEmpty() }?.let { return it }
         cachedFolderId?.let { return it }
-        return discoverFolderId().also { cachedFolderId = it }
+        // Single-flight: a second concurrent first call waits here, then reads
+        // the cache the winner just populated. The manual/cached fast paths
+        // above never take the lock, so the streaming turn is not blocked.
+        return folderMutex.withLock {
+            cachedFolderId?.let { return@withLock it }
+            discoverFolderId().also { cachedFolderId = it }
+        }
     }
 
     private suspend fun discoverFolderId(): String {
@@ -171,21 +202,46 @@ class YandexAiStudioClient(
             .header(AUTHORIZATION, "Api-Key ${apiKeyProvider()}")
             .get()
             .build()
-        val response = httpClient.newCall(request).await()
-        try {
-            val raw = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                val detail = detailFromBody(raw)
-                val suffix = if (detail.isNullOrBlank()) "" else " ($detail)"
-                throw YandexFolderResolutionException(
-                    "Yandex model discovery failed (HTTP ${response.code})$suffix"
-                )
-            }
-            return parseFolderId(raw)
-                ?: throw YandexFolderResolutionException("Yandex model discovery returned no gpt:// entry")
+        val call = httpClient.newCall(request)
+        // Dedicated bound: the shared client defaults are not a per-discovery
+        // contract. OkHttp's call timeout spans connect + headers + body, so a
+        // stalled `/models` cannot hang resolution (nor the turn behind it).
+        call.timeout().timeout(folderDiscoveryTimeoutMs, TimeUnit.MILLISECONDS)
+        val response = try {
+            call.await()
+        } catch (e: CancellationException) {
+            throw e // A8: never mask shutdown/barge-in
+        } catch (e: IOException) {
+            // Transport/timeout → typed, content-free folder failure. The raw
+            // message can embed host/port material and reaches the file log, so
+            // it is preserved as the CAUSE (never interpolated into the text).
+            throw YandexFolderResolutionException(
+                "Yandex model discovery failed (${e.javaClass.simpleName})",
+                e,
+            )
+        }
+        return try {
+            folderIdFromResponse(response)
         } finally {
             runCatching { response.close() }
         }
+    }
+
+    /**
+     * The one typed failure site for a decoded (non-transport) discovery reply:
+     * a non-2xx status or a body whose `data[]` carries no `gpt://` entry.
+     */
+    private fun folderIdFromResponse(response: Response): String {
+        val raw = response.body?.string().orEmpty()
+        if (!response.isSuccessful) {
+            val detail = detailFromBody(raw)
+            val suffix = if (detail.isNullOrBlank()) "" else " ($detail)"
+            throw YandexFolderResolutionException(
+                "Yandex model discovery failed (HTTP ${response.code})$suffix"
+            )
+        }
+        return parseFolderId(raw)
+            ?: throw YandexFolderResolutionException("Yandex model discovery returned no gpt:// entry")
     }
 
     /**
@@ -207,9 +263,7 @@ class YandexAiStudioClient(
         return id.removePrefix(GPT_SCHEME).split('/').firstOrNull()?.takeIf { it.isNotBlank() }
     }
 
-    private fun extractOutputText(raw: String): String {
-        val parsed = runCatching { json.decodeFromString(YandexResponse.serializer(), raw) }.getOrNull()
-            ?: return ""
+    private fun extractOutputText(parsed: YandexResponse): String {
         parsed.outputText?.takeIf { it.isNotBlank() }?.let { return it }
         return parsed.output.asSequence()
             .flatMap { it.content.asSequence() }
@@ -233,12 +287,27 @@ class YandexAiStudioClient(
         const val EVENT_STREAM = "text/event-stream"
         const val JSON_MEDIA_TYPE = "application/json; charset=utf-8"
         const val TYPE_OUTPUT_TEXT = "output_text"
+
+        /**
+         * Dedicated bound for `GET /models` folder discovery (5 s). Explicit
+         * per-discovery value: the shared OkHttp client's defaults are not a
+         * contract for this call.
+         */
+        const val DEFAULT_FOLDER_DISCOVERY_TIMEOUT_MS = 5_000L
     }
 }
 
 /**
  * The service account folder could not be resolved (discovery non-2xx, empty
- * or malformed `data[]`). A fatal, typed failure — never a crash and never a
- * silently empty answer.
+ * or malformed `data[]`, or a transport timeout). A fatal, typed failure —
+ * never a crash and never a silently empty answer.
  */
-class YandexFolderResolutionException(message: String) : RuntimeException(message)
+class YandexFolderResolutionException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
+/**
+ * A 2xx response whose envelope could not be decoded. Deliberately an
+ * [IOException] so the Cognitive extraction lane classifies it as a
+ * transport/protocol anomaly (release the batch and retry) instead of an
+ * empty completion that would quarantine every row in the batch.
+ */
+class LlmResponseParseException(message: String) : IOException(message)

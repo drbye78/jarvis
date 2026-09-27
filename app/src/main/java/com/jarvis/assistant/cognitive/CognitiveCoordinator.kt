@@ -28,6 +28,7 @@ import com.jarvis.assistant.cognitive.prompt.FactPhrasing
 import com.jarvis.assistant.cognitive.recall.FactRanker
 import com.jarvis.assistant.cognitive.recall.RecallPipeline
 import com.jarvis.assistant.cognitive.recall.SearchTokenizer
+import com.jarvis.assistant.cognitive.tools.ForgetConfirmation
 import com.jarvis.assistant.cognitive.tools.MemoryOutcome
 import com.jarvis.assistant.cognitive.tools.MemoryToolsFactory
 import com.jarvis.assistant.session.CognitiveTurnHooks
@@ -310,9 +311,19 @@ class CognitiveCoordinator(
     // ------------------------------------------------------------------
 
     /**
-     * `remember_fact(value, category?, subject?)`: deterministic local
-     * write, origin EXPLICIT, confidence 1.0, routed through the SAME
-     * normalizer as extraction (plan §6.4).
+     * `remember_fact(value, category?)`: deterministic local write, origin
+     * EXPLICIT, confidence 1.0, routed through the SAME normalizer as
+     * extraction (plan §6.4).
+     *
+     * Subject anchoring (owner decision, audit MEDIUM): the ONLY subject is
+     * `user`. The tool surface no longer advertises a `subject` parameter, but
+     * this method stays the enforcement point for any off-contract value a
+     * model smuggles into the raw arguments: it is routed through the SAME
+     * [ExtractionContract.sanitizeSubject] gate as the extraction parser, and
+     * an unsanctioned subject is REJECTED with an honest
+     * [MemoryOutcome.Failed] — never silently coerced onto `user`, so the
+     * refusal is visible to the model and the transcript. Blank/absent keeps
+     * the documented `user` default.
      */
     suspend fun rememberFact(
         value: String,
@@ -324,7 +335,8 @@ class CognitiveCoordinator(
         if (trimmed.isEmpty()) return MemoryOutcome.Failed("empty value")
 
         val predicate = category?.trim()?.lowercase(java.util.Locale.ROOT)?.ifBlank { "other" } ?: "other"
-        val subjectNorm = subject?.let { SearchTokenizer.normalize(it).ifBlank { "user" } } ?: "user"
+        val subjectNorm = ExtractionContract.sanitizeSubject(subject)
+            ?: return MemoryOutcome.Failed("unsupported subject")
         val (factCategory, sensitive) = ExtractionContract.categorize(predicate, trimmed)
         val fact = ValidatedFact(
             subject = subjectNorm,
@@ -397,21 +409,53 @@ class CognitiveCoordinator(
     }
 
     /**
-     * COGNITIVE_PLAN §6.4 (security fix): a candidate listing armed for a
-     * specific turn. Confirmation is bound to TURN PROVENANCE, not to a token
-     * handed to the model: the token used to ride in the same tool-result
-     * JSON as the candidates, so with `maxToolPasses = 5` the model could echo
-     * it back with `confirmed=true` inside the SAME turn — the "confirmation"
-     * was never a user gate. Only a STRICTLY LATER turn (a new user
-     * utterance) may confirm the set.
+     * COGNITIVE_PLAN §6.4 (hardened): a candidate listing armed for a specific
+     * turn, user-utterance ordinal and query. Confirmation is bound to TURN
+     * PROVENANCE + an EXPLICIT AFFIRMATION, not to a token handed to the model:
+     * the token used to ride in the same tool-result JSON as the candidates, so
+     * with `maxToolPasses = 5` the model could echo it back with
+     * `confirmed=true` inside the SAME turn — the "confirmation" was never a
+     * user gate. A grant now requires the IMMEDIATELY-NEXT user turn to carry
+     * a genuine affirmative, which makes "any strictly later utterance" («нет»,
+     * an unrelated question, …) insufficient. Bounded by both a turn-age bound
+     * and a wall-clock TTL so it cannot linger for a hundred turns.
      */
-    private data class PendingForget(val turnId: Int, val factIds: Set<String>)
+    private data class PendingForget(
+        val turnId: Int,
+        val ordinal: Int,
+        val factIds: Set<String>,
+        val query: String,
+        val armedAtMs: Long,
+    )
 
     /** The turn currently executing ([noteTurnStart]); 0 = none observed yet. */
     private val currentTurnId = AtomicInteger(0)
 
-    /** The candidate set armed for confirmation, with the turn that issued it. */
+    /** The finalized user utterance of a turn, bound to that turn's id. */
+    private data class UtteranceBinding(val turnId: Int, val text: String)
+
+    /** The most recent finalized user utterance (turn id + text), or null. */
+    private val utteranceBinding = AtomicReference<UtteranceBinding?>(null)
+
+    /**
+     * Monotonic count of FINALIZED USER UTTERANCES (one per speech-bearing
+     * turn, regardless of session-seq gaps from supersede/cancelAll). The
+     * pending grant stores the ordinal it was armed at; confirmation requires
+     * the current ordinal to be exactly one greater, i.e. the immediately-next
+     * user turn — seq gaps never widen the window.
+     */
+    private val utteranceOrdinal = AtomicInteger(0)
+
+    /** The candidate set armed for confirmation, with its provenance. */
     private val pendingForget = AtomicReference<PendingForget?>(null)
+
+    /**
+     * Serializes the forget read-check-act cycle (arm / honor / clear). The
+     * coroutine Mutex (not a thread monitor) is used deliberately: the guarded
+     * block suspends on the Room DAOs, which a `synchronized` monitor must not
+     * straddle.
+     */
+    private val forgetMutex = Mutex()
 
     /**
      * COGNITIVE_PLAN §6.4: records the turn that is starting. Called once at
@@ -423,57 +467,130 @@ class CognitiveCoordinator(
     }
 
     /**
+     * COGNITIVE_PLAN §6.4 (hardening): records the FINALIZED user utterance of
+     * [turnId] (called by `TurnRunner` right after ASR finalizes). [turnId] is
+     * the SAME session seq passed to [noteTurnStart], so the coordinator can
+     * bind utterance → turn and refuse to honor a confirmation whose turn is
+     * not the currently-executing one.
+     *
+     * Also invalidates a SUPERSEDED grant: a pending armed at ordinal `k` is
+     * valid only for ordinal `k+1`; once a later utterance arrives more than
+     * one turn after the arming (because no tool call re-listed it), the grant
+     * is dead. This is what stops a stale grant surviving indefinitely when
+     * turns pass without a re-list.
+     */
+    override fun noteUserUtterance(turnId: Int, utterance: String) {
+        val ordinal = utteranceOrdinal.incrementAndGet()
+        utteranceBinding.set(UtteranceBinding(turnId, utterance))
+        if (ordinal > FORGET_MAX_UTTERANCE_GAP) {
+            val stale = pendingForget.get()
+            if (stale != null && stale.ordinal < ordinal - FORGET_MAX_UTTERANCE_GAP) {
+                pendingForget.compareAndSet(stale, null)
+            }
+        }
+    }
+
+    /**
      * `forget_fact(query, confirmed=false)`: two-step confirm-then-delete
-     * (plan §6.4). Confirmation is bound to TURN PROVENANCE: a candidate
-     * listing armed in turn N is honored only when `confirmed=true` arrives in
-     * a turn N' > N with the SAME candidate set. A same-turn, absent, stale or
-     * mismatched confirmation is refused and the candidates are re-listed —
-     * never a silent success.
+     * (plan §6.4). The read-check-act cycle is serialized on [forgetMutex]; the
+     * whole check runs in [forgetFactLocked]. A same-turn, absent, stale,
+     * expired, mismatched or NON-AFFIRMATIVE confirmation is refused and the
+     * candidates are re-listed — never a silent success.
      */
     suspend fun forgetFact(query: String, confirmed: Boolean): MemoryOutcome {
         if (!memoryEnabled.value) return MemoryOutcome.Disabled
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return MemoryOutcome.NothingToForget
         return try {
-            val candidates = forgetCandidates(trimmed)
-            val candidateIds = candidates.mapTo(HashSet()) { it.factId }
-            val issuedTurn = currentTurnId.get()
-            val pending = pendingForget.get()
-            val honored = confirmed &&
-                candidates.isNotEmpty() &&
-                pending != null &&
-                issuedTurn > pending.turnId &&
-                pending.factIds == candidateIds
-            when {
-                honored -> {
-                    pendingForget.set(null)
-                    val now = nowMs()
-                    candidates.forEach {
-                        factDao.updateStatus(it.factId, FactStatus.FORGOTTEN.name, now)
-                    }
-                    MemoryOutcome.Forgotten(candidates.joinToString("; ") { FactPhrasing.phrase(it) })
-                }
-                candidates.isEmpty() -> {
-                    // Nothing matched — drop any stale pending record.
-                    pendingForget.set(null)
-                    MemoryOutcome.NothingToForget
-                }
-                else -> {
-                    // Refuse and re-list. Re-arm this set for the CURRENT turn
-                    // (superseding any stale/mismatched record) so a genuine
-                    // confirmation in a LATER turn still works; the same turn
-                    // can never confirm its own listing.
-                    pendingForget.set(PendingForget(issuedTurn, candidateIds))
-                    MemoryOutcome.ForgetCandidates(candidates.map { FactPhrasing.phrase(it) })
-                }
-            }
+            forgetMutex.withLock { forgetFactLocked(trimmed, confirmed) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Same sanitization contract as rememberFact (P1 review).
+            // Same sanitization contract as rememberFact (P1 review). The
+            // grant is deliberately LEFT ARMED on failure: the pending clear
+            // happens only after the whole delete loop succeeds (see below), so
+            // a partial delete does not consume the confirmation as if it had
+            // succeeded. A retry re-derives the candidate set from ACTIVE
+            // facts only, so already-forgotten rows drop out of the set — a
+            // leftover grant can never authorize a second delete and the model
+            // is told Failed, never success.
             Timber.e("Cognitive: forgetFact failed (%s)", e.javaClass.name)
             Timber.d(e, "Cognitive: forgetFact failure detail")
             MemoryOutcome.Failed("delete failure (${e.javaClass.simpleName})")
+        }
+    }
+
+    /**
+     * The read-check-act body of [forgetFact], under [forgetMutex]. Deletes
+     * happen BEFORE the grant is cleared: on any failure the exception
+     * propagates to [forgetFact]'s catch while the grant stays armed, so a
+     * partial delete is reported as [MemoryOutcome.Failed] and never consumes
+     * the confirmation as though it had succeeded.
+     */
+    @Suppress("ComplexCondition") // the single, auditable confirmation predicate
+    private suspend fun forgetFactLocked(trimmed: String, confirmed: Boolean): MemoryOutcome {
+        val candidates = forgetCandidates(trimmed)
+        val candidateIds = candidates.mapTo(HashSet()) { it.factId }
+        val expectedQuery = SearchTokenizer.normalize(trimmed)
+        val issuedTurn = currentTurnId.get()
+        val ordinal = utteranceOrdinal.get()
+        val binding = utteranceBinding.get()
+        val now = nowMs()
+        val pending = pendingForget.get()
+
+        val honored = confirmed &&
+            candidates.isNotEmpty() &&
+            pending != null &&
+            binding != null &&
+            binding.turnId == issuedTurn &&
+            ForgetConfirmation.isAffirmative(binding.text) &&
+            pending.ordinal == ordinal - FORGET_MAX_UTTERANCE_GAP &&
+            issuedTurn > pending.turnId &&
+            now - pending.armedAtMs <= FORGET_PENDING_TTL_MS &&
+            pending.factIds == candidateIds &&
+            pending.query == expectedQuery
+
+        return when {
+            honored -> {
+                // Delete FIRST, clear the grant only after the whole loop
+                // succeeded. If any updateStatus throws, the exception reaches
+                // [forgetFact] with the grant still armed (no double-delete:
+                // candidates are ACTIVE facts only).
+                val forNow = nowMs()
+                candidates.forEach {
+                    factDao.updateStatus(it.factId, FactStatus.FORGOTTEN.name, forNow)
+                }
+                pendingForget.set(null)
+                MemoryOutcome.Forgotten(candidates.joinToString("; ") { FactPhrasing.phrase(it) })
+            }
+            candidates.isEmpty() -> {
+                // Nothing matched — drop any stale pending record.
+                pendingForget.set(null)
+                MemoryOutcome.NothingToForget
+            }
+            else -> {
+                // Refuse and re-list. Re-arm this set for the CURRENT turn
+                // (superseding any stale/mismatched/expired record) so a
+                // genuine confirmation in the immediately-next user turn still
+                // works; the same turn can never confirm its own listing. If
+                // the running turn has no bound utterance yet, arm nothing —
+                // an unbindable grant could never be legitimately confirmed.
+                val canArm = binding != null && binding.turnId == issuedTurn
+                pendingForget.set(
+                    if (canArm) {
+                        PendingForget(
+                            turnId = issuedTurn,
+                            ordinal = ordinal,
+                            factIds = candidateIds,
+                            query = expectedQuery,
+                            armedAtMs = now,
+                        )
+                    } else {
+                        null
+                    },
+                )
+                MemoryOutcome.ForgetCandidates(candidates.map { FactPhrasing.phrase(it) })
+            }
         }
     }
 
@@ -1177,6 +1294,22 @@ class CognitiveCoordinator(
 
         /** §5 cap: DAILY summary rows. */
         const val SUMMARY_ROW_CAP = 365
+
+        /**
+         * COGNITIVE_PLAN §6.4 (forget hardening): the confirmation grant is
+         * valid only for the IMMEDIATELY-NEXT user turn (utterance-ordinal
+         * gap == 1). Combined with [FORGET_PENDING_TTL_MS] this bounds the
+         * window from above by both turn count and wall clock.
+         */
+        const val FORGET_MAX_UTTERANCE_GAP = 1
+
+        /**
+         * COGNITIVE_PLAN §6.4 (forget hardening): wall-clock lifetime of a
+         * confirmation grant. Whichever bound is tighter wins — a grant whose
+         * confirming utterance is the immediately-next turn but arrives more
+         * than five minutes later is refused and re-listed.
+         */
+        const val FORGET_PENDING_TTL_MS = 5 * 60_000L
 
         /** Compaction over-fetch buffer. */
         const val BUFFER = 10

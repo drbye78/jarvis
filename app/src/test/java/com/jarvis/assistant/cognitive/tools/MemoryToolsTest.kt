@@ -38,6 +38,7 @@ class MemoryToolsTest {
 
     private fun coordinator(
         factDao: FakeUserFactDao = FakeUserFactDao(),
+        nowMs: () -> Long = { 1_000L },
     ): Pair<CognitiveCoordinator, FakeUserFactDao> {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val coordinator = CognitiveCoordinator(
@@ -55,7 +56,7 @@ class MemoryToolsTest {
                 cloudEnabled = cloudEnabled,
                 sensitiveVisible = sensitiveVisible,
                 strings = ToolStrings.Default,
-                nowMs = { 1_000L },
+                nowMs = nowMs,
                 // F11: pin the CPU hop (same precedent as the wake-word
                 // engine's `engineBuildDispatcher = Dispatchers.Unconfined`) —
                 // otherwise `withContext(Dispatchers.Default)` lets the test
@@ -137,6 +138,7 @@ class MemoryToolsTest {
 
         // Turn 1: list the candidates.
         c.noteTurnStart(1)
+        c.noteUserUtterance(1, "забудь Тарковского")
         val candidates = c.forgetFact("Тарковского", confirmed = false)
         assertTrue(candidates is MemoryOutcome.ForgetCandidates)
 
@@ -148,15 +150,17 @@ class MemoryToolsTest {
     }
 
     @Test
-    fun `forget honors a confirmation issued in a strictly later turn`() = runTest {
+    fun `forget honors an explicit affirmative in the strictly later turn`() = runTest {
         val (c, dao) = coordinator()
         c.rememberFact("любит Тарковского", "likes", null)
 
         c.noteTurnStart(1)
+        c.noteUserUtterance(1, "забудь Тарковского")
         assertTrue(c.forgetFact("Тарковского", confirmed = false) is MemoryOutcome.ForgetCandidates)
 
-        // Turn 2 (new user utterance): the matching confirmation succeeds.
+        // Turn 2 (new user utterance, explicit yes): the confirmation succeeds.
         c.noteTurnStart(2)
+        c.noteUserUtterance(2, "да")
         val done = c.forgetFact("Тарковского", confirmed = true)
         assertTrue(done is MemoryOutcome.Forgotten)
         assertEquals(FactStatus.FORGOTTEN.name, dao.rows.values.first().status)
@@ -172,6 +176,7 @@ class MemoryToolsTest {
         // Never listed (absent pending) — confirmed=true in a later turn must
         // still refuse and re-list, never silently succeed.
         c.noteTurnStart(5)
+        c.noteUserUtterance(5, "да")
         assertTrue(c.forgetFact("Тарковского", confirmed = true) is MemoryOutcome.ForgetCandidates)
         assertEquals(FactStatus.ACTIVE.name, dao.rows.values.first().status)
 
@@ -179,6 +184,7 @@ class MemoryToolsTest {
         // a mismatched set must refuse too.
         c.noteTurnStart(6)
         c.rememberFact("смотрит Тарковского", "likes", null)
+        c.noteUserUtterance(6, "да")
         assertTrue(c.forgetFact("Тарковского", confirmed = true) is MemoryOutcome.ForgetCandidates)
         assertEquals(2, dao.rows.values.count { it.status == FactStatus.ACTIVE.name })
     }
@@ -262,6 +268,44 @@ class MemoryToolsTest {
             "Default renders the RU fallback",
             outcome.spoken(ToolStrings.Default).startsWith("Запомнил"),
         )
+    }
+
+    @Test
+    fun `an unsanctioned explicit subject is refused, never coerced onto user`() = runTest {
+        val (c, dao) = coordinator()
+        // OLD behavior normalized «жена» and stored it as a valid-looking
+        // subject; the contract now refuses it visibly and writes nothing.
+        val outcome = c.rememberFact("жена Маша", category = "spouse", subject = "жена")
+        assertTrue("must be an honest failure, was $outcome", outcome is MemoryOutcome.Failed)
+        assertEquals("unsupported subject", (outcome as MemoryOutcome.Failed).detail)
+        assertEquals(0, dao.rows.size)
+
+        // Blank/absent still takes the documented `user` default.
+        assertTrue(c.rememberFact("жена Маша", "spouse", null) is MemoryOutcome.Written)
+        assertEquals("user", dao.rows.values.first().subject)
+    }
+
+    @Test
+    fun `remember_fact schema does not expose a free-text subject`() = runTest {
+        val (c, _) = coordinator()
+        val schema = c.tools().associateBy { it.name }["remember_fact"]!!.parametersJson
+        assertFalse("schema must not advertise a subject: $schema", schema.contains("\"subject\""))
+        assertTrue("value stays required", schema.contains("\"value\""))
+    }
+
+    @Test
+    fun `remember_fact refuses a subject smuggled past the schema`() = runTest {
+        val (c, dao) = coordinator()
+        val tool = c.tools().associateBy { it.name }["remember_fact"]!!
+        // The schema no longer declares `subject`, but a model can still emit
+        // it in the raw arguments: the coordinator's gate must refuse it.
+        val refused = tool.execute("""{"value":"жена Маша","category":"spouse","subject":"жена"}""")
+        assertEquals("failed", jsonKey(refused, "outcome"))
+        assertEquals(0, dao.rows.size)
+
+        val written = tool.execute("""{"value":"жена Маша","category":"spouse"}""")
+        assertEquals("written", jsonKey(written, "outcome"))
+        assertEquals("user", dao.rows.values.first().subject)
     }
 
     private fun jsonKey(json: String, key: String): String {

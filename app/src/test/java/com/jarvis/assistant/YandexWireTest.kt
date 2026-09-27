@@ -1,6 +1,7 @@
 package com.jarvis.assistant
 
 import com.jarvis.assistant.llm.LlmHttpException
+import com.jarvis.assistant.llm.LlmResponseParseException
 import com.jarvis.assistant.llm.YandexAiStudioClient
 import com.jarvis.assistant.llm.YandexFolderResolutionException
 import com.jarvis.assistant.model.ChatRequest
@@ -9,6 +10,9 @@ import com.jarvis.assistant.model.LlmChunk
 import com.jarvis.assistant.model.Message
 import com.jarvis.assistant.model.ToolCall
 import com.jarvis.assistant.model.ToolDefinition
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -20,12 +24,15 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Hermetic wire test for [YandexAiStudioClient]: the request we EMIT must match
@@ -57,13 +64,16 @@ class YandexWireTest {
         manualFolderId: String = "b1gfolder",
         webSearch: Boolean = true,
         model: String = "aliceai-llm",
+        discoveryTimeoutMs: Long = 5_000L,
+        http: OkHttpClient = OkHttpClient(),
     ): YandexAiStudioClient = YandexAiStudioClient(
-        httpClient = OkHttpClient(),
+        httpClient = http,
         apiKeyProvider = { "test-key" },
         endpoint = server.url("/v1").toString(),
         defaultModel = model,
         manualFolderId = manualFolderId,
         webSearchEnabled = webSearch,
+        folderDiscoveryTimeoutMs = discoveryTimeoutMs,
     )
 
     private fun toolDef(): ToolDefinition = ToolDefinition(
@@ -211,6 +221,69 @@ class YandexWireTest {
     }
 
     @Test
+    fun `folder discovery uses its own bounded timeout`() = runBlocking {
+        // The discovery call must not rely on the shared OkHttp client's global
+        // defaults: a stalled /models is bounded by the dedicated timeout and
+        // fails as a typed folder error (never a hang on the streaming path).
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                if (request.path!!.endsWith("/models")) {
+                    MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)
+                } else {
+                    MockResponse().setResponseCode(200).setBody(PLAIN_STREAM)
+                }
+        }
+        // A client whose READ timeout is far longer than the dedicated bound:
+        // only the explicit per-discovery timeout can end this quickly. Without
+        // it the test would block on the 60 s read timeout (non-vacuous).
+        val slowHttp = OkHttpClient.Builder()
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+        val began = System.nanoTime()
+        val error = runCatching {
+            client(manualFolderId = "", discoveryTimeoutMs = 200, http = slowHttp)
+                .chatStream(request()).toList()
+        }.exceptionOrNull()
+        val elapsedMs = (System.nanoTime() - began) / 1_000_000
+
+        assertTrue(
+            "expected the dedicated discovery timeout to fire, got $error",
+            error is YandexFolderResolutionException,
+        )
+        assertTrue(
+            "discovery must be bounded by its own timeout, took ${elapsedMs}ms",
+            elapsedMs < 5_000,
+        )
+    }
+
+    @Test
+    fun `two concurrent first calls perform one folder discovery`() = runBlocking {
+        val modelsHits = AtomicInteger()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                if (request.path!!.endsWith("/models")) {
+                    modelsHits.incrementAndGet()
+                    MockResponse().setResponseCode(200)
+                        .setBody(MODELS_JSON)
+                        // Hold the first discovery open so both callers overlap.
+                        .setHeadersDelay(300, TimeUnit.MILLISECONDS)
+                } else {
+                    MockResponse().setResponseCode(200).setBody(PLAIN_STREAM)
+                }
+        }
+        val llm = client(manualFolderId = "")
+
+        coroutineScope {
+            val first = async(Dispatchers.IO) { llm.chatStream(request()).toList() }
+            val second = async(Dispatchers.IO) { llm.chatStream(request()).toList() }
+            first.await()
+            second.await()
+        }
+
+        assertEquals("single-flight discovery must call /models once", 1, modelsHits.get())
+    }
+
+    @Test
     fun `manual folder makes a discovery failure survivable`() = runBlocking {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse =
@@ -264,7 +337,22 @@ class YandexWireTest {
         assertEquals("Париж.", answer)
     }
 
+    @Test
+    fun `chatOnce surfaces an undecodable 2xx envelope as a typed transport failure`() = runBlocking {
+        // The old code returned "" here, which the extraction worker's parser
+        // read as "no JSON" and quarantined the WHOLE batch. A typed IOException
+        // is classified as a batch-release/retry instead.
+        server.enqueue(MockResponse().setResponseCode(200).setBody("not-json-at-all"))
+        val error = runCatching { client().chatOnce(request(withTool = false)) }.exceptionOrNull()
+
+        assertTrue("expected LlmResponseParseException, got $error", error is LlmResponseParseException)
+        assertTrue("must be an IOException, got $error", error is java.io.IOException)
+    }
+
     companion object {
+        private const val MODELS_JSON =
+            """{"object":"list","data":[{"id":"gpt://b1gdiscovered/aliceai-llm/latest"}]}"""
+
         private const val PLAIN_STREAM =
             "data:{\"type\":\"response.output_text.delta\",\"delta\":\"Привет\"}\n\n" +
                 "data:{\"type\":\"response.output_text.delta\",\"delta\":\", мир!\"}\n\n" +

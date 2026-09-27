@@ -133,7 +133,7 @@ class ExtractionQueueWorkerTest {
     }
 
     @Test
-    fun `hallucinated evidence never reaches storage`() = runTest {
+    fun `hallucinated evidence never reaches storage and burns only its own row`() = runTest {
         val (queue, messages) = seed("люблю Тарковского")
         val worker = ExtractionQueueWorker(
             queue,
@@ -148,7 +148,41 @@ class ExtractionQueueWorkerTest {
         val report = worker.drainOnce()!!
         assertEquals(0, report.extracted)
         assertEquals(1, report.dropped)
+        // Per-message: the row's own invalid extraction burns ITS attempt and
+        // is released to retry alone — never stored, never blaming batch-mates.
+        assertEquals("PENDING", queue.rows[10]!!.state)
+        assertEquals(1, queue.rows[10]!!.attempt)
+    }
+
+    @Test
+    fun `one invalid row does not quarantine its batch-mates`() = runTest {
+        // The audit fix: previously a single bad row either poisoned the whole
+        // batch (unparseable response) or was silently marked DONE. Now only
+        // the row whose OWN extraction is invalid is attempt-burned.
+        val (queue, messages) = seed("меня зовут Алексей", "люблю Тарковского", "работаю в Яндексе")
+        val invalidRow = """{"subject":"user","predicate":"works_at","value":"","confidence":0.9,""" +
+            """"evidence":"работаю в Яндексе","messageId":12}"""
+        val llm = FakeLlm {
+            """{"facts":[${factJson(10, "Алексей", "меня зовут Алексей")},""" +
+                """${factJson(11, "Тарковского", "люблю Тарковского")},$invalidRow]}"""
+        }
+        val worker = ExtractionQueueWorker(queue, FakeUserFactDao(), FakeMemoryMetaDao(), messages, llm)
+
+        val report = worker.drainOnce()!!
+
+        assertEquals(2, report.extracted)
         assertEquals("DONE", queue.rows[10]!!.state)
+        assertEquals("DONE", queue.rows[11]!!.state)
+        // The invalid row is released ALONE with its own attempt burned.
+        assertEquals("PENDING", queue.rows[12]!!.state)
+        assertEquals(1, queue.rows[12]!!.attempt)
+
+        // It quarantines via the existing attempts-exhausted check; the valid
+        // rows never move again.
+        repeat(ExtractionQueueEntity.MAX_ATTEMPTS) { worker.drainOnce() }
+        assertEquals("QUARANTINED", queue.rows[12]!!.state)
+        assertEquals("DONE", queue.rows[10]!!.state)
+        assertEquals("DONE", queue.rows[11]!!.state)
     }
 
     @Test

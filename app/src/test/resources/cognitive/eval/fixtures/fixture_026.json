@@ -7,12 +7,12 @@
    "text": "Моя жена Аня работает врачом"
   }
  ],
- "recordedResponse": "{\"facts\": [{\"subject\": \"жена\", \"predicate\": \"profession\", \"value\": \"врач\", \"confidence\": 0.9, \"evidence\": \"Аня работает врачом\", \"messageId\": 39}]}",
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"spouse\", \"value\": \"Аня, врач\", \"confidence\": 0.9, \"evidence\": \"Аня работает врачом\", \"messageId\": 39}]}",
  "expectedFacts": [
   {
-   "subject": "жена",
-   "predicate": "profession",
-   "value": "врач"
+   "subject": "user",
+   "predicate": "spouse",
+   "value": "Аня, врач"
   }
  ],
  "forbiddenFacts": []

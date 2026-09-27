@@ -7,12 +7,12 @@
    "text": "Моя сестра Катя любит суши"
   }
  ],
- "recordedResponse": "{\"facts\": [{\"subject\": \"сестра\", \"predicate\": \"likes\", \"value\": \"суши\", \"confidence\": 0.9, \"evidence\": \"Катя любит суши\", \"messageId\": 42}]}",
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"other\", \"value\": \"сестра Катя, любит суши\", \"confidence\": 0.9, \"evidence\": \"Катя любит суши\", \"messageId\": 42}]}",
  "expectedFacts": [
   {
-   "subject": "сестра",
-   "predicate": "likes",
-   "value": "суши"
+   "subject": "user",
+   "predicate": "other",
+   "value": "сестра Катя, любит суши"
   }
  ],
  "forbiddenFacts": []

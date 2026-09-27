@@ -43,4 +43,31 @@ class ExtractionEvalTest {
         val metrics = harness.evaluate(fixtures)
         assertEquals(0, metrics.truePositives + metrics.falsePositives)
     }
+
+    @Test
+    fun `third-party facts are encoded as user-subject relation facts and extract`() {
+        // Owner decision: subject is user-only; named people ride in a RELATION
+        // predicate value. The four drifted fixtures (026-029) were re-encoded
+        // accordingly and must be extracted again (they were dropped while the
+        // parser enforced the whitelist).
+        val fixtures = EvalFixtures.load().filter { it.kind == "third-party" }
+        assertTrue("third-party fixtures must be present", fixtures.isNotEmpty())
+        val expected = fixtures.sumOf { it.expectedFacts.size }
+        val metrics = harness.evaluate(fixtures)
+        assertEquals("all third-party facts must extract again", expected, metrics.truePositives)
+        assertEquals(0, metrics.falseNegatives)
+        assertEquals(0, metrics.falsePositives)
+        assertEquals(0, metrics.hallucinations)
+    }
+
+    @Test
+    fun `no eval fixture uses a free-text subject`() {
+        val offenders = EvalFixtures.load()
+            .flatMap { fixture -> fixture.expectedFacts.map { fixture.id to it.subject } }
+            .filterNot { (_, subject) -> subject == "user" }
+        assertTrue(
+            "fixtures must encode named people through predicates, subject=user: $offenders",
+            offenders.isEmpty(),
+        )
+    }
 }

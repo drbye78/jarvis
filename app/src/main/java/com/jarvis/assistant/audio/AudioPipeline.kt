@@ -68,10 +68,23 @@ class AudioPipeline(
          */
         fun ringCapacity(preRollMs: Long): Int =
             (preRollMs.coerceAtLeast(FRAME_MS) / FRAME_MS).toInt()
+
+        /**
+         * SharedFlow buffer window: ~500 ms worth of frames. This is a
+         * CAPACITY-only change — the overflow policy stays
+         * [kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST], so a real
+         * overflow still drops the OLDEST frame and is counted by the
+         * SharedFlow diagnostics; it just takes ~200 KB more backpressure
+         * (~25 frames × 320 samples × 2 bytes) to reach that point.
+         */
+        const val FRAME_BUFFER_MS = 500L
+
+        /** SharedFlow capacity in frames derived from [FRAME_MS] — never a bare 25. */
+        val FRAME_BUFFER_CAPACITY: Int = (FRAME_BUFFER_MS / FRAME_MS).toInt()
     }
 
     private val _frames = MutableSharedFlow<ShortArray>(
-        extraBufferCapacity = 10,
+        extraBufferCapacity = FRAME_BUFFER_CAPACITY,
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
     )
 
@@ -81,8 +94,9 @@ class AudioPipeline(
 
     /**
      * SharedFlow drop observability. Frames emitted while no subscribers are
-     * active may overflow the extra buffer (capacity 10) and be silently
-     * dropped by [kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST].
+     * active may overflow the extra buffer (capacity [FRAME_BUFFER_CAPACITY],
+     * ~500 ms) and be silently dropped by
+     * [kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST].
      * This counter tracks such events; logged periodically to avoid spam.
      */
     private var sharedFlowDropCount = 0

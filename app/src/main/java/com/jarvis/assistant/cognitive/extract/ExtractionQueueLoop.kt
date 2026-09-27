@@ -49,6 +49,7 @@ class ExtractionQueueLoop(
     )
 
     private var drainJob: Job? = null
+    private var settingsJob: Job? = null
 
     /**
      * Starts the drain loop (idempotent). Called by the graph on start.
@@ -60,12 +61,20 @@ class ExtractionQueueLoop(
     // count would couple the settings-watch to drain error handling.
     @Suppress("ThrowsCount")
     fun start() {
-        if (drainJob?.isActive == true) return
-        // Settings flips wake the loop so toggles apply live (plan principle
-        // 5). The first combine emission is immediate — one harmless wake.
-        scope.launch(CoroutineName("cognitive-settings-watch")) {
-            settingsChanged.collect { wake() }
+        // BOTH jobs are guarded on their own [Job]: a restart after the drain
+        // job died (its `isActive` false) must revive the drain WITHOUT
+        // registering a second settings watcher. The old code launched the
+        // watcher unconditionally, so every such restart leaked one more
+        // collector onto [settingsChanged].
+        if (settingsJob?.isActive != true) {
+            // Settings flips wake the loop so toggles apply live (plan
+            // principle 5). The first combine emission is immediate — one
+            // harmless wake.
+            settingsJob = scope.launch(CoroutineName("cognitive-settings-watch")) {
+                settingsChanged.collect { wake() }
+            }
         }
+        if (drainJob?.isActive == true) return
         drainJob = scope.launch(CoroutineName("cognitive-drain")) {
             // Crash recovery: RUNNING rows from a dead process → PENDING
             // (plan §5 idempotency: work is exactly-once per message).

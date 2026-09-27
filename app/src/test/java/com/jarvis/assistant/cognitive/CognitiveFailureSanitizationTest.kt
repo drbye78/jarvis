@@ -181,9 +181,11 @@ class CognitiveFailureSanitizationTest {
         val c = coordinator(dao)
         c.rememberFact("аллергия на $secret", "health", null)
         c.noteTurnStart(1)
+        c.noteUserUtterance(1, "забудь это")
         val candidates = c.forgetFact(secret, confirmed = false)
         assertTrue("two-step confirm must still work: $candidates", candidates is MemoryOutcome.ForgetCandidates)
         c.noteTurnStart(2)
+        c.noteUserUtterance(2, "да")
         assertSanitized(c.forgetFact(secret, confirmed = true))
     }
 

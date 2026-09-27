@@ -7,12 +7,12 @@
    "text": "Мой коллега Дима занимается скалолазанием"
   }
  ],
- "recordedResponse": "{\"facts\": [{\"subject\": \"коллега\", \"predicate\": \"hobby\", \"value\": \"скалолазание\", \"confidence\": 0.9, \"evidence\": \"Дима занимается скалолазанием\", \"messageId\": 41}]}",
+ "recordedResponse": "{\"facts\": [{\"subject\": \"user\", \"predicate\": \"colleague\", \"value\": \"Дима, скалолазание\", \"confidence\": 0.9, \"evidence\": \"Дима занимается скалолазанием\", \"messageId\": 41}]}",
  "expectedFacts": [
   {
-   "subject": "коллега",
-   "predicate": "hobby",
-   "value": "скалолазание"
+   "subject": "user",
+   "predicate": "colleague",
+   "value": "Дима, скалолазание"
   }
  ],
  "forbiddenFacts": []

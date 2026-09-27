@@ -349,6 +349,18 @@ class AudioPipelineTest {
         assertFalse(p.isRunning())
         assertTrue("the source opened during release must be closed", source.stops.get() >= 1)
     }
+
+    @Test
+    fun `shared flow buffer holds about 500 ms of frames`() {
+        // Audit #4: the buffer was a bare 10 frames (200 ms); it is now derived
+        // from the frame duration. Capacity only — DROP_OLDEST is untouched.
+        assertEquals(500L, AudioPipeline.FRAME_BUFFER_MS)
+        assertEquals(
+            (AudioPipeline.FRAME_BUFFER_MS / AudioPipeline.FRAME_MS).toInt(),
+            AudioPipeline.FRAME_BUFFER_CAPACITY,
+        )
+        assertEquals(25, AudioPipeline.FRAME_BUFFER_CAPACITY)
+    }
 }
 
 /** Source whose HAL delivers short-but-positive frames (e.g. 300 of 320). */

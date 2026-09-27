@@ -104,4 +104,14 @@ interface CognitiveTurnHooks {
      * baseline.
      */
     fun noteTurnStart(turnId: Int) {}
+
+    /**
+     * COGNITIVE_PLAN §6.4 (forget hardening): the FINALIZED user utterance of
+     * [turnId], known only after ASR finalizes. Called once per speech-bearing
+     * turn (same [turnId] passed to [noteTurnStart]) so the coordinator can
+     * require a confirmation to come from an EXPLICIT AFFIRMATIVE in the
+     * immediately-next user turn, not merely from any later utterance. Default
+     * no-op for tests / pre-cognitive baseline.
+     */
+    fun noteUserUtterance(turnId: Int, utterance: String) {}
 }
