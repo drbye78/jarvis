@@ -117,8 +117,10 @@ class MainActivity : AppCompatActivity() {
 
             override fun onItemRangeMoved(fromPosition: Int, toPosition: Int, itemCount: Int) =
                 updateEmptyState()
-
-            override fun onChanged() = updateEmptyState()
+            // No onChanged() override: ListAdapter/AsyncListDiffer dispatches
+            // only per-range DiffUtil callbacks and never notifyDataSetChanged,
+            // so that override was unreachable dead code. The empty state is
+            // driven from the submit site in observeTranscript() instead.
         })
         applyMotionPolicy()
 
@@ -288,6 +290,16 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             manager.transcriptLive().collectLatest { messages ->
                 adapter.submit(messages)
+                // Single submit site for the transcript, so the empty state is
+                // driven from here as well as from the adapter observer below.
+                // ListAdapter/AsyncListDiffer only dispatches per-range
+                // DiffUtil callbacks (never notifyDataSetChanged) and a
+                // zero-row or empty→empty commit can produce no usable range
+                // callback, which left the resting prompt hidden on a fresh
+                // install. The observer's range callbacks still cover the
+                // incremental (diffed) mutations, where the new count is only
+                // latched after the background diff.
+                updateEmptyState()
             }
         }
         // Status + orb + live partial: poll graph presence, collect while alive
@@ -589,7 +601,14 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    /** Empty transcript: show the resting prompt until the first turn lands. */
+    /**
+     * Shows the resting prompt while the transcript has no rows. Driven from
+     * the single submit site in [observeTranscript] (initial render and every
+     * submitted list) plus the adapter observer's per-range callbacks
+     * (incremental diffed mutations). `ListAdapter`/`AsyncListDiffer` never
+     * emits `notifyDataSetChanged`, and an empty commit can carry no usable
+     * range callback, so neither source alone is sufficient.
+     */
     private fun updateEmptyState() {
         transcriptEmpty.visibility =
             if (adapter.itemCount == 0) View.VISIBLE else View.GONE
