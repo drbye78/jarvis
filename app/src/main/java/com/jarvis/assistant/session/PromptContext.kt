@@ -90,4 +90,18 @@ interface CognitiveTurnHooks {
      * no-op for tests / pre-behaviour baseline.
      */
     fun onFollowUpUtterance(utterance: String) {}
+
+    /**
+     * COGNITIVE_PLAN §6.4 (forget confirmation): the identity of the turn
+     * that is STARTING. Called once at the very top of
+     * [TurnRunner.runTurn], before any ASR/LLM/tool work, so the coordinator
+     * can bind a confirmation to TURN PROVENANCE — a candidate listing
+     * issued in turn N may only be confirmed in a turn N' > N, which makes
+     * a one-turn self-confirmation by the model structurally impossible
+     * (the confirmation token used to travel to the model in the same
+     * tool-result JSON). [turnId] is the monotonically increasing session
+     * seq from `SessionManager`. Default no-op for tests / pre-cognitive
+     * baseline.
+     */
+    fun noteTurnStart(turnId: Int) {}
 }

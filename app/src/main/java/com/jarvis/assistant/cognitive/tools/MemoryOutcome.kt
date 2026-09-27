@@ -36,11 +36,16 @@ sealed interface MemoryOutcome {
     data object RecallEmpty : MemoryOutcome
 
     /**
-     * Two-step forget, step 1: candidates listed, [confirmToken] handed to
-     * the LLM to pass back with `confirmed=true` (stateless confirmation —
-     * the token only exists if candidates were actually listed, plan §6.4).
+     * Two-step forget, step 1: candidates listed back to the model. There is
+     * deliberately NO confirmation token here — the token used to ride in the
+     * tool-result JSON to the model, which let it echo the token back with
+     * `confirmed=true` inside the SAME turn (the gate was never a user gate).
+     * Confirmation is now bound to TURN PROVENANCE in the coordinator: the
+     * candidate listing is armed for this turn, and only a STRICTLY LATER
+     * turn may confirm it. The model must therefore ask the user and wait for
+     * their next utterance.
      */
-    data class ForgetCandidates(val candidates: List<String>, val confirmToken: String) : MemoryOutcome
+    data class ForgetCandidates(val candidates: List<String>) : MemoryOutcome
 
     /** Two-step forget, step 2 done. */
     data class Forgotten(val value: String) : MemoryOutcome
@@ -115,7 +120,6 @@ fun MemoryOutcome.toJson(): String = buildJsonObject {
                     candidates.map { JsonPrimitive(it) },
                 )
             )
-            put("confirmToken", confirmToken)
         }
         is MemoryOutcome.Forgotten -> {
             put("outcome", "forgotten")

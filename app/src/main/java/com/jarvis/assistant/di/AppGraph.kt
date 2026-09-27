@@ -561,6 +561,9 @@ class AppGraph(
 
             override fun onFollowUpUtterance(text: String) =
                 cognitiveCoordinator.onFollowUpUtterance(text)
+
+            override fun noteTurnStart(turnId: Int) =
+                cognitiveCoordinator.noteTurnStart(turnId)
         },
         // Phase 5 (M7): pause-on-wake reuses the real tool lane — the same
         // capability-gated control path the LLM uses, incl. the media-key

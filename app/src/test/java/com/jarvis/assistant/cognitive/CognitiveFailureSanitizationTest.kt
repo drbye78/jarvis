@@ -180,10 +180,11 @@ class CognitiveFailureSanitizationTest {
         val dao = BoomingFactDao(boomOnUpdateStatus = true, secret = secret)
         val c = coordinator(dao)
         c.rememberFact("аллергия на $secret", "health", null)
-        val candidates = c.forgetFact(secret, confirmed = false, token = null)
+        c.noteTurnStart(1)
+        val candidates = c.forgetFact(secret, confirmed = false)
         assertTrue("two-step confirm must still work: $candidates", candidates is MemoryOutcome.ForgetCandidates)
-        val token = (candidates as MemoryOutcome.ForgetCandidates).confirmToken
-        assertSanitized(c.forgetFact(secret, confirmed = true, token = token))
+        c.noteTurnStart(2)
+        assertSanitized(c.forgetFact(secret, confirmed = true))
     }
 
     @Test

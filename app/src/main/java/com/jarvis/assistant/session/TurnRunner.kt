@@ -160,6 +160,11 @@ class TurnRunner(
     // that tips the depth counter — the structure is deliberate.
     @Suppress("NestedBlockDepth")
     suspend fun CoroutineScope.runTurn(sessionId: Int) {
+        // COGNITIVE_PLAN §6.4 (forget confirmation): bind this turn's
+        // identity BEFORE any ASR/LLM/tool work. The forget tool requires a
+        // STRICTLY LATER turn to honor `confirmed=true`, so the model can
+        // never confirm its own candidate listing inside the same turn.
+        cognitive?.noteTurnStart(sessionId)
         val turn = TurnState()
         try {
             onStateEvent(TurnEvent(sessionId, SessionEvent.WakeWordOrBargeIn)) // -> LISTENING

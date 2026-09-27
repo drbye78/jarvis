@@ -112,7 +112,7 @@ class MemoryToolsTest {
         val (c, dao) = coordinator()
         assertTrue(c.rememberFact("зовут Алексей", "name", null) is MemoryOutcome.Disabled)
         assertTrue(c.recallFacts(null) is MemoryOutcome.Disabled)
-        assertTrue(c.forgetFact("Алексей", false, null) is MemoryOutcome.Disabled)
+        assertTrue(c.forgetFact("Алексей", false) is MemoryOutcome.Disabled)
         assertEquals(0, dao.rows.size)
         memoryEnabled.value = true
     }
@@ -131,18 +131,33 @@ class MemoryToolsTest {
     }
 
     @Test
-    fun `forget is two-step and refuses confirmation without the token`() = runTest {
+    fun `forget is two-step and refuses a same-turn confirmation`() = runTest {
         val (c, dao) = coordinator()
         c.rememberFact("любит Тарковского", "likes", null)
-        val candidates = c.forgetFact("Тарковского", confirmed = false, token = null)
+
+        // Turn 1: list the candidates.
+        c.noteTurnStart(1)
+        val candidates = c.forgetFact("Тарковского", confirmed = false)
         assertTrue(candidates is MemoryOutcome.ForgetCandidates)
-        val token = (candidates as MemoryOutcome.ForgetCandidates).confirmToken
 
-        // Refusal path: no token, wrong token.
-        assertTrue(c.forgetFact("Тарковского", true, null) is MemoryOutcome.ForgetCandidates)
-        assertTrue(c.forgetFact("Тарковского", true, "deadbeef") is MemoryOutcome.ForgetCandidates)
+        // SAME turn: confirmed=true must be refused (candidates re-listed, no
+        // status change) — the model can no longer confirm its own listing.
+        val refused = c.forgetFact("Тарковского", confirmed = true)
+        assertTrue(refused is MemoryOutcome.ForgetCandidates)
+        assertEquals(FactStatus.ACTIVE.name, dao.rows.values.first().status)
+    }
 
-        val done = c.forgetFact("Тарковского", true, token)
+    @Test
+    fun `forget honors a confirmation issued in a strictly later turn`() = runTest {
+        val (c, dao) = coordinator()
+        c.rememberFact("любит Тарковского", "likes", null)
+
+        c.noteTurnStart(1)
+        assertTrue(c.forgetFact("Тарковского", confirmed = false) is MemoryOutcome.ForgetCandidates)
+
+        // Turn 2 (new user utterance): the matching confirmation succeeds.
+        c.noteTurnStart(2)
+        val done = c.forgetFact("Тарковского", confirmed = true)
         assertTrue(done is MemoryOutcome.Forgotten)
         assertEquals(FactStatus.FORGOTTEN.name, dao.rows.values.first().status)
         // The row stays: forgetting is a status, not a delete (audit trail).
@@ -150,9 +165,37 @@ class MemoryToolsTest {
     }
 
     @Test
+    fun `forget refuses an absent or stale pending record`() = runTest {
+        val (c, dao) = coordinator()
+        c.rememberFact("любит Тарковского", "likes", null)
+
+        // Never listed (absent pending) — confirmed=true in a later turn must
+        // still refuse and re-list, never silently succeed.
+        c.noteTurnStart(5)
+        assertTrue(c.forgetFact("Тарковского", confirmed = true) is MemoryOutcome.ForgetCandidates)
+        assertEquals(FactStatus.ACTIVE.name, dao.rows.values.first().status)
+
+        // Armed in turn 5, then the candidate set grows before the next turn:
+        // a mismatched set must refuse too.
+        c.noteTurnStart(6)
+        c.rememberFact("смотрит Тарковского", "likes", null)
+        assertTrue(c.forgetFact("Тарковского", confirmed = true) is MemoryOutcome.ForgetCandidates)
+        assertEquals(2, dao.rows.values.count { it.status == FactStatus.ACTIVE.name })
+    }
+
+    @Test
+    fun `candidate JSON carries no confirmation token`() {
+        val json = MemoryOutcome.ForgetCandidates(listOf("любит Тарковского")).toJson()
+        assertFalse(
+            "the token must never reach the model again: $json",
+            Json.parseToJsonElement(json).jsonObject.containsKey("confirmToken"),
+        )
+    }
+
+    @Test
     fun `forget with no match says so`() = runTest {
         val (c, _) = coordinator()
-        assertTrue(c.forgetFact("несуществующее", false, null) is MemoryOutcome.NothingToForget)
+        assertTrue(c.forgetFact("несуществующее", false) is MemoryOutcome.NothingToForget)
     }
 
     @Test
@@ -179,7 +222,10 @@ class MemoryToolsTest {
 
         val candidates = tools["forget_fact"]!!.execute("""{"query":"Алексей"}""")
         assertEquals("confirm_forget", jsonKey(candidates, "outcome"))
-        assertTrue(jsonKey(candidates, "confirmToken").isNotEmpty())
+        assertFalse(
+            "no confirmToken may ride in the model-facing tool JSON",
+            Json.parseToJsonElement(candidates).jsonObject.containsKey("confirmToken"),
+        )
     }
 
     @Test

@@ -74,10 +74,14 @@ class RecallFactsTool(
 }
 
 /**
- * `forget_fact(query, confirmed=false, token?)` — two-step forget (plan
- * §6.4): step 1 lists candidates + hands out a confirmation token; step 2
- * (confirmed=true, token) marks FORGOTTEN. The tool refuses `confirmed=true`
- * without a valid token — the model cannot skip the confirmation.
+ * `forget_fact(query, confirmed=false)` — two-step forget (plan §6.4):
+ * step 1 lists the candidates; step 2 (`confirmed=true`) marks them
+ * FORGOTTEN. Confirmation is bound to TURN PROVENANCE in the coordinator
+ * ([CognitiveCoordinator.noteTurnStart]): a listing issued in one turn can
+ * only be confirmed by a STRICTLY LATER turn, so the model cannot list and
+ * confirm by itself inside a single turn. There is no token on the wire —
+ * the model must show the candidates to the user and wait for their next
+ * utterance.
  */
 class ForgetFactTool(
     private val coordinator: CognitiveCoordinator,
@@ -85,13 +89,13 @@ class ForgetFactTool(
     override val name = "forget_fact"
     override val description =
         "Забыть факт о пользователе. СНАЧАЛА вызови с confirmed=false — получишь список " +
-            "кандидатов и token; покажи кандидаты пользователю и подтверди. Потом вызови ещё раз " +
-            "с confirmed=true и тем же token. НЕ вызывай confirmed=true без token."
+            "кандидатов; покажи их пользователю и дождись его подтверждения. Затем, уже в СЛЕДУЮЩЕМ " +
+            "ответе пользователя, вызови ещё раз с confirmed=true. Подтверждение в том же ответе " +
+            "не сработает — вернётся тот же список кандидатов."
     override val parametersJson = schema(
         mapOf(
             "query" to """{"type":"string","description":"Что забыть (поиск по фактам)"}""",
-            "confirmed" to """{"type":"boolean","description":"true только с token из первого вызова"}""",
-            "token" to """{"type":"string","description":"token из первого вызова forget_fact"}""",
+            "confirmed" to """{"type":"boolean","description":"true только после того, как пользователь подтвердил в СЛЕДУЮЩЕМ ответе"}""",
         ),
         required = listOf("query"),
     )
@@ -101,8 +105,7 @@ class ForgetFactTool(
             ?: return MemoryOutcome.Failed("bad arguments").toJson()
         val query = args.string("query").orEmpty()
         val confirmed = args.bool("confirmed") ?: false
-        val token = args.string("token")
-        val outcome = coordinator.forgetFact(query, confirmed, token)
+        val outcome = coordinator.forgetFact(query, confirmed)
         return outcome.toJson()
     }
 }

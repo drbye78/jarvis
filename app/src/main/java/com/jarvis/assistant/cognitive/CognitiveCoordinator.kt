@@ -52,7 +52,9 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import timber.log.Timber
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * COGNITIVE_PLAN §4: the ONE class the rest of the app sees. Owns the three
@@ -395,39 +397,75 @@ class CognitiveCoordinator(
     }
 
     /**
-     * `forget_fact(query, confirmed=false)`: two-step confirm-then-delete
-     * (plan §6.4). `confirmed=true` is only honored with the [token] the
-     * candidate step produced — the tool refuses to skip the confirmation.
+     * COGNITIVE_PLAN §6.4 (security fix): a candidate listing armed for a
+     * specific turn. Confirmation is bound to TURN PROVENANCE, not to a token
+     * handed to the model: the token used to ride in the same tool-result
+     * JSON as the candidates, so with `maxToolPasses = 5` the model could echo
+     * it back with `confirmed=true` inside the SAME turn — the "confirmation"
+     * was never a user gate. Only a STRICTLY LATER turn (a new user
+     * utterance) may confirm the set.
      */
-    suspend fun forgetFact(query: String, confirmed: Boolean, token: String?): MemoryOutcome {
+    private data class PendingForget(val turnId: Int, val factIds: Set<String>)
+
+    /** The turn currently executing ([noteTurnStart]); 0 = none observed yet. */
+    private val currentTurnId = AtomicInteger(0)
+
+    /** The candidate set armed for confirmation, with the turn that issued it. */
+    private val pendingForget = AtomicReference<PendingForget?>(null)
+
+    /**
+     * COGNITIVE_PLAN §6.4: records the turn that is starting. Called once at
+     * the top of `TurnRunner.runTurn`, before any ASR/LLM/tool work, so a
+     * candidate listing can be bound to the turn that produced it.
+     */
+    override fun noteTurnStart(turnId: Int) {
+        currentTurnId.set(turnId)
+    }
+
+    /**
+     * `forget_fact(query, confirmed=false)`: two-step confirm-then-delete
+     * (plan §6.4). Confirmation is bound to TURN PROVENANCE: a candidate
+     * listing armed in turn N is honored only when `confirmed=true` arrives in
+     * a turn N' > N with the SAME candidate set. A same-turn, absent, stale or
+     * mismatched confirmation is refused and the candidates are re-listed —
+     * never a silent success.
+     */
+    suspend fun forgetFact(query: String, confirmed: Boolean): MemoryOutcome {
         if (!memoryEnabled.value) return MemoryOutcome.Disabled
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return MemoryOutcome.NothingToForget
         return try {
             val candidates = forgetCandidates(trimmed)
-            if (candidates.isEmpty()) return MemoryOutcome.NothingToForget
-
-            if (!confirmed) {
-                MemoryOutcome.ForgetCandidates(
-                    candidates.map { FactPhrasing.phrase(it) },
-                    confirmTokenFor(candidates),
-                )
-            } else {
-                val expected = confirmTokenFor(candidates)
-                if (token.isNullOrBlank() || !constantTimeEquals(token, expected)) {
-                    // Confirmation without a listed candidate set — refuse
-                    // and re-list (the plan's "refuses confirmed=true unless
-                    // candidates were listed in the same window").
-                    return MemoryOutcome.ForgetCandidates(
-                        candidates.map { FactPhrasing.phrase(it) },
-                        expected,
-                    )
+            val candidateIds = candidates.mapTo(HashSet()) { it.factId }
+            val issuedTurn = currentTurnId.get()
+            val pending = pendingForget.get()
+            val honored = confirmed &&
+                candidates.isNotEmpty() &&
+                pending != null &&
+                issuedTurn > pending.turnId &&
+                pending.factIds == candidateIds
+            when {
+                honored -> {
+                    pendingForget.set(null)
+                    val now = nowMs()
+                    candidates.forEach {
+                        factDao.updateStatus(it.factId, FactStatus.FORGOTTEN.name, now)
+                    }
+                    MemoryOutcome.Forgotten(candidates.joinToString("; ") { FactPhrasing.phrase(it) })
                 }
-                val now = nowMs()
-                candidates.forEach {
-                    factDao.updateStatus(it.factId, FactStatus.FORGOTTEN.name, now)
+                candidates.isEmpty() -> {
+                    // Nothing matched — drop any stale pending record.
+                    pendingForget.set(null)
+                    MemoryOutcome.NothingToForget
                 }
-                MemoryOutcome.Forgotten(candidates.joinToString("; ") { FactPhrasing.phrase(it) })
+                else -> {
+                    // Refuse and re-list. Re-arm this set for the CURRENT turn
+                    // (superseding any stale/mismatched record) so a genuine
+                    // confirmation in a LATER turn still works; the same turn
+                    // can never confirm its own listing.
+                    pendingForget.set(PendingForget(issuedTurn, candidateIds))
+                    MemoryOutcome.ForgetCandidates(candidates.map { FactPhrasing.phrase(it) })
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -451,22 +489,6 @@ class CognitiveCoordinator(
                 .toSet()
             tokens.any { needle -> factTokens.any { it.startsWith(needle) || needle.startsWith(it) } }
         }
-    }
-
-    /** Stateless confirmation token over the candidate set (plan §6.4). */
-    private fun confirmTokenFor(candidates: List<FactSnapshot>): String {
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-        val hash = digest.digest(
-            candidates.map { it.factId }.sorted().joinToString(",").toByteArray(),
-        )
-        return hash.take(8).joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
-    }
-
-    private fun constantTimeEquals(a: String, b: String): Boolean {
-        if (a.length != b.length) return false
-        var acc = 0
-        for (i in a.indices) acc = acc or (a[i].code xor b[i].code)
-        return acc == 0
     }
 
     // ------------------------------------------------------------------
