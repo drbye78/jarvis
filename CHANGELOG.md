@@ -6,6 +6,42 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Fixed — external audit remediation (security + robustness)
+- **The watchdog alarm no longer assumes the exact-alarm permission.** The
+  15-minute restart alarm picked `setExactAndAllowWhileIdle` from
+  `ServicePolicy.useExactAllowWhileIdle(sdkInt)` — an SDK-level check that is
+  permanently true at `minSdk 29` — with no `canScheduleExactAlarms` query and
+  no `try/catch`. On API 31+ with the permission revoked, `AlarmManager`
+  throws `SecurityException` from inside the service. The predicate is now
+  `ServicePolicy.watchdogDelivery(canScheduleExactAlarms(context))`, and the
+  exact branch degrades to the inexact `setAndAllowWhileIdle` (with a log)
+  instead of crashing. The cognitive-maintenance alarm already used an inexact
+  API and needed no change. (`ServicePolicyTest` pins both branches.)
+- **`forget_fact` confirmation is bound to turn provenance, not to a token the
+  model holds.** The two-step forget returned a `confirmToken` inside the JSON
+  handed to the LLM, so the model could list the candidates and confirm them
+  itself within the same turn (the tool loop allows 5 passes) — a
+  prompt-injection payload could therefore destroy a stored fact with no user
+  consent. The token is gone from the wire: a candidate listing arms a pending
+  record for the turn that issued it, and `confirmed=true` is honored only by a
+  **strictly later** turn with the identical candidate set. Same-turn, absent,
+  stale and mismatched confirmations all fail closed (re-list, never a silent
+  success). The soft-delete (status update, rows retained) is unchanged.
+  **Known residual risk, deliberately not claimed as closed:** the gate does
+  not verify that the user actually affirmed — any later utterance satisfies
+  `N' > N`, and `pendingForget` currently has no TTL. Closing that (an explicit
+  affirmative requirement plus expiry) is tracked as follow-up work.
+- **The transcript's resting prompt now appears deterministically.** The empty
+  state was only ever recomputed from `AdapterDataObserver` callbacks, but the
+  adapter is a `ListAdapter`/`AsyncListDiffer` (per-range DiffUtil callbacks,
+  never `notifyDataSetChanged`), so the hint's reveal depended on a zero-count
+  range notification. `updateEmptyState()` is now also driven from the single
+  submit site, and the unreachable `onChanged()` override is gone.
+
+### Changed — build
+- **JDK 17 is pinned per-repo** (`mise.toml`), so a fresh shell no longer
+  inherits a global JDK that Gradle's embedded Kotlin cannot parse.
+
 ### Added — The home orb reacts to your voice and to the wake word
 - **The orb now mirrors how loudly you are speaking.** While the mic is open it
   pulses and glows with the speaker's voice, so a silent room reads as a calm
