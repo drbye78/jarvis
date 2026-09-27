@@ -227,8 +227,23 @@ object ServicePolicy {
     /** Next watchdog ping: exactly one interval from now (no drift, no backoff). */
     fun watchdogTriggerAt(nowMs: Long, intervalMs: Long): Long = nowMs + intervalMs
 
-    /** `setExactAndAllowWhileIdle` from API 23 (Build.VERSION_CODES.M) on. */
-    fun useExactAllowWhileIdle(sdkInt: Int): Boolean = sdkInt >= 23
+    /**
+     * Delivery guarantee for the watchdog restart alarm. Reusing the
+     * [com.jarvis.assistant.tools.ExactAlarmPolicy] vocabulary: exact
+     * (`setExactAndAllowWhileIdle`, Doze-proof) while the app holds
+     * SCHEDULE_EXACT_ALARM, otherwise the inexact `setAndAllowWhileIdle`
+     * fallback — which needs NO exact-alarm permission. The caller resolves
+     * the permission state (`canScheduleExactAlarms`); this policy only maps
+     * it, so the revoked-permission degrade is JVM-testable.
+     */
+    enum class WatchdogDelivery { EXACT_ALLOW_WHILE_IDLE, INEXACT_WHILE_IDLE }
+
+    fun watchdogDelivery(canScheduleExactAlarms: Boolean): WatchdogDelivery =
+        if (canScheduleExactAlarms) {
+            WatchdogDelivery.EXACT_ALLOW_WHILE_IDLE
+        } else {
+            WatchdogDelivery.INEXACT_WHILE_IDLE
+        }
 
     // ------------------------------------------------------------------
     // Foreground-service type decisions (typed FGS on API 34+)

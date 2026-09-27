@@ -452,11 +452,23 @@ class ServicePolicyTest {
     }
 
     @Test
-    fun `exact allow-while-idle scheduling from API 23 (M) onward`() {
-        assertFalse(ServicePolicy.useExactAllowWhileIdle(sdkInt = 22))
-        assertTrue(ServicePolicy.useExactAllowWhileIdle(sdkInt = 23))
-        assertTrue(ServicePolicy.useExactAllowWhileIdle(sdkInt = 29))
-        assertTrue(ServicePolicy.useExactAllowWhileIdle(sdkInt = 34))
+    fun `watchdog delivery is inexact when the exact-alarm permission is revoked`() {
+        // Regression: the watchdog used to call setExactAndAllowWhileIdle
+        // unconditionally (minSdk 29 makes the old SDK check always true),
+        // which throws SecurityException at API 31+ once SCHEDULE_EXACT_ALARM
+        // is revoked. The permission-revoked case must degrade, not go exact.
+        assertEquals(
+            ServicePolicy.WatchdogDelivery.INEXACT_WHILE_IDLE,
+            ServicePolicy.watchdogDelivery(canScheduleExactAlarms = false),
+        )
+    }
+
+    @Test
+    fun `watchdog delivery is exact when the exact-alarm permission is held`() {
+        assertEquals(
+            ServicePolicy.WatchdogDelivery.EXACT_ALLOW_WHILE_IDLE,
+            ServicePolicy.watchdogDelivery(canScheduleExactAlarms = true),
+        )
     }
 
     // ------------------------------------------------------------------

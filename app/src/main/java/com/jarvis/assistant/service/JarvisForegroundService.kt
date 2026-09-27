@@ -29,6 +29,7 @@ import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.di.AppGraph
 import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.model.AssistantState
+import com.jarvis.assistant.tools.canScheduleExactAlarms
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.NotificationIds
 import kotlinx.coroutines.CompletableDeferred
@@ -825,6 +826,15 @@ class JarvisForegroundService : Service() {
     // Watchdog
     // ------------------------------------------------------------------
 
+    /**
+     * Watchdog restart alarm. It is EXACT (Doze-proof) only while the app
+     * holds SCHEDULE_EXACT_ALARM; on API 31+ the user can revoke it, so the
+     * delivery is decided by [ServicePolicy.watchdogDelivery] from the live
+     * permission state and degrades to the inexact `setAndAllowWhileIdle`
+     * fallback — never an unconditional exact call (which throws
+     * [SecurityException] when the permission is revoked). The request code,
+     * action and trigger time are unchanged.
+     */
     private fun scheduleRestartAlarm() {
         val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
             ?: run {
@@ -840,10 +850,19 @@ class JarvisForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val triggerAt = ServicePolicy.watchdogTriggerAt(System.currentTimeMillis(), config.restartIntervalMs)
-        if (ServicePolicy.useExactAllowWhileIdle(Build.VERSION.SDK_INT)) {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
-        } else {
-            alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+        when (ServicePolicy.watchdogDelivery(canScheduleExactAlarms(this))) {
+            ServicePolicy.WatchdogDelivery.EXACT_ALLOW_WHILE_IDLE ->
+                try {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+                } catch (e: SecurityException) {
+                    // Race: the permission was revoked between the query above
+                    // and this call, or an OEM ROM rejects it anyway. Degrade
+                    // to the inexact path instead of crashing the service.
+                    Timber.w(e, "Watchdog exact alarm rejected — arming inexact")
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+                }
+            ServicePolicy.WatchdogDelivery.INEXACT_WHILE_IDLE ->
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
         }
     }
 
