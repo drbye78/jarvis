@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
  * ([AlarmSchedulerProvider]) — building an `AndroidAlarmScheduler(dao,
  * SystemAlertArmer(this))` per click (the old shape) rebuilt the armer every
  * time, resetting its one-shot exact-alarm degrade note so it re-posted on
- * every toggle (audit P1-D / decision #10).
+ * every toggle.
  */
 class AlarmsActivity : AppCompatActivity() {
 
@@ -131,7 +131,7 @@ class AlarmListAdapter(
         holder.repeat.text = holder.repeat.context.getString(
             if (alarm.repeatDaily) R.string.alarm_repeat_daily else R.string.alarm_repeat_once
         )
-        // F2 (stale-listener rebind): submit() rebinds holders in place
+        // Stale-listener rebind: submit() rebinds holders in place
         // (notifyDataSetChanged), so the listener from the PREVIOUS bind is
         // still attached when `isChecked` is written — CompoundButton
         // setChecked() notifies it, and with rows re-sorted on every

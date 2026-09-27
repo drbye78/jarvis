@@ -52,10 +52,10 @@ interface SettingsCallbacks {
     /** The chosen wake-word model changed (`builtin` | `custom_bundled`). */
     fun onWakeWordSelected(modelId: String)
 
-    /** FIXPLAN C: a validated custom Sherpa keyword was applied (blank = bundled Jarvis). */
+    /** A validated custom Sherpa keyword was applied (blank = bundled Jarvis). */
     suspend fun onSherpaKeywordApplied(keyword: String)
 
-    /** FIXPLAN B: the voice-stop toggle changed. */
+    /** The voice-stop toggle changed. */
     fun onVoiceStopToggled(enabled: Boolean)
 
     /** Porcupine sensitivity changed, range 0.0–1.0. */

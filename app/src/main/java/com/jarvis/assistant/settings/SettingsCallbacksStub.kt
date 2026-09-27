@@ -5,7 +5,7 @@ import timber.log.Timber
 
 /**
  * No-op stand-in for [SettingsCallbacks]; every invocation is logged so a
- * pre-init settings tap is visible (P5.3).
+ * pre-init settings tap is visible.
  *
  * Moved out of `SettingsActivity.kt` by the FLIP lane (was the private
  * `object StubCallbacks`) so both hosts can hold it as the safe default until

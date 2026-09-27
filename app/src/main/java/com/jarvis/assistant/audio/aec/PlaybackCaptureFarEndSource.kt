@@ -20,7 +20,7 @@ import timber.log.Timber
 /**
  * AEC Phase B far-end lane: captures OTHER APPS' audio playback
  * (Yandex Music etc.) via [AudioPlaybackCapture] (API 29+) and feeds it to
- * the [EchoCanceller] — the wake-word-through-music scenario (audit M7).
+ * the [EchoCanceller] — the wake-word-through-music scenario.
  *
  * Requirements & honest limits (RUNBOOK):
  * - Needs a [MediaProjection] obtained from the system consent dialog —

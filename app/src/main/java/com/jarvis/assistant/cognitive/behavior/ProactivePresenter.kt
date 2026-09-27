@@ -4,7 +4,7 @@ import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 import com.jarvis.assistant.tools.ToolStrings
 
 /**
- * COGNITIVE_PLAN §8.4: the delivery seam — how a rendered suggestion reaches
+ * The delivery seam — how a rendered suggestion reaches
  * the session layer. Implemented by `SessionManager::speakProactively` in
  * production; fakes in tests. `false` = the session layer refused (machine
  * not IDLE — the arbiter raced a user interaction and lost; that is the
@@ -15,7 +15,7 @@ fun interface ProactiveSpeaker {
 }
 
 /**
- * COGNITIVE_PLAN §8.4: deterministic suggestion templates — NO LLM call.
+ * Deterministic suggestion templates — NO LLM call.
  * A proposal, never an action: "Ты обычно слушаешь джаз в это время.
  * Включить?" The rendering is pure and locale-aware through the
  * [ToolStrings] seam (RU/EN parity test covers every string).

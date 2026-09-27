@@ -3,8 +3,8 @@ package com.jarvis.assistant.cognitive.tools
 import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 
 /**
- * COGNITIVE_PLAN §6.4 (forget confirmation hardening): a small, explicit,
- * pure matcher for an EXPLICIT AFFIRMATIVE in the confirming turn.
+ * A small, explicit, pure matcher for an EXPLICIT AFFIRMATIVE in the
+ * confirming turn.
  *
  * Why this exists: the turn-provenance gate alone only required the confirming
  * utterance to be strictly LATER than the candidate listing. Any later

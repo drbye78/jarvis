@@ -55,11 +55,11 @@ import timber.log.Timber
  *   the assistant STAYS stopped (the old watchdog resurrected it within 15
  *   minutes). If the SYSTEM kills the process there is no onDestroy, the
  *   alarm survives, and the service revives — exactly the desired split.
- * - **Watchdog cancel is user-stop-only (m7)**: onDestroy cancels the alarm
+ * - **Watchdog cancel is user-stop-only**: onDestroy cancels the alarm
  *   only when `userStopped` is set, so system-driven teardowns (Apply
  *   restart) can never strand the service dead.
- * - **Ducking always recovers (m8)**: teardown unducks unconditionally.
- * - **Mute is a user intent (m12)**: [setMuted] stops the pipeline AND
+ * - **Ducking always recovers**: teardown unducks unconditionally.
+ * - **Mute is a user intent**: [setMuted] stops the pipeline AND
  *   cancels the active session; the power receiver never silently unmutes.
  * - **Media-key duck fallback now resumes** playback on unduck.
  * - **Android 10 microphone policy (minSdk 29)**: mic access is granted only
@@ -69,7 +69,7 @@ import timber.log.Timber
  *   START_STICKY recreation, boot) no longer become foreground services —
  *   they post the "tap to activate" notification ([postActivationPrompt]);
  *   the tap opens the activity and starts the pipeline with working mic.
- * - **Decision logic externalized (P1.4)**: the watchdog revive gate, action
+ * - **Decision logic externalized**: the watchdog revive gate, action
  *   routing, mute gating, init gate, FGS-type / activation-prompt decisions
  *   and maintenance timing live in [ServicePolicy] (pure JVM, unit-tested
  *   without Android); this class only reads state and executes decisions —
@@ -109,7 +109,7 @@ class JarvisForegroundService : Service() {
 
     /**
      * Error voice. The [ErrorVoiceSpeaker] owns the system TTS engine and is
-     * constructed on first SPEAK (F10) — a `by lazy` field here would be
+     * constructed on first SPEAK — a `by lazy` field here would be
      * CONSTRUCTED by onDestroy's release() when no error was ever spoken,
      * spinning up a whole TTS engine just to tear it down on the main thread
      * during service destruction.
@@ -136,7 +136,7 @@ class JarvisForegroundService : Service() {
     @Volatile private var everForegrounded = false
 
     // ------------------------------------------------------------------
-    // P3.3: watchdog revive budget — Android-side bookkeeping ONLY.
+    // Watchdog revive budget — Android-side bookkeeping ONLY.
     // The decisions (cap/backoff/day-roll) live in [ServicePolicy]; these
     // plain fields record what happened so the policy can evaluate it.
     // All watchdog/maintenance intents arrive on the service's main-thread
@@ -161,7 +161,7 @@ class JarvisForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         prefs = AppPrefs(this)
-        // Audit #12: `as` on getSystemService throws on non-standard OEM ROMs
+        // `as` on getSystemService throws on non-standard OEM ROMs
         // where the service lookup can be null — degrade honestly instead.
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         if (nm != null) {
@@ -217,7 +217,7 @@ class JarvisForegroundService : Service() {
             // word — and on Android 12+ the start itself is restricted. Never
             // become a deaf FGS: keep the maintenance chain booked, ask the
             // user to tap-activate, and tear this instance down. The decision
-            // table is [ServicePolicy.backgroundStartRoute] (P1.4).
+            // table is [ServicePolicy.backgroundStartRoute].
             val route = ServicePolicy.backgroundStartRoute(
                 action = ServicePolicy.actionFor(action),
                 userStopped = prefs.userStopped,
@@ -239,7 +239,7 @@ class JarvisForegroundService : Service() {
         }
 
         scheduleRestartAlarm()
-        // COGNITIVE_PLAN 2.2: nightly cognitive maintenance — schedule the
+        // Nightly cognitive maintenance — schedule the
         // ~03:30 inexact alarm (idempotent; each firing reschedules), and
         // opportunistically run maintenance now if the last one is > 20 h
         // old (EMUI defers inexact alarms; the wall device is nearly always
@@ -269,7 +269,7 @@ class JarvisForegroundService : Service() {
         // (revive logic below runs only for user-activated instances;
         // a watchdog that had to CREATE this instance took the
         // background-start branch in onStartCommand instead)
-        // P3.3: day-key roll resets the revive counter — the budget is per
+        // Day-key roll resets the revive counter — the budget is per
         // local day. Every alarm-delivered command lands here on the main
         // looper, so the roll cannot interleave with an attempt.
         val now = System.currentTimeMillis()
@@ -300,7 +300,7 @@ class JarvisForegroundService : Service() {
             }
             is ServicePolicy.RunningCommandDecision.RunTail -> {
                 if (decision.rescheduleMaintenance) {
-                    // COGNITIVE_PLAN 2.2: the nightly ~03:30 tick. Reschedule
+                    // The nightly ~03:30 tick. Reschedule
                     // first so the next night is always booked even if the run
                     // itself throws; the coordinator guards every step.
                     scheduleCognitiveMaintenanceAlarm()
@@ -326,7 +326,7 @@ class JarvisForegroundService : Service() {
                     null -> Unit
                 }
                 if (decision.revivePipeline) {
-                    // Audit #25: self-heal a capture pipeline that gave up after
+                    // Self-heal a capture pipeline that gave up after
                     // 50 consecutive read failures. hasGivenUp() is true ONLY for
                     // that case — never for a user stop/mute or the power-receiver
                     // stop — so the ping cannot silently undo a user intent.
@@ -358,7 +358,7 @@ class JarvisForegroundService : Service() {
                             lastReviveAtMs
                         )
                 } else if (decision.reviveSuppressed) {
-                    // P3.3: budget refused the revive. Log honestly, do NOT
+                    // Budget refused the revive. Log honestly, do NOT
                     // revive; the watchdog keeps ticking (common tail below
                     // re-arms the alarm), so a later manual restart via
                     // EXPLICIT_START or the next-day counter reset recovers.
@@ -376,11 +376,11 @@ class JarvisForegroundService : Service() {
     }
 
     // ------------------------------------------------------------------
-    // COGNITIVE_PLAN 2.2: cognitive maintenance scheduling (§9.1)
+    // Cognitive maintenance scheduling
     // ------------------------------------------------------------------
 
     /**
-     * Inexact ~03:30 alarm (setAndAllowWhileIdle per plan §9.1). Delivered
+     * Inexact ~03:30 alarm (setAndAllowWhileIdle). Delivered
      * to THIS service as a start intent — the same PendingIntent.getService
      * pattern as the watchdog, which already holds a foreground-service
      * scheduling exemption while the assistant runs.
@@ -400,7 +400,7 @@ class JarvisForegroundService : Service() {
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
         )
         val triggerAt = ServicePolicy.nextMaintenanceAt(System.currentTimeMillis())
-        // Inexact BY DESIGN (plan §9.1): maintenance is patient background
+        // Inexact BY DESIGN: maintenance is patient background
         // work; doze batching is acceptable, the opportunistic path covers
         // the deferral.
         alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
@@ -427,7 +427,7 @@ class JarvisForegroundService : Service() {
                     .get(com.jarvis.assistant.cognitive.data.MemoryMetaEntity.KEY_LAST_MAINTENANCE_AT)
                     ?.toLongOrNull()
                 val now = System.currentTimeMillis()
-                // P1.4: null (never recorded) counts as epoch 0 — stale — in
+                // Null (never recorded) counts as epoch 0 — stale — in
                 // [ServicePolicy.isMaintenanceStale], like the original `?: 0L`.
                 if (ServicePolicy.isMaintenanceStale(meta, now)) {
                     Timber.i("Cognitive: opportunistic maintenance (last %d ms ago)", now - (meta ?: 0L))
@@ -441,14 +441,14 @@ class JarvisForegroundService : Service() {
         }
     }
 
-    // P1.4: nextMaintenanceAt moved to [ServicePolicy.nextMaintenanceAt].
+    // nextMaintenanceAt moved to [ServicePolicy.nextMaintenanceAt].
 
     // ------------------------------------------------------------------
     // Initialization (idempotent, retryable)
     // ------------------------------------------------------------------
 
     private fun ensureInitialized() {
-        // P1.4: the RECORD_AUDIO-first gate is [ServicePolicy.initializationStep].
+        // The RECORD_AUDIO-first gate is [ServicePolicy.initializationStep].
         // Permission gate FIRST — the original crashed AudioRecord init on
         // fresh installs and never retried. The permission lookup is a pure
         // read the original performed only after the initialized/bootstrapping
@@ -495,7 +495,7 @@ class JarvisForegroundService : Service() {
                     onSessionError = { msg -> errorVoice.speak(msg) },
                 ).also { it.start() }
 
-                // F1 (zombie-graph race): graph construction is long and
+                // Zombie-graph race: graph construction is long and
                 // NON-SUSPENDING, so Job.cancel() from onDestroy cannot
                 // interrupt it. If the user stopped the service while we
                 // were building, onDestroy saw graph == null and will never
@@ -557,7 +557,7 @@ class JarvisForegroundService : Service() {
                 // Do NOT mark initialized: the 15-minute watchdog (or an
                 // app revisit) retries automatically.
                 bootstrapping = false
-                // C1: the ctor/start may have thrown AFTER acquireLocks() and
+                // The ctor/start may have thrown AFTER acquireLocks() and
                 // registerPowerReceiver() ran — graph is still null here, so
                 // the old cleanup (graph?.shutdown()) released NOTHING while
                 // onDestroy can only release the LATEST lock/receiver
@@ -579,10 +579,10 @@ class JarvisForegroundService : Service() {
     }
 
     private fun acquireLocks() {
-        // F3: idempotent — a watchdog retry must not stack a SECOND held
+        // Idempotent — a watchdog retry must not stack a SECOND held
         // wake lock on top of a leaked one; release any held instance first.
         releaseLocks()
-        // Audit #12: null-safe service lookups — a missing manager skips that
+        // Null-safe service lookups — a missing manager skips that
         // lock with a log line instead of crashing init (the lateinit guards
         // in onDestroy/release handle the never-assigned case).
         val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -628,7 +628,7 @@ class JarvisForegroundService : Service() {
 
                     Intent.ACTION_POWER_CONNECTED -> {
                         if (::wakeLock.isInitialized && !wakeLock.isHeld) wakeLock.acquire()
-                        // m12: restart respects mute — the receiver must never
+                        // Restart respects mute — the receiver must never
                         // silently undo a user's mute.
                         graph?.sessionManager?.onPowerConnected()
                     }
@@ -900,19 +900,19 @@ class JarvisForegroundService : Service() {
         if (bootstrapping && !graphReady.isCompleted) {
             graphReady.completeExceptionally(IllegalStateException("Service destroyed during bootstrap"))
         }
-        // m8: recover ducking no matter which state edge wedged — a teardown
+        // Recover ducking no matter which state edge wedged — a teardown
         // must never leave paused media paused forever.
         runCatching { unduck() }
-        // m7: only an EXPLICIT user stop may cancel the watchdog. Any other
+        // Only an EXPLICIT user stop may cancel the watchdog. Any other
         // teardown (system service-stop, Apply-restart handoff) leaves the
-        // restart alarm armed so the assistant revives. (P1.4: decision is
-        // [ServicePolicy.cancelWatchdogOnDestroy].)
+        // restart alarm armed so the assistant revives (the decision is
+        // [ServicePolicy.cancelWatchdogOnDestroy]).
         if (ServicePolicy.cancelWatchdogOnDestroy(userStopped = prefs.userStopped)) {
             cancelRestartAlarm()
         }
         runCatching { powerReceiver?.let { unregisterReceiver(it) } }
         powerReceiver = null
-        // B1 (main-thread ANR): AppGraph.shutdown() contains BLOCKING
+        // Main-thread ANR: AppGraph.shutdown() contains BLOCKING
         // teardown — HybridWakeWordDetector.release() runs runBlocking with
         // bounded waits up to ~2.5 s and the gRPC channel drains for up to
         // 2 s more. Service.onDestroy runs on the MAIN thread (input-dispatch
@@ -942,7 +942,7 @@ class JarvisForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder = binder
 
     /**
-     * m12: user-facing mic mute. Delegates to the session manager so muting
+     * User-facing mic mute. Delegates to the session manager so muting
      * also CANCELS the active session and survives power-receiver restarts;
      * UI can call this via the binder in a later phase.
      */
@@ -1013,7 +1013,7 @@ class JarvisForegroundService : Service() {
         const val ACTION_WATCHDOG = "com.jarvis.assistant.WATCHDOG"
         const val ACTION_RUN_COGNITIVE_MAINTENANCE = "com.jarvis.assistant.RUN_COGNITIVE_MAINTENANCE"
 
-        // P2 (audit decision #3 follow-through): the service-lane notification
+        // The service-lane notification
         // ids are the NotificationIds band constants themselves, not look-alike
         // copies — the assistant band's single source of truth is now compile-
         // time. (AlarmAndRegistryTest still pins cross-band disjointness.)
@@ -1030,7 +1030,7 @@ class JarvisForegroundService : Service() {
         private const val RESTART_REQUEST_CODE = 1001
         private const val MAINTENANCE_REQUEST_CODE = 1002
 
-        // P1.4: MAINTENANCE_HOUR / MAINTENANCE_STALE_MS moved to ServicePolicy.
+        // MAINTENANCE_HOUR / MAINTENANCE_STALE_MS moved to ServicePolicy.
         private const val CHANNEL_ID = "jarvis_foreground"
         private const val CHANNEL_BOOTSTRAP = "jarvis_bootstrap"
         private const val CHANNEL_ERROR = "jarvis_errors"
@@ -1066,7 +1066,7 @@ class JarvisForegroundService : Service() {
         fun postActivationPrompt(context: Context) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
                 ?: return
-            // P1.4: the API-33 POST_NOTIFICATIONS gate is
+            // The API-33 POST_NOTIFICATIONS gate is
             // [ServicePolicy.activationPromptAllowed]. The permission lookup
             // is a pure read; on API < 33 its result is irrelevant (the
             // policy allows the prompt unconditionally there), so evaluating

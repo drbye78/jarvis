@@ -109,7 +109,7 @@ class OnboardingActivity : AppCompatActivity() {
                 getString(R.string.onboarding_weight_required),
                 mandatory = true,
                 check = {
-                    // Audit #12: null-safe lookups — an unavailable service
+                    // Null-safe lookups — an unavailable service
                     // reports the row as not-done (the action button still
                     // opens the matching settings screen) instead of crashing
                     // the onboarding refresh loop.
@@ -255,7 +255,7 @@ class OnboardingActivity : AppCompatActivity() {
                     setBackgroundResource(out.resourceId)
                     setPadding(dp(12), dp(8), dp(12), dp(8))
                     setOnClickListener { row.action() }
-                    // Accessibility (U6): a click listener alone leaves this
+                    // Accessibility: a click listener alone leaves this
                     // TextView out of keyboard/D-pad focus order, so the only
                     // affordance that unblocks onboarding was unreachable
                     // without touch.

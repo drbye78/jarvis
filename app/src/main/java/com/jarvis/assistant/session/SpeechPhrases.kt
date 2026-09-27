@@ -7,7 +7,7 @@ import com.jarvis.assistant.R
  * Runtime SPOKEN phrases for the session lane (error voice + the offline
  * gate message).
  *
- * The deep-audit project report flagged that [TurnRunner] and [SessionManager]
+ * This provider exists because [TurnRunner] and [SessionManager]
  * hardcoded Russian error strings — fine for the RU-first product, but it
  * blocked any i18n path and made the fully-localized English UI lie about its
  * runtime behavior. Phrases now flow through this provider:

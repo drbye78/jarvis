@@ -6,7 +6,7 @@ import kotlinx.coroutines.CancellationException
 import timber.log.Timber
 
 /**
- * §11/§12.4-3 (P4.4): the Settings-card retrieval benchmark orchestration,
+ * The Settings-card retrieval benchmark orchestration,
  * extracted from the coordinator. Runs the retrieval benchmark over the
  * STATIC synthetic probe set ([RetrievalProbes] — never user facts, so the
  * cloud branch needs no privacy dialog), writes the winner to memory_meta,
@@ -16,10 +16,10 @@ import timber.log.Timber
  *
  * Nothing here runs on a timer: called explicitly from the Settings card.
  *
- * P1-C (audit §9.2): the CLOUD branch is gated on BOTH a constructed
+ * The CLOUD branch is gated on BOTH a constructed
  * cloud engine AND the reactive `memory.cloudEnabled` switch. The provider
- * is read at every [run] — never snapshotted at graph build (plan
- * principle 5), mirroring [VectorBackfill]'s gate. With the flag OFF the
+ * is read at every [run] — never snapshotted at graph build,
+ * mirroring [VectorBackfill]'s gate. With the flag OFF the
  * branch is skipped before the entitlement probe: zero HTTP calls of any
  * kind, and the outcome reports the honest `entitlement = "disabled"`
  * state (vs `null` = engine not constructed).
@@ -32,7 +32,7 @@ class BenchmarkRunner(
     /**
      * Real cloud-egress gate (`memory.cloudEnabled`). NO default: every
      * construction site must state where the flag comes from — fail-open
-     * defaults are how the §9.2 breach happened. Reactive read: the value
+     * defaults are how the cloud-egress breach happened. Reactive read: the value
      * is taken at call time, e.g. `{ flow.value }`.
      */
     private val cloudEnabled: () -> Boolean,
@@ -50,10 +50,10 @@ class BenchmarkRunner(
         var entitlement: String? = null
         val cloud = cloudEmbedder
         if (cloud != null && !cloudEnabled()) {
-            // §9.2 hard privacy gate: flag OFF → no entitlement probe, no
+            // Hard privacy gate: flag OFF → no entitlement probe, no
             // embed call — the whole cloud lane is skipped, not just the
             // HTTP failure-tolerant part. The probes are synthetic fixtures,
-            // but they still egress, and the plan's privacy inventory binds
+            // but they still egress, and the privacy inventory binds
             // every cloud class behind this switch.
             entitlement = "disabled"
         } else if (cloud != null) {
@@ -81,7 +81,7 @@ class BenchmarkRunner(
             }
         }
 
-        // §10.2: winner = the best SHIPPING branch (≥ 15 % over baseline).
+        // Winner = the best SHIPPING branch (≥ 15 % over baseline).
         val winner = listOfNotNull(
             EmbeddingEngine.LOCAL_ID.takeIf { localReport.ships() } to localReport,
             cloudReport?.let { EmbeddingEngine.CLOUD_ID.takeIf { _ -> it.ships() } to it },
@@ -106,7 +106,7 @@ class BenchmarkRunner(
     }
 
     /**
-     * F5/F6: writes the entitlement verdict as MUTUALLY EXCLUSIVE stamps.
+     * Writes the entitlement verdict as MUTUALLY EXCLUSIVE stamps.
      * A success CLEARS any previous unavailability and vice versa, so the
      * selector can never read a stale success after a revocation (or a stale
      * denial after the account was fixed). Transient verdicts write nothing —
@@ -130,7 +130,7 @@ class BenchmarkRunner(
         val winner: String?,
         /**
          * Cloud-lane verdict for the UI: null = engine not constructed,
-         * "disabled" = §9.2 switch off (skipped, zero calls), "ok" /
+         * "disabled" = cloud switch off (skipped, zero calls), "ok" /
          * "denied:<code>" / "transient" = the probe ran.
          */
         val entitlement: String?,

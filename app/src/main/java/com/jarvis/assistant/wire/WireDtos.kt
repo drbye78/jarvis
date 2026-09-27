@@ -71,7 +71,7 @@ data class WireToolFunction(
 
 fun Message.toWire(): WireMessage = WireMessage(
     role = role,
-    // Audit #22: the chat-completions spec requires a NON-NULL content string
+    // The chat-completions spec requires a NON-NULL content string
     // for user (and tool) messages; a blank utterance serialized as null made
     // the whole request fail HTTP 400. Blank user/tool content is upgraded to
     // a single space. Assistant messages legitimately carry null content when

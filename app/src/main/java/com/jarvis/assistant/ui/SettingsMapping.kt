@@ -3,7 +3,7 @@ package com.jarvis.assistant.ui
 import com.jarvis.assistant.config.ProviderSettings
 
 /**
- * Pure setting ↔ control mappings (U1).
+ * Pure setting ↔ control mappings.
  *
  * These were inline expressions scattered through `SettingsActivity`. Two of
  * them encode behavior that is easy to get wrong and impossible to see:
@@ -45,7 +45,7 @@ object SettingsMapping {
     /** Radio chosen by the user → the preference value to persist. */
     fun playerPrefFor(player: Player): String = player.prefKey
 
-    /** Semantic-recall embedder cycle (§12.4-3): AUTO → CLOUD → LOCAL → OFF. */
+    /** Semantic-recall embedder cycle: AUTO → CLOUD → LOCAL → OFF. */
     val EMBEDDER_ORDER: List<String> = listOf("AUTO", "CLOUD", "LOCAL", "OFF")
 
     /**

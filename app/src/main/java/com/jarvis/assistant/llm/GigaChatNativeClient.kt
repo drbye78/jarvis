@@ -30,7 +30,7 @@ import java.io.IOException
  *   (the server runs web_search and rewrites the answer in prose);
  * - a client call arrives as a fully-formed `FunctionCallComplete`.
  *
- * Cancellation mirrors [SseLlmClient] (M4/M5): the blocking read runs in an IO
+ * Cancellation mirrors [SseLlmClient]: the blocking read runs in an IO
  * child, `awaitClose` cancels the OkHttp [Call] to unblock it, and
  * [SseStream] rethrows a genuine transport failure while treating a cancelled
  * call's [IOException] as a silent exit.
@@ -69,7 +69,7 @@ class GigaChatNativeClient(
                 val httpCall = httpClient.newCall(httpRequest)
                 call = httpCall
 
-                // Cancellable open (M5): barge-in during connect/headers aborts
+                // Cancellable open: barge-in during connect/headers aborts
                 // the in-flight request instead of waiting for the timeout.
                 val response = httpCall.await()
                 try {

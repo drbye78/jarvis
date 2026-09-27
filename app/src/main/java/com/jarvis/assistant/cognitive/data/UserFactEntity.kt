@@ -11,17 +11,17 @@ import com.jarvis.assistant.cognitive.model.FactStatus
 import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 
 /**
- * COGNITIVE_PLAN §5, migration v3→v4: one long-term user fact.
+ * Migration v3→v4: one long-term user fact.
  *
- * Primary-key note (deliberate deviation, documented): the plan specifies a
+ * Primary-key note (deliberate deviation, documented): the design specifies a
  * UUIDv7 `id`, but Room's external-content FTS4 requires the content entity
  * to carry an INTEGER autoincrement primary key to drive its sync triggers.
- * So the row identity is [rowId] (Room/FTS-facing) and the plan's stable,
+ * So the row identity is [rowId] (Room/FTS-facing) and the stable,
  * time-ordered identity is [factId] (unique index) — supersession chains,
  * the inspector and exports reference `factId`, never `rowId`.
  *
- * [searchText] is the ONLY FTS-indexed column: the plan's "indexed content
- * is written pre-tokenized" — a Russian-normalized stem stream produced by
+ * [searchText] is the ONLY FTS-indexed column: the indexed content is written
+ * pre-tokenized — a Russian-normalized stem stream produced by
  * [SearchTokenizer.indexText] from subject+value+category. Raw text columns
  * are never matched directly (SQLite's default tokenizers do not handle
  * Russian morphology; see the SearchTokenizer KDoc).
@@ -32,7 +32,7 @@ import com.jarvis.assistant.cognitive.recall.SearchTokenizer
         Index("factId", unique = true),
         // Single composite covering both the status scan and its updatedAt
         // ordering; replaces the separate `status` / `updatedAt` indices and
-        // drops the dead `category` index (REMEDIATION_PLAN Phase 2).
+        // drops the dead `category` index.
         Index(value = ["status", "updatedAt"]),
     ],
 )
@@ -59,15 +59,15 @@ data class UserFactEntity(
     val lastRecalledAt: Long?,
     val recallCount: Int,
     /**
-     * Immutable decay anchor (REMEDIATION_PLAN Phase 4 consumes it): the
-     * confidence the decay curve is computed from. Defaults to [confidence]
-     * so rows written before Phase 4 (and any call site that does not pass
-     * it) anchor at the confidence they were stored with.
+     * Immutable decay anchor: the confidence the decay curve is computed
+     * from. Defaults to [confidence] so rows written before the anchor
+     * columns existed (and any call site that does not pass it) anchor at
+     * the confidence they were stored with.
      */
     val decayAnchorConfidence: Float = confidence,
     /**
      * When [decayAnchorConfidence] was anchored (epoch ms); 0 = never
-     * explicitly anchored, at which point Phase 4 falls back to the other
+     * explicitly anchored, at which point decay falls back to the other
      * timestamps. Immutable after write.
      */
     val decayAnchorAt: Long = 0L,

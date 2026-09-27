@@ -203,15 +203,15 @@ class AppPrefs(
         set(value) = prefs.edit().putLong(KEY_FOLLOW_UP_WINDOW_MS, value).apply()
 
     // ------------------------------------------------------------------
-    // COGNITIVE_PLAN Phase 1 (§9.2/§12.4): the memory switches. ALL of them
-    // are user-configurable by owner decision (§12.4: "a plan default is the
+    // The memory switches. ALL of them
+    // are user-configurable by owner decision ("a default is the
     // initial value of a user-visible switch, never a hard-coded behaviour")
     // and ALL are consumed reactively via [PrefsFlow] — a Settings toggle
-    // applies from the next turn, no restart (plan principle 5).
+    // applies from the next turn, no restart.
     // ------------------------------------------------------------------
 
     /**
-     * Master kill switch (plan principle 6): false → byte-identical prompts
+     * Master kill switch: false → byte-identical prompts
      * to the pre-cognitive composer, empty queue processing, zero extra
      * cloud calls. Explicit memory tools report honestly that memory is off.
      */
@@ -220,8 +220,8 @@ class AppPrefs(
         set(value) = prefs.edit().putBoolean(KEY_MEMORY_ENABLED, value).apply()
 
     /**
-     * Automatic fact extraction after turns (plan §6.2). Default OFF by
-     * design: it flips on only after the Phase 1 evaluation gate measures
+     * Automatic fact extraction after turns. Default OFF by
+     * design: it flips on only after the first evaluation gate measures
      * precision ≥ 0.85 / recall ≥ 0.7 on the fixture set. Explicit
      * remember_fact writes work regardless of this switch.
      */
@@ -230,7 +230,7 @@ class AppPrefs(
         set(value) = prefs.edit().putBoolean(KEY_MEMORY_AUTO_EXTRACT, value).apply()
 
     /**
-     * Cloud extraction/summarization egress (plan §9.2). OFF stops all
+     * Cloud extraction/summarization egress. OFF stops all
      * queued cognitive cloud calls (they stay PENDING, never dropped or
      * faked); explicit tool writes stay local and keep working.
      */
@@ -239,7 +239,7 @@ class AppPrefs(
         set(value) = prefs.edit().putBoolean(KEY_MEMORY_CLOUD_ENABLED, value).apply()
 
     /**
-     * §12.4-2: sensitive-fact categories (HEALTH, politics, religion) are
+     * Sensitive-fact categories (HEALTH, politics, religion) are
      * visible-but-marked by default for this single-user device; this switch
      * controls whether they are INJECTED INTO PROMPTS at all (the inspector
      * always shows them, marked).
@@ -249,7 +249,7 @@ class AppPrefs(
         set(value) = prefs.edit().putBoolean(KEY_MEMORY_SENSITIVE_VISIBLE, value).apply()
 
     /**
-     * Y6: TTS voice for the assistant's speech (Settings «Голос» card).
+     * TTS voice for the assistant's speech (Settings «Голос» card).
      * "Mila" is the verified default; a free-text Salute voice ID is stored
      * as-is for advanced users. Read PER SENTENCE by the session lane
      * (TurnRunner voiceSource), so a change applies to the next spoken
@@ -261,7 +261,7 @@ class AppPrefs(
 
     // ------------------------------------------------------------------
     // Speech backend (Sber SaluteSpeech vs Yandex SpeechKit v3). ONE choice
-    // drives recognition and synthesis together (deepwork plan §5.2). The
+    // drives recognition and synthesis together. The
     // backend is consumed at graph construction — each provider needs its own
     // channel and auth scheme — so a change applies after the next service
     // restart, exactly like the LLM provider selector.
@@ -308,13 +308,13 @@ class AppPrefs(
         set(value) = prefs.edit().putString(KEY_YANDEX_TTS_ROLE, value.trim()).apply()
 
     // ------------------------------------------------------------------
-    // COGNITIVE_PLAN Phase 2 (§8/§12.4-1): the behaviour switches. The
-    // proactive layer ships DEFAULT OFF (trust first — §12.4-1); quiet
+    // The behaviour switches. The
+    // proactive layer ships DEFAULT OFF (trust first); quiet
     // hours and the daily quota are user-tunable. All are consumed
     // reactively via [PrefsFlow] — live-toggle regression tests included.
     // ------------------------------------------------------------------
 
-    /** Proactive speech master switch (§8.3 gate 1). Default OFF. */
+    /** Proactive speech master switch. Default OFF. */
     var behaviorEnabled: Boolean
         get() = prefs.getBoolean(KEY_BEHAVIOR_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_BEHAVIOR_ENABLED, value).apply()
@@ -329,13 +329,13 @@ class AppPrefs(
         get() = prefs.getInt(KEY_BEHAVIOR_QUIET_END, 8)
         set(value) = prefs.edit().putInt(KEY_BEHAVIOR_QUIET_END, value.coerceIn(0, 23)).apply()
 
-    /** Global proactive utterances per day (§8.3 gate 6). Default 2. */
+    /** Global proactive utterances per day. Default 2. */
     var behaviorDailyQuota: Int
         get() = prefs.getInt(KEY_BEHAVIOR_DAILY_QUOTA, 2)
         set(value) = prefs.edit().putInt(KEY_BEHAVIOR_DAILY_QUOTA, value.coerceIn(1, 5)).apply()
 
     // ------------------------------------------------------------------
-    // COGNITIVE_PLAN Phase 3 (§11/§12.4-3): the semantic-recall selector.
+    // The semantic-recall selector.
     // AUTO (the default) resolves through the benchmark winner — either the
     // on-device «Проверить качество поиска» run or the CI ship-or-reject
     // verdict — and every unavailable branch fails closed to OFF. Consumed
@@ -358,7 +358,7 @@ class AppPrefs(
     )
 
     /**
-     * Custom Sherpa wake-word text (FIXPLAN C). Blank = the bundled
+     * Custom Sherpa wake-word text. Blank = the bundled
      * "Jarvis" keyword from assets. A non-blank value is an ENGLISH word or
      * short phrase (the bundled gigaspeech KWS model is English-BPE — the
      * tokenizer rejects anything it cannot encode, and Settings validates
@@ -369,7 +369,7 @@ class AppPrefs(
         set(value) = prefs.edit().putString(KEY_SHERPA_KEYWORD, value.trim()).apply()
 
     /**
-     * Voice stop toggle (FIXPLAN B). Default mirrors
+     * Voice stop toggle. Default mirrors
      * [com.jarvis.assistant.config.JarvisConfig.voiceStopEnabled]. Read by
      * the session state collector every state change — applies live.
      */

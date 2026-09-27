@@ -25,9 +25,9 @@ import com.jarvis.assistant.util.JsonOut
  * - brightness / Wi-Fi panel / DND / screen-off: special access, granted via
  *   the Onboarding screen; tools report HOW to grant if missing
  *
- * Audit A4: every user-visible string flows through [ToolStrings] (was:
+ * Every user-visible string flows through [ToolStrings] (was:
  * hardcoded Russian literals with one English string in the same file).
- * Audit A5: openApp reports `attempted` (not `ok`) when no Jarvis window is
+ * openApp reports `attempted` (not `ok`) when no Jarvis window is
  * visible, because Android 10+ may silently swallow the background launch.
  */
 class DeviceTools(
@@ -37,7 +37,7 @@ class DeviceTools(
     private val sdkInt: Int = Build.VERSION.SDK_INT,
 ) {
 
-    /** Null-safe audio service lookup (audit #12: `as` threw on odd OEM ROMs). */
+    /** Null-safe audio service lookup (`as` threw on odd OEM ROMs). */
     private val audioManager: AudioManager?
         get() = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
@@ -384,7 +384,7 @@ class DeviceTools(
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
             val label = pm.getApplicationLabel(match).toString()
-            // A5: honesty — from a foreground service with no visible window,
+            // Honesty — from a foreground service with no visible window,
             // Android 10+ may silently drop the launch. Report what we know.
             return when (OpenAppOutcome.of(com.jarvis.assistant.media.AppForegroundTracker.isVisible)) {
                 OpenAppOutcome.OK ->

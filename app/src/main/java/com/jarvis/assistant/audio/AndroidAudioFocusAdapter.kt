@@ -14,7 +14,7 @@ import timber.log.Timber
  */
 class AndroidAudioFocusAdapter(context: Context) : AudioFocusAdapter {
 
-    // Audit #12: null-safe lookup — no AudioManager means ducking is simply
+    // Null-safe lookup — no AudioManager means ducking is simply
     // unavailable (every request returns false, abandon is a no-op).
     private val audioManager =
         context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager

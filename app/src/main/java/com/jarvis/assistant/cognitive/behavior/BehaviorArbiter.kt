@@ -4,7 +4,7 @@ import com.jarvis.assistant.cognitive.data.BehaviorLogEntity
 import com.jarvis.assistant.cognitive.data.HabitRuleEntity
 
 /**
- * COGNITIVE_PLAN §8.3: the ordered gate matrix that decides whether a habit
+ * The ordered gate matrix that decides whether a habit
  * rule may speak. PURE — every gate consumes one boolean from
  * [ArbiterContext] (assembled by the coordinator from live signals), so each
  * gate is independently unit-testable and the matrix is exhaustive:
@@ -12,13 +12,13 @@ import com.jarvis.assistant.cognitive.data.HabitRuleEntity
  * FIRED | DEFERRED (gates 3/4 — busy/media — re-checked the same day)
  * | BLOCKED (everything else, with the gate name in the reason).
  *
- * Every evaluation — including refusals — is logged to `behavior_log` (§8.3
- * "logs every decision (including refusals to speak)"; DEFERRED rows are
- * throttled by the caller so an idle device cannot flood the table).
+ * Every evaluation — including refusals — is logged to `behavior_log`
+ * (every decision is logged, including refusals to speak; DEFERRED rows
+ * are throttled by the caller so an idle device cannot flood the table).
  */
 object BehaviorArbiter {
 
-    /** §8.3 gate 1..7 verdicts. */
+    /** Gate 1..7 verdicts. */
     sealed interface Decision {
         data object Fired : Decision
         data class Deferred(val reason: String) : Decision
@@ -31,7 +31,7 @@ object BehaviorArbiter {
      * build it by hand.
      */
     data class ArbiterContext(
-        /** Gate 1: master switch (default OFF per §12.4-1). */
+        /** Gate 1: master switch (default OFF). */
         val behaviorEnabled: Boolean,
         /** Gate 1: inside the user's quiet hours (default 23:00–08:00). */
         val quietHoursActive: Boolean,
@@ -55,7 +55,7 @@ object BehaviorArbiter {
 
     // The gate matrix reads best as flat ordered early-returns — one gate,
     // one line, one reason. Restructuring to satisfy a count limit would
-    // bury the semantics the plan specifies.
+    // bury the intended semantics.
     @Suppress("ReturnCount")
     fun evaluate(rule: HabitRuleEntity, ctx: ArbiterContext): Decision {
         // Gate 1 — master switch, quiet hours.
@@ -110,7 +110,7 @@ object BehaviorArbiter {
         utterance = utterance?.takeIf { decision == Decision.Fired },
     )
 
-    // §8.3 numeric gates — constants shared by the coordinator and tests.
+    // Numeric gates — constants shared by the coordinator and tests.
     const val COOLDOWN_MS = 72 * 60 * 60_000L
     const val DELIVERY_FRESHNESS_MS = 24 * 60 * 60_000L
     const val PRESENCE_WINDOW_MS = 4 * 60 * 60_000L

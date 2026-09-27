@@ -6,11 +6,11 @@ import com.jarvis.assistant.cognitive.model.ValidatedFact
 import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 
 /**
- * COGNITIVE_PLAN §6.3: normalization of validated fact candidates against
+ * Normalization of validated fact candidates against
  * the existing fact set — dedup, supersession, contest. Pure Kotlin with an
  * injected clock and id generator, fixture-tested.
  *
- * Decision matrix (plan §6.3, with the one underspecified corner documented):
+ * Decision matrix (with the one underspecified corner documented):
  *
  * 1. SAME identity — exact `(subject, predicate, valueNormalized)` match, OR
  *    same `(subject, predicate)` with paraphrase-level lexical overlap
@@ -27,14 +27,14 @@ import com.jarvis.assistant.cognitive.recall.SearchTokenizer
  *      (honesty over silent overwrite).
  *    - new ≥ old − 0.1 (weaker old, or new weak) → SUPERSEDE: old becomes
  *      SUPERSEDED, the new fact carries `supersedesId` → old.
- *    - new < old − 0.1 (a much weaker conflicting claim) → CREATE_NEW: the
- *      plan leaves this corner open; we keep both ACTIVE and let ranking +
+ *    - new < old − 0.1 (a much weaker conflicting claim) → CREATE_NEW: this
+ *      corner is deliberately left open; we keep both ACTIVE and let ranking +
  *      the user resolve it (a weak contradictory extraction must not destroy
  *      a strong stored fact, and marking every weak conflict "contested"
  *      would pollute the prompt with disputes).
  *
  * Forget/correction never destroys history: SUPERSEDED/FORGOTTEN rows stay
- * in the table as the audit trail (plan principle 1).
+ * in the table as the audit trail.
  */
 class FactNormalizer(
     private val nowMs: () -> Long = System::currentTimeMillis,
@@ -90,7 +90,7 @@ class FactNormalizer(
             )
             return when {
                 // Both claims strong: an honest tie — keep both, ask the user
-                // (plan §6.3: honesty over silent overwrite).
+                // (honesty over silent overwrite).
                 bothStrong ->
                     NormalizationDecision.Contest(conflicting, candidate.copy(contested = true))
 
@@ -98,7 +98,7 @@ class FactNormalizer(
                 // keeping the old row as the audit trail.
                 canSupersede -> NormalizationDecision.Supersede(conflicting, candidate)
 
-                // A much weaker contradictory claim: plan leaves this open —
+                // A much weaker contradictory claim: deliberately left open —
                 // keep both ACTIVE and let ranking + the user resolve it. A
                 // weak extraction must not destroy (or dispute-shadow) a
                 // strong stored fact.
@@ -148,7 +148,7 @@ class FactNormalizer(
             supersedesId = supersedesId,
             contested = false,
             sensitive = incoming.sensitive,
-            // 0 = explicit memory-tool write with no source message (plan §6.4).
+            // 0 = explicit memory-tool write with no source message.
             sourceMessageId = incoming.messageId.takeIf { it > 0 },
             createdAt = now,
             updatedAt = now,
@@ -166,7 +166,7 @@ class FactNormalizer(
         /** Above this, a conflict is a dispute to ask about, not a correction. */
         const val STRONG_CONFIDENCE = 0.75f
 
-        /** Supersession tolerance: new must reach old − 0.1 (plan §6.3). */
+        /** Supersession tolerance: new must reach old − 0.1. */
         const val CONFIDENCE_TOLERANCE = 0.1f
 
         /** Lexical overlap at which two values count as the same fact. */
@@ -176,7 +176,7 @@ class FactNormalizer(
     }
 }
 
-/** One normalization outcome (plan §6.3). Sealed = exhaustive call sites. */
+/** One normalization outcome. Sealed = exhaustive call sites. */
 sealed interface NormalizationDecision {
 
     /** Re-statement of a stored fact: raise confidence, bump confirm time. */

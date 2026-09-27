@@ -7,14 +7,13 @@ import com.jarvis.assistant.cognitive.model.FactStatus
 import com.jarvis.assistant.cognitive.model.ValidatedFact
 
 /**
- * COGNITIVE_PLAN §6.3: applies [NormalizationDecision]s to storage inside
+ * Applies [NormalizationDecision]s to storage inside
  * one DAO lane. The only writer of `user_facts` — explicit memory-tool
  * writes and extraction results both land here, so the dedup/supersede/
  * contest invariants hold regardless of the entry point.
  *
  * Supersession and contest are intentionally NON-DESTRUCTIVE: the old row
- * stays as the audit trail (SUPERSEDED status), the plan's "never silently
- * overwrite" honesty rule.
+ * stays as the audit trail (SUPERSEDED status) — never a silent overwrite.
  */
 class MemoryWriter(
     private val factDao: UserFactDao,

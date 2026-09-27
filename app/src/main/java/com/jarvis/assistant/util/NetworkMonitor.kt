@@ -10,7 +10,7 @@ interface OnlineChecker {
 }
 
 /**
- * Pure decision core (m14): a network is usable only when it has both
+ * Pure decision core: a network is usable only when it has both
  * INTERNET and VALIDATED capabilities — a captive portal advertises INTERNET
  * but must not pass the offline gate. Split from the Android-bound overload so
  * JVM tests exercise the decision without framework objects.
@@ -24,7 +24,7 @@ fun isNetworkUsable(capabilities: NetworkCapabilities): Boolean = isNetworkUsabl
 )
 
 class NetworkMonitor(context: Context) : OnlineChecker {
-    // Audit #12: null-safe lookup — a null manager reports offline (the
+    // Null-safe lookup — a null manager reports offline (the
     // session layer's offline gate then speaks the honest error).
     private val cm =
         context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager

@@ -6,7 +6,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * COGNITIVE_PLAN §6.4: the honesty contract of the memory tools — modeled
+ * The honesty contract of the memory tools — modeled
  * on [com.jarvis.assistant.tools.OpenAppOutcome]. A memory tool NEVER
  * returns a bare "ok": the outcome classifies what actually happened
  * (written / merged / needs clarification / failed / disabled) and renders
@@ -76,7 +76,7 @@ fun MemoryOutcome.spoken(strings: ToolStrings): String = when (this) {
  * never ours (the old hand-built StringBuilder version forgot to close a
  * string quote — exactly the class of bug a serializer eliminates).
  *
- * P1-C (audit LOW): the payload used to embed a `spoken` line rendered
+ * The payload used to embed a `spoken` line rendered
  * through [ToolStrings.Default] — hard-pinned Russian in production. No
  * consumer ever read it back (grep: the key is written, never parsed; the
  * only reader of this JSON is the LLM, which composes its own reply in the

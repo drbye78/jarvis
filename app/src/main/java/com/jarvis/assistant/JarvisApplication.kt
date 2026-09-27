@@ -12,7 +12,7 @@ class JarvisApplication : Application() {
 
         CredentialsStore.init(this)
 
-        // M2: process-foreground counting for the music lane. While no
+        // Process-foreground counting for the music lane. While no
         // activity is started, Android 10+ silently blocks our background
         // activity launches (deep links / cold starts), and the orchestrator
         // must phrase those outcomes as attempts, not achievements.

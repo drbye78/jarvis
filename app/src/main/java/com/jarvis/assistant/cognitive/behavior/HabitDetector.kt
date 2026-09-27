@@ -12,16 +12,16 @@ import java.util.Calendar
 import java.util.TimeZone
 
 /**
- * COGNITIVE_PLAN §8.2: mines [HabitRuleEntity] rows out of `command_events`.
+ * Mines [HabitRuleEntity] rows out of `command_events`.
  *
  * Runs in nightly maintenance and after every 10th recorded event (the
  * recorder drives both). Clustering is PURE KOTLIN over the raw VOICE/ok
- * events: the plan's SQL groups by `strftime('%H', …, 'localtime')`, but
- * SQLite's localtime is a device-dependent gamble — the same 2-hour bucket
- * math here is deterministic, injectable-clock testable (§4 "pure Kotlin,
- * injected Clock, fully fixture-testable").
+ * events: a SQL grouping by `strftime('%H', …, 'localtime')` is a
+ * device-dependent gamble, so the same 2-hour bucket math here is
+ * deterministic, injectable-clock testable (pure Kotlin, injected Clock,
+ * fully fixture-testable).
  *
- * State discipline (§8.2):
+ * State discipline:
  * - a NEW cluster enters as PROBATION;
  * - an existing PROBATION/ACTIVE rule just gets its support count refreshed;
  * - MUTED/RETIRED rules are NEVER touched by recompute — a user's "stop
@@ -33,9 +33,9 @@ class HabitDetector(
     private val habitEligibleTools: Set<String>,
     private val nowMs: () -> Long = System::currentTimeMillis,
     /**
-     * P4.4 (REMEDIATION_PLAN): serialization for EVERY rule-row write of
-     * this detector. The coordinator injects the SAME mutex its reject /
-     * accept / fire paths use (P0.8 `ruleWriteMutex`), so the nightly /
+     * Serialization for EVERY rule-row write of this detector. The
+     * coordinator injects the SAME mutex its reject /
+     * accept / fire paths use (`ruleWriteMutex`), so the nightly /
      * ticker rule writes can no longer interleave a session-lane
      * read-modify-write on the same row (same lost-update class as the
      * reject race). Standalone constructions (tests) default to a private
@@ -55,7 +55,7 @@ class HabitDetector(
     /**
      * The whole nightly rule pass under ONE lock acquisition.
      *
-     * P4.4 (REMEDIATION_PLAN F3): taking the mutex once makes recompute →
+     * Taking the mutex once makes recompute →
      * promote → unmute atomic with respect to the session lane's reject /
      * accept / fire paths. Calling the three public wrappers back-to-back
      * would be equally deadlock-free but would let a reject land BETWEEN the
@@ -75,7 +75,7 @@ class HabitDetector(
         val events = try {
             eventDao.voiceOkSince(since, habitEligibleTools.toList())
         } catch (e: CancellationException) {
-            throw e // P1-C (A8): a cancelled recompute is not "telemetry unreadable"
+            throw e // A cancelled recompute is not "telemetry unreadable"
         } catch (e: Exception) {
             // telemetry unreadable — habits simply wait for the next run
             // (content-free WARN: the DAO message can name tables, never facts)
@@ -130,7 +130,7 @@ class HabitDetector(
     }
 
     /**
-     * §8.2 promotion: a PROBATION rule becomes ACTIVE after its first
+     * Promotion: a PROBATION rule becomes ACTIVE after its first
      * successful suggestion cycle — an explicit accept, or a fired
      * suggestion that aged out (30 min) without a rejection.
      */
@@ -140,7 +140,7 @@ class HabitDetector(
     private suspend fun promoteProbationRulesLocked(now: Long): Int {
         var promoted = 0
         for (rule in ruleDao.candidateRules()) {
-            // F2 (REMEDIATION_PLAN): a rule the user has ALREADY pushed back on
+            // A rule the user has ALREADY pushed back on
             // is never promoted by statistics. Aging out is only evidence of
             // "not annoying" when nobody ever said no — otherwise a rejected
             // suggestion gets promoted the first time the user ignores it, and
@@ -156,7 +156,7 @@ class HabitDetector(
         return promoted
     }
 
-    /** MUTED rules whose 30-day sentence elapsed return to ACTIVE (§8.2). */
+    /** MUTED rules whose 30-day sentence elapsed return to ACTIVE. */
     suspend fun unmuteExpired(now: Long = nowMs()): Int =
         ruleWriteMutex.withLock { unmuteExpiredLocked(now) }
 
@@ -196,7 +196,7 @@ class HabitDetector(
     data class ClusterKey(val tool: String, val fingerprint: String, val hourBucket: Int)
 
     companion object {
-        /** §8.2: HAVING c >= 5. */
+        /** HAVING c >= 5. */
         const val MIN_SUPPORT = 5
 
         /** Mining window: two weeks of telemetry is plenty for a wall device. */

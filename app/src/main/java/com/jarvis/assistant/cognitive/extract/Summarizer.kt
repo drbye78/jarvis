@@ -18,7 +18,7 @@ import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 
 /**
- * COGNITIVE_PLAN 2.5: summarize-before-prune.
+ * Summarize-before-prune.
  *
  * The conversation table keeps only [com.jarvis.assistant.data.ConversationManager]
  * retention rows; everything older is deleted on every insert. Before that
@@ -29,7 +29,7 @@ import timber.log.Timber
  * (`memory_meta.lastSummarizedMessageId`) only after a successful commit.
  *
  * Honesty notes:
- * - Summarization input is the ONE new egress class (plan §9.2): it is
+ * - Summarization input is the ONE new egress class: it is
  *   gated behind `memory.cloudEnabled`, and the whole feature behind
  *   `memory.enabled`.
  * - If the cloud call fails AFTER the rows were pruned, that batch's raw
@@ -171,7 +171,7 @@ class Summarizer(
     }
 
     /**
-     * §2.5: the nightly DAILY digest over the day's SESSION rows. Keyed by
+     * The nightly DAILY digest over the day's SESSION rows. Keyed by
      * epoch-day so repeated maintenance runs on the same day are no-ops.
      */
     suspend fun dailyDigest(): SessionSummaryEntity? = mutex.withLock {
@@ -235,7 +235,7 @@ class Summarizer(
     }
 
     // ----------------------------------------------------------------------
-    // Read path (§7.1 SummarySection) — the coordinator's gatherSummary body
+    // Read path (SummarySection) — the coordinator's gatherSummary body
     // ----------------------------------------------------------------------
 
     /**
@@ -316,10 +316,10 @@ class Summarizer(
         /** A batch smaller than this is left for the next night. */
         const val MIN_BATCH_SPAN = 4
 
-        /** Bounded backlog per maintenance run (plan §9.1 honest degradation). */
+        /** Bounded backlog per maintenance run (honest degradation). */
         const val MAX_BACKLOG_BATCHES = 6
 
-        /** §7.1: hard SummarySection budget. */
+        /** Hard SummarySection budget. */
         const val PROMPT_CHAR_BUDGET = 600
 
         const val TEMPERATURE = 0.2

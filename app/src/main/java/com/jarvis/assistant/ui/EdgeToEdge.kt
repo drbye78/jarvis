@@ -9,7 +9,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.jarvis.assistant.R
 
 /**
- * Single edge-to-edge entry point (REMEDIATION_PLAN Phase 8).
+ * Single edge-to-edge entry point.
  *
  * The platform stops honouring the edge-to-edge opt-out at target 36, so the
  * screens are moved onto the edge-to-edge model deliberately instead of

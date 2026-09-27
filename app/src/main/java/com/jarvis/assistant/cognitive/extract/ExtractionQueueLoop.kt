@@ -17,9 +17,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 /**
- * The §6.2 extraction drain loop, extracted from `CognitiveCoordinator` as
- * one of exactly two approved seams (REMEDIATION_PLAN Phase 4:
- * `extract/ExtractionQueueLoop` — the coordinator is NOT decomposed further).
+ * The extraction drain loop, extracted from `CognitiveCoordinator` as
+ * one of exactly two approved seams (the coordinator is NOT decomposed
+ * further).
  *
  * Owns the drain job, the coalescing wake channel and the batching windows
  * (≤[ExtractionQueueWorker.BATCH_SIZE] per pass, flush after
@@ -67,9 +67,8 @@ class ExtractionQueueLoop(
         // watcher unconditionally, so every such restart leaked one more
         // collector onto [settingsChanged].
         if (settingsJob?.isActive != true) {
-            // Settings flips wake the loop so toggles apply live (plan
-            // principle 5). The first combine emission is immediate — one
-            // harmless wake.
+            // Settings flips wake the loop so toggles apply live. The first
+            // combine emission is immediate — one harmless wake.
             settingsJob = scope.launch(CoroutineName("cognitive-settings-watch")) {
                 settingsChanged.collect { wake() }
             }
@@ -77,7 +76,7 @@ class ExtractionQueueLoop(
         if (drainJob?.isActive == true) return
         drainJob = scope.launch(CoroutineName("cognitive-drain")) {
             // Crash recovery: RUNNING rows from a dead process → PENDING
-            // (plan §5 idempotency: work is exactly-once per message).
+            // (idempotency: work is exactly-once per message).
             try {
                 queueDao.running().forEach {
                     queueDao.updateState(
@@ -102,7 +101,7 @@ class ExtractionQueueLoop(
                     val pending = try {
                         queueDao.pendingCount()
                     } catch (e: CancellationException) {
-                        throw e // P1-C (A8): stop the loop, don't fake "idle"
+                        throw e // Stop the loop, don't fake "idle"
                     } catch (e: Exception) {
                         Timber.w(e, "Cognitive: pendingCount failed")
                         0
@@ -113,8 +112,8 @@ class ExtractionQueueLoop(
 
                         else -> {
                             // Flush after the idle window even with <
-                            // BATCH_SIZE (plan §6.2: "or flushes after 90 s
-                            // idle"); an ingest/settings wake returns early.
+                            // BATCH_SIZE (or flushes after 90 s idle); an
+                            // ingest/settings wake returns early.
                             if (pending < ExtractionQueueWorker.BATCH_SIZE) {
                                 withTimeoutOrNull(IDLE_FLUSH_MS) { wakeChannel.receive() }
                             }
@@ -141,10 +140,10 @@ class ExtractionQueueLoop(
     }
 
     companion object {
-        /** §6.2: flush a partial batch after this long without another wake. */
+        /** Flush a partial batch after this long without another wake. */
         const val IDLE_FLUSH_MS = 90_000L
 
-        /** §6.2: idle poll horizon when there is nothing to drain. */
+        /** Idle poll horizon when there is nothing to drain. */
         const val IDLE_WAIT_MS = 600_000L
     }
 }

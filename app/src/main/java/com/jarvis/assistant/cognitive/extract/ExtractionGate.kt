@@ -1,11 +1,11 @@
 package com.jarvis.assistant.cognitive.extract
 
 /**
- * COGNITIVE_PLAN §6.1: the offline heuristic that decides whether an
+ * The offline heuristic that decides whether an
  * utterance is worth a cloud extraction call. Cheap string ops only — it
  * runs on the ingest path for every voice turn, on-device, no network.
  *
- * Signals (ordered, per plan §6.1): explicit memory verbs, first-person
+ * Signals (ordered): explicit memory verbs, first-person
  * self-statements and possessives, likes/dislikes, life-fact patterns.
  * Pure tool traffic («включи джаз», «погода», «таймер на 10 минут») is
  * skipped — the expected 50–70 % skip rate is what keeps cost and noise

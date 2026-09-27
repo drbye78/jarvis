@@ -44,7 +44,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 /**
- * P1-S #1 (audit 2026-09-16, locked decision 1): a machine event together with
+ * A machine event together with
  * the SESSION SEQ of the turn that EMITTED it.
  *
  * [TurnRunner] holds no session identity of its own, but it IS the only party
@@ -63,14 +63,14 @@ import timber.log.Timber
 data class TurnEvent(val sessionSeq: Int, val event: SessionEvent)
 
 /**
- * Per-turn execution engine extracted verbatim from [SessionManager] (P7).
+ * Per-turn execution engine extracted verbatim from [SessionManager].
  *
  * Holds NO session identity of its own — every terminal transition, failure
  * and shared-UI-state write is routed back to [SessionManager] through the
  * injected callbacks ([onStateEvent], [reportFailure], [finish], [setPartial],
  * [onActivity]) so the single source of truth (state machine, error funnel,
  * partial transcript, activity pill) stays in [SessionManager]. EVERY one of
- * them is stamped with the emitting turn's id (P1-S #1, locked decision 1):
+ * them is stamped with the emitting turn's id:
  * each [onStateEvent] emission travels in a [TurnEvent], and the partial /
  * activity writers take the id as their first argument, so a turn the user
  * already superseded can never stomp the live session's state.
@@ -94,7 +94,7 @@ class TurnRunner(
     private val reportFailure: suspend (id: Int?, msg: String) -> Unit,
     private val finish: suspend (id: Int, spoke: Boolean) -> Unit,
     /**
-     * P1-S #1 (extended): the live partial writer is ALSO provenance-guarded —
+     * The live partial writer is ALSO provenance-guarded —
      * the id is the emitting turn's, so [SessionManager] can drop a stale
      * turn's partial (including its final `""`) instead of letting it stomp the
      * session the user actually owns now.
@@ -103,29 +103,29 @@ class TurnRunner(
     private val isCurrentSession: (id: Int) -> Boolean,
     /** Runtime spoken phrases (i18n); defaults to the RU literals. */
     private val phrases: SpeechPhrases = SpeechPhrases.Default,
-    /** Phase 5 (M6): duck external music while sentences play; null = off. */
+    /** Duck external music while sentences play; null = off. */
     private val focus: com.jarvis.assistant.audio.AssistantAudioFocus? = null,
-    /** G1: composed per-pass system prompt (identity + time + policies). */
+    /** Composed per-pass system prompt (identity + time + policies). */
     private val systemPrompt: SystemPromptProvider = TimeAwareSystemPrompt(),
-    /** G3: what the turn engine is doing while THINKING (status pill).
-     * P1-S #1 (extended): carries the emitting turn's id, so a stale turn can
+    /** What the turn engine is doing while THINKING (status pill).
+     * Carries the emitting turn's id, so a stale turn can
      * neither set nor clear a live session's pill. */
     private val onActivity: (id: Int, activity: TurnActivity?) -> Unit = { _, _ -> },
-    /** Y6: TTS voice resolved per sentence so Settings changes apply live. */
+    /** TTS voice resolved per sentence so Settings changes apply live. */
     private val voiceSource: () -> String = { config.ttsVoice },
     /**
-     * COGNITIVE_PLAN 1.2/1.6/1.7: memory gather + ingest hooks; null =
+     * Memory gather + ingest hooks; null =
      * pre-cognitive behaviour (byte-identical prompts, zero extra calls).
      */
     private val cognitive: CognitiveTurnHooks? = null,
-    /** COGNITIVE_PLAN 1.6: true when this session came from the follow-up. */
+    /** True when this session came from the follow-up. */
     private val isFollowUpTurn: () -> Boolean = { false },
 ) {
-    /** m10: bounds how many sentence jobs hold a TTS synthesis/playback slot. */
+    /** Bounds how many sentence jobs hold a TTS synthesis/playback slot. */
     private val ttsSynthPermits = Semaphore(TTS_SYNTH_PREFETCH)
 
     /**
-     * Per-turn mutable state (audit A7). One instance per [runTurn] — the
+     * Per-turn mutable state. One instance per [runTurn] — the
      * previous class-level `spokeThisTurn` was shared across superseding
      * sessions, so a straggler sentence child of a barged-in turn could flip
      * the flag for the NEXT turn's follow-up-window eligibility. A fresh
@@ -137,7 +137,7 @@ class TurnRunner(
         val spoke = java.util.concurrent.atomic.AtomicBoolean(false)
 
         /**
-         * Audit fix: explicit registry of TTS sentence jobs. The drain used
+         * Explicit registry of TTS sentence jobs. The drain used
          * to join/cancel ALL session-scope children (eventCollector/feeder/
          * hardCap leftovers, cognitive deferreds, …) — now only these are
          * joined. Appended at LAUNCH time from the collect loop, so a job is
@@ -149,7 +149,7 @@ class TurnRunner(
 
     /**
      * Execute one turn. [sessionId] is the session/turn seq this turn was
-     * launched with (P1-S #1, locked decision 1): it is the turn's identity
+     * launched with: it is the turn's identity
      * for its whole life, stamped on EVERY event handed to [onStateEvent] and
      * passed to [reportFailure]/[finish], so [SessionManager] can drop a
      * straggler write from a turn the user already superseded. It is captured
@@ -158,11 +158,11 @@ class TurnRunner(
      */
     // The NestedBlockDepth suppression follows processLlm's precedent: the
     // function IS the turn skeleton (open ASR → collect → dispatch by
-    // outcome), and the audit fix added the transport-teardown try/finally
+    // outcome), and it added the transport-teardown try/finally
     // that tips the depth counter — the structure is deliberate.
     @Suppress("NestedBlockDepth")
     suspend fun CoroutineScope.runTurn(sessionId: Int) {
-        // COGNITIVE_PLAN §6.4 (forget confirmation): bind this turn's
+        // Bind this turn's
         // identity BEFORE any ASR/LLM/tool work. The forget tool requires a
         // STRICTLY LATER turn to honor `confirmed=true`, so the model can
         // never confirm its own candidate listing inside the same turn.
@@ -182,7 +182,7 @@ class TurnRunner(
             val stream = openAsrWithRetry()
             if (stream == null) {
                 onStateEvent(TurnEvent(sessionId, SessionEvent.AsrFailed()))
-                // #18/#19: reportFailure IS the terminal for error turns
+                // reportFailure IS the terminal for error turns
                 // (ErrorOccurred -> IDLE + error voice). A trailing finish()
                 // would emit LlmDone from IDLE — rejected by the machine
                 // (log noise) and, with spoke=true, open a follow-up window
@@ -192,7 +192,7 @@ class TurnRunner(
             }
 
             // 2) Feed live audio into the stream until the server reports EOU.
-            // Audit fix: the bidi transport must be torn down on EVERY exit —
+            // The bidi transport must be torn down on EVERY exit —
             // the old call-site cancel covered the normal return only, so a
             // barge-in/cancelAll mid-utterance abandoned the RPC until its
             // deadline. finally covers abort paths too.
@@ -212,7 +212,7 @@ class TurnRunner(
                         return
                     }
                     onStateEvent(TurnEvent(sessionId, SessionEvent.SpeechCaptured)) // -> THINKING
-                    // P0.1 (REMEDIATION_PLAN): the utterance is user content —
+                    // The utterance is user content —
                     // FileLoggingTree persists INFO+ to disk in release, so the
                     // raw text may appear only at DEBUG (AGENTS.md: no fact
                     // content outside DEBUG). INFO keeps a content-free summary.
@@ -232,20 +232,20 @@ class TurnRunner(
                             explicitUserCommand = IrreversibleCommand.isCommand(outcome.text),
                         ),
                     )
-                    // COGNITIVE_PLAN 1.7: persist, then fire-and-forget ingest
+                    // Persist, then fire-and-forget ingest
                     // keyed by the row id (exactly-once per message).
-                    // Audit fix: check-then-write UNDER NonCancellable — a seq
+                    // Check-then-write UNDER NonCancellable — a seq
                     // bump between a bare check and the write let a stale user
                     // row land after the superseding turn's rows.
                     val messageId = persistUserMessage(sessionId, outcome.text)
                     if (messageId != null) {
-                        // COGNITIVE_PLAN §6.4 (forget hardening): bind the
+                        // Bind the
                         // finalized utterance to THIS turn before any tool can
                         // run, so the forget gate can require an explicit
                         // affirmative from the immediately-next user turn.
                         cognitive?.noteUserUtterance(sessionId, outcome.text)
                         cognitive?.ingest(outcome.text, messageId, TurnOrigin.VOICE)
-                        // COGNITIVE_PLAN 2.4: the reject half of the accept/reject
+                        // The reject half of the accept/reject
                         // loop — a follow-up utterance right after a proactive
                         // suggestion may be an explicit «нет» (the coordinator
                         // decides; this is a fire-and-forget signal).
@@ -254,9 +254,9 @@ class TurnRunner(
                         }
                     }
 
-                    // COGNITIVE_PLAN 1.6: one PromptContext per turn; the
+                    // One PromptContext per turn; the
                     // memory gather starts NOW so its (≤40 ms) cost overlaps
-                    // the pre-LLM prompt assembly (§7.2). F11: it is NOT
+                    // the pre-LLM prompt assembly. It is NOT
                     // hidden inside the LLM's time-to-first-token — TTFT
                     // begins once the request is on the wire. The CPU phases
                     // run on Dispatchers.Default (CognitiveDeps).
@@ -288,11 +288,11 @@ class TurnRunner(
             // through startSession/cancelAll (both bump the seq first), so it
             // can never open a window the user does not expect.
             //
-            // Audit fix: let the sentence children SETTLE before reading the
+            // Let the sentence children SETTLE before reading the
             // spoke flag — their cancellation handlers still run and set
             // spoke=true when the audio had already reached the player; join
             // returns immediately (the parent cancel already cancelled them).
-            // Remediation F3: the sweep is BOUNDED — a cancellation-
+            // The sweep is BOUNDED — a cancellation-
             // unresponsive child (wedged transport) must not park the dying
             // coroutine forever; 2 s is generous for cancellation handlers.
             withContext(NonCancellable) {
@@ -301,7 +301,7 @@ class TurnRunner(
                 }
             }
             finish(sessionId, turn.spoke.get())
-            // Audit fix: rethrow the ORIGINAL exception — a fresh
+            // Rethrow the ORIGINAL exception — a fresh
             // CancellationException discarded the cause/mode of the real one.
             throw e
         } catch (e: Exception) {
@@ -316,7 +316,7 @@ class TurnRunner(
     }
 
     /**
-     * Audit fix: stop every sentence this turn launched (cancel + bounded
+     * Stop every sentence this turn launched (cancel + bounded
      * join). Used on failure paths BEFORE [reportFailure] so no orphaned
      * sentence can enqueue a Play after the funnel's player.flush() — the
      * error voice is a separate engine the flush cannot touch.
@@ -325,7 +325,7 @@ class TurnRunner(
         val jobs = turn.sentenceJobs.toList()
         if (jobs.isEmpty()) return
         jobs.forEach { it.cancel() }
-        // Remediation F4: a SHORT dedicated join budget — the jobs are
+        // A SHORT dedicated join budget — the jobs are
         // already cancelled, so this only waits out a wedged transport.
         // Reusing config.ttsDrainTimeoutMs (60 s) delayed the error voice by
         // up to a minute before the user ever heard it.
@@ -335,7 +335,7 @@ class TurnRunner(
     }
 
     /**
-     * Audit fix: the user-message write is a check-then-write UNDER
+     * The user-message write is a check-then-write UNDER
      * [NonCancellable] — a seq bump between a bare check and the write let a
      * stale user row land after the superseding turn's rows. Returns the row
      * id, or null when the session was superseded (ingest is skipped too).
@@ -372,7 +372,7 @@ class TurnRunner(
      * Pumps live mic audio into the ASR stream until the server reports
      * end-of-utterance (or the local hard cap fires).
      *
-     * [id] is the turn's session seq (P1-S #1): every partial it publishes —
+     * [id] is the turn's session seq: every partial it publishes —
      * including the final's clearing `""` — is stamped with it, so a collector
      * still draining after a barge-in cannot overwrite the new session's live
      * transcript.
@@ -408,7 +408,7 @@ class TurnRunner(
         }
 
         // Feeder: pre-roll from ring buffer, then live frames.
-        // Audit fix (first-syllable gap): subscribe to the LIVE frames FIRST.
+        // First-syllable gap: subscribe to the LIVE frames FIRST.
         // The old order (drain() then collect) had a suspension gap between
         // the two — frames emitted with no subscriber are lost (replay=0),
         // clipping up to ~60 ms of the utterance head. Live frames arriving
@@ -460,10 +460,10 @@ class TurnRunner(
     // ------------------------------------------------------------------
 
     /**
-     * COGNITIVE_PLAN 1.6: per-turn prompt context. Built ONCE per turn; the
+     * Per-turn prompt context. Built ONCE per turn; the
      * memory provider is a deferred STARTED here (the moment ASR finalizes —
-     * plan §7.2) and awaited by the composer on first use. F11 correction:
-     * its ≤40 ms cost overlaps the PRE-LLM prompt assembly (composer render +
+     * and awaited by the composer on first use. Its ≤40 ms cost overlaps the
+     * PRE-LLM prompt assembly (composer render +
      * request build), NOT the server's time-to-first-token — TTFT starts once
      * the request is on the wire, so local work can never hide inside it. The
      * CPU phases run on `Dispatchers.Default` (see `CognitiveDeps
@@ -478,8 +478,8 @@ class TurnRunner(
             val gatherDeferred = async { hooks.gather(utterance) }
             suspend { gatherDeferred.await() }
         }
-        // COGNITIVE_PLAN 2.5: the summary block is a cheap presence-gated DB
-        // read (§7.1 "gated by presence of summaries; cheap") — no separate
+        // The summary block is a cheap presence-gated DB
+        // read ("gated by presence of summaries; cheap") — no separate
         // prefetch lane needed; still resolved once per turn via async.
         val summary: suspend () -> String = if (hooks == null) {
             suspend { "" }
@@ -498,7 +498,7 @@ class TurnRunner(
     /**
      * LLM turn: iterative tool loop + streaming sentence TTS.
      *
-     * Interruption semantics (supersedes the v4-P1 "persist nothing" tradeoff):
+     * Interruption semantics (supersedes the earlier "persist nothing" tradeoff):
      * tools still execute BEFORE persistence so history can never hold a
      * dangling assistant/tool_calls pair, but if the session is cancelled
      * mid-pass (barge-in, shutdown), the COMPLETED subset — the assistant row
@@ -507,14 +507,14 @@ class TurnRunner(
      * longer vanish from the conversation; tools that never finished are
      * simply absent (no phantom results, never a dangling pair).
      *
-     * COGNITIVE_PLAN 1.6: every pass re-renders the prompt from the SAME
+     * Every pass re-renders the prompt from the SAME
      * [context] — fresh clock per pass (via the composer), one memory
      * snapshot per turn.
      *
      * The complexity/nesting suppressions are deliberate: this method IS the
      * tool-loop state machine (retry ladder, interruption persistence,
      * streaming TTS fan-out). Splitting it would scatter the interruption
-     * semantics that must stay atomic — the same tradeoff P7 made when it
+     * semantics that must stay atomic — the same tradeoff made when this engine
      * was extracted verbatim from SessionManager.
      */
     @Suppress("CyclomaticComplexMethod", "NestedBlockDepth")
@@ -526,7 +526,7 @@ class TurnRunner(
             pass++
             if (pass > config.maxToolPasses) {
                 Timber.w("Tool loop exceeded %d passes, aborting turn", config.maxToolPasses)
-                // Audit fix: earlier passes may have launched sentences — stop
+                // Earlier passes may have launched sentences — stop
                 // them before the funnel (same post-partial discipline).
                 cancelSpeechChildren(turn)
                 // reportFailure is the terminal — no trailing finish() (the
@@ -551,11 +551,11 @@ class TurnRunner(
             val toolAccum = mutableMapOf<Int, ToolCallAccumulator>()
             val toolCallsPending = mutableListOf<ToolCall>()
 
-            // G3: THINKING begins — the pill leaves the generic label only
+            // THINKING begins — the pill leaves the generic label only
             // when a finer-grained tool label takes over below.
             onActivity(id, TurnActivity.Thinking)
 
-            // G4: transient-failure retry. Safe ONLY while the stream emitted
+            // Transient-failure retry. Safe ONLY while the stream emitted
             // nothing: a retried stream that had already produced chunks would
             // duplicate spoken sentences. Zero-output timeouts / IOExceptions /
             // 5xx-429 are transient; 4xx is fatal; partial output is never retried.
@@ -579,7 +579,7 @@ class TurnRunner(
                                     // children) — the drain below would never run and
                                     // the LLM timeout would kill mid-playback audio.
                                     sentenceBuffer.append(chunk.text).forEach { sentence ->
-                                        // Audit fix: register the sentence job at
+                                        // Register the sentence job at
                                         // LAUNCH time (before any of its code runs)
                                         // — the drain/cleanup joins exactly these.
                                         turn.sentenceJobs.add(
@@ -633,7 +633,7 @@ class TurnRunner(
                         continue
                     }
                     Timber.w(e, "LLM stream timed out after $llmAttempts retries")
-                    // Audit fix: partial output already launched sentence
+                    // Partial output already launched sentence
                     // children — cancel + join them BEFORE the error funnel,
                     // so no sentence can enqueue a Play after reportFailure's
                     // flush and play over the error voice (the error voice is
@@ -651,7 +651,7 @@ class TurnRunner(
                         continue
                     }
                     Timber.e(e, "LLM stream failed after $llmAttempts retries")
-                    // Audit fix: same post-partial cleanup as the timeout path.
+                    // Same post-partial cleanup as the timeout path.
                     cancelSpeechChildren(turn)
                     reportFailure(id, phrases.llmFailed)
                     return
@@ -659,7 +659,7 @@ class TurnRunner(
             }
 
             // Tool calls? Execute ALL of them first, buffering results in
-            // memory, then persist assistant+results atomically (C2). If the
+            // memory, then persist assistant+results atomically. If the
             // session is cancelled mid-pass, the COMPLETED subset is still
             // persisted atomically (never a dangling pair) before propagating.
             // Tool failures are already converted to JSON error results by the
@@ -671,7 +671,7 @@ class TurnRunner(
                 val completed = mutableListOf<Pair<ToolCall, Message>>()
                 try {
                     for (call in pending) {
-                        // G3: the pill shows WHAT is running while the user waits.
+                        // The pill shows WHAT is running while the user waits.
                         onActivity(id, TurnActivity.ToolRunning(call.function.name))
                         val toolResult = withContext(Dispatchers.IO) {
                             functionRouter.executeResult(call.function)
@@ -696,7 +696,7 @@ class TurnRunner(
             // Plain answer: persist once, wait for every TTS sentence to drain.
             if (assistantText.isNotEmpty()) {
                 withContext(NonCancellable) {
-                    // Audit fix: re-check INSIDE the NonCancellable block —
+                    // Re-check INSIDE the NonCancellable block —
                     // same check-then-write discipline as
                     // [persistCompletedToolPass] below.
                     if (isCurrentSession(id)) {
@@ -707,13 +707,13 @@ class TurnRunner(
                 }
             }
 
-            // m9: ONE overall deadline for the whole drain. Each child used to
+            // ONE overall deadline for the whole drain. Each child used to
             // get its own ttsDrainTimeoutMs — worst case N×60s parked in
             // SPEAKING. Children progress concurrently, so joining them under
             // a single budget caps total park time at ttsDrainTimeoutMs, and
             // finish still transitions to IDLE when the budget expires.
             //
-            // Audit fix: join ONLY the tracked sentence jobs — the old
+            // Join ONLY the tracked sentence jobs — the old
             // `coroutineContext[Job]?.children` sweep also joined unrelated
             // session-scope children (eventCollector/feeder/hardCap leftovers,
             // cognitive deferreds, anything else a hook launched), stalling
@@ -732,7 +732,7 @@ class TurnRunner(
     }
 
     /**
-     * Atomic persistence of ONE tool pass (C2 + interruption subset): the
+     * Atomic persistence of ONE tool pass: the
      * assistant row carries tool_calls ONLY for the tools that produced
      * results, paired 1:1 with those results — never a dangling half-pair.
      * Runs under [NonCancellable] so a barge-in racing this write cannot tear
@@ -744,14 +744,14 @@ class TurnRunner(
         pending: List<ToolCall>,
         completed: List<Pair<ToolCall, Message>>,
     ) {
-        // M1: a superseded (barge-in'd) turn must not poison history. If a newer
+        // A superseded (barge-in'd) turn must not poison history. If a newer
         // session is already running, drop this stale persist rather than let it
         // interleave after the new turn's writes. (Outer check = fast path.)
         if (!isCurrentSession(id)) return
         if (completed.isEmpty()) return
         val completedIds = completed.mapTo(HashSet()) { it.first.id }
         withContext(NonCancellable) {
-            // Audit fix: RE-CHECK inside the NonCancellable block — a seq bump
+            // RE-CHECK inside the NonCancellable block — a seq bump
             // between the outer check and the write previously let a stale
             // tool row land after the superseding turn's rows.
             if (!isCurrentSession(id)) return@withContext
@@ -767,7 +767,7 @@ class TurnRunner(
     }
 
     /**
-     * G4 retry predicate: only transient causes, only zero-output streams,
+     * Retry predicate: only transient causes, only zero-output streams,
      * only within the configured attempt budget.
      */
     private fun shouldRetryLlm(e: Exception, emittedAnything: Boolean, attemptsMade: Int): Boolean {
@@ -786,7 +786,7 @@ class TurnRunner(
      * Player flush (barge-in) cancels the Deferred, which surfaces here as
      * CancellationException of the await — we treat it as "sentence dropped".
      *
-     * m10: the [ttsSynthPermits] permit spans the fetch + this sentence's
+     * The [ttsSynthPermits] permit spans the fetch + this sentence's
      * playback slot, so at most [TTS_SYNTH_PREFETCH] sentences hold a TTS
      * stream/queued PCM at once — a long answer no longer opens a gRPC
      * synthesis stream for EVERY completed sentence up front. Playback itself
@@ -795,10 +795,10 @@ class TurnRunner(
     private suspend fun CoroutineScope.speakSentence(sessionId: Int, text: String, turn: TurnState) {
         onStateEvent(TurnEvent(sessionId, SessionEvent.PlaybackStarted)) // -> SPEAKING
         ttsSynthPermits.withPermit {
-            // Y6: resolve the voice per sentence — a Settings change applies
+            // Resolve the voice per sentence — a Settings change applies
             // to the very next synthesis, no service restart.
             val flow = ttsClient.synthesizeStream(text, voiceSource())
-            // Phase 5 (M6): the first sentence of a generation requests
+            // The first sentence of a generation requests
             // duck focus; the last drained sentence abandons it. Barge-in
             // flush abandons via SessionManager's onTtsFlushed hook.
             focus?.onTtsSentenceStarted()
@@ -809,11 +809,11 @@ class TurnRunner(
                 enqueued = true
                 val completed = withTimeoutOrNull(config.ttsSentenceTimeoutMs) { done.await() }
                 if (completed == null) {
-                    // Audit fix: the timeout must STOP the playback, not
+                    // The timeout must STOP the playback, not
                     // abandon it — cancel the deferred so the player halts
                     // the sentence at the budget instead of running past it.
                     done.cancel()
-                    // Audit fix: a timed-out sentence is treated as never
+                    // A timed-out sentence is treated as never
                     // spoken — the budget may have fired before ANY audio
                     // (hung synthesis), and the playback is cut short anyway.
                     // (Previously the spoke flag was set at method ENTRY, so
@@ -837,10 +837,10 @@ class TurnRunner(
                 if (d != null && d.isCancelled) return@withPermit
                 throw e
             } catch (e: Exception) {
-                // N1: a real TTS failure (gRPC error, token expiry, AudioTrack
+                // A real TTS failure (gRPC error, token expiry, AudioTrack
                 // short write) must NOT escape and crash the scope. Drop the
                 // sentence instead of letting it kill the process.
-                // P0.2 (REMEDIATION_PLAN): the sentence may echo user facts —
+                // The sentence may echo user facts —
                 // length only at ERROR (persisted at INFO+ in release); the
                 // content stays DEBUG-only.
                 Timber.e(e, "TTS sentence failed, dropping (len=%d)", text.length)
@@ -853,7 +853,7 @@ class TurnRunner(
 
     private companion object {
         /**
-         * m10: concurrent TTS synthesis prefetch bound. Hardcoded instead of a
+         * Concurrent TTS synthesis prefetch bound. Hardcoded instead of a
          * JarvisConfig knob because config/ is owned by another lane this
          * phase; promote to config later if tuning is ever needed.
          */
@@ -866,7 +866,7 @@ class TurnRunner(
         private const val ASR_FINAL_GRACE_MS = 3_000L
 
         /**
-         * Remediation F3: budget for the cancellation-path sentence-join
+         * Budget for the cancellation-path sentence-join
          * sweep ([runTurn]'s CancellationException catch). The children are
          * already cancelled by the parent; the bound only matters for a
          * wedged transport that ignores cancellation.
@@ -874,7 +874,7 @@ class TurnRunner(
         private const val CANCEL_JOIN_BUDGET_MS = 2_000L
 
         /**
-         * Remediation F4: budget for [cancelSpeechChildren]'s join sweep on
+         * Budget for [cancelSpeechChildren]'s join sweep on
          * the ERROR paths — deliberately short so the error voice is not
          * delayed behind wedged sentence transports (was the 60 s
          * [JarvisConfig.ttsDrainTimeoutMs], making the user wait a minute).

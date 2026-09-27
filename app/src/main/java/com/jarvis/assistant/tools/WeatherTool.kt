@@ -50,12 +50,12 @@ private const val DEFAULT_FORECAST_DAYS = 7
  * missing, writing `"temp":?`). Names are URL-encoded to prevent query
  * injection.
  *
- * F6: condition names resolve through [conditionFor] so production can pass
+ * Condition names resolve through [conditionFor] so production can pass
  * the locale-aware `weather_*` string resources (values/ AND values-en/ ship
  * all 15 — the translations existed but were dead resources). The default
  * keeps the original RU literals for non-Android callers and tests.
  *
- * Audit A6: the geocoding language now follows [languageTag] (device locale
+ * The geocoding language now follows [languageTag] (device locale
  * in production — it was hardcoded to "ru"), the geocoder is asked for the
  * top-5 candidates, and an EXACT name match is preferred over the raw first
  * hit (disambiguation: "Санкт-Петербург" must not resolve to a same-named
@@ -80,7 +80,7 @@ class OpenMeteoWeatherClient(
     /** Default horizon when a [WeatherQuery] asks for a non-positive day count. */
     private val forecastDays: Int = DEFAULT_FORECAST_DAYS,
     /**
-     * COGNITIVE_PLAN 0.6 (hermetic suite): base-URL seams so the JVM tests
+     * Base-URL seams so the JVM tests
      * run against MockWebServer instead of the REAL open-meteo endpoints —
      * a unit test that calls the live internet hangs sandboxes/CI without
      * egress and is non-deterministic everywhere else. Defaults keep
@@ -286,7 +286,7 @@ private fun weatherCodeToRussianDefault(code: Int?): String = when (code) {
 }
 
 /**
- * F6: locale-aware weather-code → condition-name resolver backed by the
+ * Locale-aware weather-code → condition-name resolver backed by the
  * `weather_*` string resources. Wired in FunctionRouter so English-locale
  * devices hear "partly cloudy" instead of "малооблачно".
  */
@@ -386,7 +386,7 @@ class WeatherTool(
         return try {
             weatherClient.getWeather(WeatherQuery(location, days))
         } catch (e: CancellationException) {
-            // Audit #4: barge-in cancellation must propagate (the client's
+            // Barge-in cancellation must propagate (the client's
             // own rethrow in httpGet would otherwise be undone here).
             throw e
         } catch (e: Exception) {

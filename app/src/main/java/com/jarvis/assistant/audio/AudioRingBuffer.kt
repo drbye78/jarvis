@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicLong
  * Frames stored here must be private snapshots (see [AudioPipeline]).
  *
  * Capacity derives from [com.jarvis.assistant.config.JarvisConfig.preRollMs]
- * (M8) — see [AudioPipeline.ringCapacity]. Every frame dropped because the
+ * — see [AudioPipeline.ringCapacity]. Every frame dropped because the
  * buffer overflowed increments [evictionCount] so clipped-audio incidents are
  * diagnosable after the fact.
  */

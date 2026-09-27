@@ -4,7 +4,7 @@ package com.jarvis.assistant.media
  * Transport commands for an external player app (play, pause, next, seek,
  * etc.) with capability-gated dispatch and media-key fallback.
  *
- * Selection order (M4): the NAMED app's session → any PLAYING session → the
+ * Selection order: the NAMED app's session → any PLAYING session → the
  * most recent session → media key. A named app that is installed but has no
  * live session is a miss: we answer instructively instead of silently
  * commanding a random player.
@@ -12,12 +12,12 @@ package com.jarvis.assistant.media
  * Rich actions (seek/like/repeat/shuffle/speed) require a live session — a
  * media key cannot express them.
  *
- * Extracted from [MusicPlaybackOrchestrator] (M4 decomposition).
+ * Extracted from [MusicPlaybackOrchestrator].
  */
 class TransportControl(
     private val gateway: MediaGateway,
     private val resolver: MusicAppResolver,
-    /** For the API-29 setPlaybackSpeed guard (plan risk R7); production
+    /** For the API-29 setPlaybackSpeed guard; production
      *  passes Build.VERSION.SDK_INT, JVM tests pin it explicitly. */
     private val deviceApiLevel: Int = 30,
 ) {
@@ -33,7 +33,7 @@ class TransportControl(
      * Tier 2: rich transport with per-action capability gating. A player
      * whose action mask (or rating type) says it cannot honor the command
      * gets an honest Russian refusal — never a silent no-op, never a fake
-     * success. Selection (M4) and the media-key fallback are unchanged for
+     * success. Selection and the media-key fallback are unchanged for
      * the basic six; the rich actions require a live session (a media key
      * cannot seek/like/repeat).
      */
@@ -44,7 +44,7 @@ class TransportControl(
         val action = spec.action
         val target = if (appHint != null) resolver.resolve(appHint) else null
 
-        // M4 (extended): a NAMED app that cannot even be RESOLVED (not
+        // A NAMED app that cannot even be RESOLVED (not
         // installed / unknown label) is a miss too — silently commanding
         // whichever player happens to be playing would act on the wrong app.
         if (appHint != null && target == null) {
@@ -59,7 +59,7 @@ class TransportControl(
         val controllers = gateway.activeControllers()
         val controller = selectController(controllers, target)
 
-        // M4: the named app is installed but nothing is playing in it — do
+        // The named app is installed but nothing is playing in it — do
         // NOT fall through to some other player's session.
         if (controller == null && target != null) {
             return MusicPlaybackOrchestrator.Outcome(
@@ -90,7 +90,7 @@ class TransportControl(
         if (controller != null) {
             val caps = controller.capabilities()
 
-            // R7: the API gate lives BEFORE any dispatch — on API < 29 the
+            // The API gate lives BEFORE any dispatch — on API < 29 the
             // framework transport has no setPlaybackSpeed at all.
             if (action == MusicPlaybackOrchestrator.Action.SPEED &&
                 !MusicPlaybackOrchestrator.TransportPolicy.speedAllowed(deviceApiLevel)
@@ -132,7 +132,7 @@ class TransportControl(
                     // Honest refusal for a no-op seek: without positionMs or
                     // deltaMs the computed target equals the current position,
                     // and a no-op reported as "Команда отправлена" is a fake
-                    // success (the M4 honesty rule).
+                    // success (the honesty rule).
                     if (spec.positionMs == null && spec.deltaMs == null) {
                         return MusicPlaybackOrchestrator.Outcome(
                             MusicPlaybackOrchestrator.Status.ERROR,
@@ -236,7 +236,7 @@ class TransportControl(
     suspend fun nowPlaying(appHint: String?): MusicPlaybackOrchestrator.Outcome {
         val target = if (appHint != null) resolver.resolve(appHint) else null
 
-        // M4: asking about a NAMED player must not report some other app's
+        // Asking about a NAMED player must not report some other app's
         // track as if it were the answer — including the case where the
         // named app cannot be resolved at all (not installed). Previously
         // an unresolvable hint fell through to "any playing session" and
@@ -303,7 +303,7 @@ class TransportControl(
     // ------------------------------------------------------------------
 
     /**
-     * M4: session selection for transport commands. Order: the NAMED app's
+     * Session selection for transport commands. Order: the NAMED app's
      * session → any PLAYING session → the most recent session → media key.
      * A named app that is installed but has no live session is a miss: we
      * answer instructively instead of silently commanding a random player.
@@ -314,7 +314,7 @@ class TransportControl(
     ): MediaControllerHandle? {
         if (target != null) {
             controllers.firstOrNull { it.packageName == target.packageName }?.let { return it }
-            return null // named-app miss — the caller answers honestly (M4)
+            return null // named-app miss — the caller answers honestly
         }
         return controllers.firstOrNull { it.snapshot().isPlaying }
             ?: controllers.firstOrNull()

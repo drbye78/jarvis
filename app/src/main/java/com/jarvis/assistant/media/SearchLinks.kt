@@ -1,7 +1,7 @@
 package com.jarvis.assistant.media
 
 /**
- * Pure builder for player deep links (M1).
+ * Pure builder for player deep links.
  *
  * Why it exists: the Android adapter used to inline
  * `URLEncoder.encode(query, "UTF-8")`, which encodes a space as `+`. That is
@@ -17,7 +17,7 @@ package com.jarvis.assistant.media
  * geo/bot-blocked from the dev environment, so the web-search URL shape
  * could not be verified, and an unverified link would make the orchestrator
  * claim "search opened" while the user stares at a wrong page. The browser
- * (S0/S2) and session/launch lanes cover Zvuk — it ships official Android
+ * and session/launch lanes cover Zvuk — it ships official Android
  * Auto support, the strongest MediaBrowserService/playFromSearch signal.
  * RUNBOOK «Zvuk» documents the one-minute on-device check that re-enables
  * a deep-link entry once its shape is confirmed.

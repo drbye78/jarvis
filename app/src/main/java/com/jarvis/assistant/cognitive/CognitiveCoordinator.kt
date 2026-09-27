@@ -58,30 +58,29 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * COGNITIVE_PLAN §4: the ONE class the rest of the app sees. Owns the three
+ * The ONE class the rest of the app sees. Owns the three
  * asynchronous paths (read / write / maintenance) and the synchronous tool
  * surface, all under a child scope with a [SupervisorJob] and its own
  * exception handler — a crash or hang in cognition must never take a
- * session down (plan §4 concurrency rules).
+ * session down.
  *
- * Settings are consumed REACTIVELY (plan principle 5 — the Phase 0
- * PrefsFlow lesson): every read path checks the CURRENT [StateFlow] value,
+ * Settings are consumed REACTIVELY (the PrefsFlow lesson): every read path checks the CURRENT [StateFlow] value,
  * so a Settings toggle applies from the next turn without a restart, and a
  * regression test asserts it (AGENTS.md convention).
  *
- * Kill-switch semantics (plan principle 6): `memoryEnabled=false` → gather
+ * Kill-switch semantics: `memoryEnabled=false` → gather
  * renders "", ingest is a no-op, tools report honestly
  * ([MemoryOutcome.Disabled]) — byte-identical prompts to the pre-cognitive
  * baseline, snapshot-tested.
  */
-// COGNITIVE_PLAN §4 names this class deliberately: "the ONE class the rest
-// of the app sees". All pure logic lives in separate, unit-tested classes
+// This class is deliberately the ONE class the rest
+// of the app sees. All pure logic lives in separate, unit-tested classes
 // (FactRanker, HabitDetector, BehaviorArbiter, Summarizer, …); what remains
 // here is composition + fire-and-forget orchestration over the child scope.
 @Suppress("LargeClass", "TooManyFunctions")
 class CognitiveCoordinator(
     /**
-     * P4.4: the former ~35 constructor params, grouped into [CognitiveDeps]
+     * The former ~35 constructor params, grouped into [CognitiveDeps]
      * (pure mechanical regrouping — same objects, same defaults). The body
      * keeps the original names via the alias block below, so no invariant
      * comment moved because of the grouping.
@@ -90,7 +89,7 @@ class CognitiveCoordinator(
     parentScope: CoroutineScope,
 ) : CognitiveTurnHooks {
 
-    /** Child scope: supervisor + own handler, per plan §4. */
+    /** Child scope: supervisor + own handler. */
     val scope: CoroutineScope = CoroutineScope(
         SupervisorJob(parent = parentScope.coroutineContext[Job]) +
             deps.cognitiveDispatcher +
@@ -101,7 +100,7 @@ class CognitiveCoordinator(
             CoroutineName("cognitive"),
     )
 
-    // P4.4: the former constructor params, carried by [deps] and aliased
+    // The former constructor params, carried by [deps] and aliased
     // under their original names — the body and its invariant comments are
     // untouched by the regrouping. Declared FIRST so the component
     // initializers below keep evaluating in the original order.
@@ -154,7 +153,7 @@ class CognitiveCoordinator(
         inTransaction = inTransaction,
     )
 
-    /** P4.4: §9.2 export (Inspector support) extracted; composition only. */
+    /** Export (Inspector support) extracted; composition only. */
     private val factExport = FactExportService(
         factDao = factDao,
         metaDao = metaDao,
@@ -162,18 +161,18 @@ class CognitiveCoordinator(
         nowMs = nowMs,
     )
 
-    /** P4.4: §11/§12.4-3 benchmark orchestration extracted; delegates. */
+    /** Benchmark orchestration extracted; delegates. */
     private val benchmarkRunner = BenchmarkRunner(
         metaDao = metaDao,
         localEmbedder = localEmbedder,
         cloudEmbedder = cloudEmbedder,
-        // P1-C §9.2: the real egress gate, read per run() — the same
+        // The real egress gate, read per run() — the same
         // reactive pattern VectorBackfill uses (never a graph-build value).
         cloudEnabled = { cloudEnabled.value },
         nowMs = nowMs,
     )
 
-    // ---- Phase 2 behaviour layer (§8) ---------------------------------------
+    // ---- Behaviour layer ---------------------------------------------------
 
     /**
      * Serializes read-modify-write cycles on habit-rule rows (reject /
@@ -185,7 +184,7 @@ class CognitiveCoordinator(
      * 70/300 scenarios ended at rejectCount 1–2). A lock per cycle here
      * is microseconds and only ever contended between these rare paths.
      *
-     * P4.4: the SAME mutex is injected into [HabitDetector], whose rule
+     * The SAME mutex is injected into [HabitDetector], whose rule
      * writes (recompute / promoteProbationRules / unmuteExpired —
      * nightly-ticker paths) were previously uncovered: they do
      * read-modify-write cycles on the same rows this class writes from
@@ -213,7 +212,7 @@ class CognitiveCoordinator(
         nowMs = nowMs,
     ).also { it.background = scope }
 
-    /** §12.4-4: opt-in vector builder (Settings «Построить векторы»). */
+    /** Opt-in vector builder (Settings «Построить векторы»). */
     val vectorBackfill = VectorBackfill(
         factDao = factDao,
         vectorDao = vectorDao,
@@ -223,14 +222,14 @@ class CognitiveCoordinator(
         nowMs = nowMs,
     )
 
-    /** Observable degraded counter (plan §7.2); exposed for diagnostics. */
+    /** Observable degraded counter; exposed for diagnostics. */
     private val degradedCounterAtomic = AtomicLong()
 
     val degradedCounter: Long get() = degradedCounterAtomic.get()
 
     /**
      * Reactive wake for the drain loop: any cognitive setting flip re-applies
-     * live (plan principle 5: config is consumed reactively, never snapshotted).
+     * live (config is consumed reactively, never snapshotted).
      * The loop receives only "something changed" — it stays free of the
      * settings vocabulary the coordinator owns.
      */
@@ -242,14 +241,14 @@ class CognitiveCoordinator(
         embedderChoice,
     ) { _, _, _, _, _ -> Unit }
 
-    /** §7 read path (Phase 4 seam): ranking, engine resolution, rendering. */
+    /** Read path (extracted seam): ranking, engine resolution, rendering. */
     private val recall = RecallPipeline(
         deps = deps,
         scope = scope,
         onDegraded = { degradedCounterAtomic.incrementAndGet() },
     )
 
-    /** §6.2 drain loop (Phase 4 seam): batching, pacing, crash recovery. */
+    /** Drain loop (extracted seam): batching, pacing, crash recovery. */
     private val queueLoop = ExtractionQueueLoop(
         scope = scope,
         queueDao = queueDao,
@@ -262,22 +261,22 @@ class CognitiveCoordinator(
     )
 
     // ------------------------------------------------------------------
-    // READ PATH (§7): gather ≤ 40 ms, never blocks the turn on failure.
+    // READ PATH: gather ≤ 40 ms, never blocks the turn on failure.
     // ------------------------------------------------------------------
 
     /**
-     * One gather per turn. The §7 read path itself (ranking, engine
+     * One gather per turn. The read path itself (ranking, engine
      * resolution, rendering, phase-budget degradation) is the [RecallPipeline]
-     * seam extracted in Phase 4; this remains the session-facing entry point.
+     * seam; this remains the session-facing entry point.
      */
     override suspend fun gather(utterance: String?): String = recall.gather(utterance)
 
     // ------------------------------------------------------------------
-    // WRITE PATH (§6): ingest → queue → batched cloud extraction.
+    // WRITE PATH: ingest → queue → batched cloud extraction.
     // ------------------------------------------------------------------
 
     override fun ingest(utterance: String, messageId: Long, origin: TurnOrigin) {
-        // The assistant must not learn from its own voice (plan §6.1).
+        // The assistant must not learn from its own voice.
         if (origin != TurnOrigin.VOICE) return
         if (!memoryEnabled.value || !autoExtractEnabled.value) return
         if (!ExtractionGate.shouldExtract(utterance)) return
@@ -302,20 +301,20 @@ class CognitiveCoordinator(
 
     /**
      * Starts the drain loop (idempotent, called by the graph on start). The
-     * §6.2 batching/pacing logic itself is the [ExtractionQueueLoop] seam.
+     * batching/pacing logic itself is the [ExtractionQueueLoop] seam.
      */
     fun startQueueLoop() = queueLoop.start()
 
     // ------------------------------------------------------------------
-    // Synchronous tool surface (§6.4) — deterministic, honest outcomes.
+    // Synchronous tool surface — deterministic, honest outcomes.
     // ------------------------------------------------------------------
 
     /**
      * `remember_fact(value, category?)`: deterministic local write, origin
      * EXPLICIT, confidence 1.0, routed through the SAME normalizer as
-     * extraction (plan §6.4).
+     * extraction.
      *
-     * Subject anchoring (owner decision, audit MEDIUM): the ONLY subject is
+     * Subject anchoring (owner decision): the ONLY subject is
      * `user`. The tool surface no longer advertises a `subject` parameter, but
      * this method stays the enforcement point for any off-contract value a
      * model smuggles into the raw arguments: it is routed through the SAME
@@ -362,7 +361,7 @@ class CognitiveCoordinator(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // P1 review: e.message can QUOTE the fact row that broke the
+            // e.message can QUOTE the fact row that broke the
             // DAO/serializer — user memory content — and [detail] crosses into
             // the LLM tool-result JSON AND the spoken user string
             // (MemoryOutcome.spoken → memoryWriteFailed), while the throwable
@@ -377,7 +376,7 @@ class CognitiveCoordinator(
 
     /**
      * `recall_facts(query?)`: FTS + ranking over ACTIVE facts with honest
-     * confidence marks; empty result says so (plan §6.4).
+     * confidence marks; empty result says so.
      */
     suspend fun recallFacts(query: String?): MemoryOutcome {
         if (!memoryEnabled.value) return MemoryOutcome.Disabled
@@ -401,7 +400,7 @@ class CognitiveCoordinator(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Same sanitization contract as rememberFact (P1 review).
+            // Same sanitization contract as rememberFact.
             Timber.e("Cognitive: recallFacts failed (%s)", e.javaClass.name)
             Timber.d(e, "Cognitive: recallFacts failure detail")
             MemoryOutcome.Failed("query failure (${e.javaClass.simpleName})")
@@ -409,7 +408,7 @@ class CognitiveCoordinator(
     }
 
     /**
-     * COGNITIVE_PLAN §6.4 (hardened): a candidate listing armed for a specific
+     * A candidate listing armed for a specific
      * turn, user-utterance ordinal and query. Confirmation is bound to TURN
      * PROVENANCE + an EXPLICIT AFFIRMATION, not to a token handed to the model:
      * the token used to ride in the same tool-result JSON as the candidates, so
@@ -458,7 +457,7 @@ class CognitiveCoordinator(
     private val forgetMutex = Mutex()
 
     /**
-     * COGNITIVE_PLAN §6.4: records the turn that is starting. Called once at
+     * Records the turn that is starting. Called once at
      * the top of `TurnRunner.runTurn`, before any ASR/LLM/tool work, so a
      * candidate listing can be bound to the turn that produced it.
      */
@@ -467,7 +466,7 @@ class CognitiveCoordinator(
     }
 
     /**
-     * COGNITIVE_PLAN §6.4 (hardening): records the FINALIZED user utterance of
+     * Records the FINALIZED user utterance of
      * [turnId] (called by `TurnRunner` right after ASR finalizes). [turnId] is
      * the SAME session seq passed to [noteTurnStart], so the coordinator can
      * bind utterance → turn and refuse to honor a confirmation whose turn is
@@ -491,8 +490,8 @@ class CognitiveCoordinator(
     }
 
     /**
-     * `forget_fact(query, confirmed=false)`: two-step confirm-then-delete
-     * (plan §6.4). The read-check-act cycle is serialized on [forgetMutex]; the
+     * `forget_fact(query, confirmed=false)`: two-step confirm-then-delete.
+     * The read-check-act cycle is serialized on [forgetMutex]; the
      * whole check runs in [forgetFactLocked]. A same-turn, absent, stale,
      * expired, mismatched or NON-AFFIRMATIVE confirmation is refused and the
      * candidates are re-listed — never a silent success.
@@ -506,7 +505,7 @@ class CognitiveCoordinator(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Same sanitization contract as rememberFact (P1 review). The
+            // Same sanitization contract as rememberFact. The
             // grant is deliberately LEFT ARMED on failure: the pending clear
             // happens only after the whole delete loop succeeds (see below), so
             // a partial delete does not consume the confirmation as if it had
@@ -609,16 +608,16 @@ class CognitiveCoordinator(
     }
 
     // ------------------------------------------------------------------
-    // BEHAVIOUR (§8): telemetry → habits → arbitration → proactive speech.
+    // BEHAVIOUR: telemetry → habits → arbitration → proactive speech.
     // Every entry point is fire-and-forget on the cognitive scope — none
-    // of this may ever block a turn or crash a session (§4).
+    // of this may ever block a turn or crash a session.
     // ------------------------------------------------------------------
 
     /**
-     * §8.1: one executed tool call lands here (via the ToolRegistry
+     * One executed tool call lands here (via the ToolRegistry
      * observer wired by AppGraph). Writes the `command_events` row (slot
      * fingerprint ONLY — never raw utterances), reinforces a suggestion the
-     * user just accepted (§8.2: a matching command within 10 minutes), and
+     * user just accepted (a matching command within 10 minutes), and
      * triggers habit recomputation on every 10th event.
      */
     suspend fun recordCommandEvent(tool: String, argsJson: String?, ok: Boolean, latencyMs: Long) {
@@ -658,29 +657,29 @@ class CognitiveCoordinator(
     }
 
     // ------------------------------------------------------------------
-    // SEMANTIC RECALL — user-facing entries (§12.4-3/§12.4-4): the Settings
+    // SEMANTIC RECALL — user-facing entries: the Settings
     // card calls these. All are opt-in; nothing here runs on a timer.
     // ------------------------------------------------------------------
 
     /**
-     * §11/§12.4-3: the Settings-card benchmark — P4.4 extracted the
-     * orchestration into [BenchmarkRunner]; the coordinator stays the ONE
+     * The Settings-card benchmark: the orchestration lives in
+     * [BenchmarkRunner]; the coordinator stays the ONE
      * entry point the app sees.
      */
     suspend fun runRetrievalBenchmark(): BenchmarkRunner.BenchmarkOutcome = benchmarkRunner.run()
 
     /**
-     * Settings seam: the engine the §12.4-3 selector resolves to RIGHT
+     * Settings seam: the engine the selector resolves to RIGHT
      * NOW (null = vectors off). The vectors action builds for THIS engine.
      */
     suspend fun resolvedEngineId(): String? = recall.resolveActiveEngine()?.engineId
 
     /**
-     * §12.4-4: start the opt-in vector build for [engineId] on the
+     * Start the opt-in vector build for [engineId] on the
      * cognitive scope. Returns false when the engine is unknown or a run
      * is already in progress; progress is observable via
      * [vectorBackfill.progress]. The CALLER owns the privacy dialog for
-     * the CLOUD branch (fact values egress — §9.2).
+     * the CLOUD branch (fact values egress).
      */
     fun startVectorBuild(engineId: String): Boolean {
         val engine = recall.engineById(engineId) ?: return false
@@ -698,7 +697,7 @@ class CognitiveCoordinator(
         return true
     }
 
-    /** §8.2: the user executed the suggested command within the window. */
+    /** The user executed the suggested command within the window. */
     private suspend fun reinforceAccept(tool: String, fingerprint: String) {
         val now = nowMs()
         // Same read-modify-write discipline as the reject path: an accept
@@ -713,7 +712,7 @@ class CognitiveCoordinator(
                     rule.copy(
                         acceptCount = rule.acceptCount + 1,
                         // First accept completes the first successful
-                        // suggestion cycle — PROBATION graduates (§8.2).
+                        // suggestion cycle — PROBATION graduates.
                         state = HabitRuleEntity.STATE_ACTIVE,
                     ),
                 )
@@ -727,7 +726,7 @@ class CognitiveCoordinator(
     }
 
     /**
-     * §8.3: evaluate every candidate rule against the gate matrix. Called
+     * Evaluate every candidate rule against the gate matrix. Called
      * by the behaviour ticker ([startBehaviorLoop]) and after maintenance.
      * Gate 1 short-circuits on the flow value — with the switch OFF (the
      * default) this method is one cheap flow read, nothing else.
@@ -738,7 +737,7 @@ class CognitiveCoordinator(
         val rules = try {
             ruleDao.candidateRules()
         } catch (e: CancellationException) {
-            throw e // P1-C (A8): a cancelled pass is not a query failure
+            throw e // A cancelled pass is not a query failure
         } catch (e: Exception) {
             Timber.w(e, "Cognitive: rule query failed")
             return
@@ -787,7 +786,7 @@ class CognitiveCoordinator(
         }
     }
 
-    /** §8.4: present → speak → bookkeeping. A blank rendering is dropped. */
+    /** Present → speak → bookkeeping. A blank rendering is dropped. */
     private suspend fun fireRule(rule: HabitRuleEntity, now: Long) {
         val text = ProactivePresenter.render(rule, strings)
         if (text.isBlank()) return
@@ -816,7 +815,7 @@ class CognitiveCoordinator(
     }
 
     /**
-     * Non-FIRED rows are throttled to ≤1 per rule per hour: §8.3 wants every
+     * Non-FIRED rows are throttled to ≤1 per rule per hour: every
      * refusal audited, but an IDLE device in front of a TV would otherwise
      * write the same BLOCKED row every tick and drown the log. FIRED rows
      * are never throttled.
@@ -832,7 +831,7 @@ class CognitiveCoordinator(
     }
 
     /**
-     * §8.3/§8.2: the behaviour ticker — evaluates due rules periodically
+     * The behaviour ticker — evaluates due rules periodically
      * (this is also the DEFERRED same-day re-check). Start once from the
      * graph; a no-op while the switch is OFF.
      */
@@ -852,7 +851,7 @@ class CognitiveCoordinator(
     }
 
     /**
-     * §8.2: the reject half of the accept/reject loop. A SHORT explicit
+     * The reject half of the accept/reject loop. A SHORT explicit
      * refusal («нет», «не надо») right after a delivered suggestion counts
      * against the rule; 3 rejections mute it for 30 days, 6 retire it.
      * Long or affirmative replies are ignored — only unambiguous refusals
@@ -919,7 +918,7 @@ class CognitiveCoordinator(
     }
 
     /**
-     * §2.5/§7.1: rendered summary block for the composer (presence-gated,
+     * Rendered summary block for the composer (presence-gated,
      * budget-truncated by the Summarizer; same fail-quiet contract as
      * [gather]).
      */
@@ -937,7 +936,7 @@ class CognitiveCoordinator(
     }
 
     /**
-     * §2.5: the ConversationManager prune hook — capture the doomed range
+     * The ConversationManager prune hook — capture the doomed range
      * BEFORE the delete lands. The local read is synchronous (fast); the
      * cloud call runs on the cognitive scope.
      */
@@ -952,18 +951,18 @@ class CognitiveCoordinator(
     }
 
     // ------------------------------------------------------------------
-    // Maintenance (§9.1) — Phase 1 logic; the nightly alarm lands in 2.2.
+    // Maintenance — the nightly alarm owns the schedule.
     // ------------------------------------------------------------------
 
     /**
-     * P1-C (audit): maintenance-step guard with the A8 cancellation
-     * contract. [runCatching] swallows [CancellationException] — a cancel
+     * Maintenance-step guard with the cancellation contract.
+     * [runCatching] swallows [CancellationException] — a cancel
      * mid-maintenance then produced a storm of spurious "step failed"
      * ERROR lines (12 after the first) and the machine limped through the
      * remaining steps. Here CE ALWAYS propagates (the run aborts at once),
      * every genuine failure is logged (throwable attached; messages are
      * content-free — FileLoggingTree persists WARN+ to disk) and still
-     * never skips the other steps (plan §9.1).
+     * never skips the other steps.
      */
     private suspend inline fun maintenanceStep(
         name: String,
@@ -980,13 +979,13 @@ class CognitiveCoordinator(
 
     suspend fun onMaintenance() {
         val now = nowMs()
-        // Every step individually guarded (plan §9.1) so one failure cannot
+        // Every step individually guarded so one failure cannot
         // skip the others.
         maintenanceStep("decay step") { decayInactiveFacts(now) }
         maintenanceStep("compaction step") { compactOverCap() }
         maintenanceStep("superseded-retention step") { deleteExpiredSuperseded(now) }
-        // ---- Phase 2 steps (§8.2/§2.5/§5 compaction) ----
-        // F3: ONE acquisition of `ruleWriteMutex` for all three habit passes,
+        // ---- Behaviour + summary + compaction steps ----
+        // ONE acquisition of `ruleWriteMutex` for all three habit passes,
         // so no session-lane reject/accept can land between them.
         maintenanceStep("habit maintenance") { habitDetector.nightly(now) }
         maintenanceStep("command-event retention") {
@@ -1000,7 +999,7 @@ class CognitiveCoordinator(
             val made = summarizer.runBacklogAndDigest()
             if (made > 0) Timber.i("Cognitive: %d summary batch(es) produced", made)
         }
-        // ---- Phase 3 steps (§11) ----
+        // ---- Semantic-recall steps ----
         maintenanceStep("vector maintenance") { vectorMaintenance() }
         maintenanceStep("entity derivation") { deriveEntities() }
         maintenanceStep("maintenance stamp") {
@@ -1009,13 +1008,13 @@ class CognitiveCoordinator(
     }
 
     /**
-     * §11/§5: keep the vector store consistent — GC vectors of facts that
+     * Keep the vector store consistent — GC vectors of facts that
      * left ACTIVE (superseded/forgotten/deleted), then top-up the facts
      * that appeared since the last build. Only the engine the user actually
      * built with is maintained; no engine recorded → no-op.
      */
     private suspend fun vectorMaintenance() {
-        // N7 backstop: a cloud-off transition that happened while the app was
+        // Backstop: a cloud-off transition that happened while the app was
         // killed (or before this watch existed) must still be purged.
         if (!cloudEnabled.value) purgeCloudVectors()
         val engineId = metaDao.get(MemoryMetaEntity.KEY_VECTORS_ENGINE) ?: return
@@ -1030,7 +1029,7 @@ class CognitiveCoordinator(
         if (stale.isNotEmpty()) vectorDao.deleteByFactIds(stale)
         val known = rows.mapTo(HashSet()) { it.factId }
         if (activeIds.any { it !in known }) {
-            // P1-C: same cancellation contract as maintenanceStep — a
+            // Same cancellation contract as maintenanceStep — a
             // wedged top-up defers to tomorrow, a cancel propagates.
             try {
                 vectorBackfill.runFor(engine)
@@ -1043,7 +1042,7 @@ class CognitiveCoordinator(
     }
 
     /**
-     * N7: when the user turns `memory.cloudEnabled` OFF, every CLOUD vector
+     * When the user turns `memory.cloudEnabled` OFF, every CLOUD vector
      * space must be deleted. The read gate in RecallPipeline already refuses to
      * *use* them, but the rows (embeddings of user facts) otherwise stay on
      * disk indefinitely. Deletes every engine space that is not the on-device
@@ -1061,7 +1060,7 @@ class CognitiveCoordinator(
     }
 
     /**
-     * N7: purge CLOUD vector spaces the moment `memory.cloudEnabled` flips
+     * Purge CLOUD vector spaces the moment `memory.cloudEnabled` flips
      * false. The nightly `vectorMaintenance` backstop only runs overnight, so a
      * user who disables cloud expects the data gone now, not tomorrow.
      */
@@ -1083,7 +1082,7 @@ class CognitiveCoordinator(
     }
 
     /**
-     * §11: rebuild the two-table entity index from ACTIVE RELATION facts
+     * Rebuild the two-table entity index from ACTIVE RELATION facts
      * (idempotent full rebuild, atomic in one transaction — the recall
      * boost itself never reads these tables, so derivation lag cannot
      * corrupt recall).
@@ -1113,7 +1112,7 @@ class CognitiveCoordinator(
     }
 
     /**
-     * §5 cap: DAILY summaries beyond [SUMMARY_ROW_CAP] → oldest dropped.
+     * Cap: DAILY summaries beyond [SUMMARY_ROW_CAP] → oldest dropped.
      */
     private suspend fun compactSummaries() {
         var excess = summaryDao.countDaily() - SUMMARY_ROW_CAP
@@ -1177,7 +1176,7 @@ class CognitiveCoordinator(
     }
 
     // ------------------------------------------------------------------
-    // Inspector support (§4/§9.2): observe, wipe, export.
+    // Inspector support: observe, wipe, export.
     // ------------------------------------------------------------------
 
     fun observeFacts() = factDao.observeAll()
@@ -1189,7 +1188,7 @@ class CognitiveCoordinator(
         factDao.updateStatus(factId, FactStatus.FORGOTTEN.name, nowMs())
     }
 
-    /** «Забыть всё» (plan §9.2): ALL cognitive tables, never `messages`. */
+    /** «Забыть всё»: ALL cognitive tables, never `messages`. */
     suspend fun wipeAll() = inTransaction {
         factDao.wipeAll()
         queueDao.wipeAll()
@@ -1198,22 +1197,22 @@ class CognitiveCoordinator(
         ruleDao.wipeAll()
         behaviorLogDao.wipeAll()
         summaryDao.wipeAll()
-        // Phase 3: the semantic stores are cognitive data too.
+        // The semantic stores are cognitive data too.
         vectorDao.wipeAll()
         entityDao.wipeAll()
     }
 
     /**
-     * Export (plan §7 principle 7): every fact + meta, JSON — P4.4
-     * extracted the serialization into [FactExportService].
+     * Export: every fact + meta, JSON — the serialization lives in
+     * [FactExportService].
      */
     suspend fun exportJson(): JsonObject = factExport.exportJson()
 
-    /** Registers the LLM-callable memory tools (plan §6.4). */
+    /** Registers the LLM-callable memory tools. */
     fun tools(): List<ToolContract> = MemoryToolsFactory(this).all()
 
     /**
-     * COGNITIVE_PLAN 1.9: the opt-in backfill entry point (Settings «Память»
+     * The opt-in backfill entry point (Settings «Память»
      * → «Проанализировать прошлые диалоги»). Delegates to the worker; -1
      * means "already done" (the UI shows the done state).
      */
@@ -1225,8 +1224,8 @@ class CognitiveCoordinator(
 
     companion object {
         /**
-         * Plan §7.2: hard prompt-block budget, used by [gatherSummary]. F11
-         * correction: this cost overlaps the caller's PRE-LLM prompt assembly
+         * Hard prompt-block budget, used by [gatherSummary]. This cost
+         * overlaps the caller's PRE-LLM prompt assembly
          * (buildPromptContext → composer render), NOT the server's
          * time-to-first-token — TTFT is measured after the request is on the
          * wire, so it can never "hide" local ranking work. The fact-gather
@@ -1235,15 +1234,15 @@ class CognitiveCoordinator(
          */
         const val GATHER_BUDGET_MS = 40L
 
-        // ---- Phase 2 (§8/§5/§9.1) ----
+        // ---- Behaviour + retention ----
 
-        /** Recompute habits after every Nth recorded event (§8.2). */
+        /** Recompute habits after every Nth recorded event. */
         const val HABIT_RECOMPUTE_EVERY = 10L
 
-        /** §8.2: a matching user command within 10 min = accept. */
+        /** A matching user command within 10 min = accept. */
         const val ACCEPT_WINDOW_MS = 10 * 60_000L
 
-        /** §8.2: 3 rejections → MUTED… */
+        /** 3 rejections → MUTED… */
         const val MUTE_REJECTS = 3
 
         /** …for 30 days; */
@@ -1288,15 +1287,15 @@ class CognitiveCoordinator(
         /** Non-FIRED decision rows: ≤1 per rule per hour (see [logThrottled]). */
         const val DECISION_LOG_THROTTLE_MS = 60 * 60_000L
 
-        /** §5 retention: command_events 90 days, behavior_log 30 days. */
+        /** Retention: command_events 90 days, behavior_log 30 days. */
         const val COMMAND_EVENT_RETENTION_MS = 90L * 24 * 60 * 60_000L
         const val BEHAVIOR_LOG_RETENTION_MS = 30L * 24 * 60 * 60_000L
 
-        /** §5 cap: DAILY summary rows. */
+        /** Cap: DAILY summary rows. */
         const val SUMMARY_ROW_CAP = 365
 
         /**
-         * COGNITIVE_PLAN §6.4 (forget hardening): the confirmation grant is
+         * The confirmation grant is
          * valid only for the IMMEDIATELY-NEXT user turn (utterance-ordinal
          * gap == 1). Combined with [FORGET_PENDING_TTL_MS] this bounds the
          * window from above by both turn count and wall clock.
@@ -1304,7 +1303,7 @@ class CognitiveCoordinator(
         const val FORGET_MAX_UTTERANCE_GAP = 1
 
         /**
-         * COGNITIVE_PLAN §6.4 (forget hardening): wall-clock lifetime of a
+         * Wall-clock lifetime of a
          * confirmation grant. Whichever bound is tighter wins — a grant whose
          * confirming utterance is the immediately-next turn but arrives more
          * than five minutes later is refused and re-listed.

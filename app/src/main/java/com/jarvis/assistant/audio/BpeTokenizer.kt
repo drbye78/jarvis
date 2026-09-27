@@ -14,7 +14,7 @@ import java.io.File
  * rejecting exactly the inputs sentencepiece would render as `<unk>`
  * (digits, punctuation, accents).
  *
- * FIXPLAN C: this is what makes CUSTOM wake words possible without the
+ * This is what makes CUSTOM wake words possible without the
  * sherpa-onnx CLI — the user types a word, [tokenizeKeywordPhrase] produces
  * the keywords-file token line, [SherpaKeywords.toKeywordsFileContent]
  * writes the file, [SherpaKwsEngine] loads it via `newFromFile`.

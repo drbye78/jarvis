@@ -104,7 +104,7 @@ class SettingsCallbacksReal(
     }
 
     override fun onVoiceStopToggled(enabled: Boolean) {
-        // COGNITIVE_PLAN 0.2: the pref alone is NOT enough. The stop phrase
+        // The pref alone is NOT enough. The stop phrase
         // is baked into the ENGINE keyword set at build time (Sherpa) and
         // into the dedicated stop lane's build requirement (Porcupine), so
         // the toggle must rebuild the live engine — the same path the
@@ -113,7 +113,7 @@ class SettingsCallbacksReal(
         // change; without this rebuild, 3 of the 4 engine×toggle
         // combinations stayed stale until a restart.
         //
-        // A5: the state collector fires on STATE CHANGE only, so re-arm the
+        // The state collector fires on STATE CHANGE only, so re-arm the
         // lane for the current state too — otherwise enabling voice stop
         // while the assistant is THINKING/SPEAKING did nothing until the
         // turn ended (the rebuild's own tail re-arm reads the flag this

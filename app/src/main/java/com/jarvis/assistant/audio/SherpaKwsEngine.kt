@@ -14,7 +14,7 @@ import java.io.File
 /**
  * Where the transducer model (and its tokens/bpe vocab) come from.
  *
- * FIXPLAN C: the bundled AAR exports BOTH native constructors —
+ * The bundled AAR exports BOTH native constructors —
  * `newFromAsset` (verified in libsherpa-onnx-jni.so) AND `newFromFile` — so
  * filesystem models work. The asset path stays the zero-config default;
  * the file path enables generated keyword files (custom wake words) and
@@ -37,7 +37,7 @@ sealed interface SherpaModelSource {
  * Fully on-device wake-word engine backed by Sherpa-ONNX Keyword Spotting
  * (zipformer2 transducer, xnnpack CPU backend). No account, no network.
  *
- * Keyword identity (FIXPLAN B): the engine is built from ordered
+ * Keyword identity: the engine is built from ordered
  * [SherpaKeywords.Entry] items; the native `KeywordSpotterResult.keyword`
  * (the matched token line) is mapped back through whitespace-normalized
  * (and space-stripped) comparison, so a result that arrives space-joined or
@@ -46,7 +46,7 @@ sealed interface SherpaModelSource {
  * file whose lines disagree with [entries] degrades to silence, not to a
  * self-triggering assistant.
  *
- * The sensitivity→threshold mapping is unchanged (M5): higher sensitivity →
+ * The sensitivity→threshold mapping is unchanged: higher sensitivity →
  * lower `keywordsThreshold` → easier trigger.
  */
 class SherpaKwsEngine(
@@ -68,7 +68,7 @@ class SherpaKwsEngine(
     private val workDir: File? = null,
 ) : WakeWordEngine {
 
-    // M5: map the 0.0–1.0 sensitivity to Sherpa's `keywordsThreshold`.
+    // Map the 0.0–1.0 sensitivity to Sherpa's `keywordsThreshold`.
     private val keywordsThreshold = 0.25f + (1f - sensitivity.coerceIn(0f, 1f)) * 0.5f
 
     override val phrases: List<WakeWordEngine.Phrase> =
@@ -124,7 +124,7 @@ class SherpaKwsEngine(
                             }
                         }
                 }
-                // FIXPLAN C: file constructor — the AAR's Kotlin ctor is
+                // File constructor — the AAR's Kotlin ctor is
                 // `KeywordSpotter(assetManager: AssetManager?, config)` with
                 // NO default (the old AGENTS.md note was right about that
                 // part); passing NULL assetManager routes to native
@@ -133,7 +133,7 @@ class SherpaKwsEngine(
             }
         }
 
-        // L1: a failure to create the stream would otherwise leak the native
+        // A failure to create the stream would otherwise leak the native
         // spotter — release it before propagating the error.
         try {
             stream = spotter.createStream()

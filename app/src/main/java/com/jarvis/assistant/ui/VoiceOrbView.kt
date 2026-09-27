@@ -464,7 +464,7 @@ class VoiceOrbView @JvmOverloads constructor(
         canvas.drawCircle(cx, cy, core, corePaint)
         ringPaint.color = withAlpha(mutedColor, 0.3f)
         canvas.drawCircle(cx, cy, ring, ringPaint)
-        // Shape channel (U12): a diagonal slash through the ring. Colour alone
+        // Shape channel: a diagonal slash through the ring. Colour alone
         // cannot carry "microphone off" for a colour-blind user, and MUTED
         // must not read as a merely dim IDLE ring.
         ringPaint.color = withAlpha(mutedColor, 0.55f)
@@ -482,7 +482,7 @@ class VoiceOrbView @JvmOverloads constructor(
         canvas.drawCircle(cx, cy, core, corePaint)
         ringPaint.color = withAlpha(deafColor, 0.6f)
         canvas.drawCircle(cx, cy, ring, ringPaint)
-        // Shape channel (U12): a radial tick at 12 o'clock. DEAF is the most
+        // Shape channel: a radial tick at 12 o'clock. DEAF is the most
         // important shape to tell apart from MUTED — both are "not hearing",
         // with opposite causes (engine failure vs user intent) — so it must
         // not rely on the error hue.

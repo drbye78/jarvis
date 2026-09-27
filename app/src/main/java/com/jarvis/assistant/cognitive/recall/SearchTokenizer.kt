@@ -1,12 +1,12 @@
 package com.jarvis.assistant.cognitive.recall
 
 /**
- * COGNITIVE_PLAN Phase 1 (§5/§7): deterministic Russian-aware text
+ * Deterministic Russian-aware text
  * normalization for the lexical memory index.
  *
  * Why this exists: SQLite's bundled FTS tokenizers are unreliable for
  * Russian morphology — `simple` is case-sensitive for non-ASCII, `unicode61`
- * folds case but does nothing about «Тарковского» vs «Тарковский». The plan's
+ * folds case but does nothing about «Тарковского» vs «Тарковский». The
  * answer is to make BOTH sides of the match deterministic and testable:
  *
  * - the indexed content is WRITTEN pre-tokenized ([indexText] output goes
@@ -100,7 +100,7 @@ object SearchTokenizer {
     /**
      * Lexical overlap between two free-text strings on stemmed token sets:
      |A∩B| / min(|A|,|B|) — asymmetric containment, 1.0 when one side
-     * is fully covered by the other (paraphrase detection, plan §6.3).
+     * is fully covered by the other (paraphrase detection).
      * 0.0 when either side has no tokens.
      */
     fun overlap(a: String, b: String): Float {

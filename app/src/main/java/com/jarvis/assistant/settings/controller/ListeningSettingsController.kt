@@ -183,9 +183,9 @@ class ListeningSettingsController(
         scope.cancel()
     }
 
-    /** ESSENTIAL controls: voice stop (FIXPLAN B) + the follow-up switch/window. */
+    /** ESSENTIAL controls: voice stop + the follow-up switch/window. */
     private fun bindEssentialControls(root: View) {
-        // FIXPLAN B voice stop. The callback owns persistence AND the live
+        // Voice stop. The callback owns persistence AND the live
         // engine rebuild (the stop phrase is baked into the keyword set), so the
         // controller deliberately does not touch the pref itself.
         voiceStopSwitch = root.findViewById(R.id.voiceStopSwitch)
@@ -284,7 +284,7 @@ class ListeningSettingsController(
         })
     }
 
-    /** The custom Sherpa keyword sub-block (FIXPLAN C). */
+    /** The custom Sherpa keyword sub-block. */
     private fun bindSherpaKeywordControls(root: View) {
         sherpaKeywordInput = root.findViewById(R.id.sherpaKeywordInput)
         sherpaKeywordStatus = root.findViewById(R.id.sherpaKeywordStatus)

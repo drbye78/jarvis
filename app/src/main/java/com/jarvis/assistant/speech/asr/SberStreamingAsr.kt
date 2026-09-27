@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * Reliability decisions:
  * - The RPC runs under a cancellable [Context], so [cancel] aborts the call
- *   immediately (original defect #6 — gRPC calls were never cancelled).
+ *   immediately (gRPC calls were previously never cancelled).
  * - A gRPC deadline caps the whole stream ([deadlineMs]).
  * - The server performs end-of-utterance detection: we send
  *   `enable_partial_results` and `no_speech_timeout`, and treat
@@ -52,7 +52,7 @@ class SberStreamingAsr(
         private val noSpeechTimeoutSec: Long,
     ) : AsrStream {
 
-        // m11: replay=1 redelivers a terminal event emitted in the window
+        // replay=1 redelivers a terminal event emitted in the window
         // between open() and the session's subscription (an instant server
         // error used to be dropped, hanging the session in LISTENING until
         // the 90s cap); extraBufferCapacity keeps early emissions from being

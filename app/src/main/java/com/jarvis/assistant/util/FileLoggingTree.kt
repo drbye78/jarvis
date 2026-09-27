@@ -15,7 +15,7 @@ import java.util.concurrent.Executors
  * debugging instructions useless on release. Release builds now log
  * INFO-and-above to rotating files under filesDir/logs/.
  *
- * D3 (blocking IO on the caller thread): Timber trees run synchronously on
+ * Blocking IO on the caller thread: Timber trees run synchronously on
  * the logging thread, and this app logs from the MAIN thread (Application
  * onCreate, activities, the service lifecycle). Every line used to cost a
  * stat + open + write + close on the caller. All disk work now runs on one
@@ -23,7 +23,7 @@ import java.util.concurrent.Executors
  * formats its arguments. Pending lines are lost on process death — an
  * accepted trade-off for log records.
  *
- * P3.4: every persisted line runs through [LogScrubber] (message + stack
+ * Every persisted line runs through [LogScrubber] (message + stack
  * trace) — pattern-based redaction as defense-in-depth behind the
  * DEBUG-only convention for content-bearing material. See [LogScrubber]
  * for the documented rule set.

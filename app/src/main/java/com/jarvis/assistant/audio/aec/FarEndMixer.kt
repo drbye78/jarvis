@@ -12,7 +12,7 @@ import timber.log.Timber
  *
  * - Each lane owns a pending-frame queue; [onFrame] appends (bounded —
  *   overflow drops oldest, a stalled consumer must not grow without bound;
- *   drops are COUNTED and logged under `AecDiag`, audit #24: silent drops
+ *   drops are COUNTED and logged under `AecDiag`: silent drops
  *   used to degrade AEC quality with zero diagnostic visibility).
  * - [drainSlot] consumes exactly [slotSamples] from every lane per call —
  *   starving lanes contribute zeros (their speaker was silent), burst-fed
@@ -27,7 +27,7 @@ import timber.log.Timber
  * Thread-safety: [onFrame] may be called from any lane's thread (TTS actor,
  * capture pump); [drainSlot] is producer-only. Every public method mutates
  * shared lane state, so every one of them runs under the SINGLE [lock] monitor
- * (P1-S #5 — `@Synchronized` on `this` was a second, unrelated monitor and
+ * (`@Synchronized` on `this` was a second, unrelated monitor and
  * bought nothing).
  */
 class FarEndMixer(
@@ -50,7 +50,7 @@ class FarEndMixer(
     /**
      * Number of slots where at least one lane delivered energy.
      *
-     * P1-S #5 (audit 2026-09-16): @Volatile for lock-free diagnostics, but
+     * @Volatile for lock-free diagnostics, but
      * every WRITE happens under [lock] — [lane] and [reset] used to be
      * `@Synchronized` on `this` while [onFrame] / [drainSlot] used [lock], so
      * a reset could interleave with the producer's read-modify-write of this
@@ -66,7 +66,7 @@ class FarEndMixer(
         private set
 
     /**
-     * Far-end frames dropped by lane-overflow so far (audit #24). Lifetime
+     * Far-end frames dropped by lane-overflow so far. Lifetime
      * total — deliberately NOT reset by [reset]: "has this mixer ever dropped"
      * is the diagnostic question. Surface via `adb logcat -s AecDiag`.
      */
@@ -155,7 +155,7 @@ class FarEndMixer(
             }
         }
         for (s in out) energy += (s * s).toDouble()
-        // P1-S #5: the diagnostic counters move back under [lock] so a
+        // The diagnostic counters move back under [lock] so a
         // concurrent [reset] cannot lose an increment (read-modify-write on a
         // @Volatile is not atomic).
         synchronized(lock) {
@@ -184,7 +184,7 @@ class FarEndMixer(
         /** Below this a slot counts as silent (int16² scale, ~-60 dBFS). */
         const val ACTIVE_ENERGY_FLOOR = 320.0 * 4.0
 
-        /** Re-log lane drops only every Nth dropped frame (audit #24). */
+        /** Re-log lane drops only every Nth dropped frame. */
         const val DROP_LOG_STRIDE = 50L
     }
 }

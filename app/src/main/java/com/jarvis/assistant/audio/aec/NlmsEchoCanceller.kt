@@ -23,12 +23,12 @@ import timber.log.Timber
  *     echo. Near-end speech comfortably above the residual floor (>
  *     GATE_OPEN_FACTOR ×, see the constant's doc) releases the gain fully;
  *     SOFT speech within that margin is still partially attenuated toward
- *     MIN_GATE — the honest double-talk trade-off, not a guarantee (audit
- *     #23; on-device tuning guidance lives in the RUNBOOK).
+ *     MIN_GATE — the honest double-talk trade-off, not a guarantee (on-device
+ *     tuning guidance lives in the RUNBOOK).
  *  5. Far-end silent for > [BYPASS_SLOTS] frames (~200 ms) ⇒ bit-exact passthrough —
  *     the canceller NEVER touches near-end-only audio.
  *
- * Honesty (PLAN-AEC-FOLLOWUP §0): this is a linear-filter canceller, NOT
+ * Honesty: this is a linear-filter canceller, NOT
  * WebRTC AEC3 — typical ERLE is 15–30 dB for linear echo paths; nonlinear
  * speaker distortion of cheap tablet speakers limits the achievable
  * suppression. The [EchoCanceller] interface is the drop-in slot for a
@@ -131,7 +131,7 @@ class NlmsEchoCanceller(
         )
 
     /**
-     * Irregular-length mic frames normalized instead of rejected (P1-S #7).
+     * Irregular-length mic frames normalized instead of rejected.
      * Lifetime total; content-free, so it is safe at WARN.
      */
     @Volatile
@@ -162,7 +162,7 @@ class NlmsEchoCanceller(
     }
 
     override fun process(micFrame: ShortArray): ShortArray {
-        // P1-S #7 (audit 2026-09-16): an irregular frame used to `require`
+        // An irregular frame used to `require`
         // here and throw IllegalArgumentException. AudioPipeline catches every
         // Exception from process() as a producer FAILURE (attempt counting →
         // 50 in a row = give up + deaf until the 15-min watchdog), so one
@@ -431,7 +431,7 @@ class NlmsEchoCanceller(
         /**
          * Error this many × the residual floor opens the gate fully (~11.8 dB).
          *
-         * Audit #23: was 25 (~14 dB), which suppressed soft near-end speech
+         * Was 25 (~14 dB), which suppressed soft near-end speech
          * toward MIN_GATE (0.15) during double-talk — a soft-spoken user got
          * eaten for up to the FREEZE_RESEED_SLOTS horizon. 15 keeps echo-only
          * suppression (converged residual sits at ≈1× the floor, still clamped
@@ -442,7 +442,7 @@ class NlmsEchoCanceller(
         private const val GATE_OPEN_FACTOR = 15.0
 
         /**
-         * Pure gate target for the error/floor ratio (audit #23): open when the
+         * Pure gate target for the error/floor ratio: open when the
          * error towers over the converged residual floor, clamped to [MIN_GATE]
          * when it sits at it. Extracted for unit tests.
          */

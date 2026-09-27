@@ -42,7 +42,7 @@ interface ToolContract {
 }
 
 /**
- * Structured outcome of a tool execution (m1). Classification is carried by
+ * Structured outcome of a tool execution. Classification is carried by
  * [isError] instead of sniffing the content for an `"error"` substring —
  * legitimate payloads may legitimately contain that key.
  */
@@ -75,7 +75,7 @@ class ToolRegistry(
     private val tools: List<ToolContract>,
     private val perToolTimeoutMs: Long = 15_000,
     /**
-     * COGNITIVE_PLAN 2.1: telemetry seam — observes every COMPLETED execution
+     * Telemetry seam — observes every COMPLETED execution
      * (success, tool failure or timeout; not barge-in cancellations, which
      * rethrow). Receives (call, result, latencyMs). Fire-and-forget on the
      * observer's side; a throwing observer is logged and ignored by the
@@ -137,12 +137,12 @@ class ToolRegistry(
     }
 
     /**
-     * Classified execution (m1): success → isError=false; execution exception
+     * Classified execution: success → isError=false; execution exception
      * or timeout → isError=true with JSON error content. The old
      * `result.contains("\"error\"")` substring sniffing is gone — a payload
      * that merely mentions "error" is no longer misclassified.
      *
-     * Audit #4: [CancellationException] is RETHROWN, never converted to an
+     * [CancellationException] is RETHROWN, never converted to an
      * error result. Barge-in cancels the session mid tool call; swallowing
      * that cancellation here would break structured concurrency (the turn
      * would keep running and persist a bogus tool error instead of being
@@ -191,7 +191,7 @@ class ToolRegistry(
                 isError = true,
             )
         }
-        // COGNITIVE_PLAN 2.1: record AFTER the outcome is known, for both
+        // Record AFTER the outcome is known, for both
         // success and failure; latency includes the tool's own timeout wait.
         val latencyMs = (System.nanoTime() - startedAt) / 1_000_000
         val observer = onExecuted
@@ -225,7 +225,7 @@ fun kotlinx.serialization.json.JsonObject.string(key: String): String? =
 
 fun kotlinx.serialization.json.JsonObject.int(key: String): Int? =
     this[key]?.jsonPrimitive?.contentOrNull?.let { content ->
-        // F9: LLMs occasionally emit integer fields in float form ("50.0").
+        // LLMs occasionally emit integer fields in float form ("50.0").
         // toIntOrNull() rejected those outright, so SetVolumeTool et al.
         // answered "Missing required parameter" for a value the model DID
         // supply. Accept float-form numbers by parsing through Double.

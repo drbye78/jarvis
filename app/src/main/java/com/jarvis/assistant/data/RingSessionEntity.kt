@@ -8,12 +8,12 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 
 /**
- * REMEDIATION_PLAN Phase 2: durable, process-independent ring state.
+ * Durable, process-independent ring state.
  *
  * One row per alert currently ringing. `alertId` IS the alert identity
  * (it is already the AlarmManager request code and the base of the ringing
  * notification id), so it doubles as this table's primary key: at most one
- * live ring session per alert. Phase 3 owns the begin/end transitions.
+ * live ring session per alert; [com.jarvis.assistant.tools.RingCoordinator] owns the begin/end transitions.
  */
 @Entity(tableName = "ring_sessions")
 data class RingSessionEntity(
@@ -29,7 +29,7 @@ data class RingSessionEntity(
     val firedTriggerMillis: Long,
 )
 
-/** CRUD for [RingSessionEntity]; Phase 3 owns the ring lifecycle wiring. */
+/** CRUD for [RingSessionEntity]; [com.jarvis.assistant.tools.RingCoordinator] owns the ring lifecycle wiring. */
 @Dao
 interface RingSessionDao {
 

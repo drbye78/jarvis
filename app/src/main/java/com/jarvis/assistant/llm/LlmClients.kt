@@ -24,7 +24,7 @@ import java.util.UUID
 /**
  * Shared SSE implementation for OpenAI-compatible endpoints.
  *
- * Cancellation correctness (original defect #7): the blocking line-reading
+ * Cancellation correctness: the blocking line-reading
  * loop runs in a child coroutine on [Dispatchers.IO], and `awaitClose`
  * cancels the OkHttp [Call]. Because `Call.cancel()` closes the underlying
  * socket, the blocked `readUtf8Line()` unblocks with an IOException and the
@@ -88,11 +88,11 @@ abstract class SseLlmClient(
                 val httpCall = httpClient.newCall(httpRequest)
                 call = httpCall
 
-                // Cancellable open (M5): barge-in during connect/headers aborts
+                // Cancellable open: barge-in during connect/headers aborts
                 // the in-flight request instead of waiting for the timeout.
                 val response = httpCall.await()
                 try {
-                    // Body lifecycle (M4): closed on EVERY exit below — normal
+                    // Body lifecycle: closed on EVERY exit below — normal
                     // EOF, [DONE], error, and cancellation — via this finally.
                     if (!response.isSuccessful) {
                         val err = runCatching { response.body?.string() }.getOrNull().orEmpty()

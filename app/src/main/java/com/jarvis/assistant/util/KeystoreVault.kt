@@ -23,7 +23,7 @@ import javax.crypto.spec.GCMParameterSpec
  * the same threat model (device-bound key, at-rest confidentiality) with
  * zero library dependencies and explicit, auditable crypto.
  *
- * Self-healing, NARROWED (COGNITIVE_PLAN 0.4 — the re-audit's catch-all):
+ * Self-healing, NARROWED:
  * an entry that fails to decrypt because the KEY MATERIAL is wrong for this
  * device (key invalidated by a backup restore, OEM keystore corruption →
  * [GeneralSecurityException] family, or a truncated entry) is dropped and

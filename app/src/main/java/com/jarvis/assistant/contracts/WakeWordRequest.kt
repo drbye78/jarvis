@@ -5,7 +5,7 @@ package com.jarvis.assistant.contracts
  * Carried through WakeWordDetector.reconfigure so a single code path can
  * swap between Picovoice Porcupine and Sherpa-ONNX KWS at runtime.
  *
- * FIXPLAN C: the Sherpa path gained custom-keyword support — the AAR's
+ * The Sherpa path gained custom-keyword support — the AAR's
  * `newFromFile` constructor loads models from the filesystem, so a
  * generated keywords file + the extracted (or user-supplied) model builds
  * an engine for any English keyword the bundled BPE model can tokenize.
@@ -16,7 +16,7 @@ data class WakeWordRequest(
     // Porcupine .ppn path (null = built-in JARVIS keyword).
     val keywordPath: String?,
     /**
-     * Sherpa-ONNX model directory. FIXPLAN C semantics:
+     * Sherpa-ONNX model directory. Semantics:
      * - null → the model is loaded from the bundled APK assets via RELATIVE
      *   paths (Mode A, `newFromAsset`) together with the bundled keywords
      *   file. This is the zero-config default.
@@ -27,7 +27,7 @@ data class WakeWordRequest(
      */
     val sherpaModelDir: String?,
     /**
-     * Custom Sherpa wake-word TEXT (FIXPLAN C). Blank/null = the bundled
+     * Custom Sherpa wake-word TEXT. Blank/null = the bundled
      * keywords file (jarvis + stop). Non-blank = an English word or short
      * phrase; the engine tokenizes it against the model's BPE vocab and
      * generates a keywords file (plus the stop phrase).
@@ -38,7 +38,7 @@ data class WakeWordRequest(
     // - Sherpa-ONNX: mapped to keywordsThreshold (higher sensitivity means a
     //   lower threshold, i.e. an easier trigger). It is NOT the keyword score.
     val sensitivity: Float,
-    // FIXPLAN B: when true the engine keyword set includes the stop phrase
+    // When true the engine keyword set includes the stop phrase
     // (or the dedicated Porcupine-mode stop lane is armed).
     val stopPhraseEnabled: Boolean = true,
 )

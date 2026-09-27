@@ -68,7 +68,7 @@ class AppGraph(
 
     val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e ->
-            // N1: defense-in-depth. Any uncaught coroutine exception (a TTS
+            // Defense-in-depth. Any uncaught coroutine exception (a TTS
             // sentence that slipped past local handling, or a state-collector
             // failure on an odd OEM ROM) must not crash the process on an
             // always-listening appliance. Log it; failure paths already report.
@@ -79,7 +79,7 @@ class AppGraph(
     val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS) // long enough for SSE streams
-        // Audit #15: total-call safety net. 120 s exceeds every legitimate
+        // Total-call safety net. 120 s exceeds every legitimate
         // user of this client — the session layer caps LLM streams at
         // config.llmTimeoutMs = 45 s, TTS has a per-sentence deadline, the
         // credential probes use 5–15 s — so this only fires on a genuinely
@@ -134,10 +134,10 @@ class AppGraph(
         database.messageDao(),
         config.historyMaxMessages,
         config.historyMaxChars,
-        // COGNITIVE_PLAN 1.9: keep the recent dialogue on disk (LLM window
+        // Keep the recent dialogue on disk (LLM window
         // stays historyMaxMessages) so the opt-in backfill has material.
         config.historyRetentionMessages,
-        // COGNITIVE_PLAN 2.5: summarize-before-prune — the summarizer reads
+        // Summarize-before-prune — the summarizer reads
         // the doomed range BEFORE the retention delete lands (its cloud call
         // is fire-and-forget on the cognitive scope). The lambda resolves
         // the coordinator lazily, so the conversation lane stays
@@ -187,7 +187,7 @@ class AppGraph(
     }
 
     private fun apiKeyFor(): String =
-        // A3: the OpenAI-compatible key lives in the Keystore vault, same as
+        // The OpenAI-compatible key lives in the Keystore vault, same as
         // the Sber credentials (AppPrefs.openAiApiKey routes to the same slot).
         appPrefs.openAiApiKey
 
@@ -214,7 +214,7 @@ class AppGraph(
         SpeechBackend.SBER -> SberStreamingAsr(
             tokenManager = tokenManager,
             channel = saluteChannel,
-            // m11: the gRPC deadline must OUTLIVE the local maxUtteranceMs cap
+            // The gRPC deadline must OUTLIVE the local maxUtteranceMs cap
             // (90s) plus its grace window, or deadline-exceeded races/masks the
             // local no-speech path and misclassifies the outcome.
             deadlineMs = config.asrStreamDeadlineMs + 5_000,
@@ -223,7 +223,7 @@ class AppGraph(
         SpeechBackend.YANDEX -> YandexStreamingAsr(
             apiKeyProvider = yandexApiKeyProvider,
             channel = yandexSttChannel,
-            // Same m11 rule as Sber: outlive the local utterance cap.
+            // Same rule as Sber: outlive the local utterance cap.
             deadlineMs = config.asrStreamDeadlineMs + 5_000,
         )
     }
@@ -332,7 +332,7 @@ class AppGraph(
         frames = audioPipeline.frames,
         context = appContext,
         initialReq = initialWakeRequest(),
-        // FIXPLAN C: custom keywords / extracted & user models resolve here,
+        // Custom keywords / extracted & user models resolve here,
         // off the main thread, inside the detector's build path.
         sherpaEngineBuilder = { req -> buildSherpaEngine(req) },
     )
@@ -341,14 +341,14 @@ class AppGraph(
         farEndTap = if (aecMode == AecMode.SOFTWARE) ::ttsFarEndTap else null,
     )
 
-    // Phase 5 (M6): assistant TTS ducks external players; spoken progress
+    // Assistant TTS ducks external players; spoken progress
     // phrases («Секунду…») reuse the same serialized player.
     val audioFocus = com.jarvis.assistant.audio.AssistantAudioFocus(
         com.jarvis.assistant.audio.AndroidAudioFocusAdapter(appContext),
     )
 
     /**
-     * Y6: the TTS voice resolved LIVE from prefs (Settings «Голос» card),
+     * The TTS voice resolved LIVE from prefs (Settings «Голос» card),
      * falling back to the config default when the pref is blank. Read per
      * sentence by the turn lane and per phrase by [speechFeedback], so a
      * Settings change applies with no service restart.
@@ -381,7 +381,7 @@ class AppGraph(
     )
 
     /**
-     * P2-A (decision #10): the graph-owned alarm scheduler, installed into
+     * The graph-owned alarm scheduler, installed into
      * [com.jarvis.assistant.tools.AlarmSchedulerProvider] AT CONSTRUCTION so
      * the voice lane ([functionRouter]) and the UI/ringing lanes share the
      * SAME instance — one armer, hence ONE [com.jarvis.assistant.tools.OneShotGate]
@@ -395,7 +395,7 @@ class AppGraph(
     ).also { com.jarvis.assistant.tools.AlarmSchedulerProvider.install(it) }
 
     /**
-     * P3.1/P3.3: the graph-owned ring coordinator, installed into
+     * The graph-owned ring coordinator, installed into
      * [com.jarvis.assistant.tools.RingCoordinatorProvider] at construction
      * (same rule as [alarmScheduler]). The receiver, the ringing activity and
      * the cancel/delete tools all resolve THIS instance, so the durable
@@ -411,13 +411,13 @@ class AppGraph(
         appContext,
         httpClient,
         speechFeedback,
-        // A4: tool errors are spoken — resolve them from the device locale.
+        // Tool errors are spoken — resolve them from the device locale.
         toolStrings = com.jarvis.assistant.tools.AndroidToolStrings(appContext),
-        // A6: weather geocoding answers in the device language.
+        // Weather geocoding answers in the device language.
         weatherLanguageTag = java.util.Locale.getDefault().language.ifBlank { "ru" },
         // DI fix: ONE alarm scheduler, wired here through the graph (the
         // router no longer reaches AppDatabase.getInstance directly) — and
-        // P2-A shared with the provider (see [alarmScheduler]).
+        // Shared with the provider (see [alarmScheduler]).
         alarmScheduler = alarmScheduler,
         // 0.7: ONE AppPrefs instance graph-wide (the router built its own).
         appPrefs = appPrefs,
@@ -434,9 +434,9 @@ class AppGraph(
         ),
         // Weather: Open-Meteo URLs + GPS timing live in the config, not the tool.
         config = config,
-        // COGNITIVE_PLAN 1.5: remember_fact / recall_facts / forget_fact.
+        // remember_fact / recall_facts / forget_fact.
         cognitiveTools = { cognitiveCoordinator.tools() },
-        // COGNITIVE_PLAN 2.1: command telemetry — every tool execution writes
+        // Command telemetry — every tool execution writes
         // one command_events row (slot fingerprint only, no utterances).
         executionObserver = { call, result, latencyMs ->
             cognitiveCoordinator.observeCommandExecution(
@@ -449,14 +449,14 @@ class AppGraph(
     )
 
     /**
-     * COGNITIVE_PLAN 0.7/1.2: reactive settings. Every wake-word, voice-stop
+     * Reactive settings. Every wake-word, voice-stop
      * and follow-up pref as a StateFlow; the CognitiveCoordinator's switches
      * are consumed from here, never re-snapshotted at graph build time.
      */
     val prefsFlow by lazy { com.jarvis.assistant.util.PrefsFlow(appPrefs) }
 
     /**
-     * COGNITIVE_PLAN 2.3 gate 3 bridge: the arbiter needs the session state
+     * The arbiter bridge: the arbiter needs the session state
      * machine's IDLE-ness without a coordinator→session dependency. The
      * graph owns both ends and keeps this flow in sync (collector started
      * below, right after [sessionManager] exists).
@@ -464,8 +464,8 @@ class AppGraph(
     private val sessionIdleFlow = kotlinx.coroutines.flow.MutableStateFlow(true)
 
     /**
-     * COGNITIVE_PLAN 1.2: the Cognitive Core. Lazy so graph construction
-     * stays off the cognitive path (startup budget §9.4 ≤ 30 ms); the daos
+     * The Cognitive Core. Lazy so graph construction
+     * stays off the cognitive path (startup budget ≤ 30 ms); the daos
      * trigger the v3→v4 migration on first touch, off the hot path.
      */
     val cognitiveCoordinator: com.jarvis.assistant.cognitive.CognitiveCoordinator by lazy {
@@ -481,12 +481,12 @@ class AppGraph(
                 autoExtractEnabled = prefsFlow.memoryAutoExtract,
                 cloudEnabled = prefsFlow.memoryCloudEnabled,
                 sensitiveVisible = prefsFlow.memorySensitiveVisible,
-                // ---- COGNITIVE_PLAN Phase 2 (§8): behaviour layer ----
+                // ---- Behaviour layer ----
                 eventDao = database.commandEventDao(),
                 ruleDao = database.habitRuleDao(),
                 behaviorLogDao = database.behaviorLogDao(),
                 summaryDao = database.sessionSummaryDao(),
-                // ---- COGNITIVE_PLAN Phase 3 (§11): semantic recall ----
+                // ---- Semantic recall ----
                 vectorDao = database.factVectorDao(),
                 entityDao = database.entityDao(),
                 embedderChoice = prefsFlow.memoryEmbedder,
@@ -496,7 +496,7 @@ class AppGraph(
                     postJson = com.jarvis.assistant.cognitive.embed.GigaChatEmbedder
                         .gigaChatHttpTransport(httpClient) { tokenManager.getGigaChatToken() },
                 ),
-                // §12.4-1: default OFF; the Settings card flips the pref and the
+                // Default OFF; the Settings card flips the pref and the
                 // flow pushes it here live (no restart).
                 behaviorEnabled = prefsFlow.behaviorEnabled,
                 behaviorQuietStart = prefsFlow.behaviorQuietStart,
@@ -543,10 +543,10 @@ class AppGraph(
         // card updates it live through the service binder.
         followUpEnabled = appPrefs.followUpEnabled,
         followUpWindowMs = appPrefs.followUpWindowMs,
-        // FIXPLAN B: live voice-stop toggle (Settings card, applies from the
+        // Live voice-stop toggle (Settings card, applies from the
         // next turn).
         voiceStopEnabled = { appPrefs.voiceStopEnabled },
-        // COGNITIVE_PLAN 1.2/1.6/1.7: memory gather + ingest hooks. Lazily
+        // Memory gather + ingest hooks. Lazily
         // resolved so the session lane never forces the cognitive migration
         // at graph construction.
         cognitive = object : com.jarvis.assistant.session.CognitiveTurnHooks {
@@ -568,7 +568,7 @@ class AppGraph(
             override fun noteUserUtterance(turnId: Int, utterance: String) =
                 cognitiveCoordinator.noteUserUtterance(turnId, utterance)
         },
-        // Phase 5 (M7): pause-on-wake reuses the real tool lane — the same
+        // Pause-on-wake reuses the real tool lane — the same
         // capability-gated control path the LLM uses, incl. the media-key
         // fallback for the app that owns audio focus.
         //
@@ -600,7 +600,7 @@ class AppGraph(
     ).also { it.setOnError(onSessionError) }
 
     /**
-     * COGNITIVE_PLAN 2.3 gate 3: keep the arbiter's IDLE view in sync with
+     * Keep the arbiter's IDLE view in sync with
      * the real state machine. Started once at graph construction; the
      * collector lives on the graph scope and dies with it.
      */
@@ -613,7 +613,7 @@ class AppGraph(
     }
 
     /**
-     * m12: user mute intent. Owned by the SessionManager (so the semantics —
+     * User mute intent. Owned by the SessionManager (so the semantics —
      * stop pipeline + cancel active session + survive power-receiver restarts
      * — stay JVM-testable); exposed here as the observation point for UI.
      */
@@ -625,11 +625,11 @@ class AppGraph(
         else -> "jarvis_ru.ppn" // custom_bundled (default)
     }
 
-    /** FIXPLAN C: extracts the bundled model once for generated keyword files. */
+    /** Extracts the bundled model once for generated keyword files. */
     private val sherpaModelStore by lazy { com.jarvis.assistant.audio.SherpaModelStore(appContext) }
 
     /**
-     * FIXPLAN C: build the Sherpa engine for a request, resolving a custom
+     * Build the Sherpa engine for a request, resolving a custom
      * keyword against the bundled model. Runs OFF the main thread inside the
      * detector's build path; any failure throws → the detector surfaces
      * [com.jarvis.assistant.contracts.DetectorState.Failed] with the reason.
@@ -639,7 +639,7 @@ class AppGraph(
      *    with wake + stop phrases.
      * 2. Custom keyword → [SherpaModelStore] extraction of the bundled model,
      *    BPE-tokenize the keyword with THAT model's vocab, generate the
-     *    keywords file, build via `newFromFile` — the supported FIXPLAN C flow.
+     *    keywords file, build via `newFromFile` — the supported custom-keyword flow.
      *
      * Dormant-knob removal (settings-redesign foundation): the old "user model
      * directory" branch read `appPrefs.sherpaOnnxPath`, a pref with NO writer,
@@ -718,14 +718,14 @@ class AppGraph(
      * Sensitivity is re-read from [appPrefs] here — the `provider` snapshot is
      * sealed at construction, so the old `provider.wakeSensitivity` read made
      * the Settings sensitivity slider a live no-op (the engine rebuilt with
-     * the stale value; audit finding "slider no-op").
+     * the stale value; the "slider no-op" finding).
      */
     suspend fun reconfigureWakeWord() {
         wakeWordDetector.reconfigure(buildWakeRequest())
     }
 
     /**
-     * Y6: «Проверить голос» from the Settings card — speaks one sample
+     * «Проверить голос» from the Settings card — speaks one sample
      * sentence through the REAL synthesis + player lane, focus-bracketed
      * like a turn sentence, best-effort (a failed probe is logged, not
      * surfaced as a session error).
@@ -746,7 +746,7 @@ class AppGraph(
                     audioFocus.onTtsSentenceFinished()
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
-                // A8: cleanup, then RETHROW — swallowing cancellation here
+                // Cleanup, then RETHROW — swallowing cancellation here
                 // broke structured concurrency (the probe coroutine would
                 // keep running as if nothing happened after scope.cancel()).
                 audioFocus.onTtsFlushed()
@@ -764,22 +764,22 @@ class AppGraph(
         try {
             audioPipeline.start()
             sessionManager.startListening()
-            // COGNITIVE_PLAN 1.2: queue loop starts with the service; the
+            // Queue loop starts with the service; the
             // first lazy touch of the coordinator runs the v3→v4 migration.
             cognitiveCoordinator.startQueueLoop()
-            // COGNITIVE_PLAN 2.3: the behaviour ticker (no-op while the
-            // §12.4-1 switch is OFF).
+            // The behaviour ticker (no-op while the
+            // switch is OFF).
             cognitiveCoordinator.startBehaviorLoop()
-            // N7: purge cloud vector spaces the moment memory.cloudEnabled flips false.
+            // Purge cloud vector spaces the moment memory.cloudEnabled flips false.
             cognitiveCoordinator.startCloudPurgeWatch()
         } catch (e: Exception) {
-            shutdown() // N11: tear down anything we built before the throw
+            shutdown() // Tear down anything we built before the throw
             throw e
         }
     }
 
     fun shutdown() {
-        // N11: every teardown is best-effort so shutdown() is safe to call even
+        // Every teardown is best-effort so shutdown() is safe to call even
         // if construction/start partially failed (no resource left dangling for
         // the watchdog's next retry).
         runCatching { prefsFlow.close() } // 0.7: release the change listener
@@ -796,7 +796,7 @@ class AppGraph(
         // rebuild (provider change, watchdog restart).
         runCatching { yandexSttChannel.shutdown().awaitTermination(2, TimeUnit.SECONDS) }
         runCatching { yandexTtsChannel.shutdown().awaitTermination(2, TimeUnit.SECONDS) }
-        // C3: the gRPC channel was torn down but the OkHttp client's pooled
+        // The gRPC channel was torn down but the OkHttp client's pooled
         // connections and dispatcher threads were not — every graph rebuild
         // (provider change, watchdog restart) previously left them lingering
         // for their 60-s/5-s idle timeouts, holding sockets to LLM endpoints.

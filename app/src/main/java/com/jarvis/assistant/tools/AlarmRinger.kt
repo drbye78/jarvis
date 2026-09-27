@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
- * Pure decision core of [AlarmRinger] (REMEDIATION_PLAN P1.5): the ring-loop
+ * Pure decision core of [AlarmRinger]: the ring-loop
  * timing, auto-stop threshold and vibration pattern, extracted so the JVM
  * suite can pin them. The MediaPlayer/vibrator WIRING itself stays in
  * [AlarmRinger] and is device-only (unit tests cover the decisions, not the
@@ -61,7 +61,7 @@ object AlarmRingerPolicy {
  * Used by the full-screen ringing activity; stopped on dismiss/snooze and
  * auto-stops after a maximum duration so a missed alarm cannot ring forever.
  *
- * m13: the auto-stop watchdog is a coroutine owned by this object's scope
+ * The auto-stop watchdog is a coroutine owned by this object's scope
  * (was an unsupervised daemon Thread per ring) and MediaPlayer.prepare runs
  * on Dispatchers.IO (was the main thread). Cancelling [stop] tears both down
  * deterministically.
@@ -93,7 +93,7 @@ object AlarmRinger {
 
         autoStopJob = scope.launch {
             val prepared = try {
-                // Blocking prepare() stays off the caller thread (m13).
+                // Blocking prepare() stays off the caller thread.
                 withContext(Dispatchers.IO) { preparePlayer(appContext) }
             } catch (e: Exception) {
                 Timber.e(e, "Alarm ringer failed to start")
@@ -133,7 +133,7 @@ object AlarmRinger {
 
     private fun startVibration(appContext: Context) {
         try {
-            // Audit #12: null-safe lookup — skip vibration, keep the sound.
+            // Null-safe lookup — skip vibration, keep the sound.
             val v = appContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
             vibrator = v
             vibrating = true

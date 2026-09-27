@@ -26,7 +26,7 @@ import javax.net.ssl.X509TrustManager
  * Sber-facing HTTPS/gRPC call fails with
  * `SSLHandshakeException: Trust anchor for certification path not found`.
  *
- * ## The bundled anchors are HOST-SCOPED (audit decision #4)
+ * ## The bundled anchors are HOST-SCOPED
  *
  * [compositeTrustManager] — the one every client installs — is a
  * [SberHostScopedTrustManager] wrapper: the Минцифры fallback is reachable
@@ -251,7 +251,7 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
 
     /**
      * UNscoped composite: system CAs first, bundled Минцифры CAs as the
-     * fallback, for EVERY host. This is the pre-decision-#4 shape and is far
+     * fallback, for EVERY host. This is the earlier shape and is far
      * too permissive to install directly — it exists only as the Sber-host
      * branch inside [compositeTrustManager]. Call sites that installed this
      * globally are exactly the vulnerability the wrapper closes.
@@ -285,7 +285,7 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
      * The trust manager every Sber-facing client installs (AppGraph's shared
      * OkHttp client, the gRPC SSLContext, [withSberTrust]).
      *
-     * HOST-SCOPED (audit decision #4): the returned manager validates Sber
+     * HOST-SCOPED: the returned manager validates Sber
      * hosts against [sberCompositeTrustManager] (system first, Минцифры
      * fallback) and every other host strictly against the platform default
      * trust manager. Signature and semantics-as-a-drop-in are unchanged from
@@ -308,7 +308,7 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
 }
 
 /**
- * Host-scoped routing in front of two anchor sets (audit decision #4).
+ * Host-scoped routing in front of two anchor sets.
  *
  * Routing table for `checkServerTrusted`:
  *

@@ -47,7 +47,7 @@ class AndroidMediaGateway(
     private val listenerComponent = ComponentName(appContext, JarvisNotificationListener::class.java)
 
     /**
-     * M2: whether OUR UI is currently visible. Android 10+ silently blocks
+     * Whether OUR UI is currently visible. Android 10+ silently blocks
      * startActivity from a background app (no BAL exemption), so a "success"
      * return from the launch path is only trustworthy when we are in the
      * foreground; the orchestrator uses this flag to phrase launch outcomes
@@ -76,7 +76,7 @@ class AndroidMediaGateway(
     }.getOrDefault(false)
 
     override fun activeControllers(): List<MediaControllerHandle> = runCatching {
-        // Audit #12: null-safe lookup — "no sessions" on odd OEM ROMs.
+        // Null-safe lookup — "no sessions" on odd OEM ROMs.
         val msm = appContext.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
             ?: return@runCatching emptyList<MediaControllerHandle>()
         msm.getActiveSessions(listenerComponent).mapNotNull { fw ->
@@ -96,7 +96,7 @@ class AndroidMediaGateway(
     }
 
     override fun dispatchMediaKey(keyCode: Int) {
-        // Audit #12: null-safe lookup — log instead of crashing the fallback.
+        // Null-safe lookup — log instead of crashing the fallback.
         val am = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
             ?: run {
                 Timber.e("AudioManager unavailable — media key %d not dispatched", keyCode)
@@ -109,7 +109,7 @@ class AndroidMediaGateway(
     }
 
     override fun openAppSearch(app: MediaAppInfo, query: String): Boolean {
-        // M1: SearchLinks delegates the percent-encoding, and production
+        // SearchLinks delegates the percent-encoding, and production
         // passes Uri::encode — spaces become %20, NOT '+'. URLEncoder would
         // emit '+' (correct for form bodies, wrong in URIs: neither
         // Uri.getQueryParameter nor the https path-segment form ever decodes
@@ -130,7 +130,7 @@ class AndroidMediaGateway(
     }
 
     /**
-     * Tier 1 (S4): the pre-session Assistant protocol — resolve an activity
+     * Tier 1: the pre-session Assistant protocol — resolve an activity
      * declaring android.media.action.MEDIA_PLAY_FROM_SEARCH for the target
      * package and hand it SearchManager.QUERY + the structured slot extras.
      * Most modern players ship no such activity; the resolution failure is
@@ -208,7 +208,7 @@ class AndroidMediaGateway(
  * The compat wrapper is deliberate: framework TransportControls lacks
  * setRepeatMode/setShuffleMode/setPlaybackSpeed (compat-protocol actions
  * only — see the capability lane), and the compat mask in PlaybackState
- * carries those bits. Phase 4's rich transport extends THIS handle.
+ * carries those bits. A richer transport extends THIS handle.
  */
 internal class AndroidControllerHandle(
     private val controller: MediaControllerCompat,

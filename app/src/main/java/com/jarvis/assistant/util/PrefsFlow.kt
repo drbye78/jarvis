@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * COGNITIVE_PLAN 0.7: reactive StateFlow wrappers over [AppPrefs] for the
+ * Reactive StateFlow wrappers over [AppPrefs] for the
  * COGNITIVE switches.
  *
  * Scope note (dead-flow trim): this class ALSO used to carry the wake-word
@@ -17,8 +17,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * construction that must fire ONCE per change, and wiring a second reactive
  * collector alongside the explicit call sites would double-fire it). Those
  * dead flows were removed; this class now carries exactly the consumed set —
- * the CognitiveCoordinator's switches (Phase 1), the behaviour layer
- * (Phase 2) and the semantic-recall selector (Phase 3).
+ * the CognitiveCoordinator's switches, the behaviour layer
+ * and the semantic-recall selector.
  *
  * Every flow below emits the current value immediately and every change as
  * it happens (a [SharedPreferences.OnSharedPreferenceChangeListener]
@@ -33,7 +33,7 @@ class PrefsFlow(private val appPrefs: AppPrefs) : SharedPreferences.OnSharedPref
 
     private val prefs: SharedPreferences = appPrefs.rawPrefs()
 
-    // --- COGNITIVE_PLAN Phase 1: memory switches (§9.2/§12.4) ----------------
+    // --- Memory switches -----------------------------------------------------
     // Every switch below is user-configurable (owner sign-off) and read per
     // turn by the CognitiveCoordinator — a Settings toggle applies live, and
     // PrefsFlowTest asserts the push for each new key (the AGENTS.md rule).
@@ -50,7 +50,7 @@ class PrefsFlow(private val appPrefs: AppPrefs) : SharedPreferences.OnSharedPref
     private val _memorySensitiveVisible = MutableStateFlow(appPrefs.memorySensitiveVisible)
     val memorySensitiveVisible: StateFlow<Boolean> = _memorySensitiveVisible.asStateFlow()
 
-    // --- COGNITIVE_PLAN Phase 2: behaviour switches (§8/§12.4-1) ------------
+    // --- Behaviour switches --------------------------------------------------
 
     private val _behaviorEnabled = MutableStateFlow(appPrefs.behaviorEnabled)
     val behaviorEnabled: StateFlow<Boolean> = _behaviorEnabled.asStateFlow()
@@ -64,7 +64,7 @@ class PrefsFlow(private val appPrefs: AppPrefs) : SharedPreferences.OnSharedPref
     private val _behaviorDailyQuota = MutableStateFlow(appPrefs.behaviorDailyQuota)
     val behaviorDailyQuota: StateFlow<Int> = _behaviorDailyQuota.asStateFlow()
 
-    // --- COGNITIVE_PLAN Phase 3: semantic-recall selector (§12.4-3) --------
+    // --- Semantic-recall selector --------------------------------------------
 
     private val _memoryEmbedder = MutableStateFlow(appPrefs.memoryEmbedder)
     val memoryEmbedder: StateFlow<String> = _memoryEmbedder.asStateFlow()

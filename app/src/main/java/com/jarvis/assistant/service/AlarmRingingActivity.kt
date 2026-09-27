@@ -22,13 +22,13 @@ import timber.log.Timber
  * logged a line). Shows over the lock screen with the screen lit, loops the
  * alarm sound, vibrates, and offers Dismiss / Snooze (+10 min).
  *
- * REMEDIATION_PLAN P3.1/P3.5: this activity is now PURELY the ring UI. The
+ * This activity is now PURELY the ring UI. The
  * terminal DB transition and the ringing notification are owned by
  * [AlarmReceiver]'s ring-begin ([RingCoordinator]) — the activity used to
  * RE-POST the notification here (the duplicate) and re-run `onFired` from its
  * own ioScope, which was the "ring lost if the activity never launched" bug.
  *
- * Every action is token-guarded (P3.5): the durable ring-session token from
+ * Every action is token-guarded: the durable ring-session token from
  * the intent must match the live session, so a notification left over from an
  * earlier ring cannot dismiss/snooze a newer one. Back = dismiss — backing out
  * never strands an un-dismissable ring.

@@ -5,14 +5,14 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * COGNITIVE_PLAN §5, migration v3→v4: the durable extraction work queue.
+ * Migration v3→v4: the durable extraction work queue.
  *
  * `messageId` is the PRIMARY KEY: enqueueing is `INSERT OR IGNORE`, so work
  * is exactly-once per message even if the ingest hook fires twice (retry,
  * process death between insert and trim). Survives process death; the
  * worker polls PENDING ordered by `messageId`.
  *
- * Indices (REMEDIATION_PLAN Phase 2): `(state, messageId)` covers the hot
+ * Indices: `(state, messageId)` covers the hot
  * `pending()` scan (`WHERE state = 'PENDING' ORDER BY messageId`), and
  * `batchId` covers `releaseBatch`.
  */
@@ -33,7 +33,7 @@ data class ExtractionQueueEntity(
     @PrimaryKey val messageId: Long,
     /** 0 on first enqueue; the worker bumps before each cloud attempt. */
     val attempt: Int = 0,
-    /** PENDING → RUNNING → DONE | QUARANTINED (plan §5). */
+    /** PENDING → RUNNING → DONE | QUARANTINED. */
     val state: String = STATE_PENDING,
     /** Set while a batch's cloud call is in flight (crash diagnostics). */
     val batchId: String? = null,
@@ -46,13 +46,13 @@ data class ExtractionQueueEntity(
         const val STATE_DONE = "DONE"
         const val STATE_QUARANTINED = "QUARANTINED"
 
-        /** Attempts before a poison row is parked (plan §6.2: never blind-retried). */
+        /** Attempts before a poison row is parked (never blind-retried). */
         const val MAX_ATTEMPTS = 3
     }
 }
 
 /**
- * COGNITIVE_PLAN §5, migration v3→v4: memory subsystem bookkeeping —
+ * Migration v3→v4: memory subsystem bookkeeping —
  * schema revision, summarization cursor, backfill flag, daily counters.
  * Key/value with JSON-encoded values where structured.
  */
@@ -68,9 +68,9 @@ data class MemoryMetaEntity(
         const val KEY_DAILY_COUNTERS_JSON = "dailyCountersJson"
         const val KEY_EXTRACTION_BACKFILL_DONE = "extractionBackfillDone"
 
-        // ---- COGNITIVE_PLAN Phase 3 (semantic recall) --------------------
+        // ---- Semantic recall ----------------------------------------------
 
-        /** Engine id the on-device benchmark picked (§12.4-3 AUTO default). */
+        /** Engine id the on-device benchmark picked (the AUTO default). */
         const val KEY_EMBEDDER_WINNER = "embedderWinner"
 
         /** Engine whose vector backfill completed (vectors exist for it). */

@@ -6,6 +6,28 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — THREAT_MODEL.md
+- **A formal threat model, the audit's "biggest missing artifact".** It covers a
+  local attacker (filesystem / `adb` / backup / physical), a remote attacker
+  (compromised LLM endpoint, prompt injection, a malicious app, malicious tool
+  content), a privacy section listing every destination data can reach, and the
+  authorization model (implicit / spoken-confirmation / physical-interaction /
+  never-allowed). It is built from a verified inventory of the components,
+  permissions, secrets, data-at-rest, egress and input surfaces — every claim
+  carries a `file:line` anchor — and it states its accepted gaps (unencrypted
+  room DB, rooted-device attacker, provider trust) and the open items
+  (turn-granular authorization, `remember_fact` as a persistence vector, log
+  retention, the inert notification listener, DB encryption). Linked from
+  `README.md`, `ARCHITECTURE.md` and `AGENTS.md`.
+
+### Changed — documentation: historical citations become stable contracts
+- Comments and KDoc across `app/src/main` cited planning documents that no longer
+  exist in the repo (`COGNITIVE_PLAN.md` and `REMEDIATION_PLAN.md` were deleted;
+  `FIXPLAN` was never committed), so a reader could not resolve them. The
+  citations were removed and the invariant each accompanied was kept as a
+  standalone statement — **history belongs in git, contracts belong in source.**
+  No executable code changed.
+
 ### Fixed — external audit remediation (security + robustness)
 - **The watchdog alarm no longer assumes the exact-alarm permission.** The
   15-minute restart alarm picked `setExactAndAllowWhileIdle` from

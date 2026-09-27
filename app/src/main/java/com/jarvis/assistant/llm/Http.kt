@@ -10,7 +10,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * The ONE cancellable-HTTP primitive for this codebase (M5).
+ * The ONE cancellable-HTTP primitive for this codebase.
  *
  * Awaits an OkHttp [Call] without blocking a thread: the response is delivered
  * through OkHttp's async queue, and cancelling the awaiting coroutine cancels

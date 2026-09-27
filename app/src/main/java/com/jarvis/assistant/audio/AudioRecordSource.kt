@@ -13,7 +13,7 @@ import timber.log.Timber
  * On-device microphone source backed by AudioRecord.
  *
  * Captures 16 kHz / mono / 16-bit PCM in 320-sample (20 ms) frames. [read]
- * ALWAYS returns a private copy of the internal capture buffer (audit #8:
+ * ALWAYS returns a private copy of the internal capture buffer:
  * the full-frame fast path used to return the reused internal array itself —
  * safe only while every downstream consumer happened to copy; any future
  * EchoCanceller implementation that retains its input would corrupt audio).
@@ -25,14 +25,14 @@ import timber.log.Timber
  * lane (SOFTWARE cancellation happens downstream in [AudioPipeline] — a HW
  * effect on the mic would break the electrical reference's linearity).
  *
- * P1-S #4 (audit 2026-09-16): the record is published through a
+ * The record is published through a
  * reader-counted handle ([live] / [readersInFlight] / [awaitingReader]), so
  * [stop] can never release an AudioRecord that another thread is reading in
  * native code. [read] on a closed source throws
  * [IllegalStateException]("AudioRecordSource not started"), which
  * [AudioPipeline] treats as a clean producer exit.
  *
- * P1-S #4(d) test seam: the live capture session is expressed as a
+ * Test seam: the live capture session is expressed as a
  * [CaptureHandle] built by an injected factory. Production uses
  * [androidHandleFactory] (real AudioRecord + optional HW AEC); JVM tests
  * inject a fake whose read() parks like the blocking native call, so the
@@ -52,7 +52,7 @@ class AudioRecordSource internal constructor(
 
     companion object {
         /**
-         * Pure decision (m5): fail fast when the framework reports a broken
+         * Pure decision: fail fast when the framework reports a broken
          * buffer size instead of accepting a source that can never deliver
          * audio. JVM-testable without the framework call itself.
          */
@@ -68,7 +68,7 @@ class AudioRecordSource internal constructor(
         /**
          * Production handle factory. The framework call that can never yield a
          * usable buffer is evaluated HERE — at source construction — so the
-         * m5 fail-fast timing of the old eager `bufferSize` field is kept;
+         * The fail-fast timing of the old eager `bufferSize` field is kept;
          * the returned closure only touches the framework again when a real
          * capture session is opened by [AudioRecordSource.start].
          */
@@ -115,7 +115,7 @@ class AudioRecordSource internal constructor(
     }
 
     /**
-     * P1-S #4 (audit 2026-09-16): one live capture session plus the effect
+     * One live capture session plus the effect
      * attached to it, behind the [CaptureHandle] seam. Bundled so a deferred
      * teardown can never release the WRONG record: a reader that is still
      * inside native `read()` when [stop] runs must release exactly the handle
@@ -249,7 +249,7 @@ class AudioRecordSource internal constructor(
             )
         }
         if (read == 0) return ShortArray(0)
-        // Audit #8: always hand out a private copy — never the reused internal
+        // Always hand out a private copy — never the reused internal
         // buffer — so every downstream consumer may safely retain the frame.
         return buf.copyOf(read)
     }
@@ -309,7 +309,7 @@ class AudioRecordSource internal constructor(
 
 /**
  * One live capture session (an AudioRecord + its optional hardware effect),
- * behind the P1-S #4(d) seam that lets JVM tests drive the reader-counted
+ * behind the test seam that lets JVM tests drive the reader-counted
  * teardown protocol of [AudioRecordSource] with a fake whose read() parks
  * exactly like the blocking native call.
  *

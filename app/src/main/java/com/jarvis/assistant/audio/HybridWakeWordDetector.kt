@@ -38,7 +38,7 @@ private class PorcupineWakeWordEngine(
     context: Context?,
 ) : WakeWordEngine {
     private val porcupine: Porcupine = Porcupine.Builder()
-        // Audit #30: peek() — a JVM test or a pre-init path constructing this
+        // peek() — a JVM test or a pre-init path constructing this
         // engine degrades to an empty key (Porcupine's own validation then
         // fails the build honestly) instead of crashing on a store lookup.
         .setAccessKey(CredentialsStore.peek()?.picovoiceKey.orEmpty())
@@ -75,7 +75,7 @@ private class PorcupineWakeWordEngine(
  * engines want 512-sample frames at 16 kHz, so frames are re-chunked through a
  * reusable [SampleAccumulator].
  *
- * Initialisation is ASYNC and OFF the calling thread (H1): the native engine
+ * Initialisation is ASYNC and OFF the calling thread: the native engine
  * build (especially Sherpa-ONNX, which loads a ~17 MB transducer model) used to
  * run synchronously inside the constructor and could block the main thread long
  * enough to trip an ANR on low-end devices (Kirin 710A class). The build now
@@ -86,15 +86,15 @@ private class PorcupineWakeWordEngine(
  * processed by a half-built engine.
  *
  * Fixes preserved:
- * - Silent-init-failure defect (M1): if the engine cannot initialise the
+ * - Silent-init-failure defect: if the engine cannot initialise the
  *   detector emits [Detection.DetectorError] AND flips [state] to
  *   [DetectorState.Failed] — the StateFlow is readable synchronously even though
  *   nobody has subscribed to the SharedFlow yet. SessionManager checks it in
  *   startListening.
- * - Use-after-free teardown (C3): [release] cancels the scope, joins the actor
+ * - Use-after-free teardown: [release] cancels the scope, joins the actor
  *   with a bounded wait, and only then deletes the native engine under
  *   [processMutex], so an in-flight process() can never touch a freed engine.
- * - A build cancelled by [release]/lifecycle teardown (M2): the native build
+ * - A build cancelled by [release]/lifecycle teardown: the native build
  *   runs under [NonCancellable], so a cancelled caller cannot orphan a built
  *   native engine; a published/swapped engine is dropped (released) instead of
  *   leaked when the detector is already [DetectorState.Released].
@@ -105,10 +105,10 @@ private class PorcupineWakeWordEngine(
  *   native engine build AND the detector's coroutine scope. Tests inject
  *   [Dispatchers.Unconfined] to keep the synchronous init contract asserted by
  *   the unit tests.
- * @param sherpaEngineBuilder FIXPLAN C seam: builds the Sherpa engine for a
+ * @param sherpaEngineBuilder Seam that builds the Sherpa engine for a
  *   request (custom keywords, extracted/user models). Null = the default
  *   bundled-asset engine with the request's wake+stop phrase set.
- * @param stopLaneFactory FIXPLAN B seam: builds the dedicated stop-phrase
+ * @param stopLaneFactory Seam that builds the dedicated stop-phrase
  *   engine used when the PRIMARY engine has no stop phrase (Porcupine
  *   primary). Null + no context = stop lane unsupported (silently off).
  */
@@ -144,7 +144,7 @@ class HybridWakeWordDetector(
 
     private val processMutex = Mutex()
 
-    // L4: serialize concurrent engine builds (initial build + reconfigure) so
+    // Serialize concurrent engine builds (initial build + reconfigure) so
     // native engine builds don't pile up on top of each other.
     private val reconfigureMutex = Mutex()
 
@@ -153,14 +153,14 @@ class HybridWakeWordDetector(
         const val RELEASE_ACTOR_JOIN_MS = 1_000L
 
         /**
-         * Bounded wait for [processMutex] during engine teardown (audit #1):
+         * Bounded wait for [processMutex] during engine teardown:
          * a native process() wedged past the join budget holds the mutex, and
          * an unbounded lock here would block the releasing thread forever.
          */
         const val RELEASE_ENGINE_LOCK_MS = 1_500L
     }
 
-    // @Volatile (teardown-race defense-in-depth, audit): the actor now reads
+    // @Volatile (teardown-race defense-in-depth): the actor now reads
     // these fields ONLY under [processMutex], and every writer mutates them
     // under the same mutex — but the volatile marker also makes a stray
     // unsynchronized read see a publication, never a half-constructed engine.
@@ -168,13 +168,13 @@ class HybridWakeWordDetector(
     private var actorJob: Job? = null
 
     // ------------------------------------------------------------------
-    // FIXPLAN B: dedicated stop-phrase lane (Porcupine primary).
+    // Dedicated stop-phrase lane (Porcupine primary).
     // Built ONCE on the first enable, kept alive afterwards, and only the
     // FRAME FEED is gated by [stopLaneEnabled] — a model load per turn
     // would cost seconds, while a loaded int8 KWS idles at zero CPU when
     // not fed. When the primary engine itself carries a stop phrase
     // (Sherpa primary) the lane is neither built nor fed.
-    // COGNITIVE_PLAN 0.3: the lane's lifecycle (arm → build → publish) is
+    // The lane's lifecycle (arm → build → publish) is
     // re-evaluated after every primary swap via [armStopLaneIfNeeded], so a
     // toggle or a reconfigure that races a swap can no longer strand voice
     // stop in a dead lane-less state.
@@ -182,7 +182,7 @@ class HybridWakeWordDetector(
     @Volatile private var stopLaneEnabled = false
 
     /**
-     * P1-S #6 (audit 2026-09-16): the arm guard is a check-then-SET pair
+     * The arm guard is a check-then-SET pair
      * reached from the settings pref, the state collector and the tail of
      * every swap — on different threads. A @Volatile boolean let two callers
      * both pass the check and launch two `buildStopLane()` coroutines, each
@@ -195,14 +195,14 @@ class HybridWakeWordDetector(
     /** Same @Volatile rationale as [engine] (teardown-race defense-in-depth). */
     @Volatile private var stopEngine: WakeWordEngine? = null
 
-    /** Test seam (COGNITIVE_PLAN 0.3): expose the lane for regression assertions. */
+    /** Test seam: expose the lane for regression assertions. */
     internal fun stopLaneForTest(): WakeWordEngine? = stopEngine
 
     // Live, reconfigurable request (updated by [reconfigure]).
     private var currentReq: WakeWordRequest = initialReq
 
     init {
-        // H1: do NOT build on the calling thread. Kick off the async build;
+        // Do NOT build on the calling thread. Kick off the async build;
         // the detector is observable as Bootstrapping until it completes.
         _state.value = DetectorState.Bootstrapping
         scope.launch { buildAndSwap(initialReq) }
@@ -217,7 +217,7 @@ class HybridWakeWordDetector(
      * [NonCancellable] so a cancelled caller cannot orphan a native engine).
      */
     private suspend fun buildAndSwap(req: WakeWordRequest) {
-        // M2 + L4: build under NonCancellable AND hold reconfigureMutex so two
+        // Build under NonCancellable AND hold reconfigureMutex so two
         // heavy native builds (initial vs reconfigure, or a slider drag) cannot
         // run concurrently and double the peak native RAM on a low-end device.
         val built = reconfigureMutex.withLock {
@@ -232,7 +232,7 @@ class HybridWakeWordDetector(
         }
 
         if (built == null) {
-            // M1: surface the failure readably + via the event flow — but ONLY
+            // Surface the failure readably + via the event flow — but ONLY
             // when there is no engine currently serving detections. A failed
             // reconfigure while a working engine exists must keep that engine
             // (and the actor) alive instead of going deaf.
@@ -244,7 +244,7 @@ class HybridWakeWordDetector(
                             "Sherpa model failed to load (bundled assets missing)"
                         store == null || !store.hasPicovoiceKey() ->
                             "Picovoice access key is missing (set it in Settings → Настройки)"
-                        // P0.7 (REMEDIATION_PLAN): the repo intentionally does
+                        // The repo intentionally does
                         // NOT ship jarvis_ru.ppn (RUNBOOK) — do not point the
                         // user at a bundled asset that never exists; give the
                         // actionable fix instead.
@@ -260,9 +260,9 @@ class HybridWakeWordDetector(
 
         // Swap (or drop) the engine atomically. NonCancellable so a cancelled
         // scope still releases a built-but-unpublishable engine instead of
-        // leaking it (M2).
+        // leaking it.
         //
-        // Bounded publish (audit): the processMutex acquisition here used to
+        // Bounded publish: the processMutex acquisition here used to
         // be unbounded — a native process() wedged past the release() join
         // budget keeps holding the mutex, and a Settings-driven reconfigure
         // (sensitivity drag, engine switch) then hung FOREVER. The wait now
@@ -286,7 +286,7 @@ class HybridWakeWordDetector(
                             // DEFECT 1: release the displaced engine so a reconfigure /
                             // sensitivity change never orphans a native engine.
                             runCatching { old?.release() }
-                            // FIXPLAN B stop-lane housekeeping for the NEW request:
+                            // Stop-lane housekeeping for the NEW request:
                             // - the new primary covers stop (Sherpa with stop phrase)
                             //   or stop is disabled → the dedicated lane is dead weight;
                             // - otherwise allow a fresh lazy build for the new request.
@@ -296,7 +296,7 @@ class HybridWakeWordDetector(
                                 stopEngine = null
                                 runCatching { lane.release() }
                             }
-                            // COGNITIVE_PLAN 0.3: the flag is NO LONGER reset here —
+                            // The flag is NO LONGER reset here —
                             // a lane build genuinely in flight owns it, and the tail
                             // re-arm below re-evaluates the need after publish.
                             true
@@ -332,18 +332,18 @@ class HybridWakeWordDetector(
             actorJob = scope.launch { runActorLoop() }
         }
 
-        // COGNITIVE_PLAN 0.3: re-evaluate the stop lane after EVERY successful
+        // Re-evaluate the stop lane after EVERY successful
         // primary swap. setStopLaneEnabled(true) may have inspected the OLD
         // primary — which covered stop, or already owned a lane for the old
         // request — while this swap to a stop-less primary was in flight.
         // Without this re-arm the lane is never built and voice stop dies
-        // silently until the next state change (the re-audit's rebuild race).
+        // silently until the next state change (a rebuild race).
         if (stopLaneEnabled) armStopLaneIfNeeded()
     }
 
     /**
      * F-A: post-publish-failure handling, shared by the Released-rejection
-     * and the publish-timeout paths. Drops the unpublishable engine (M2),
+     * and the publish-timeout paths. Drops the unpublishable engine,
      * and — when a publish TIMEOUT left the detector with NO engine while
      * still [DetectorState.Bootstrapping] (the initial build) — mirrors
      * the build-failure branch: the detector used to stay deaf while
@@ -417,7 +417,7 @@ class HybridWakeWordDetector(
         reconfigure(currentReq.copy(sensitivity = value))
 
     /**
-     * FIXPLAN B: arm/disarm the stop-phrase lane live. Safe from any thread.
+     * Arm/disarm the stop-phrase lane live. Safe from any thread.
      * The first arm while the primary engine lacks a stop phrase kicks the
      * one-time async build; subsequent arms only flip the feed gate.
      */
@@ -428,7 +428,7 @@ class HybridWakeWordDetector(
     }
 
     /**
-     * COGNITIVE_PLAN 0.3: idempotent lazy-arm of the dedicated stop lane.
+     * Idempotent lazy-arm of the dedicated stop lane.
      * Runs the cheap guard checks on the CALLING thread, then kicks the heavy
      * build on the detector scope. Called from [setStopLaneEnabled] AND from
      * the tail of every successful [buildAndSwap] — the single place that
@@ -441,7 +441,7 @@ class HybridWakeWordDetector(
         if (engine?.phrases?.any { it.isStop } == true) return // primary covers it
         if (!currentReq.stopPhraseEnabled) return
         if (stopLaneFactory == null && realContext == null) return // unsupported (JVM tests)
-        // P1-S #6: claim the build atomically — the guards above narrow the
+        // Claim the build atomically — the guards above narrow the
         // window, this closes it.
         if (!stopLaneBuildInFlight.compareAndSet(false, true)) return
         scope.launch { buildStopLane() }
@@ -473,7 +473,7 @@ class HybridWakeWordDetector(
             }
         }
         withContext(NonCancellable) {
-            // Bounded publish (same audit as buildAndSwap): a wedged native
+            // Bounded publish (as in buildAndSwap): a wedged native
             // process() must not hang the lane's publish step forever. On
             // timeout the freshly built lane is dropped — voice stop stays off
             // this round; the flag reset below keeps future re-arms possible.
@@ -490,7 +490,7 @@ class HybridWakeWordDetector(
                             if (old != null && old !== built) runCatching { old.release() }
                         }
                     } else {
-                        runCatching { built?.release() } // released mid-build → drop the orphan (M2)
+                        runCatching { built?.release() } // released mid-build → drop the orphan
                     }
                     true
                 } finally {
@@ -519,7 +519,7 @@ class HybridWakeWordDetector(
      * crash by surfacing [DetectorState.Failed] + [Detection.DetectorError]
      * instead of dying or going stale-Ready.
      *
-     * FIXPLAN B: phrase-aware emission — the matched phrase's `isStop` flag
+     * Phrase-aware emission — the matched phrase's `isStop` flag
      * routes the detection to [Detection.StopPhrase] or [Detection.WakeWord]
      * — and the stop lane (Porcupine primary) is fed ONLY while enabled.
      */
@@ -601,7 +601,7 @@ class HybridWakeWordDetector(
      * (or the timeout fires) and the native engine is deleted under [processMutex]
      * before we return.
      *
-     * **Bounded on BOTH waits (audit #1).** The join budget alone was not
+     * **Bounded on BOTH waits.** The join budget alone was not
      * enough: a native `process()` wedged past it keeps holding
      * [processMutex], and an unbounded `withLock` then blocked the caller
      * forever — the very ANR the join timeout exists to prevent. The mutex
@@ -632,7 +632,7 @@ class HybridWakeWordDetector(
             val engineReleased = withTimeoutOrNull(RELEASE_ENGINE_LOCK_MS) {
                 processMutex.lock()
                 try {
-                    // C2: publish Released INSIDE the critical section. A
+                    // Publish Released INSIDE the critical section. A
                     // buildAndSwap publication also runs under this mutex and
                     // bails out when it sees Released — publishing AFTER the
                     // unlock left a window where an in-flight NonCancellable
@@ -642,7 +642,7 @@ class HybridWakeWordDetector(
                     runCatching { engine?.release() }
                         .onFailure { Timber.w(it, "Wake-word engine release() threw (ignored)") }
                     engine = null
-                    // FIXPLAN B: the stop lane is native too — same UAF rules.
+                    // The stop lane is native too — same UAF rules.
                     runCatching { stopEngine?.release() }
                         .onFailure { Timber.w(it, "Stop lane release() threw (ignored)") }
                     stopEngine = null

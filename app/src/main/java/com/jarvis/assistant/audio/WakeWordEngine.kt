@@ -7,7 +7,7 @@ package com.jarvis.assistant.audio
  * Replaces the old Porcupine-only [com.jarvis.assistant.audio.PorcupineEngine]
  * so both Picovoice Porcupine and Sherpa-ONNX KWS share one contract.
  *
- * FIXPLAN B: engines are keyword-aware. [phrases] lists the keyword phrases
+ * Engines are keyword-aware. [phrases] lists the keyword phrases
  * the engine was built with, in index order — [process] returns the matched
  * phrase's INDEX (the detector maps it to [com.jarvis.assistant.contracts.Detection.WakeWord]
  * or [com.jarvis.assistant.contracts.Detection.StopPhrase]) or -1 for "nothing".

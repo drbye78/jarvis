@@ -9,7 +9,7 @@ package com.jarvis.assistant.media
  * Structured slots flow to the player as playFromSearch extras
  * (MediaStore.EXTRA_MEDIA_FOCUS + slot extras, assembled by the adapter from
  * [toSearchCommand]); they also make verification query-aware, which is the
- * full audit-M3 fix: PLAYING is only ever spoken when the now-playing
+ * PLAYING is only ever spoken when the now-playing
  * metadata actually matches the request.
  */
 data class VoiceQuery(
@@ -121,7 +121,7 @@ data class SearchCommand(
     val isUnstructured: Boolean get() = focus == null && extras.isEmpty()
 
     /**
-     * Tier 1 (S4): extras for the legacy MEDIA_PLAY_FROM_SEARCH activity
+     * Tier 1: extras for the legacy MEDIA_PLAY_FROM_SEARCH activity
      * intent — SearchManager.QUERY (the flat text) plus the same structured
      * slot extras when present. Pure so the exact key set is JVM-tested.
      */
@@ -159,7 +159,7 @@ data class SearchCommand(
 }
 
 /**
- * Verification scoring (audit M3, full fix).
+ * Verification scoring.
  *
  * normalize = lowercase + strip punctuation + collapse whitespace, so
  * «AC/DC», «AC-DC» and «AC DC» compare equal and punctuation-heavy player

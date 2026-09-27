@@ -9,7 +9,7 @@ import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 import kotlinx.serialization.Serializable
 
 /**
- * COGNITIVE_PLAN §10.2 + Phase 3: the retrieval-quality gate.
+ * The retrieval-quality gate.
  *
  * "50 query→expected-fact pairs; lexical baseline vs hybrid; ship vectors
  * only at ≥ 15 % recall@5 improvement; negative result documented
@@ -54,7 +54,7 @@ object EmbedderBenchmark {
         val hybridRecallAt5: Double,
         val improvement: Double,
     ) {
-        /** §10.2 ship-or-reject. */
+        /** Ship-or-reject. */
         fun ships(): Boolean =
             hybridRecallAt5 >= baselineRecallAt5 * (1.0 + IMPROVEMENT_THRESHOLD)
 

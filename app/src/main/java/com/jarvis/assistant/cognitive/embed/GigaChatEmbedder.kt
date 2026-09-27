@@ -19,8 +19,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
 /**
- * COGNITIVE_PLAN Phase 3 (§11): the GigaChat embeddings engine — the CLOUD
- * branch of the `memory.embedder` selector (§12.4-3).
+ * The GigaChat embeddings engine — the CLOUD
+ * branch of the `memory.embedder` selector.
  *
  * Endpoint: OpenAI-compatible `POST {base}/api/v1/embeddings` with the SAME
  * OAuth bearer token the chat transport uses ([TokenManager]); the model is
@@ -34,7 +34,7 @@ import java.io.IOException
  * production adapter (OkHttp + token). The seam also keeps fact VALUES out
  * of any test log — no egress happens in CI, ever.
  *
- * Privacy (§9.2 truth table): using this engine SENDS FACT VALUES AND
+ * Privacy: using this engine SENDS FACT VALUES AND
  * QUERIES to GigaChat — the Settings card discloses this before backfill
  * with this engine, and the on-device benchmark uses only STATIC SYNTHETIC
  * probe strings (never user facts), so «Проверить качество» needs no
@@ -84,12 +84,12 @@ class GigaChatEmbedder(
     }
 
     /**
-     * §12.4-3 entitlement check: a single synthetic-string probe. 4xx → the
+     * Entitlement check: a single synthetic-string probe. 4xx → the
      * account cannot use embeddings (NOT_ENTITLED); transient failures are
      * surfaced as [EmbeddingEngine.Entitlement.Transient] so the UI can say
      * "network/service problem" instead of wrongly claiming a verdict.
      *
-     * F6 (REMEDIATION_PLAN): this method's contract is "ALWAYS return a
+     * This method's contract is "ALWAYS return a
      * verdict" — it must never throw. [embed] can fail in ways that are not
      * [IOException] (a 200 reply whose body is malformed trips `require(...)`
      * → IllegalArgumentException, or a non-numeric field →

@@ -105,7 +105,7 @@ class SentenceBuffer(
 
         val remainder = sentences.last()
         // A remainder that already ends on a REAL boundary is a complete
-        // sentence. B3: testing only the CHARACTER used to re-introduce the
+        // sentence. Testing only the CHARACTER used to re-introduce the
         // abbreviation-dot flush this splitter exists to prevent — when a
         // delta ends right after "т.д." the buffer force-flushed an
         // incomplete sentence and the continuation became a separate TTS

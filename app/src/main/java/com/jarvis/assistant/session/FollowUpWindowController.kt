@@ -24,7 +24,7 @@ class FollowUpWindowController(
     /**
      * Commands the SessionManager must apply.
      *
-     * A6: each event returns ONLY the effect it can emit, typed as that
+     * Each event returns ONLY the effect it can emit, typed as that
      * variant. Every call site therefore matches exhaustively against
      * `null` — previously they took the shared `Effect?` and had to carry
      * branches for variants the event could never emit ("not emitted here").
@@ -81,7 +81,7 @@ class FollowUpWindowController(
      * deadline** — outside the window the VAD is idle (no collector running)
      * so stray true values are ignored.
      *
-     * A6: the deadline check matters because the collector polls [transition]
+     * The deadline check matters because the collector polls [transition]
      * on a delay; an onset landing in the gap between the deadline and the
      * next tick used to be accepted and started a follow-up turn after the
      * window the user actually saw had already run out. Rejecting here lets

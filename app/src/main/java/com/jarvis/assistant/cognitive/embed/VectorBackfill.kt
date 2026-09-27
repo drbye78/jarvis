@@ -11,15 +11,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * COGNITIVE_PLAN Phase 3 (§11 "v6 migration + backfill"; §12.4-4: opt-in):
- * builds one vector per ACTIVE fact in ONE engine space, chunked,
+ * Builds one vector per ACTIVE fact in ONE engine space, chunked,
  * resumable, observable.
  *
  * Opt-in semantics: nothing here runs on its own — the Settings action
  * calls the coordinator, which resolves the ACTIVE engine from the
  * selector and launches [runFor] on the cognitive scope. Cloud backfill
  * additionally requires `memory.cloudEnabled` and is preceded by a
- * privacy dialog (fact values egress to GigaChat — §9.2 truth table).
+ * privacy dialog (fact values egress to GigaChat).
  *
  * Resumability: built rows persist; a crashed/interrupted run simply
  * continues where it stopped (the missing-set is recomputed per run).

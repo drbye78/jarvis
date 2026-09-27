@@ -3,7 +3,7 @@ package com.jarvis.assistant.cognitive.embed
 import kotlin.math.sqrt
 
 /**
- * COGNITIVE_PLAN Phase 3 (§11): pure vector math for the semantic-recall
+ * Pure vector math for the semantic-recall
  * lane. Everything here is deterministic, allocation-frugal and free of
  * Android imports so it is fixture-testable on the JVM — the same
  * discipline as SearchTokenizer/FactRanker.
@@ -16,9 +16,9 @@ import kotlin.math.sqrt
  * Cosine note: every engine MUST store L2-normalized vectors
  * ([l2Normalize] is part of the engine contract, see [EmbeddingEngine]).
  * For normalized vectors cosine(a, b) == dot(a, b), so the hot loop is a
- * plain dot product — no sqrt, no division. At the plan's §12.3 bound
+ * plain dot product — no sqrt, no division. At the bounded corpus size
  * (< 10 000 facts × 256 dims) a full brute-force scan is a few
- * milliseconds — sqlite-vec stays a non-goal (§12.3).
+ * milliseconds — sqlite-vec stays a non-goal.
  */
 object VectorMath {
 

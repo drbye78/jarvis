@@ -10,7 +10,7 @@ package com.jarvis.assistant.audio.aec
  *
  * The built-in implementation is [NlmsEchoCanceller]; the interface is the
  * documented slot for a future native WebRTC-AEC3 drop-in (no Java-exposed
- * APM exists on Maven today — see PLAN-AEC-FOLLOWUP.md §0).
+ * APM exists on Maven today).
  */
 interface EchoCanceller {
 
@@ -52,7 +52,7 @@ interface EchoCanceller {
         val gateGain: Float,
         /** frameErrPower / residFloor — ≈1 means converged echo-only; ≫10 means double-talk. */
         val errorToFloor: Double?,
-        /** Far-end reference frames dropped by mixer lane overflow (audit #24). */
+        /** Far-end reference frames dropped by mixer lane overflow. */
         val droppedFarEndFrames: Long,
     )
 

@@ -1,7 +1,7 @@
 package com.jarvis.assistant.audio
 
 /**
- * M6 fix: the assistant's own TTS now requests audio focus with
+ * The assistant's own TTS now requests audio focus with
  * AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK before speaking, so compliant players
  * (Яндекс Музыка included) duck their stream for the spoken confirmation
  * instead of talking over it — the standard assistant behavior. Before this,
@@ -32,7 +32,7 @@ interface AudioFocusAdapter {
  * just lose the duck. Count underflow and double-abandon are clamped into
  * no-ops so racing sentence completions can never wedge the machine.
  *
- * B2 (thread safety): the callers run on the multi-threaded AppGraph scope
+ * Thread safety: the callers run on the multi-threaded AppGraph scope
  * (Dispatchers.IO) with up to 3 concurrent sentence coroutines (TurnRunner
  * prefetches 2, SpeechFeedback adds a third). A plain Int counter lost
  * updates on interleaved read-modify-write, which could wedge the machine

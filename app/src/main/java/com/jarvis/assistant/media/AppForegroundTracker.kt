@@ -1,7 +1,7 @@
 package com.jarvis.assistant.media
 
 /**
- * M2: process-foreground tracker for the MUSIC lane.
+ * Process-foreground tracker for the MUSIC lane.
  *
  * Android 10+ silently blocks `startActivity` from an app that has no visible
  * window and no background-activity-launch (BAL) exemption — a foreground

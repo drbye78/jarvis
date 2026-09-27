@@ -57,7 +57,7 @@ import java.util.concurrent.TimeUnit
  * first turns perform ONE `GET /models` and the rest reuse the cached result.
  * The lock is only taken on a cache miss; the hot (cached) path never locks.
  *
- * Cancellation mirrors [GigaChatNativeClient] (M4/M5): the blocking read runs
+ * Cancellation mirrors [GigaChatNativeClient]: the blocking read runs
  * in an IO child, `awaitClose` cancels the OkHttp [Call] to unblock it, and
  * [SseStream] rethrows a genuine transport failure while treating a cancelled
  * call's [IOException] as a silent exit.
@@ -93,7 +93,7 @@ class YandexAiStudioClient(
                 val httpCall = httpClient.newCall(newRequest(bodyJson, acceptEvents = true).build())
                 call = httpCall
 
-                // Cancellable open (M5): barge-in during connect/headers aborts
+                // Cancellable open: barge-in during connect/headers aborts
                 // the in-flight request instead of waiting for the timeout.
                 val response = httpCall.await()
                 try {
@@ -210,7 +210,7 @@ class YandexAiStudioClient(
         val response = try {
             call.await()
         } catch (e: CancellationException) {
-            throw e // A8: never mask shutdown/barge-in
+            throw e // Never mask shutdown/barge-in
         } catch (e: IOException) {
             // Transport/timeout → typed, content-free folder failure. The raw
             // message can embed host/port material and reaches the file log, so

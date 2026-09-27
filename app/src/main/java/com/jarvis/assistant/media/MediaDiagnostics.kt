@@ -4,7 +4,7 @@ package com.jarvis.assistant.media
  * Tier 0: capability diagnostics. Formats one logcat-readable line per media
  * session (plus MediaBrowser discovery, once that lane exists) under the
  * MusicDiag tag, so a single «Джарвис, включи музыку» attempt on the tablet
- * answers every ground-truth question no static audit can:
+ * answers every ground-truth question no static analysis can:
  *
  *  1. does the live session advertise ACTION_PLAY_FROM_SEARCH?
  *  2. repeat/shuffle bits? heart rating? queue?

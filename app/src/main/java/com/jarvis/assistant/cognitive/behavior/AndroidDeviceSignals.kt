@@ -8,7 +8,7 @@ import android.media.AudioManager
 import android.os.BatteryManager
 
 /**
- * COGNITIVE_PLAN §8.3 gates 2/4: the production [DeviceSignals] — real
+ * The production [DeviceSignals] — real
  * Android state. Every read is defensive: a failure degrades to the
  * permissive answer (not-DND, battery-OK, no-media) because the arbiter's
  * other gates (IDLE, presence, cooldowns, quotas) still hold the line.
@@ -56,7 +56,7 @@ class AndroidDeviceSignals(context: Context) : DeviceSignals {
     }
 
     companion object {
-        /** §8.3 gate 2: "battery > 15% or charging". */
+        /** Gate 2: "battery > 15% or charging". */
         const val BATTERY_FLOOR_PERCENT = 15
     }
 }

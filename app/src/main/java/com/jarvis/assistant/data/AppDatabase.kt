@@ -16,13 +16,13 @@ import com.jarvis.assistant.cognitive.data.SessionSummaryEntity
 import com.jarvis.assistant.cognitive.data.UserFactEntity
 
 /**
- * Version 2 — the single coordinated schema bump (REMEDIATION_PLAN Phase 2).
+ * Version 2 — the single coordinated schema bump.
  *
  * The pre-release v1→v7 chain was previously collapsed into version 1 with the
  * full current schema and every `Migration` constant gone. Version 2 is the
  * first *deliberate* post-collapse bump and it lands the data, cognitive and
  * alarms lane schema changes TOGETHER (indices/PKs/FKs, fact decay anchors,
- * alert clock domains + `ring_sessions`) — see REMEDIATION_PLAN §2. It is
+ * alert clock domains + `ring_sessions`). It is
  * still destructive: pre-1.0 has no backward compatibility, so installed
  * databases from any older version are wiped on first open (accepted).
  *
@@ -66,17 +66,17 @@ abstract class AppDatabase : RoomDatabase() {
     /** Unified alert store accessor; name kept for cross-lane call-site parity. */
     abstract fun alarmDao(): AlertDao
 
-    /** Durable, process-independent ring state (REMEDIATION_PLAN Phase 2). */
+    /** Durable, process-independent ring state. */
     abstract fun ringSessionDao(): RingSessionDao
 
-    /** COGNITIVE_PLAN 1.1: memory core accessors. */
+    /** Memory core accessors. */
     abstract fun userFactDao(): com.jarvis.assistant.cognitive.data.UserFactDao
 
     abstract fun extractionQueueDao(): com.jarvis.assistant.cognitive.data.ExtractionQueueDao
 
     abstract fun memoryMetaDao(): com.jarvis.assistant.cognitive.data.MemoryMetaDao
 
-    /** COGNITIVE_PLAN 2.1–2.5: behaviour-layer accessors. */
+    /** Behaviour-layer accessors. */
     abstract fun commandEventDao(): com.jarvis.assistant.cognitive.data.CommandEventDao
 
     abstract fun habitRuleDao(): com.jarvis.assistant.cognitive.data.HabitRuleDao
@@ -85,7 +85,7 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun sessionSummaryDao(): com.jarvis.assistant.cognitive.data.SessionSummaryDao
 
-    /** COGNITIVE_PLAN Phase 3: semantic-recall accessors. */
+    /** Semantic-recall accessors. */
     abstract fun factVectorDao(): com.jarvis.assistant.cognitive.data.FactVectorDao
 
     abstract fun entityDao(): com.jarvis.assistant.cognitive.data.EntityDao
@@ -108,7 +108,7 @@ abstract class AppDatabase : RoomDatabase() {
                     // unlike the deprecated no-arg overload, also covers
                     // downgrade — so the separate
                     // `fallbackToDestructiveMigrationOnDowngrade(true)` call
-                    // is gone (REMEDIATION_PLAN Phase 2).
+                    // is gone.
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }

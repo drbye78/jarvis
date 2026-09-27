@@ -18,7 +18,7 @@ import timber.log.Timber
 import kotlin.coroutines.coroutineContext
 
 /**
- * Thin seam over [android.media.AudioTrack] (m4) so the player actor is
+ * Thin seam over [android.media.AudioTrack] so the player actor is
  * JVM-testable with a fake; production code always gets
  * [AndroidAudioTrackAdapter] via the default constructor argument.
  */
@@ -102,7 +102,7 @@ class AndroidAudioTrackAdapter(spec: AudioSpec) : AudioTrackAdapter {
  * actor drops any job whose generation is stale — so flushing cancels the
  * current sentence AND every queued one.
  *
- * m4 fixes:
+ * Key behaviors:
  * - flush()/release() are routed as ACTOR COMMANDS through the same channel
  *   as playback; the hardware buffer is only ever paused/flushed/stopped by
  *   the actor thread, never cross-thread while it writes.
@@ -209,7 +209,7 @@ class StreamingAudioTrackPlayer(
         }
         currentPlay = play
         currentDone = job.done
-        // F1 (caller-cancellation propagation): `done` used to be a pure
+        // Caller-cancellation propagation: `done` used to be a pure
         // completion signal — a caller cancelling it (the session lane's
         // sentence-timeout `done.cancel()`) flipped the deferred WITHOUT
         // stopping the actual AudioTrack writes: the inner writer job kept

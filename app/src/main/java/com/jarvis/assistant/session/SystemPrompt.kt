@@ -6,7 +6,7 @@ import timber.log.Timber
 /**
  * Builds the system prompt for every LLM pass.
  *
- * COGNITIVE_PLAN §7.1: the signature now carries [PromptContext] — per-turn
+ * The signature now carries [PromptContext] — per-turn
  * context built ONCE by [TurnRunner] — so the composer can inject the
  * gathered memory block. The original [TurnRunner] carried a static Russian
  * literal; the provider was introduced so the prompt could be composed (and
@@ -34,7 +34,7 @@ interface SystemPromptProvider {
 /**
  * Shared section text + assembly. ONE assembly function is used by both the
  * baseline provider and the composer, so `memory.enabled=false` yields a
- * byte-identical prompt BY CONSTRUCTION (plan principle 6, snapshot-tested).
+ * byte-identical prompt BY CONSTRUCTION (snapshot-tested).
  */
 internal object PromptSections {
 
@@ -76,8 +76,8 @@ internal object PromptSections {
      * The one and only assembly order:
      * IDENTITY \n TIME MEMORY SUMMARY POLICIES \n TOOL_ROUTING.
      * [memoryBlock] is the rendered `<memory-context>` block + trailing
-     * blank line, or "" when disabled/empty. [summaryBlock] (COGNITIVE_PLAN
-     * 2.5) is the rendered `<summary-context>` block + trailing blank line,
+     * blank line, or "" when disabled/empty. [summaryBlock] is the rendered
+     * `<summary-context>` block + trailing blank line,
      * or "" when there are no summaries.
      */
     fun assemble(time: String, memoryBlock: String, summaryBlock: String = ""): String = buildString {
@@ -127,8 +127,7 @@ internal object PromptSections {
  * Pre-cognitive baseline prompt (time + identity + policies, no memory).
  * Kept as its own class because (a) JVM tests assert the byte-identity of
  * the disabled-composer output AGAINST this exact output, and (b) it is the
- * honest "kill switch degrades to today's behaviour" reference (plan
- * principle 6).
+ * honest "kill switch degrades to today's behaviour" reference.
  *
  * @param nowMs injectable clock; defaults to the wall clock. Re-read on
  * every [build] call so each LLM pass gets the current time.
@@ -148,7 +147,7 @@ class TimeAwareSystemPrompt(
 }
 
 /**
- * COGNITIVE_PLAN §7.1: the composed prompt — baseline sections plus the
+ * The composed prompt — baseline sections plus the
  * gathered memory and summary blocks. The sections are produced by the
  * cognitive layer through [PromptContext.memory]/[PromptContext.summary]
  * (the TurnRunner prefetches them the moment ASR finalizes, so the composer
@@ -159,7 +158,7 @@ class TimeAwareSystemPrompt(
  *
  * Failure policy: a gather error NEVER breaks the turn — the block renders
  * empty, the failure is logged (Timber, no fact content), and the
- * coordinator bumps its degraded counter (plan §7.2/§9.3 fail-quiet).
+ * coordinator bumps its degraded counter (fail-quiet).
  */
 class PromptComposer(
     private val nowMs: () -> Long = System::currentTimeMillis,
@@ -174,10 +173,10 @@ class PromptComposer(
     }
 
     /**
-     * A gather error NEVER breaks the turn (plan §7.2/§9.3 fail-quiet): the
+     * A gather error NEVER breaks the turn (fail-quiet): the
      * section renders empty, the failure is logged without fact content, and
      * the coordinator owns the degraded counter. Cancellation is always
-     * rethrown (A8 convention).
+     * rethrown.
      */
     private suspend fun renderSection(label: String, gather: suspend () -> String): String {
         val block = try {
@@ -213,7 +212,7 @@ class PromptComposer(
 
     companion object {
         /**
-         * COGNITIVE_PLAN §3/§40: the cognitive additions to the prompt — the
+         * The cognitive additions to the prompt — the
          * memory section AND the summary section COMBINED — are capped at 1200
          * chars per turn. The memory section is produced upstream with its own
          * (equal) cap, so without this guard the two could sum to ~1800 and the

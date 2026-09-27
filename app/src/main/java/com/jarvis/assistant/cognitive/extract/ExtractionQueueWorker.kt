@@ -17,11 +17,11 @@ import timber.log.Timber
 import java.io.IOException
 
 /**
- * COGNITIVE_PLAN §6.2: drains the durable extraction queue — batches up to
+ * Drains the durable extraction queue — batches up to
  * [BATCH_SIZE] PENDING messages into ONE `chatOnce` GigaChat call
  * (temperature 0), validates strictly, normalizes, writes.
  *
- * Failure model (plan §6.2/§9.3 — "queued, never dropped, never faked"):
+ * Failure model (queued, never dropped, never faked):
  * - Cloud unavailable / 429 / 5xx: rows return to PENDING (batch released),
  *   the loop backs off [CLOUD_BACKOFF_MS]; attempts persist in the rows.
  * - A row whose attempts exceed [ExtractionQueueEntity.MAX_ATTEMPTS] is
@@ -53,7 +53,7 @@ class ExtractionQueueWorker(
 
     private val writer = MemoryWriter(factDao, normalizer, inTransaction)
 
-    /** Counters flushed to memory_meta daily counters (plan principle 7). */
+    /** Counters flushed to memory_meta daily counters. */
     var extractedCount: Long = 0
         private set
     var quarantinedCount: Long = 0
@@ -63,8 +63,8 @@ class ExtractionQueueWorker(
 
     /**
      * True when the most recent batch failed on the TRANSPORT (429/5xx/IO)
-     * — the loop owner reads it to apply the 30 s cloud backoff (plan
-     * §6.2), as opposed to a successful parse with zero facts.
+     * — the loop owner reads it to apply the 30 s cloud backoff,
+     * as opposed to a successful parse with zero facts.
      */
     @Volatile
     var lastBatchTransportFailed: Boolean = false
@@ -133,7 +133,7 @@ class ExtractionQueueWorker(
                 Timber.i("Cognitive: extraction batch %s emptied by retention", batchId)
                 ExtractionBatchReport(batchId, batch.size, 0, 0, quarantined = false)
             } else {
-                // ONE cloud call for the whole batch (plan §6.2), transient-retried.
+                // ONE cloud call for the whole batch, transient-retried.
                 lastBatchTransportFailed = false
                 val response = requestCompletion(batchId, pairs)
                 if (response == null) {
@@ -143,7 +143,7 @@ class ExtractionQueueWorker(
                 }
             }
         } catch (e: CancellationException) {
-            throw e // A8: shutdown/barge-in propagates; rows are recovered at startup
+            throw e // Shutdown/barge-in propagates; rows are recovered at startup
         } catch (e: Exception) {
             // An UNEXPECTED failure (parser/serialization/DB) AFTER the claim
             // must not leave the rows RUNNING with batchId set. Mark the batch
@@ -175,7 +175,7 @@ class ExtractionQueueWorker(
             )
         }
     } catch (e: CancellationException) {
-        throw e // A8: shutdown/barge-in propagates; rows are recovered at startup
+        throw e // Shutdown/barge-in propagates; rows are recovered at startup
     } catch (e: LlmHttpException) {
         Timber.w("Cognitive: extraction batch %s failed (HTTP %d)", batchId, e.code)
         markTransportFailure(batchId)
@@ -271,7 +271,7 @@ class ExtractionQueueWorker(
     }
 
     /**
-     * COGNITIVE_PLAN 1.9: opt-in backfill — enqueue the still-retained
+     * Opt-in backfill — enqueue the still-retained
      * user messages for extraction, one-shot via the `extractionBackfillDone`
      * meta flag. Returns the number of NEWLY enqueued rows.
      */
@@ -301,13 +301,13 @@ class ExtractionQueueWorker(
     }
 
     companion object {
-        /** Plan §6.2: 3 turns per cloud call. */
+        /** 3 turns per cloud call. */
         const val BATCH_SIZE = 3
 
-        /** Plan §1.9: backfill window. */
+        /** Backfill window. */
         const val BACKFILL_LIMIT = 200
 
-        /** Plan §4: queue idle backoff after a 429/5xx/IO failure. */
+        /** Queue idle backoff after a 429/5xx/IO failure. */
         const val CLOUD_BACKOFF_MS = 30_000L
     }
 }

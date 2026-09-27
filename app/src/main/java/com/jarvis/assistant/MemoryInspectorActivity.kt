@@ -24,15 +24,15 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
- * COGNITIVE_PLAN 1.8/§4: the Memory Inspector — "transparency is a feature,
- * not a debug screen" (plan principle 7). The user can see every fact with
- * its provenance marks (§12.4-2: sensitive facts are always VISIBLE but
+ * The Memory Inspector — "transparency is a feature,
+ * not a debug screen". The user can see every fact with
+ * its provenance marks (sensitive facts are always VISIBLE but
  * MARKED), delete one item, export everything as JSON (SAF) or wipe all
  * cognitive data with a confirmation.
  *
  * «Забыть всё» wipes the cognitive tables only — `messages` are a separate,
- * pre-existing control (plan §9.2). The queue depth is shown so queued
- * offline work is visible, never invisible (plan §6.2: queued, never
+ * pre-existing control. The queue depth is shown so queued
+ * offline work is visible, never invisible (queued, never
  * dropped, never faked).
  */
 class MemoryInspectorActivity : AppCompatActivity() {
@@ -179,7 +179,7 @@ class MemoryInspectorActivity : AppCompatActivity() {
         Toast.makeText(this, R.string.memory_service_not_running, Toast.LENGTH_SHORT).show()
     }
 
-    /** §12.4-2: sensitive facts are rendered MARKED, always. */
+    /** Sensitive facts are rendered MARKED, always. */
     private fun markFor(entity: UserFactEntity): String = buildList {
         if (entity.sensitive) add(getString(R.string.memory_item_sensitive))
         if (entity.contested) add(getString(R.string.memory_item_contested))

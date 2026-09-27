@@ -4,7 +4,7 @@ import com.jarvis.assistant.cognitive.model.FactCategory
 import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 
 /**
- * COGNITIVE_PLAN Appendix A + §6.2: the extraction LLM contract — the exact
+ * The extraction LLM contract — the exact
  * system prompt (RU, temperature 0), the user-content builder for a batch,
  * and the predicate→category map with sensitive-topic patterns used by the
  * local validator. One file owns the whole contract so a model change is a
@@ -13,7 +13,7 @@ import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 object ExtractionContract {
 
     /**
-     * Appendix A, verbatim requirements: STRICT JSON only, no commentary,
+     * Verbatim requirements: STRICT JSON only, no commentary,
      * evidence must occur verbatim in the utterance, empty result is
      * `{"facts":[]}`.
      *
@@ -35,8 +35,8 @@ object ExtractionContract {
         batch.joinToString("\n") { (id, text) -> "$id: $text" }
 
     /**
-     * Predicate whitelist → category (plan §6.2: "unknown predicates →
-     * OTHER"). Keys are the exact strings the prompt advertises.
+     * Predicate whitelist → category (unknown predicates →
+     * OTHER). Keys are the exact strings the prompt advertises.
      */
     val PREDICATE_CATEGORIES: Map<String, FactCategory> = mapOf(
         "name" to FactCategory.IDENTITY,
@@ -64,7 +64,7 @@ object ExtractionContract {
     )
 
     /**
-     * Subject whitelist (audit MEDIUM): the contract advertises exactly ONE
+     * Subject whitelist: the contract advertises exactly ONE
      * subject — `"user"` (see the format line in [SYSTEM_PROMPT]). Facts about
      * other people/things are encoded the contract's way, through the RELATION
      * predicates ([PREDICATE_CATEGORIES]: spouse/child/parent/friend/
@@ -109,8 +109,8 @@ object ExtractionContract {
     }
 
     /**
-     * Sensitive-topic substrings (plan §6.2: HEALTH / politics / religion
-     * patterns mark `sensitive=true`; §12.4-2: visible-but-marked, prompt
+     * Sensitive-topic substrings (HEALTH / politics / religion
+     * patterns mark `sensitive=true`; visible-but-marked, prompt
      * injection governed by the user switch).
      */
     private val SENSITIVE_PATTERNS = listOf(
@@ -131,7 +131,7 @@ object ExtractionContract {
         return category to sensitive
     }
 
-    /** chatOnce request parameters for extraction (plan §6.2: temp 0). */
+    /** chatOnce request parameters for extraction (temp 0). */
     const val TEMPERATURE = 0.0
     const val MAX_TOKENS = 1024
 }

@@ -23,7 +23,7 @@ object JsonOut {
     }
 
     private fun primitive(v: Any?): JsonPrimitive = when (v) {
-        // D1: a null value serializes as JSON null, not the STRING
+        // A null value serializes as JSON null, not the STRING
         // "null" — {"x":"null"} mis-types the field for the LLM.
         null -> JsonNull
         is String -> JsonPrimitive(v)

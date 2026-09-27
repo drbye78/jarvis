@@ -5,14 +5,14 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * COGNITIVE_PLAN §5, migration v4→v5 (Phase 2 — temporal + behavioural).
+ * Migration v4→v5 (temporal + behavioural).
  *
  * One executed tool call. Written by the CommandEventRecorder from the
  * ToolRegistry observer — every existing and future tool gets telemetry for
  * free, with NO utterance content: only the normalized slot payload
  * ([argsFingerprint]) plus mechanics (ok/latency). This is the raw material
- * for habit mining (§8.2) and the accept-reinforcement signal (§8.2: "a
- * matching user-executed command within 10 minutes of a suggestion").
+ * for habit mining and the accept-reinforcement signal (a matching
+ * user-executed command within 10 minutes of a suggestion).
  */
 @Entity(
     tableName = "command_events",
@@ -34,7 +34,7 @@ data class CommandEventEntity(
     val argsFingerprint: String,
     val ok: Boolean,
     val latencyMs: Long,
-    /** VOICE | PROACTIVE | SCHEDULED (§8.1). Only VOICE feeds habit mining. */
+    /** VOICE | PROACTIVE | SCHEDULED. Only VOICE feeds habit mining. */
     val origin: String,
 ) {
     companion object {
@@ -45,7 +45,7 @@ data class CommandEventEntity(
 }
 
 /**
- * One mined habit candidate (§8.2). A rule says: "the user runs
+ * One mined habit candidate. A rule says: "the user runs
  * [tool] with [argsFingerprint] around [hourBucket] (2-hour buckets)".
  *
  * Lifecycle: PROBATION (mined) → ACTIVE (first successful suggestion cycle:
@@ -54,8 +54,8 @@ data class CommandEventEntity(
  * (6 lifetime rejections). Recompute (HabitDetector) never resurrects a
  * MUTED/RETIRED rule and never touches its counters.
  *
- * Schema note: the plan lists no `mutedUntil` column; the 30-day MUTED
- * unmuting needs a timestamp, so this column is an additive, documented
+ * Schema note: the 30-day MUTED unmuting needs a timestamp that the base
+ * rule columns do not carry, so `mutedUntil` is an additive, documented
  * deviation (nullable — NULL everywhere except MUTED rows).
  */
 @Entity(
@@ -97,8 +97,8 @@ data class HabitRuleEntity(
 }
 
 /**
- * Every arbiter evaluation lands here — INCLUDING refusals (§8.3: "logs
- * every decision (including refusals to speak)"). 30-day retention.
+ * Every arbiter evaluation lands here — INCLUDING refusals (every decision
+ * is logged, including refusals to speak). 30-day retention.
  * DEFERRED rows are throttled (≤1 per rule per hour) so a wall-mounted
  * device idling in front of a TV cannot flood the table.
  */
@@ -125,16 +125,15 @@ data class BehaviorLogEntity(
 }
 
 /**
- * A summary of past conversation (§2.5/§7.1): SESSION = one summarize-
+ * A summary of past conversation: SESSION = one summarize-
  * before-prune batch, DAILY = the nightly digest over the day's SESSION
  * rows. The SummarySection renders the latest DAILY plus the SESSION rows
  * that follow it, within a hard char budget.
  */
 @Entity(
     tableName = "session_summaries",
-    // Composite replaces the separate `kind` / `toAt` indices
-    // (REMEDIATION_PLAN Phase 2): every summary query is kind-scoped then
-    // ordered by toAt.
+    // Composite replaces the separate `kind` / `toAt` indices:
+    // every summary query is kind-scoped then ordered by toAt.
     indices = [Index(value = ["kind", "toAt"])],
 )
 data class SessionSummaryEntity(
@@ -147,7 +146,7 @@ data class SessionSummaryEntity(
     val toAt: Long,
     /** Russian summary text (the product language). */
     val text: String,
-    /** Cloud model that produced it (stamped per plan §10.1 re-run rule). */
+    /** Cloud model that produced it (a model change re-runs summaries). */
     val modelId: String,
     val tokensIn: Int,
     val tokensOut: Int,

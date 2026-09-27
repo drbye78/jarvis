@@ -7,7 +7,7 @@ import com.jarvis.assistant.R
  * Strings the TOOL layer returns as JSON error/details — these are read by
  * the LLM and SPOKEN to the user, so they must follow the device locale.
  *
- * Audit A4: [DeviceTools] hardcoded Russian error literals (with one English
+ * [DeviceTools] hardcoded Russian error literals (with one English
  * string in the same file), so English-locale users heard Russian errors
  * from the tool lane while the rest of the app was fully localized. Tool
  * errors now flow through this seam:
@@ -44,7 +44,7 @@ interface ToolStrings : WeatherToolMessages, GeoToolMessages {
     val openAppAttemptedDetail: String
     val weatherNotAvailable: String
 
-    // --- COGNITIVE_PLAN Phase 1 (§7.1): memory-section wrapper strings ------
+    // --- Memory-section wrapper strings --------------------------------------
     // These render INSIDE the system prompt (the <memory-context> block), so
     // they follow the ToolStrings seam for the RU/EN parity test even though
     // the assistant's brain stays Russian — the seam keeps the wrapper from
@@ -57,7 +57,7 @@ interface ToolStrings : WeatherToolMessages, GeoToolMessages {
     val memorySensitiveMark: String
     val memoryContestedNote: String
 
-    // --- COGNITIVE_PLAN Phase 1 (§6.4): memory-tool spoken outcomes ---------
+    // --- Memory-tool spoken outcomes -----------------------------------------
     fun memoryWritten(value: String): String
     fun memoryMerged(value: String): String
     fun memoryNeedsClarification(existing: String, candidate: String): String
@@ -69,8 +69,8 @@ interface ToolStrings : WeatherToolMessages, GeoToolMessages {
     fun memoryForgotten(value: String): String
     val memoryNothingToForget: String
 
-    // COGNITIVE_PLAN 2.4: proactive suggestion templates (§8.4 —
-    // deterministic, no LLM call; proposal-not-action).
+    // Proactive suggestion templates (deterministic, no LLM call;
+    // proposal-not-action).
     fun proactiveMusicSuggestion(query: String): String
     fun proactiveWeatherSuggestion(city: String): String
     fun proactiveGenericSuggestion(commandLabel: String): String

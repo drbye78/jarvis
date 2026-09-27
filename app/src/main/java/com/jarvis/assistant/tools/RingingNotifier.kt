@@ -19,7 +19,7 @@ import com.jarvis.assistant.util.NotificationIds
 import timber.log.Timber
 
 /**
- * Ring notification channel (REMEDIATION_PLAN P3.3). The old code created
+ * Ring notification channel. The old code created
  * `jarvis_alarm` inline as a bare `NotificationChannel(..., IMPORTANCE_HIGH)`
  * with NO sound/vibration attributes, so the FSI-denied / notification-only
  * path was silently mute. Channel attributes are IMMUTABLE after creation, so
@@ -62,7 +62,7 @@ object NotificationChannels {
 }
 
 /**
- * THE one ringing-notification builder (REMEDIATION_PLAN P3.3): the receiver
+ * THE one ringing-notification builder: the receiver
  * and the ringing activity used to build near-identical notifications in two
  * places (the activity's re-post was the duplicate). It carries:
  *  - `contentIntent` -> [AlarmRingingActivity];
@@ -132,7 +132,7 @@ object RingingNotifier {
         if (fullScreenAllowed) {
             builder.setFullScreenIntent(contentIntent, true)
         } else {
-            // Honest degrade (P3.4): no over-lock-screen launch. Offer the
+            // Honest degrade: no over-lock-screen launch. Offer the
             // exact settings screen that restores it instead of pretending.
             // The FSI permission only exists on API 34+.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {

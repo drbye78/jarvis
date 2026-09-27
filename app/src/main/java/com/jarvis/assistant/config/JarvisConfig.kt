@@ -7,7 +7,7 @@ package com.jarvis.assistant.config
 data class JarvisConfig(
     // Porcupine wake word
     /**
-     * REMEDIATION_PLAN P0.7: this default is a CONFIG PLACEHOLDER, not a
+     * This default is a CONFIG PLACEHOLDER, not a
      * shipped asset — the repo intentionally does NOT bundle `jarvis_ru.ppn`
      * (see RUNBOOK: .ppn keywords are user-supplied via Settings and are
      * bound to the user's Picovoice key). Building a Porcupine engine
@@ -30,7 +30,7 @@ data class JarvisConfig(
     val gigaChatMaxTokens: Int = 2048,
 
     /**
-     * G4 (dialogue audit): transient LLM failures are retried when the stream
+     * Transient LLM failures are retried when the stream
      * produced ZERO output (so no sentence can be spoken twice). Applies to
      * IOExceptions, 5xx/429 [com.jarvis.assistant.llm.LlmHttpException] and
      * zero-output timeouts. 4xx never retries.
@@ -127,7 +127,7 @@ data class JarvisConfig(
     val historyMaxMessages: Int = 20,
 
     /**
-     * COGNITIVE_PLAN 1.9: on-disk retention for the messages table. Larger
+     * On-disk retention for the messages table. Larger
      * than the LLM window — the memory core's opt-in backfill works on the
      * retained recent dialogue. Storage cost is trivial; nothing here is
      * ever auto-sent anywhere (extraction is gated + queued).
@@ -135,7 +135,7 @@ data class JarvisConfig(
     val historyRetentionMessages: Int = 200,
 
     /**
-     * COGNITIVE_PLAN §8.2: the habit-eligible tool allowlist. Read-mostly
+     * The habit-eligible tool allowlist. Read-mostly
      * and music tools only — habits for `setVolume`/`lockScreen` would be
      * noise. Everything outside this set is never mined into a rule.
      */
@@ -148,7 +148,7 @@ data class JarvisConfig(
     ),
 
     /**
-     * Y5 (dialogue audit): hard char budget for the history window. A crude
+     * Hard char budget for the history window. A crude
      * chars/4 ≈ tokens estimate — no tokenizer dependency — that keeps the
      * request inside the model context even with verbose tool results.
      * 0 disables the budget. The newest message is always kept (truncated
@@ -156,22 +156,22 @@ data class JarvisConfig(
      */
     val historyMaxChars: Int = 24_000,
 
-    // Audio pre-roll (M8): how much recent mic audio the ring buffer keeps so
+    // Audio pre-roll: how much recent mic audio the ring buffer keeps so
     // the first words are not clipped between wake word and ASR stream open.
     val preRollMs: Long = DEFAULT_PRE_ROLL_MS,
 
-    // Barge-in policy (M7): interrupting TTS playback requires a repeated wake
+    // Barge-in policy: interrupting TTS playback requires a repeated wake
     // word within [bargeInRepeatWindowMs] unless [bargeInSingleShot] is set.
     val bargeInRepeatWindowMs: Long = 1_200,
     val bargeInSingleShot: Boolean = false,
 
     // Speech gRPC endpoint (saluteChannel target for SaluteSpeech ASR + TTS).
-    // Renamed from the misleading `llmEndpoint` (audit A1): the LLM URL is
+    // Renamed from the misleading `llmEndpoint`: the LLM URL is
     // [gigaChatEndpoint] / the provider base URL — this field NEVER touched
     // the LLM lane.
     val saluteGrpcEndpoint: String = "smartspeech.sber.ru:443",
 
-    // Phase 5 (M7 mitigation): pause external music at session start for a
+    // Pause external music at session start for a
     // clean listening window. Default OFF: music stops and does NOT auto-resume —
     // the user says «продолжи» when they want it back. (AEC-aware: in SOFTWARE
     // mode the wake word can also survive music via the canceller, but the
@@ -180,7 +180,7 @@ data class JarvisConfig(
     val pauseMusicOnWake: Boolean = false,
 
     /**
-     * Voice stop (FIXPLAN B): saying «стоп» / "stop" while the assistant
+     * Voice stop: saying «стоп» / "stop" while the assistant
      * THINKS or SPEAKS cancels the active turn without the wake word.
      * Default ON; toggleable in Settings. The stop phrase is spotted by the
      * same on-device KWS engine — no network, no second model.
@@ -197,7 +197,7 @@ data class JarvisConfig(
  * User-facing provider configuration (Settings screen). Persisted in plain
  * prefs; secrets (the OpenAI-compatible API key) live in the SecretVault.
  *
- * Audit A2: the dead `wakeSensitivity` duplicate was removed — the wake
+ * The dead `wakeSensitivity` duplicate was removed — the wake
  * sensitivity slider reads/writes [com.jarvis.assistant.util.AppPrefs]
  * directly (the live source the engine reconfigure path consumes).
  */

@@ -8,7 +8,7 @@ import androidx.room.Transaction
 import androidx.room.Update
 
 /**
- * COGNITIVE_PLAN Phase 3: vector store + entity-index DAOs. Plain
+ * Vector store + entity-index DAOs. Plain
  * interfaces — JVM-testable via fakes exactly like the memory-core and
  * behaviour DAOs.
  */
@@ -31,7 +31,7 @@ interface FactVectorDao {
 
     /**
      * Engine spaces that own at least one vector. Needed to purge CLOUD
-     * vectors when `memory.cloudEnabled` flips false (REMEDIATION_PLAN N7).
+     * vectors when `memory.cloudEnabled` flips false.
      */
     @Query("SELECT DISTINCT engineId FROM fact_vectors")
     suspend fun distinctEngineIds(): List<String>

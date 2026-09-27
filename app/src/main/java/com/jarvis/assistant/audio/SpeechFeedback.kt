@@ -9,7 +9,7 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
- * M5 fix: spoken progress during the music cascade. Up to ~20 s of the
+ * Spoken progress during the music cascade. Up to ~20 s of the
  * cold-start cascade used to pass in complete silence; now the user hears
  * «Секунду…» when a long path is predicted and «Открываю плеер…» right
  * before we launch the app's UI.
@@ -25,7 +25,7 @@ interface SpeechFeedback {
     /** Called when the play cascade starts; [predictedLong] = cold start ahead. */
     fun onCascadeStarted(predictedLong: Boolean)
 
-    /** Called right before an activity-launching strategy (S3/S5/S6 territory). */
+    /** Called right before an activity-launching strategy. */
     fun onLaunchingPlayer(label: String)
 
     /** Test/production-default no-op. */
@@ -40,7 +40,7 @@ interface SpeechFeedback {
  * so a slow gRPC call cannot stall the tool call that triggered it; the
  * focus gate brackets the phrase exactly like a turn sentence.
  *
- * Y6: the voice is resolved PER PHRASE through [voiceSource] (prefs-backed)
+ * The voice is resolved PER PHRASE through [voiceSource] (prefs-backed)
  * so a Settings «Голос» change applies to the next spoken cue without a
  * service restart — same live semantics as the turn lane.
  */
@@ -74,7 +74,7 @@ class TtsSpeechFeedback(
                     focus?.onTtsSentenceFinished()
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
-                // A8 pattern (same as AppGraph.speakVoiceSample): the phrase
+                // Same pattern as AppGraph.speakVoiceSample: the phrase
                 // was killed mid-flight (barge-in flush) — cleanup, then
                 // RETHROW. Swallowing cancellation here broke structured
                 // concurrency: this child coroutine kept running after

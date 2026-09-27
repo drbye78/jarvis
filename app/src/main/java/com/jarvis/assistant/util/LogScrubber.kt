@@ -1,8 +1,8 @@
 package com.jarvis.assistant.util
 
 /**
- * Pattern-based redaction for release log files (REMEDIATION_PLAN P3.4,
- * defense-in-depth behind SpeechContentLoggingTest). App convention: any
+ * Pattern-based redaction for release log files, a defense-in-depth net
+ * behind SpeechContentLoggingTest. App convention: any
  * content-bearing material (utterances, TTS text, LLM replies, tool
  * payloads, user-set labels) is logged at DEBUG only — [SpeechContentLoggingTest]
  * is the pinned precedent. [FileLoggingTree] persists every INFO+ line to
@@ -32,8 +32,8 @@ object LogScrubber {
     const val REDACTED = "<redacted>"
 
     /**
-     * Vocabulary the codebase actually uses for content carriers (P3.4
-     * audit). Case-insensitive; separator is `:` or `=` with optional
+     * Vocabulary the codebase actually uses for content carriers.
+     * Case-insensitive; separator is `:` or `=` with optional
      * surrounding spaces.
      */
     private val CONTENT_KEY_ASSIGNMENT = Regex(

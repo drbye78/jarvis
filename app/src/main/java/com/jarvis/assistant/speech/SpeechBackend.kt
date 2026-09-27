@@ -3,7 +3,7 @@ package com.jarvis.assistant.speech
 /**
  * Which cloud speech provider serves BOTH recognition and synthesis.
  *
- * Product decision (deepwork plan §5.2): ONE backend drives ASR and TTS
+ * Product decision: ONE backend drives ASR and TTS
  * together — a mixed Sber-ASR/Yandex-TTS configuration would double the
  * credential surface for no user-visible benefit, and the Settings card
  * mirrors the existing single-choice LLM provider selector.

@@ -7,7 +7,7 @@ import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
 /**
- * COGNITIVE_PLAN §5/§6: extraction work queue + memory bookkeeping DAOs.
+ * Extraction work queue + memory bookkeeping DAOs.
  * Plain interfaces — JVM-testable via fakes (the queue worker and the
  * coordinator tests never touch a real database).
  */
@@ -47,7 +47,7 @@ interface ExtractionQueueDao {
     )
     suspend fun releaseBatch(batchId: String, now: Long)
 
-    /** «Забыть всё»: cancel queued work with the facts (plan §9.2). */
+    /** «Забыть всё»: cancel queued work with the facts. */
     @Query("DELETE FROM extraction_queue")
     suspend fun wipeAll()
 }

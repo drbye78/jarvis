@@ -363,7 +363,7 @@ class MainActivity : AppCompatActivity() {
                             updatePartial(partial)
                         }
                     }
-                    // G3: what the engine is doing while THINKING —
+                    // What the engine is doing while THINKING —
                     // «Ставлю будильник…» instead of a flat «Думаю…».
                     activityJob = launch {
                         graph.sessionManager.turnActivity.collectLatest { activity ->
@@ -522,12 +522,12 @@ class MainActivity : AppCompatActivity() {
     /** Last observed state — kept so the mute toggle can redraw the orb. */
     private var currentState: AssistantState? = null
 
-    /** G3: last observed turn activity (null = generic THINKING label). */
+    /** Last observed turn activity (null = generic THINKING label). */
     private var currentActivity: TurnActivity? = null
 
     /**
      * Transcript insert motion policy. With motion allowed the list keeps its
-     * item animator, paced with the plan's single insert token; with reduced
+     * item animator, paced with the single insert token; with reduced
      * motion the animator is dropped entirely so a new exchange appears as a
      * static end frame. Called at setup and on every live setting flip.
      */
@@ -543,7 +543,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Truthful pill (N2): the pure [StateLabel] mapping owns what is shown
+     * Truthful pill: the pure [StateLabel] mapping owns what is shown
      * (deaf / muted / activity / per-state), so every collector that calls
      * this re-renders the same way. There are deliberately no early `return`s
      * that skip writing the label — a stale pill was the original bug.

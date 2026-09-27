@@ -4,7 +4,7 @@ import androidx.annotation.StringRes
 import com.jarvis.assistant.R
 
 /**
- * Pure field validation for the Settings credential forms (U7).
+ * Pure field validation for the Settings credential forms.
  *
  * Errors used to be delivered as a Toast, which is the wrong surface for a
  * problem with a specific input: it names no field, it disappears on its own,

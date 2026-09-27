@@ -1,11 +1,11 @@
 package com.jarvis.assistant.cognitive.embed
 
 /**
- * COGNITIVE_PLAN Phase 3: the EmbeddingEngine seam (plan §11: "EmbeddingEngine
- * seam + entitlement check of the GigaChat embeddings endpoint").
+ * The EmbeddingEngine seam plus the entitlement check of the GigaChat
+ * embeddings endpoint.
  *
  * One engine is ACTIVE at a time (the user-visible `memory.embedder`
- * selector, §12.4-3). Every stored vector is stamped with [engineId]; a
+ * selector). Every stored vector is stamped with [engineId]; a
  * cosine is only ever computed inside ONE engine's space — switching the
  * selector invalidates stored vectors and the backfill rebuilds them.
  *
@@ -27,14 +27,14 @@ interface EmbeddingEngine {
     suspend fun embed(texts: List<String>): List<FloatArray>
 
     /**
-     * §12.4-3 entitlement probe. Default: the engine is always usable
+     * Entitlement probe. Default: the engine is always usable
      * (LOCAL); the cloud engine overrides with the real endpoint probe.
      */
     suspend fun checkEntitlement(): Entitlement = Entitlement.Ok
 
     enum class Kind { LOCAL, CLOUD }
 
-    /** Entitlement probe verdicts (§12.4-3). */
+    /** Entitlement probe verdicts. */
     sealed interface Entitlement {
 
         /** Endpoint works — cloud branch usable. */
@@ -47,7 +47,7 @@ interface EmbeddingEngine {
         data class Transient(val code: Int) : Entitlement
     }
 
-    /** Engine registry (the §12.4-3 selector values map onto these). */
+    /** Engine registry (the selector values map onto these). */
     companion object {
         /** On-device hashed lexical engine — always available, zero egress. */
         const val LOCAL_ID = "local-lexical-v1"
@@ -58,7 +58,7 @@ interface EmbeddingEngine {
 }
 
 /**
- * F5 (REMEDIATION_PLAN): the recorded cloud-entitlement verdict.
+ * The recorded cloud-entitlement verdict.
  *
  * The benchmark writes two stamps into `memory_meta` — `cloudEmbedEntitled`
  * (epoch ms of the last OK probe) and `cloudEmbedUnavailable` (HTTP code of the
@@ -100,7 +100,7 @@ object CloudEntitlement {
     ): Boolean = engineConstructed && entitledStamp != null && unavailableStamp == null
 }
 
-/** Selector values behind the `memory.embedder` pref (§12.4-3). */
+/** Selector values behind the `memory.embedder` pref. */
 enum class EmbedderChoice {
     /** Benchmark winner (memory_meta); CI ship verdict as fallback; else OFF. */
     AUTO,
@@ -111,7 +111,7 @@ enum class EmbedderChoice {
     /** On-device lexical engine (no egress, fits the 40 ms gather budget). */
     LOCAL,
 
-    /** No vectors at all — byte-identical to the Phase 2 read path. */
+    /** No vectors at all — byte-identical to the lexical-only read path. */
     OFF;
 
     companion object {
@@ -121,13 +121,13 @@ enum class EmbedderChoice {
 }
 
 /**
- * Pure selection logic for the `memory.embedder` selector (§12.4-3: "the
- * outcome becomes the default of a user-visible selector"). Fail-closed:
+ * Pure selection logic for the `memory.embedder` selector (the benchmark
+ * outcome becomes the default of a user-visible selector). Fail-closed:
  * every unavailable branch resolves to OFF (no vectors), never to a
  * guessed engine.
  *
  * - AUTO → the on-device benchmark winner when usable; without one the CI
- *   ship-or-reject verdict for the LOCAL branch decides (§10.2) — a REJECT
+ *   ship-or-reject verdict for the LOCAL branch decides — a REJECT
  *   keeps vectors OFF until an on-device benchmark (possibly with cloud
  *   entitlement) proves a winner;
  * - CLOUD → only with a constructed cloud engine AND a passed entitlement

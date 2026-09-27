@@ -6,7 +6,7 @@ import androidx.room.Query
 import androidx.room.Update
 
 /**
- * COGNITIVE_PLAN §5/§8: behaviour-layer DAOs (telemetry, habits, decisions,
+ * Behaviour-layer DAOs (telemetry, habits, decisions,
  * summaries). Plain interfaces — JVM-testable via fakes, exactly like the
  * memory-core DAOs (CognitiveDaos.kt).
  */
@@ -32,11 +32,11 @@ interface CommandEventDao {
     )
     suspend fun voiceOkSince(since: Long, tools: List<String>): List<CommandEventEntity>
 
-    /** Retention (§5): events older than 90 days are deleted; rules persist. */
+    /** Retention: events older than 90 days are deleted; rules persist. */
     @Query("DELETE FROM command_events WHERE at < :cutoff")
     suspend fun deleteOlderThan(cutoff: Long): Int
 
-    /** «Забыть всё» (plan §9.2): telemetry is cognitive data too — wiped. */
+    /** «Забыть всё»: telemetry is cognitive data too — wiped. */
     @Query("DELETE FROM command_events")
     suspend fun wipeAll()
 }
@@ -84,14 +84,14 @@ interface BehaviorLogDao {
     @Insert
     suspend fun insert(row: BehaviorLogEntity): Long
 
-    /** §8.3 gate 6: global daily quota — FIRED rows since start of day. */
+    /** Gate 6: global daily quota — FIRED rows since start of day. */
     @Query("SELECT COUNT(*) FROM behavior_log WHERE decision = 'FIRED' AND at >= :since")
     suspend fun firedSince(since: Long): Int
 
     @Query("SELECT * FROM behavior_log WHERE ruleId = :ruleId ORDER BY at DESC, id DESC LIMIT 1")
     suspend fun latestForRule(ruleId: Long): BehaviorLogEntity?
 
-    /** §8.2 reject detection: was a suggestion FIRED within [since]? */
+    /** Reject detection: was a suggestion FIRED within [since]? */
     @Query(
         "SELECT * FROM behavior_log WHERE decision = 'FIRED' AND at >= :since " +
             "ORDER BY at DESC, id DESC LIMIT 1"
@@ -102,7 +102,7 @@ interface BehaviorLogDao {
     @Query("SELECT COUNT(*) FROM behavior_log WHERE ruleId = :ruleId AND at >= :since")
     suspend fun countForRuleSince(ruleId: Long, since: Long): Int
 
-    /** Retention (§5): 30 days. */
+    /** Retention: 30 days. */
     @Query("DELETE FROM behavior_log WHERE at < :cutoff")
     suspend fun deleteOlderThan(cutoff: Long): Int
 
@@ -119,7 +119,7 @@ interface SessionSummaryDao {
     @Query("SELECT * FROM session_summaries WHERE kind = 'DAILY' ORDER BY toAt DESC, id DESC LIMIT 1")
     suspend fun latestDaily(): SessionSummaryEntity?
 
-    /** SESSION rows the DAILY digest does not cover yet (§7.1 SummarySection). */
+    /** SESSION rows the DAILY digest does not cover yet (SummarySection). */
     @Query(
         "SELECT * FROM session_summaries WHERE kind = 'SESSION' AND toAt > :fromAt " +
             "ORDER BY toAt ASC, id ASC"

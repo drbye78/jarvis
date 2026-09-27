@@ -1,17 +1,17 @@
 package com.jarvis.assistant.cognitive.embed
 
 /**
- * COGNITIVE_PLAN Phase 3 (§12.4-3): the on-device benchmark probe set —
+ * The on-device benchmark probe set —
  * STATIC SYNTHETIC RU retrieval probes compiled into the app.
  *
  * Why in code (not fixtures/assets): the same probe set serves the
  * Settings «Проверить качество поиска» action AND the CI eval, with zero
  * asset-audit surface and zero drift between the two runs. The probes are
  * synthetic — «пользователь»-named facts that no user ever wrote — so the
- * CLOUD branch of the benchmark sends NO user data (§9.2), which is why
+ * CLOUD branch of the benchmark sends NO user data, which is why
  * the benchmark needs no privacy dialog while vector backfill does.
  *
- * Probe design mirrors the §10.2 gate: each probe is a small memory store
+ * Probe design mirrors the retrieval gate: each probe is a small memory store
  * (target fact + realistic distractors) and a query phrased the way a user
  * actually asks — paraphrases, synonyms (начальник/руководитель), light
  * morphology, partial value mentions — plus distractors that punish a

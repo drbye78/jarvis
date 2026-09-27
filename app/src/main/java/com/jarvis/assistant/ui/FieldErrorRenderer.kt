@@ -4,7 +4,7 @@ import android.content.Context
 import com.google.android.material.textfield.TextInputLayout
 
 /**
- * Attaches [FieldValidation] errors to the offending input (U7).
+ * Attaches [FieldValidation] errors to the offending input.
  *
  * `TextInputLayout.setError` renders the message inline, under the field it
  * belongs to, keeps it until the input is corrected, and exposes it to

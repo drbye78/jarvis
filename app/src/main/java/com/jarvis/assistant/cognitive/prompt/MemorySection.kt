@@ -6,11 +6,11 @@ import com.jarvis.assistant.cognitive.recall.ScoredFact
 import com.jarvis.assistant.tools.ToolStrings
 
 /**
- * COGNITIVE_PLAN §7.1: the deterministic `MemorySection` — everything the
+ * The deterministic `MemorySection` — everything the
  * ranked facts become inside the system prompt. Pure Kotlin + the
  * ToolStrings seam, fixture-tested.
  *
- * Budget rule (plan §7.1/§12.2): the WHOLE section is ≤ [SECTION_BUDGET]
+ * Budget rule: the WHOLE section is ≤ [SECTION_BUDGET]
  * chars; the profile line ≤ [PROFILE_BUDGET]. When over budget the
  * LOWEST-RANKED bullets are dropped whole — never truncated mid-line — and
  * the output is deterministic for a given (facts, strings) pair. Snapshot
@@ -160,7 +160,7 @@ object FactPhrasing {
         return if (fact.subject == "user") body else "${fact.subject}: $body"
     }
 
-    /** Bullet with confidence + sensitivity + contest marks (plan §7.1). */
+    /** Bullet with confidence + sensitivity + contest marks. */
     fun bullet(fact: FactSnapshot, strings: ToolStrings): String {
         val marks = mutableListOf<String>()
         marks.add(
@@ -175,7 +175,7 @@ object FactPhrasing {
         return "— ${phrase(fact)} (${marks.joinToString(", ")})"
     }
 
-    /** Profile entries come only from the anchor categories (plan §7.1). */
+    /** Profile entries come only from the anchor categories. */
     fun isProfileCategory(category: FactCategory): Boolean =
         category == FactCategory.IDENTITY || category == FactCategory.RELATION
 }

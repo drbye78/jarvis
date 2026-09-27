@@ -6,20 +6,20 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * COGNITIVE_PLAN Phase 3 (§11), migration v5→v6: one stored embedding for
+ * Migration v5→v6: one stored embedding for
  * one fact, in exactly ONE engine space ([engineId]). The primary key is the
  * composite `(factId, engineId)` — a fact has at most one vector per engine,
- * and re-computing upserts over that pair (REMEDIATION_PLAN Phase 2 fixed
- * the old single-column `factId` PK, which contradicted this per-engine
- * contract and erased the previous engine's row on an engine switch).
+ * and re-computing upserts over that pair (a single-column `factId` PK would
+ * contradict this per-engine contract and erase the previous engine's row on
+ * an engine switch).
  *
  * Vectors of non-ACTIVE facts are garbage-collected by maintenance
  * (retention step), and a selector switch to another engine makes all
  * rows of the old engine dead weight that the next backfill pass replaces
  * (per-engine storage keeps the switch cheap and resumable).
  *
- * `factId` is a declared FK to `user_facts.factId` with CASCADE (D1:
- * derived children are enforced): a fact deletion drops its vectors rather
+ * `factId` is a declared FK to `user_facts.factId` with CASCADE (derived
+ * children are enforced): a fact deletion drops its vectors rather
  * than leaving orphans. The composite PK's leading column already indexes
  * the child side, and `UserFactEntity.factId` carries the unique index Room
  * requires on the parent.
@@ -59,8 +59,8 @@ data class FactVectorEntity(
 }
 
 /**
- * One named thing derived from ACTIVE RELATION facts (§11: "entity/relation
- * derivation"). «работаю у Иванова» + «начальник — Иванов» merge into one
+ * One named thing derived from ACTIVE RELATION facts. «работаю у Иванова» +
+ * «начальник — Иванов» merge into one
  * entity on the normalized name, carrying the kind for display.
  */
 @Entity(

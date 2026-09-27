@@ -1,17 +1,17 @@
 package com.jarvis.assistant.session
 
 /**
- * COGNITIVE_PLAN §7.1: everything one turn contributes to the system prompt.
+ * Everything one turn contributes to the system prompt.
  * Built ONCE per turn by [TurnRunner] (right after ASR finalizes) and reused
  * by every LLM pass inside the turn — per-pass FRESH time is preserved by
  * the composer re-rendering the clock, while the memory gather result is
  * shared (it is a point-in-time DB read; re-gathering per pass would only
- * burn the latency budget, the plan's TurnState lesson applied to context).
+ * burn the latency budget, the TurnState lesson applied to context).
  *
  * [memory] is a lazy provider so the gather can be STARTED as soon as the
- * utterance is final (before the LLM request is even built — plan §7.2:
+ * utterance is final (before the LLM request is even built:
  * "launched the moment ASR finalizes") and awaited only when the composer
- * needs it, so it overlaps the PRE-LLM prompt assembly. F11 correction: it is
+ * needs it, so it overlaps the PRE-LLM prompt assembly. It is
  * NOT hidden inside GigaChat's time-to-first-token — TTFT begins once the
  * request is on the wire, so local ranking work cannot hide there (the CPU
  * phases run on `Dispatchers.Default`). The provider
@@ -35,7 +35,7 @@ data class PromptContext(
     val memory: suspend () -> String = { "" },
 
     /**
-     * COGNITIVE_PLAN 2.5/§7.1: rendered summary block (latest DAILY + the
+     * Rendered summary block (latest DAILY + the
      * SESSION rows after it, budget-truncated by the coordinator). Same
      * contract as [memory]: idempotent, "" = skip the section.
      */
@@ -51,15 +51,15 @@ data class PromptContext(
 }
 
 /**
- * Origin of one conversational turn (COGNITIVE_PLAN §3/§8.1). PROACTIVE
+ * Origin of one conversational turn. PROACTIVE
  * turns are never ingested into memory — the assistant must not learn from
- * its own voice — and are tagged in telemetry from Phase 2.
+ * its own voice — and are tagged in telemetry.
  */
 enum class TurnOrigin { VOICE, PROACTIVE, SCHEDULED }
 
 /**
- * The cognitive turn seam as far as the session layer is concerned
- * (COGNITIVE_PLAN §6.1/§7.2): the per-turn memory read (already rendered,
+ * The cognitive turn seam as far as the session layer is concerned:
+ * the per-turn memory read (already rendered,
  * budget-enforced) and the fire-and-forget write after the user message is
  * persisted. Implemented by the CognitiveCoordinator; null = pre-cognitive
  * behaviour for tests/baseline.
@@ -69,22 +69,22 @@ interface CognitiveTurnHooks {
      * Rendered `<memory-context>` block for the turn ("" when memory is
      * off/empty/degraded). Implementations must self-bound the cost
      * (coordinator: `withTimeout(40 ms)`) and never throw except
-     * cancellation. The utterance drives the lexical union (plan §7.2).
+     * cancellation. The utterance drives the lexical union.
      */
     suspend fun gather(utterance: String?): String
 
-    /** Fire-and-forget ingest of a persisted user message (plan §6.1). */
+    /** Fire-and-forget ingest of a persisted user message. */
     fun ingest(utterance: String, messageId: Long, origin: TurnOrigin)
 
     /**
-     * COGNITIVE_PLAN 2.5/§7.1: rendered `<summary-context>` block (latest
+     * Rendered `<summary-context>` block (latest
      * DAILY digest + newer SESSION rows). Same self-bounding contract as
      * [gather]; default "" = section skipped (tests / baseline).
      */
     suspend fun gatherSummary(utterance: String?, isFollowUp: Boolean): String = ""
 
     /**
-     * COGNITIVE_PLAN 2.4: the utterance a follow-up turn started with —
+     * The utterance a follow-up turn started with —
      * the reject half of the accept/reject loop (an explicit «нет»/«не
      * надо» right after a proactive suggestion mutes the rule). Default
      * no-op for tests / pre-behaviour baseline.
@@ -92,7 +92,7 @@ interface CognitiveTurnHooks {
     fun onFollowUpUtterance(utterance: String) {}
 
     /**
-     * COGNITIVE_PLAN §6.4 (forget confirmation): the identity of the turn
+     * The identity of the turn
      * that is STARTING. Called once at the very top of
      * [TurnRunner.runTurn], before any ASR/LLM/tool work, so the coordinator
      * can bind a confirmation to TURN PROVENANCE — a candidate listing
@@ -106,7 +106,7 @@ interface CognitiveTurnHooks {
     fun noteTurnStart(turnId: Int) {}
 
     /**
-     * COGNITIVE_PLAN §6.4 (forget hardening): the FINALIZED user utterance of
+     * The FINALIZED user utterance of
      * [turnId], known only after ASR finalizes. Called once per speech-bearing
      * turn (same [turnId] passed to [noteTurnStart]) so the coordinator can
      * require a confirmation to come from an EXPLICIT AFFIRMATIVE in the

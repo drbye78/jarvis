@@ -12,7 +12,7 @@ import timber.log.Timber
  * chat-completions streaming endpoints (GigaChat included).
  *
  * Pure, JVM-testable, and deliberately defensive: a malformed chunk is
- * skipped (with a log line — audit #28), never fatal to the stream.
+ * skipped (with a log line), never fatal to the stream.
  */
 object SseParser {
 
@@ -45,7 +45,7 @@ object SseParser {
     fun isDone(data: String): Boolean = data == "[DONE]"
 
     /**
-     * SSE event assembly (spec §; audit #13): one event is a run of field
+     * SSE event assembly: one event is a run of field
      * lines terminated by a BLANK line, and all `data:` lines of one event
      * are joined with `\n`. Feeding lines one at a time returns the completed
      * payload on the terminating blank line (null otherwise); [flush] emits a
@@ -89,11 +89,11 @@ object SseParser {
         val chunk = try {
             json.parseToJsonElement(data).jsonObject
         } catch (e: Exception) {
-            // Audit #28: a silently swallowed parse failure made LLM response
+            // A silently swallowed parse failure made LLM response
             // corruption undiagnosable — log it (bounded length, never the raw
             // body: it can echo token-adjacent material to the file log).
             //
-            // Audit P1-X #1 (same rule as TokenManager.parseFailure): the
+            // Same rule as TokenManager.parseFailure: the
             // throwable is deliberately NOT passed to Timber. Serialization /
             // IllegalArgumentException messages QUOTE the offending input, and
             // FileLoggingTree persists WARN+ stack traces — LogScrubber has no

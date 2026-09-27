@@ -1,7 +1,7 @@
 package com.jarvis.assistant.ui
 
 /**
- * Edge-to-edge inset policy (REMEDIATION_PLAN Phase 8).
+ * Edge-to-edge inset policy.
  *
  * At target 36 the platform stops honouring the edge-to-edge opt-out, so
  * every screen root must pad itself by the system bars it now draws behind.

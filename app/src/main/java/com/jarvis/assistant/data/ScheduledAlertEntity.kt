@@ -5,17 +5,17 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * One row per schedulable alert — the unified alarm/timer store
- * (PLAN.md §3.3, items M9/S3). `id` is THE sole identity anchor:
+ * One row per schedulable alert — the unified alarm/timer store.
+ * `id` is THE sole identity anchor:
  *  - the AlarmManager request code, used directly as an Int (no truncation,
  *    no hashing) so request codes are unique by construction and cancel is
  *    always exact (the old scheme armed timers with requestCode = base +
  *    epoch-millis truncated to Int, which wrapped mod 2³² and collided);
  *  - the base of the ringing NOTIFICATION id, banded via
  *    [com.jarvis.assistant.util.NotificationIds.ringingId] so it can never
- *    collide with the assistant notification band 0..999 (decision #3).
+ *    collide with the assistant notification band 0..999.
  *
- * Schema v1 (audit remediation decision #2): the pre-release v1→v7 chain was
+ * Schema v1: the pre-release v1→v7 chain was
  * collapsed — this is the baseline schema and pre-existing installs are wiped
  * destructively on open, so every column below (incl. [anchorTimeMillis]) is
  * created fresh by Room rather than migrated into place.
@@ -26,7 +26,7 @@ import androidx.room.PrimaryKey
         // Boot re-arm / scheduler sweeps query by (kind, enabled) ordered by
         // trigger time; `enabled` in the middle of the old index broke the
         // ordering, so it is dropped and `(kind, triggerAtMillis)` covers the
-        // kind-scoped sweep (REMEDIATION_PLAN Phase 2).
+        // kind-scoped sweep.
         Index(
             value = ["kind", "triggerAtMillis"],
             name = "index_scheduled_alerts_kind_triggerAtMillis",
@@ -57,17 +57,17 @@ data class ScheduledAlertEntity(
     /**
      * Which AlarmManager clock space [triggerAtMillis] lives in
      * ([ClockDomain.RTC] for wall-clock alarms, [ClockDomain.ELAPSED] for
-     * timers). Phase 3 wires arming; Phase 2 only persists it.
+     * timers). The scheduler wires arming; this layer only persists it.
      */
     val clockDomain: String = ClockDomain.RTC,
     /**
      * Reboot-safe anchor for an ELAPSED-domain timer (millis since boot at
-     * arm time); 0 for RTC alarms. Phase 3 owns reconciliation.
+     * arm time); 0 for RTC alarms. The scheduler owns reconciliation.
      */
     val anchorElapsedMillis: Long = 0L,
     /**
      * The elapsed anchor that was actually armed (may differ from
-     * [anchorElapsedMillis] after snooze); 0 when unarmed/RTC. Phase 3 owns.
+     * [anchorElapsedMillis] after snooze); 0 when unarmed/RTC. The scheduler owns this.
      */
     val armedElapsedMillis: Long = 0L,
 ) {
@@ -78,8 +78,8 @@ data class ScheduledAlertEntity(
 }
 
 /**
- * Clock domains persisted on [ScheduledAlertEntity] (REMEDIATION_PLAN
- * Phase 2). Strings (not an enum) so the column stays a plain TEXT and the
+ * Clock domains persisted on [ScheduledAlertEntity]. Strings (not an enum) so
+ * the column stays a plain TEXT and the
  * values are stable across process versions; the alarms lane maps them onto
  * `AlarmManager.RTC_WAKEUP` / `AlarmManager.ELAPSED_REALTIME_WAKEUP`.
  */

@@ -22,7 +22,7 @@ import kotlinx.serialization.json.Json
  *    assistant whose ids have no tool results keeps its content with
  *    `tool_calls` cleared. Either half alone would make the chat-completions
  *    request schema-invalid (HTTP 400).
- * 4. Y5: a hard char budget ([maxChars]) bounds the window BEFORE the pair
+ * 4. A hard char budget ([maxChars]) bounds the window BEFORE the pair
  *    sanitizer runs — verbose tool results can no longer overflow the model
  *    context. Oldest messages are dropped first; the newest is always kept
  *    (truncated head+tail if it alone overflows) so the current turn never
@@ -37,15 +37,15 @@ class ConversationManager(
     /** Char budget for [getHistoryForLLM]; ~4 chars ≈ 1 token. 0 = unlimited. */
     private val maxChars: Int = 0,
     /**
-     * COGNITIVE_PLAN 1.9: on-disk retention (deleteAllExceptRecent). Larger
+     * On-disk retention (deleteAllExceptRecent). Larger
      * than the LLM window: the memory core's opt-in backfill needs recent
-     * utterances to exist in the table (plan: "backfill of last 200
+     * utterances to exist in the table ("backfill of last 200
      * messages"), while the LLM context stays bounded by [maxMessages].
      * Rows here are plain history, never auto-sent anywhere.
      */
     private val retentionMaxMessages: Int = maxMessages,
     /**
-     * COGNITIVE_PLAN 2.5: summarize-before-prune. Called with the id cutoff
+     * Summarize-before-prune. Called with the id cutoff
      * BEFORE the retention delete lands, so the cognitive core can read and
      * summarize the doomed range (its local read is fast; its cloud call is
      * fire-and-forget on the cognitive scope). The hook itself must be
@@ -60,14 +60,14 @@ class ConversationManager(
         addMessage(Message(role = role, content = content))
 
     /** Persists one message, trims retention, returns the inserted row id —
-     *  the extraction ingest hook keys work on it (plan §6.1). */
+     *  the extraction ingest hook keys work on it. */
     suspend fun addMessage(message: Message): Long {
         val id = dao.insert(message.toEntity())
         trim()
         return id
     }
 
-    /** Persists the assistant message and its tool results atomically (C2). */
+    /** Persists the assistant message and its tool results atomically. */
     suspend fun addAssistantWithToolResults(assistant: Message, results: List<Message>) {
         dao.insertAssistantWithResults(assistant.toEntity(), results.map { it.toEntity() })
         trim()
@@ -146,7 +146,7 @@ class ConversationManager(
         dao.recentDescLive(limit).map { list -> list.reversed().map { it.toMessage() } }
 
     // ------------------------------------------------------------------
-    // Y5: char-budget trim (runs BEFORE the tool-pair sanitizer)
+    // Char-budget trim (runs BEFORE the tool-pair sanitizer)
     // ------------------------------------------------------------------
 
     /**

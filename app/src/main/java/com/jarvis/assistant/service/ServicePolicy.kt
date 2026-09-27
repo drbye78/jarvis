@@ -3,7 +3,7 @@ package com.jarvis.assistant.service
 import java.util.Calendar
 
 /**
- * Pure decision logic for [JarvisForegroundService] (REMEDIATION_PLAN P1.4).
+ * Pure decision logic for [JarvisForegroundService].
  *
  * NO Android imports: every input is a plain value the service reads from
  * its Android surroundings, every output is a decision the service executes.
@@ -13,7 +13,7 @@ import java.util.Calendar
  * mute gating, Android 10 background-start activation policy, action
  * routing, maintenance timing) is unit-testable on the JVM.
  *
- * Behavior-preserving extraction (P1.4): each branch condition below was
+ * Behavior-preserving extraction: each branch condition below was
  * moved verbatim from the service; decision evaluation order matches the
  * original. The EXPLICIT_START branch of [JarvisForegroundService.onStartCommand]
  * has no conditional decision beyond the [JarvisForegroundService.everForegrounded]
@@ -65,12 +65,12 @@ object ServicePolicy {
      * `graph`/`prefs` at the same points the original branch conditions
      * read them. `graphReady` means `graph != null && initialized`.
      *
-     * P3.3 revive budget: the SERVICE owns the bookkeeping (counter
+     * Revive budget: the SERVICE owns the bookkeeping (counter
      * increments, day-key roll, last-revive timestamp — plain Android-side
      * fields recorded when a revive is actually attempted); this class only
      * evaluates it. Callers that don't track a budget can leave the revive
      * fields at their defaults (`reviveCountToday = 0`, infinite cap, no
-     * last-revive) — the decision is then identical to the pre-P3.3 gate.
+     * last-revive) — the decision is then identical to the earlier gate.
      */
     data class RunningInstanceInputs(
         val graphReady: Boolean,
@@ -84,7 +84,7 @@ object ServicePolicy {
     )
 
     // ------------------------------------------------------------------
-    // P3.3: watchdog revive budget
+    // Watchdog revive budget
     // ------------------------------------------------------------------
 
     /**
@@ -136,8 +136,8 @@ object ServicePolicy {
     }
 
     /** Watchdog tick outcome. Evaluation order: user stop FIRST (the ping
-     *  must never silently undo a user intent), then the audit #25 revive
-     *  gate (`graphReady && pipelineGivenUp && !muted`), then the P3.3
+     *  must never silently undo a user intent), then the revive gate
+     *  (`graphReady && pipelineGivenUp && !muted`), then the
      *  revive budget. A revive blocked by the budget is an honest, visible
      *  outcome — the watchdog keeps ticking and logs it (next-day reset or
      *  a manual restart recovers). */
@@ -275,13 +275,13 @@ object ServicePolicy {
         sdkInt < 33 || notificationsPermissionGranted
 
     // ------------------------------------------------------------------
-    // Cognitive maintenance timing (COGNITIVE_PLAN §9.1)
+    // Cognitive maintenance timing
     // ------------------------------------------------------------------
 
-    /** §9.1: nightly maintenance lands at ~03:30 local. */
+    /** Nightly maintenance lands at ~03:30 local. */
     const val MAINTENANCE_HOUR = 3
 
-    /** §9.1: the opportunistic trigger — last maintenance older than 20 h. */
+    /** The opportunistic trigger — last maintenance older than 20 h. */
     const val MAINTENANCE_STALE_MS = 20L * 60 * 60_000L
 
     /** Next local ~03:30 (today if still before it, tomorrow otherwise). */
@@ -311,7 +311,7 @@ object ServicePolicy {
     // ------------------------------------------------------------------
 
     /**
-     * m7: only an EXPLICIT user stop may cancel the watchdog alarm on
+     * Only an EXPLICIT user stop may cancel the watchdog alarm on
      * destroy. Any other teardown (system service-stop, Apply-restart
      * handoff) leaves the restart alarm armed so the assistant revives.
      */

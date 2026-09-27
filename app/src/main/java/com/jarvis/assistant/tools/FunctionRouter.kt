@@ -24,27 +24,27 @@ import okhttp3.OkHttpClient
 class FunctionRouter(
     context: Context,
     httpClient: OkHttpClient,
-    /** Phase 5 (M5): spoken cascade progress; null = silent cascade. */
+    /** Spoken cascade progress; null = silent cascade. */
     speechFeedback: com.jarvis.assistant.audio.SpeechFeedback? = null,
-    /** A4: tool-layer error strings (locale-aware in production). */
+    /** Tool-layer error strings (locale-aware in production). */
     toolStrings: ToolStrings = ToolStrings.Default,
-    /** A6: geocoding language — follows the device locale in production. */
+    /** Geocoding language — follows the device locale in production. */
     weatherLanguageTag: String = "ru",
     /**
-     * COGNITIVE_PLAN 0.7: ONE [AppPrefs] instance, injected from the graph —
+     * ONE [AppPrefs] instance, injected from the graph —
      * the router used to construct its own, so two instances of the same
      * prefs file lived side by side and future cognitive tools would have
      * read a different instance than the session layer.
      */
     val appPrefs: com.jarvis.assistant.util.AppPrefs,
     /**
-     * COGNITIVE_PLAN 1.5: the memory tools (remember_fact / recall_facts /
+     * The memory tools (remember_fact / recall_facts /
      * forget_fact), resolved LAZILY so registering them never forces the
      * cognitive coordinator's first DB touch at graph construction.
      */
     private val cognitiveTools: () -> List<ToolContract> = { emptyList() },
     /**
-     * COGNITIVE_PLAN 2.1: telemetry observer passed through to the
+     * Telemetry observer passed through to the
      * ToolRegistry (command_events). Null = no telemetry (tests).
      */
     private val executionObserver: (
@@ -115,7 +115,7 @@ class FunctionRouter(
         listOf(
             SetAlarmTool(
                 alarmScheduler,
-                // F6: locale-aware defaults — the values-en translations
+                // Locale-aware defaults — the values-en translations
                 // existed but were never wired (dead resources).
                 defaultLabel = { appContext.getString(com.jarvis.assistant.R.string.default_alarm_label) },
             ),
@@ -129,11 +129,11 @@ class FunctionRouter(
             WeatherTool(
                 OpenMeteoWeatherClient(
                     httpClient,
-                    // F6: condition names follow the device locale.
+                    // Condition names follow the device locale.
                     conditionFor = { code ->
                         com.jarvis.assistant.tools.weatherConditionName(appContext, code)
                     },
-                    // A6: geocoding answers in the device language; missing
+                    // Geocoding answers in the device language; missing
                     // readings render locale-aware instead of a hardcoded «н/д».
                     languageTag = weatherLanguageTag,
                     notAvailable = toolStrings.weatherNotAvailable,
@@ -179,7 +179,7 @@ class FunctionRouter(
     /**
      * The full registry = base tools + memory tools. Lazy: the cognitive
      * coordinator (and its Room v4 migration) resolves on first LLM pass
-     * or first tool call, not at graph construction (§9.4 startup budget).
+     * or first tool call, not at graph construction (startup budget).
      */
     private val toolRegistry by lazy {
         ToolRegistry(
@@ -195,7 +195,7 @@ class FunctionRouter(
     override fun setAuthorizationContext(sessionId: Int, context: TurnAuthorization?) =
         toolRegistry.setAuthorizationContext(sessionId, context)
 
-    /** Structured outcome (m1): classification via [ToolResult.isError]. */
+    /** Structured outcome: classification via [ToolResult.isError]. */
     override suspend fun executeResult(call: FunctionCall): ToolResult =
         toolRegistry.executeResult(call)
 }

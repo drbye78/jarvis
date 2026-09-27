@@ -178,8 +178,8 @@ class GeoPlaceTool(
  * attempt.
  *
  * No vehicle filtering is offered in v1: MapKit's `TransitOptions.avoid`
- * bitmask is derived from the UNVERIFIED `FilterVehicleTypes` enum mapping
- * (see MAPKIT_CONTRACT §5), so passing 0 avoids nothing and every mode is
+ * bitmask is derived from the UNVERIFIED `FilterVehicleTypes` enum mapping,
+ * so passing 0 avoids nothing and every mode is
  * reachable by simply choosing `mode` on a follow-up call.
  */
 class GeoRouteTool(

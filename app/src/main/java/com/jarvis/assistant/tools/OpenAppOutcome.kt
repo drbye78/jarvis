@@ -1,7 +1,7 @@
 package com.jarvis.assistant.tools
 
 /**
- * Pure decision core for the openApp tool's honesty contract (audit A5).
+ * Pure decision core for the openApp tool's honesty contract.
  *
  * Android 10+ silently blocks `startActivity` from a context with no visible
  * window (a foreground service is NOT an exemption) — and the call returns

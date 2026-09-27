@@ -16,7 +16,7 @@ import timber.log.Timber
 import java.util.UUID
 
 /**
- * Pure ring-session identity logic (REMEDIATION_PLAN P3.2/P3.5), extracted so
+ * Pure ring-session identity logic, extracted so
  * the JVM suite can pin capture/resume without Android. Ring state is durable
  * in `ring_sessions`, NOT a process-local field: the token minted at
  * ring-begin is the only thing a notification action / activity may act on, so
@@ -118,7 +118,7 @@ sealed interface RingBeginOutcome {
 }
 
 /**
- * Owns the ring lifecycle (REMEDIATION_PLAN P3.1/P3.3/P3.9): the RECEIVER runs
+ * Owns the ring lifecycle: the RECEIVER runs
  * [beginRing] (terminal DB transition + durable ring session + notification)
  * before anything is surfaced; the activity and notification actions call
  * [dismiss]/[snooze]; cancel tools call [endLiveRing].
@@ -214,7 +214,7 @@ class RingCoordinator(
     }
 
     /**
-     * Unconditional stop for the cancel/delete tools (P3.9): they do not carry
+     * Unconditional stop for the cancel/delete tools: they do not carry
      * a ring token, but deleting an alert must silence it. No-op when nothing
      * is live.
      */
@@ -237,7 +237,7 @@ class RingCoordinator(
  * [AlarmSchedulerProvider].
  *
  * [scope] is the receiver-driven app scope: ring-begin must outlive the
- * activity lifecycle (the whole point of P3.1), so it is NOT tied to a
+ * activity lifecycle, so it is NOT tied to a
  * BroadcastReceiver's transient scope.
  */
 object RingCoordinatorProvider {

@@ -16,7 +16,7 @@ sealed interface SessionEvent {
     data object PlaybackStarted : SessionEvent
     data object ErrorOccurred : SessionEvent
 
-    /** Explicit cancellation of everything (cancelAll) — global reset to IDLE (M6). */
+    /** Explicit cancellation of everything (cancelAll) — global reset to IDLE. */
     data object Cancelled : SessionEvent
 
     /** Follow-up window opened after a spoken turn drained (no barge-in). */
@@ -29,7 +29,7 @@ sealed interface SessionEvent {
     data object FollowUpWindowExpired : SessionEvent
 
     /**
-     * COGNITIVE_PLAN 2.4: a proactive mini-session starts speaking (from
+     * A proactive mini-session starts speaking (from
      * IDLE only — the arbiter guarantees it; the machine enforces it).
      */
     data object ProactiveSpeechStarted : SessionEvent
@@ -64,7 +64,7 @@ object SessionTransitions {
         put(AssistantState.FOLLOW_UP_WINDOW to SessionEvent.FollowUpWindowExpired, AssistantState.IDLE)
         // Safety: a straggler LlmDone while the window is open must not wedge.
         put(AssistantState.FOLLOW_UP_WINDOW to SessionEvent.LlmDone, AssistantState.FOLLOW_UP_WINDOW)
-        // COGNITIVE_PLAN 2.4: proactive mini-session — IDLE → SPEAKING
+        // Proactive mini-session — IDLE → SPEAKING
         // directly (no LISTENING/THINKING legs: there is no utterance to
         // capture and no LLM pass); the drain then lands via LlmDone → IDLE,
         // the same terminal a normal spoken turn uses.
@@ -91,7 +91,7 @@ class SessionStateMachine {
     private val _state = MutableStateFlow(AssistantState.IDLE)
     val state: StateFlow<AssistantState> = _state.asStateFlow()
 
-    // P3.2: a plain monitor, not kotlinx Mutex — [onEvent] must be callable
+    // A plain monitor, not kotlinx Mutex — [onEvent] must be callable
     // SYNCHRONOUSLY (guard + transition atomic on the caller's thread, no
     // launch hop; see SessionManager.applyMachineEvent). The critical
     // section is a pure table lookup + StateFlow set: no suspension needed,

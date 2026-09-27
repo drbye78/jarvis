@@ -32,7 +32,7 @@ import timber.log.Timber
  * - A gRPC deadline ([deadlineMs]) caps each sentence, so a hung synthesis
  *   can no longer wedge a session in SPEAKING forever.
  *
- * SAMPLE-RATE CONSTRAINT (audit fix, honest documentation): the
+ * SAMPLE-RATE CONSTRAINT (honest documentation): the
  * `SynthesisRequest` proto carries NO sample-rate field (see
  * `app/src/main/proto/synthesis.proto` — text/encoding/language/content_type/
  * voice only), so the PCM output rate is pinned by the VOICE, not the
@@ -84,7 +84,7 @@ class SaluteSpeechTts(
                     .setContentType(SynthesisRequest.ContentType.TEXT)
                     .build()
 
-                // P3.5 (fix of the documented latent race): a chunk is
+                // Fix of the documented latent race: a chunk is
                 // delivered via a spawned CHILD coroutine
                 // (`launch { send(bytes) }`, needed for backpressure from the
                 // non-suspending gRPC callback), so a synchronous `close()`
@@ -114,7 +114,7 @@ class SaluteSpeechTts(
                 val responseObserver = object : StreamObserver<SynthesisResponse> {
                     override fun onNext(value: SynthesisResponse) {
                         val bytes = value.data.toByteArray()
-                        // N5: bridge the gRPC callback (non-suspend) to the
+                        // Bridge the gRPC callback (non-suspend) to the
                         // channelFlow producer scope. send() suspends on
                         // backpressure so audio chunks are never silently dropped.
                         if (bytes.isNotEmpty()) {

@@ -35,7 +35,7 @@ object Motion {
 
     /**
      * Transcript row insert. Applied to the list's item-insert animation
-     * duration so a new exchange lands in the plan's one approved motion.
+     * duration so a new exchange lands in the one approved motion.
      */
     const val TRANSCRIPT_INSERT_MS = 180L
 

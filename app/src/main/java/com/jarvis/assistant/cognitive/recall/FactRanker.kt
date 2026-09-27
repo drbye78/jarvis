@@ -6,7 +6,7 @@ import kotlin.math.ln
 import kotlin.math.pow
 
 /**
- * COGNITIVE_PLAN §7.2: the pure ranking function for prompt injection.
+ * The pure ranking function for prompt injection.
  *
  * ```
  * score = 0.35 * confidence
@@ -16,8 +16,8 @@ import kotlin.math.pow
  *       + 0.10 * lexicalOverlap(utteranceTokens, factTokens)
  * ```
  *
- * A lexical FTS hit adds a flat [LEXICAL_HIT_BOOST] on top (plan §7.2:
- * "lexical hit ⇒ score boost 0.3") — applied by the caller that knows the
+ * A lexical FTS hit adds a flat [LEXICAL_HIT_BOOST] on top (lexical hit
+ * ⇒ score boost 0.3) — applied by the caller that knows the
  * FTS results, not by this class.
  *
  * Deterministic for a given (facts, utterance, now): ties break by
@@ -27,7 +27,7 @@ import kotlin.math.pow
 class FactRanker(private val nowMs: () -> Long = System::currentTimeMillis) {
 
     /**
-     * Top-k selection with a per-category spread (plan §7.2: max
+     * Top-k selection with a per-category spread (max
      * [maxPerCategory] from one category) so a hundred music preferences
      * cannot crowd out the user's name.
      */
@@ -56,7 +56,7 @@ class FactRanker(private val nowMs: () -> Long = System::currentTimeMillis) {
         return picked
     }
 
-    /** The plan's score for one fact against the (possibly empty) utterance. */
+    /** The score for one fact against the (possibly empty) utterance. */
     fun score(fact: FactSnapshot, utteranceTokens: Set<String>): Float {
         val recency = recencyDecay(fact.updatedAt, nowMs())
         val usage = usageTerm(fact.recallCount)
@@ -85,10 +85,10 @@ class FactRanker(private val nowMs: () -> Long = System::currentTimeMillis) {
         const val DEFAULT_LIMIT = 5
         const val MAX_PER_CATEGORY = 2
 
-        /** Flat boost added to facts that matched the FTS query (plan §7.2). */
+        /** Flat boost added to facts that matched the FTS query. */
         const val LEXICAL_HIT_BOOST = 0.3f
 
-        /** Recency half-life in days (plan §7.2: 60). */
+        /** Recency half-life in days (60). */
         private const val RECENCY_HALF_LIFE_DAYS = 60.0
         private const val DAY_MS = 86_400_000.0
 
@@ -101,7 +101,7 @@ class FactRanker(private val nowMs: () -> Long = System::currentTimeMillis) {
         private const val W_CATEGORY = 0.15f
         private const val W_OVERLAP = 0.10f
 
-        /** 0.5^(ageDays / 60) — plan §7.2. */
+        /** 0.5^(ageDays / 60). */
         fun recencyDecay(updatedAt: Long, nowMs: Long): Float {
             val ageDays = ((nowMs - updatedAt).coerceAtLeast(0)) / DAY_MS
             return 0.5.pow(ageDays / RECENCY_HALF_LIFE_DAYS).toFloat()

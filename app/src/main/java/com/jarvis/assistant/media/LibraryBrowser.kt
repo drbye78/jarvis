@@ -7,7 +7,7 @@ package com.jarvis.assistant.media
  * player's library (playlists, search results) and playing specific items
  * by mediaId.
  *
- * Extracted from [MusicPlaybackOrchestrator] (M4 decomposition).
+ * Extracted from [MusicPlaybackOrchestrator].
  */
 class LibraryBrowser(
     private val browser: MediaBrowserGateway?,

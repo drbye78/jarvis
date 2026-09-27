@@ -6,13 +6,13 @@ import com.jarvis.assistant.cognitive.model.FactStatus
 import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 
 /**
- * COGNITIVE_PLAN Phase 3 (§11: "entity/relation derivation from RELATION
- * facts + recall integration («кто мой начальник?»)"). Pure Kotlin.
+ * Entity/relation derivation from RELATION facts plus recall integration
+ * («кто мой начальник?»). Pure Kotlin.
  *
  * Two cooperating parts:
  *
- * 1. [deriveEntities] — the two-table entity model (plan §12.3: "two-table
- *    entity model suffices at this scale"): named things mentioned by
+ * 1. [deriveEntities] — the two-table entity model (sufficient at this
+ *    scale): named things mentioned by
  *    ACTIVE RELATION facts (Иванов the boss, Яндекс the employer, Маша the
  *    spouse), deduplicated on the normalized name. Derived in nightly
  *    maintenance and after backfill; stored in `entities` +
@@ -27,8 +27,8 @@ import com.jarvis.assistant.cognitive.recall.SearchTokenizer
  *    path, hence no way for derivation lag to corrupt recall.
  *
  * Honest scope: the synonym table is deliberately small and test-pinned —
- * it answers the canonical phrasings, everything else stays with the LLM
- * (the plan's "the LLM is the NLU" principle). Miss = no boost, never a
+ * it answers the canonical phrasings, everything else stays with the LLM.
+ * Miss = no boost, never a
  * wrong boost.
  */
 object EntityIndex {

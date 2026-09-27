@@ -9,14 +9,14 @@ import com.jarvis.assistant.tools.schema
 import com.jarvis.assistant.tools.string
 
 /**
- * COGNITIVE_PLAN §6.4: the LLM-callable memory tool surface. All three route
+ * The LLM-callable memory tool surface. All three route
  * through the coordinator (the single writer/reader of `user_facts`) and
  * return [MemoryOutcome] JSON — honest structured outcomes, never a bare
- * "ok". The JSON carries NO pre-rendered spoken line (P1-C): the LLM composes
+ * "ok". The JSON carries NO pre-rendered spoken line: the LLM composes
  * the reply in the conversation's language; locale-correct user-facing
  * wording, where needed, goes through [spoken] + [com.jarvis.assistant.tools.ToolStrings].
  *
- * Explicit writes bypass the extraction LLM entirely (plan §6.4): the tool
+ * Explicit writes bypass the extraction LLM entirely: the tool
  * arguments ARE the fact, so there is nothing to hallucinate.
  */
 
@@ -86,7 +86,7 @@ class RecallFactsTool(
 }
 
 /**
- * `forget_fact(query, confirmed=false)` — two-step forget (plan §6.4):
+ * `forget_fact(query, confirmed=false)` — two-step forget:
  * step 1 lists the candidates; step 2 (`confirmed=true`) marks them
  * FORGOTTEN. Confirmation is bound to TURN PROVENANCE AND AN EXPLICIT
  * AFFIRMATION in the coordinator ([CognitiveCoordinator.noteTurnStart] /
@@ -126,7 +126,7 @@ class ForgetFactTool(
     }
 }
 
-/** Bundle for the FunctionRouter registration (plan §6.4 / §11 task 1.5). */
+/** Bundle for the FunctionRouter registration. */
 class MemoryToolsFactory(
     coordinator: CognitiveCoordinator,
 ) {

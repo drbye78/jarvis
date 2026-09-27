@@ -142,7 +142,7 @@ interface MediaGateway {
     fun hasNotificationListenerAccess(): Boolean
 
     /**
-     * M2: whether OUR UI is visible right now. Android 10+ silently blocks
+     * Whether OUR UI is visible right now. Android 10+ silently blocks
      * background activity starts (a foreground service is not an exemption),
      * so launch/deep-link "success" is only believable in the foreground —
      * the orchestrator phrases launch outcomes as attempts otherwise.
@@ -163,7 +163,7 @@ interface MediaGateway {
     fun openAppSearch(app: MediaAppInfo, query: String): Boolean
 
     /**
-     * Tier 1 (S4): the pre-session legacy protocol — resolve an activity
+     * Tier 1: the pre-session legacy protocol — resolve an activity
      * handling android.media.action.MEDIA_PLAY_FROM_SEARCH and send it the
      * query (+ structured slot extras). False when the player ships no such
      * activity (the common case on modern players).

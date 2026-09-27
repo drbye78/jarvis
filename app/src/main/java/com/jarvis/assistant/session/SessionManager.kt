@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * tool loop -> per-sentence TTS w/ prefetch -> drain -> IDLE) lives in
  * [TurnRunner], which is constructed once here and reached via [startSession].
  * This class keeps the single source of truth for the state machine, the error
- * funnel ([reportFailure], M6), the live partial transcript, and mute intent,
+ * funnel ([reportFailure]), the live partial transcript, and mute intent,
  * and exposes them to [TurnRunner] through the four injected callbacks.
  *
  * Key guarantees:
@@ -50,20 +50,20 @@ import java.util.concurrent.atomic.AtomicInteger
  * - **Timeouts everywhere**: LLM total, TTS per sentence, ASR hard cap.
  * - A [sessionSeq] guard prevents a stale session's terminal transition OR
  *   late failure from clobbering the new session's state; all failures funnel
- *   through [reportFailure] (M6). cancelAll() performs an explicit guarded
- *   reset of the state machine to IDLE. REMEDIATION_PLAN P3.2: every machine
+ *   through [reportFailure]. cancelAll() performs an explicit guarded
+ *   reset of the state machine to IDLE. Every machine
  *   event applies through [applyMachineEvent] — the seq/state guard and the
  *   transition are atomic on one thread (no launch hop), so a superseded
- *   turn's late event can never interleave out of order. P1-S #1 (locked
- *   decision 1): the seq a turn is validated AGAINST travels ON the event
+ *   turn's late event can never interleave out of order. The seq a turn is
+ *   validated AGAINST travels ON the event
  *   ([TurnEvent], captured by the emitting turn — see [applyTurnEvent]), and
  *   [reportFailure]/[finish] run their side effects only once the guard has
  *   actually accepted the event.
- * - Live ASR partials are published on [partialTranscript] (S1) and the turn
+ * - Live ASR partials are published on [partialTranscript] and the turn
  *   pill on [turnActivity] — both ONLY through the id-stamped
  *   [publishPartial]/[publishActivity] guard, so a draining turn cannot rewrite
- *   the live session's transcript or label (P1-S #1, extended). Mic muting is
- *   a user intent exposed via [setMuted]/[muted] (m12).
+ *   the live session's transcript or label. Mic muting is
+ *   a user intent exposed via [setMuted]/[muted].
  */
 class SessionManager(
     private val audioPipeline: AudioPipeline,
@@ -78,32 +78,32 @@ class SessionManager(
     private val networkMonitor: OnlineChecker,
     private val config: JarvisConfig,
     private val scope: CoroutineScope,
-    /** Phase 5 (M6): duck-gate for assistant TTS; null = no ducking. */
+    /** Duck-gate for assistant TTS; null = no ducking. */
     private val focus: com.jarvis.assistant.audio.AssistantAudioFocus? = null,
     /**
-     * Phase 5 (M7 mitigation): called at session start when
+     * Called at session start when
      * [JarvisConfig.pauseMusicOnWake] is on. Best-effort pause of external
      * audio — no auto-resume (the user says «продолжи»).
      */
     private val externalMusicPauser: (suspend () -> Unit)? = null,
     /** Follow-up window: feature toggle + window length (user-controllable). */
-    // @Volatile (audit #29): written from the Settings binder thread, read by
+    // @Volatile: written from the Settings binder thread, read by
     // the session coroutine inside maybeOpenFollowUpWindow.
     @Volatile private var followUpEnabled: Boolean = false,
     followUpWindowMs: Long = FollowUpWindowController.DEFAULT_WINDOW_MS,
     /** Runtime spoken phrases (i18n); defaults to the RU literals. */
     private val phrases: SpeechPhrases = SpeechPhrases.Default,
-    /** G1: per-pass system prompt provider (time-aware in production). */
+    /** Per-pass system prompt provider (time-aware in production). */
     private val systemPrompt: SystemPromptProvider = TimeAwareSystemPrompt(),
-    /** Y6: TTS voice resolved per sentence (Settings-appliable live). */
+    /** TTS voice resolved per sentence (Settings-appliable live). */
     private val voiceSource: () -> String = { config.ttsVoice },
     /**
-     * FIXPLAN B: live voice-stop toggle (read on every state change, so a
+     * Live voice-stop toggle (read on every state change, so a
      * Settings switch applies from the next turn without a restart).
      */
     private val voiceStopEnabled: () -> Boolean = { config.voiceStopEnabled },
     /**
-     * COGNITIVE_PLAN 1.2/1.6/1.7: the cognitive turn hooks (memory gather +
+     * The cognitive turn hooks (memory gather +
      * ingest). Null = pre-cognitive behaviour (tests/baseline); the graph
      * wires the real coordinator.
      */
@@ -116,9 +116,9 @@ class SessionManager(
     private val sessionSeq = AtomicInteger(0)
 
     // ------------------------------------------------------------------
-    // REMEDIATION_PLAN P3.2: race-free machine-event application
+    // Race-free machine-event application
     //
-    // The audit flagged that terminal machine events were `scope.launch`ed
+    // Terminal machine events were previously `scope.launch`ed
     // from multiple threads (cancelAll / stopActiveTurn / closeFollowUpWindow),
     // so the ORDER in which they reached the (mutex-serialized) state machine
     // depended on dispatcher dispatch order — the sessionSeq GUARD was
@@ -157,7 +157,7 @@ class SessionManager(
      * [controlLock], so a seq bump cannot land between the guard and the apply.
      * No suspension occurs there (AGENTS.md monitor discipline).
      *
-     * P1-S #2/#3: returns whether the event ACTUALLY reached the machine.
+     * Returns whether the event ACTUALLY reached the machine.
      * The guarded terminals (`reportFailure`, `finish`) run their side
      * effects (player flush, transcript/activity clears) only on `true`, so a
      * dropped stale event can no longer clobber the live session's state.
@@ -184,7 +184,7 @@ class SessionManager(
     }
 
     /**
-     * P1-S #1 (locked decision 1): the TurnRunner → machine seam. A
+     * The TurnRunner → machine seam. A
      * [TurnEvent] carries the SEQ OF THE TURN THAT EMITTED it, so
      * [applyMachineEvent] compares the emitter's id against the CURRENT
      * session instead of comparing the current session with itself — the
@@ -200,7 +200,7 @@ class SessionManager(
         applyMachineEvent(turnEvent.event, validSeq = turnEvent.sessionSeq)
 
     /**
-     * P1-S #1 (extended): the provenance guard applied to the two SHARED UI
+     * The provenance guard applied to the two SHARED UI
      * STATE writes the turn engine owns — the live ASR partial transcript
      * ([partialTranscript]) and the activity pill ([turnActivity]). Before
      * this, both were handed to [TurnRunner] ungated, so a collector still
@@ -241,9 +241,9 @@ class SessionManager(
         }
 
     /**
-     * COGNITIVE_PLAN 1.6: whether the CURRENT session was opened from the
+     * Whether the CURRENT session was opened from the
      * follow-up window (follow-up turns answer "continue the previous
-     * thought" — the composer may render summaries differently in Phase 2).
+     * thought" — the composer may render summaries differently).
      * Written under [controlLock] in [startSession], read by the turn lane.
      */
     @Volatile
@@ -251,7 +251,7 @@ class SessionManager(
 
     /**
      * Serializes every mutation of [sessionJob] / [detectionJob] /
-     * [windowJob] (audit #5: binder-thread `startSession` vs `cancelAll`
+     * [windowJob] (binder-thread `startSession` vs `cancelAll`
      * could cancel a JUST-launched job or leak an uncancelled one through a
      * plain read-modify-write race). A plain monitor is enough: the guarded
      * blocks contain NO suspension points (monitors must never be held
@@ -277,19 +277,19 @@ class SessionManager(
      * be audible (and the VAD floor cold); 200 ms keeps both from firing a
      * phantom follow-up turn.
      *
-     * @Volatile (audit #29): written by the session coroutine that opens the
+     * @Volatile: written by the session coroutine that opens the
      * window, read by the window collector coroutine.
      */
     @Volatile private var followUpLeadIn = 0
 
-    /** S1: live ASR partials for the UI (UI wiring happens in a later phase).
+    /** Live ASR partials for the UI (UI wiring happens in a later phase).
      * Written ONLY via [publishPartial] (turn-id guarded) and the guarded
      * terminals/`startSession` clears below. */
     private val _partialTranscript = MutableStateFlow("")
     val partialTranscript: StateFlow<String> = _partialTranscript.asStateFlow()
 
     /**
-     * G3: what the turn engine is doing while THINKING (null = generic label).
+     * What the turn engine is doing while THINKING (null = generic label).
      * TurnRunner pushes via [publishActivity] (turn-id guarded); every terminal
      * below (finish / reportFailure / startSession / cancelAll) clears so a
      * stale «Настраиваю громкость…» never outlives its turn. StateFlow writes
@@ -298,12 +298,12 @@ class SessionManager(
     private val _turnActivity = MutableStateFlow<TurnActivity?>(null)
     val turnActivity: StateFlow<TurnActivity?> = _turnActivity.asStateFlow()
 
-    /** m12: user mute intent; survives power-receiver restarts. */
+    /** User mute intent; survives power-receiver restarts. */
     private val _muted = MutableStateFlow(false)
     val muted: StateFlow<Boolean> = _muted.asStateFlow()
 
     /**
-     * Per-turn execution engine (P7). Constructed once; [startSession] drives
+     * Per-turn execution engine. Constructed once; [startSession] drives
      * it. The injected callbacks route state events, failures, terminal
      * transitions, partial updates and the activity pill back into this class
      * so the single source of truth stays here — and EVERY one of them is
@@ -313,7 +313,7 @@ class SessionManager(
     private val turnRunner = TurnRunner(
         audioPipeline, asrClient, llm, ttsClient, player, functionRouter,
         conversationManager, config,
-        // P3.2 + P1-S #1: turn-runner state events apply through the SAME
+        // Turn-runner state events apply through the SAME
         // guarded path as every other event (a direct stateMachine::onEvent
         // here was the remaining race: a cancelled-but-still-draining turn
         // could land PlaybackStarted AFTER a newer session's reset).
@@ -324,7 +324,7 @@ class SessionManager(
         // Synchronous — no launch hop, so guard and transition stay atomic.
         { turnEvent -> applyTurnEvent(turnEvent) },
         this::reportFailure, this::finish,
-        // P1-S #1 (extended): the partial transcript and the activity pill go
+        // The partial transcript and the activity pill go
         // through the SAME provenance guard as the machine events — the turn's
         // id is their first argument, so a superseded turn's late write is a
         // no-op instead of a stomp on the live session. (Lambdas, not method
@@ -336,7 +336,7 @@ class SessionManager(
         systemPrompt = systemPrompt,
         onActivity = { id, activity -> publishActivity(id, activity) },
         voiceSource = voiceSource,
-        // COGNITIVE_PLAN 1.6/1.7: per-turn memory gather + ingest hook.
+        // Per-turn memory gather + ingest hook.
         cognitive = cognitive,
         isFollowUpTurn = { currentTurnFromFollowUp },
     )
@@ -346,7 +346,7 @@ class SessionManager(
     @Volatile private var onErrorHandler: suspend (String) -> Unit = {}
 
     init {
-        // FIXPLAN B: arm the stop-phrase lane exactly while the assistant
+        // Arm the stop-phrase lane exactly while the assistant
         // THINKS or SPEAKS. For a Sherpa primary this is a no-op (the stop
         // phrase rides in the same keywords file); for a Porcupine primary
         // it gates the dedicated lane's frame feed — zero idle CPU. The
@@ -358,7 +358,7 @@ class SessionManager(
     }
 
     /**
-     * A5: re-arm the stop phrase lane for the CURRENT state.
+     * Re-arm the stop phrase lane for the CURRENT state.
      *
      * The state collector above only fires on a STATE CHANGE, so a Settings
      * toggle flipped while the assistant is THINKING/SPEAKING left the lane
@@ -384,20 +384,20 @@ class SessionManager(
     }
 
     /**
-     * M6: THE single funnel for every user-visible failure. A failure carrying
+     * THE single funnel for every user-visible failure. A failure carrying
      * a session id is LOGGED AND DROPPED when that session has been superseded
      * — the shared state machine and the error voice belong to the newest
      * session only, and a stale session's late failure must not yank them.
      * Pass id=null for lifecycle-scoped failures (wake-word engine) that have
      * no session identity of their own.
      *
-     * REMEDIATION_PLAN P0.3: `message` must be a FIXED classification phrase
+     * `message` must be a FIXED classification phrase
      * (a [SpeechPhrases] literal, or a fixed engine-failure reason string) —
      * never user content (ASR text, tool output, exception payloads). It is
      * both logged at WARN/ERROR here — and FileLoggingTree persists INFO+ to
      * disk in release — and SPOKEN via [onErrorHandler]. Every current call
      * site (TurnRunner's phrases.* funnel and this class's wake-word routing)
-     * passes fixed phrases, verified by audit; this contract keeps future
+     * passes fixed phrases, verified by test; this contract keeps future
      * call sites honest so raw content can never re-enter this funnel.
      */
     suspend fun reportFailure(id: Int?, message: String) {
@@ -407,7 +407,7 @@ class SessionManager(
             Timber.w("Dropping stale session %d failure: %s", id, message)
             return
         }
-        // P1-S #2 (audit 2026-09-16): the guard must be AUTHORITATIVE and ride
+        // The guard must be AUTHORITATIVE and ride
         // ATOMICALLY with the effects. Previously the flush + clears ran
         // BEFORE the seq check, so a turn superseded in the check-vs-apply gap
         // silently flushed the NEW session's playback and wiped its live
@@ -433,7 +433,7 @@ class SessionManager(
         }
         if (!applied) return
         Timber.e("Session failure: %s", message)
-        // Audit fix: re-check before the error voice — it is a SEPARATE engine
+        // Re-check before the error voice — it is a SEPARATE engine
         // (system TTS) that player.flush() cannot touch and [onErrorHandler]
         // SUSPENDS, so it cannot ride inside the monitor. A failure whose
         // session was superseded after the terminal landed must not speak into
@@ -448,7 +448,7 @@ class SessionManager(
 
     /** Start the wake-word collector. Idempotent. */
     fun startListening() {
-        // M1: an init failure is emitted into a SharedFlow nobody subscribes
+        // An init failure is emitted into a SharedFlow nobody subscribes
         // to yet, so it would be dropped silently. Read the detector state
         // synchronously and route a dead engine into the error path instead
         // of running deaf.
@@ -460,7 +460,7 @@ class SessionManager(
             }
             return
         }
-        // #5: the cancel + relaunch hand-off is atomic — a concurrent
+        // The cancel + relaunch hand-off is atomic — a concurrent
         // cancelAll between them must not leave a stray collector running.
         synchronized(controlLock) {
             detectionJob?.cancel()
@@ -489,12 +489,12 @@ class SessionManager(
     /**
      * Begin (or restart) a listening session — also the barge-in entry point.
      *
-     * @param fromFollowUp COGNITIVE_PLAN 1.6: true when opened by the
+     * @param fromFollowUp true when opened by the
      *   follow-up window's speech onset (tagged in [PromptContext]).
      */
     fun startSession(fromFollowUp: Boolean = false) {
         currentTurnFromFollowUp = fromFollowUp
-        // M1 (hardened): SUPERSEDE FIRST. The old order (cancel → flush →
+        // SUPERSEDE FIRST. The old order (cancel → flush →
         // increment) left a micro-window where the interrupted session's
         // guarded writes (persistCompletedToolPass / finish / reportFailure)
         // could still read the OLD seq and legally land after the user had
@@ -502,7 +502,7 @@ class SessionManager(
         // guards immediately; anything it writes from this point is dropped
         // deterministically.
         //
-        // #5: the whole supersede sequence (seq bump, job cancel, flush,
+        // The whole supersede sequence (seq bump, job cancel, flush,
         // relaunch, sessionJob assignment) runs under [controlLock] so a
         // concurrent cancelAll/startSession can never tear the hand-off —
         // e.g. cancel a JUST-launched job, or null a job reference before
@@ -516,14 +516,14 @@ class SessionManager(
             windowJob = null
             sessionJob?.cancel()
             player.flush() // generation bump: current + queued sentences die
-            focus?.onTtsFlushed() // M6: barge-in ends the duck immediately
+            focus?.onTtsFlushed() // Barge-in ends the duck immediately
             sessionJob = scope.launch { runSession(id) }
         }
     }
 
     /** Body of one session — launched under [controlLock] by [startSession]. */
     private suspend fun CoroutineScope.runSession(id: Int) {
-        // Phase 5 (M7 mitigation): a clean listening window when the user
+        // A clean listening window when the user
         // opted in — external audio pauses while we listen; NO auto-resume.
         if (config.pauseMusicOnWake) {
             externalMusicPauser?.let { pauser ->
@@ -532,7 +532,7 @@ class SessionManager(
             }
         }
         if (!networkMonitor.isCurrentlyOnline()) {
-            // P3.2: validSeq=id — the guard drops the LISTENING jump if this
+            // validSeq=id — the guard drops the LISTENING jump if this
             // session was superseded before the event applied.
             applyMachineEvent(SessionEvent.WakeWordOrBargeIn, validSeq = id)
             reportFailure(id, phrases.offline)
@@ -544,7 +544,7 @@ class SessionManager(
     }
 
     fun cancelAll() {
-        // Invalidate FIRST (M1 philosophy, audit #5): bumping the seq atomically
+        // Invalidate FIRST: bumping the seq atomically
         // with the teardown drops every guarded write an in-flight turn might
         // still produce (finish / reportFailure / persistCompletedToolPass) —
         // including the CancellationException path's finish(), which previously
@@ -561,7 +561,7 @@ class SessionManager(
             _partialTranscript.value = ""
             _turnActivity.value = null
         }
-        // P1-S #1 (reality check on the old P3.2 comment): there is NO event
+        // There is NO event
         // lane and no consumer thread — [applyMachineEvent] guards and applies
         // SYNCHRONOUSLY on this thread. The seq it carries is this
         // invalidation's own (post-bump), so the reset lands unless a LATER
@@ -572,7 +572,7 @@ class SessionManager(
     }
 
     // ------------------------------------------------------------------
-    // Voice stop (FIXPLAN B): «стоп» / "stop" without the wake word
+    // Voice stop: «стоп» / "stop" without the wake word
     // ------------------------------------------------------------------
 
     /**
@@ -583,7 +583,7 @@ class SessionManager(
      * anything — it is part of the user's utterance.
      */
     private fun handleStopPhrase(detection: Detection.StopPhrase) {
-        // COGNITIVE_PLAN 0.2: re-check the LIVE pref before acting. The stop
+        // Re-check the LIVE pref before acting. The stop
         // lane's armed/disarmed state can lag a Settings toggle (the state
         // collector re-arms on STATE changes only, and a Sherpa rebuild races
         // the toggle) — an armed-but-just-disabled lane must not cancel a
@@ -597,7 +597,7 @@ class SessionManager(
             Timber.d("Stop phrase '%s' ignored in state=%s", detection.keyword, state)
             return
         }
-        // P1-S #8: the matched keyword is USER SPEECH CONTENT → DEBUG-only
+        // The matched keyword is USER SPEECH CONTENT → DEBUG-only
         // (FileLoggingTree persists INFO+ to disk; AGENTS.md logging rule).
         Timber.d("Voice stop ('%s') in state=%s — cancelling the turn", detection.keyword, state)
         stopActiveTurn()
@@ -614,7 +614,7 @@ class SessionManager(
     fun stopActiveTurn() {
         val hadActive: Boolean
         synchronized(controlLock) {
-            // Audit fix: a COMPLETED job left in the field is NOT an active
+            // A COMPLETED job left in the field is NOT an active
             // turn — `sessionJob != null` was true after every clean turn,
             // so a stop then bumped the seq pointlessly and applied a global
             // Cancelled OVER an open follow-up window (whose collector kept
@@ -628,7 +628,7 @@ class SessionManager(
                 focus?.onTtsFlushed()
                 _partialTranscript.value = ""
                 _turnActivity.value = null
-                // P3.2: guarded at APPLY time by the same synchronous path as
+                // Guarded at APPLY time by the same synchronous path as
                 // every other event (the old check on the caller's thread +
                 // launch left a gap where a concurrent startSession could bump
                 // the seq first).
@@ -644,7 +644,7 @@ class SessionManager(
 
     /** Terminal transition, guarded against stale sessions. */
     private suspend fun finish(id: Int, spoke: Boolean) {
-        // P1-S #3 (audit 2026-09-16): same shape as reportFailure. The seq
+        // Same shape as reportFailure. The seq
         // revalidation, the LlmDone apply and the shared-state clears are ONE
         // unit inside [controlLock] (every seq bump takes that monitor), so a
         // turn superseded in the old check-vs-apply gap can no longer wipe a
@@ -666,12 +666,12 @@ class SessionManager(
     }
 
     // ------------------------------------------------------------------
-    // COGNITIVE_PLAN 2.4: proactive delivery (a guarded mini-session)
+    // Proactive delivery (a guarded mini-session)
     // ------------------------------------------------------------------
 
     /**
      * Speak a proactive suggestion — a GUARDED mini-session, never a free
-     * lane (plan §8.4):
+     * lane:
      *
      * 1. re-check IDLE under [controlLock] (the arbiter checked earlier, but
      *    the state may have moved — the machine has the final word);
@@ -695,7 +695,7 @@ class SessionManager(
         if (text.isBlank()) return false
         synchronized(controlLock) {
             if (stateMachine.currentState() != AssistantState.IDLE) return false
-            // Audit fix: a muted assistant has a STOPPED pipeline — a proactive
+            // A muted assistant has a STOPPED pipeline — a proactive
             // mini-session would speak into silence and force-open a follow-up
             // window whose VAD collector can never legitimately fire. Refuse.
             if (_muted.value) return false
@@ -711,7 +711,7 @@ class SessionManager(
 
     /** Body of the proactive mini-session — launched under [controlLock]. */
     private suspend fun CoroutineScope.runProactive(id: Int, text: String) {
-        // P3.2: session-id guard at apply time (the machine itself enforces
+        // Session-id guard at apply time (the machine itself enforces
         // IDLE for this event either way).
         applyMachineEvent(SessionEvent.ProactiveSpeechStarted, validSeq = id)
         // Persist BEFORE synthesis: a barge-in during playback must still
@@ -756,7 +756,7 @@ class SessionManager(
             }
             return
         } catch (e: Exception) {
-            // Audit fix: TTS failures surface as e.g. gRPC
+            // TTS failures surface as e.g. gRPC
             // StatusRuntimeException from done.await() — an uncaught one
             // escaped the coroutine, wedging the machine in SPEAKING and
             // leaving sessionIdleFlow stuck false. Mirror speakSentence's
@@ -769,7 +769,7 @@ class SessionManager(
             return
         }
         if (id != sessionSeq.get()) return // superseded while speaking
-        // P3.2: validSeq=id — SPEAKING → IDLE under the session-id guard.
+        // validSeq=id — SPEAKING → IDLE under the session-id guard.
         applyMachineEvent(SessionEvent.LlmDone, validSeq = id) // SPEAKING → IDLE
         // The follow-up window is the accept/reject loop's entry — opened
         // regardless of the standalone follow-up pref (see KDOC).
@@ -793,7 +793,7 @@ class SessionManager(
     /**
      * Open the follow-up window after a turn ended.
      *
-     * Audit fix: the WHOLE open is guarded by the CURRENT seq — a stale
+     * The WHOLE open is guarded by the CURRENT seq — a stale
      * turn's terminal interleaving with a fresh [startSession] previously
      * applied [SessionEvent.FollowUpWindowOpened] unconditionally and
      * launched a VAD collector that raced the live ASR (its onset fired
@@ -812,7 +812,7 @@ class SessionManager(
     ) {
         if (id != null && id != sessionSeq.get()) return
         if (!followUpEnabled && !forceOpen) return
-        // A6: `onTurnEnded` returns ONLY `OpenWindow?`, so this match is
+        // `onTurnEnded` returns ONLY `OpenWindow?`, so this match is
         // exhaustive without the dead "not emitted here" branches.
         when (followUp.onTurnEnded(spoke, enabled = true)) {
             FollowUpWindowController.Effect.OpenWindow -> {
@@ -820,7 +820,7 @@ class SessionManager(
                 // Apply-time seq guard: a supersede that lands between the
                 // check above and this apply drops the event.
                 applyMachineEvent(SessionEvent.FollowUpWindowOpened, validSeq = id)
-                // Remediation F2: the open's seq rides down to the collector
+                // The open's seq rides down to the collector
                 // so both the in-lock launch gate and the VAD-onset path can
                 // re-validate it against a concurrent barge-in.
                 startFollowUpCollector(validSeq = id)
@@ -838,12 +838,12 @@ class SessionManager(
      */
     // The ThrowsCount suppression is deliberate (precedent: processLlm's
     // complexity suppressions): the collector's terminal exits ARE distinct
-    // exceptions — superseded onset (F2 re-check), follow-up turn started,
+    // exceptions — superseded-onset re-check, follow-up turn started,
     // and window expiry — each carrying its own cancellation identity, and
     // splitting them would scatter the terminal semantics.
     @Suppress("ThrowsCount")
     private fun startFollowUpCollector(validSeq: Int? = null) {
-        // Audit fix: the collector may only run when the open actually
+        // The collector may only run when the open actually
         // APPLIED — if the FollowUpWindowOpened event was dropped (stale seq)
         // or rejected by the machine (a fresh session is LISTENING), a VAD
         // collector here would race the live session's ASR lane. The state
@@ -852,9 +852,9 @@ class SessionManager(
             Timber.i("Follow-up window open dropped — machine not in FOLLOW_UP_WINDOW")
             return
         }
-        // #5: windowJob hand-off under the same lock as every other job field.
+        // windowJob hand-off under the same lock as every other job field.
         synchronized(controlLock) {
-            // Remediation F2: the pre-lock state check is a cheap pre-filter —
+            // The pre-lock state check is a cheap pre-filter —
             // the AUTHORITATIVE gate is this in-lock re-check, atomic with the
             // windowJob hand-off. A barge-in (startSession/cancelAll) that
             // bumped the seq between the state check and here previously left
@@ -895,7 +895,7 @@ class SessionManager(
                         } else {
                             followUpVad.process(frame)
                             if (followUpVad.onset) {
-                                // Remediation F2: re-validate AT ONSET — the
+                                // Re-validate AT ONSET — the
                                 // collector may still be draining its last
                                 // frames when a barge-in bumps the seq (the
                                 // windowJob.cancel() cancellation is async).
@@ -911,7 +911,7 @@ class SessionManager(
                                     throw CancellationException("follow-up window superseded")
                                 }
                                 Timber.i("Follow-up speech detected — starting turn")
-                                // A6: the controller's onset verdict IS the
+                                // The controller's onset verdict IS the
                                 // gate — it returns StartFollowUpTurn only
                                 // while the window is OPEN (its own state is
                                 // independent of the machine's, so consuming
@@ -920,7 +920,7 @@ class SessionManager(
                                 when (followUp.onVadActive()) {
                                     FollowUpWindowController.Effect.StartFollowUpTurn -> {
                                         applyMachineEvent(SessionEvent.FollowUpSpeechDetected)
-                                        // COGNITIVE_PLAN 1.6: tag the turn origin.
+                                        // Tag the turn origin.
                                         startSession(fromFollowUp = true) // cancels this collector via windowJob
                                     }
                                     null -> Unit // window already closed — drop the onset
@@ -929,7 +929,7 @@ class SessionManager(
                             }
                         }
                         _followUpProgress.value = followUp.remainingFraction()
-                        // A6: the effect is the expiry verdict (emitted exactly
+                        // The effect is the expiry verdict (emitted exactly
                         // once, when the deadline passes) — consumed here.
                         when (followUp.transition()) {
                             FollowUpWindowController.Effect.ExpireWindow -> {
@@ -965,7 +965,7 @@ class SessionManager(
             _followUpProgress.value = 0f
         }
         if (!silent) {
-            // #17 + P3.2: the state check rides WITH the transition in the
+            // The state check rides WITH the transition in the
             // same synchronous call (requireState is evaluated at apply time —
             // no stale caller-thread read, no launch-dispatch-order
             // dependence).
@@ -982,7 +982,7 @@ class SessionManager(
     }
 
     // ------------------------------------------------------------------
-    // Mute (m12)
+    // Mute
     // ------------------------------------------------------------------
 
     /**

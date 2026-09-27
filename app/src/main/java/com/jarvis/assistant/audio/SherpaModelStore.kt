@@ -7,7 +7,7 @@ import java.io.File
 /**
  * One-time extraction of the bundled Sherpa-ONNX KWS model from APK assets
  * into `filesDir`, so [SherpaKwsEngine] can build via the AAR's `newFromFile`
- * constructor with a GENERATED keywords file (custom wake words, FIXPLAN C).
+ * constructor with a GENERATED keywords file (custom wake words).
  *
  * The asset loading path (`newFromAsset`) stays the zero-config default —
  * extraction happens only when a custom keyword or a generated keyword set

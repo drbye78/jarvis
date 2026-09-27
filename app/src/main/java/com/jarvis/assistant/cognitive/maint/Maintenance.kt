@@ -6,11 +6,11 @@ import kotlin.math.ln
 import kotlin.math.pow
 
 /**
- * COGNITIVE_PLAN §9.1: pure maintenance math for the nightly job. Each rule
+ * Pure maintenance math for the nightly job. Each rule
  * is a total function of its inputs (injected clock at the call site), so
  * the compaction/decay behavior is fixture-testable without a database.
  *
- * Caps (plan §4 principle 4 — bounded everything):
+ * Caps (bounded everything):
  * - facts ≤ [MAX_ACTIVE_FACTS] ACTIVE; overflow → lowest score → ARCHIVED
  * - confidence decay 0.99×/day for facts untouched ≥ [DECAY_AFTER_DAYS],
  *   floored at [CONFIDENCE_FLOOR]; below the floor → ARCHIVE candidate
@@ -75,8 +75,8 @@ object Maintenance {
     }
 
     /**
-     * Facts below the floor become ARCHIVE candidates (plan §9.1: "floor
-     * 0.2 → ARCHIVE candidate"). Already-archived rows are never returned.
+     * Facts below the floor become ARCHIVE candidates (floor
+     * 0.2 → ARCHIVE candidate). Already-archived rows are never returned.
      */
     fun belowFloorArchiveCandidates(facts: List<FactSnapshot>, nowMs: Long): List<String> =
         facts.filter { it.status == FactStatus.ACTIVE }
@@ -103,6 +103,6 @@ object Maintenance {
             decayed,
         )
 
-    /** log(1+x) helper retained for future habit/support math (plan §8.2). */
+    /** log(1+x) helper retained for future habit/support math. */
     fun log1p(x: Double): Double = ln(1.0 + x)
 }

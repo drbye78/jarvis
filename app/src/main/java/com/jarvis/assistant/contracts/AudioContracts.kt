@@ -27,7 +27,7 @@ interface AudioSource {
 /**
  * What a wake-word-class engine heard.
  *
- * FIXPLAN B: engines now carry keyword IDENTITY — the same on-device KWS
+ * Engines now carry keyword IDENTITY — the same on-device KWS
  * spotter recognizes the wake phrase AND the stop phrase ("стоп"/"stop",
  * the same spoken word in Russian and English), so the user can interrupt a
  * playing answer without the wake word.
@@ -50,7 +50,7 @@ sealed interface Detection {
 /**
  * Lifecycle of the wake-word engine, observable synchronously. Exists because
  * a failure emitted into a replay-less SharedFlow before any subscriber is
- * simply dropped — [Failed] must be readable at any time (M1).
+ * simply dropped — [Failed] must be readable at any time.
  */
 sealed interface DetectorState {
     data object Bootstrapping : DetectorState
@@ -77,7 +77,7 @@ interface WakeWordDetector {
     suspend fun setSensitivity(value: Float)
 
     /**
-     * FIXPLAN B: feed the dedicated stop-phrase lane while the assistant
+     * Feed the dedicated stop-phrase lane while the assistant
      * THINKS or SPEAKS. No-op for engines whose keyword set already carries
      * the stop phrase (Sherpa primary); for Porcupine-primary it gates the
      * extra KWS engine's feed — zero idle CPU either way.
@@ -86,7 +86,7 @@ interface WakeWordDetector {
 }
 
 /**
- * Explicit barge-in policy (M7). TTS answers containing «Джарвис» used to
+ * Explicit barge-in policy. TTS answers containing «Джарвис» used to
  * truncate themselves because ANY single detection during playback barged in;
  * interrupting playback now requires an explicit, configurable gesture:
  *
@@ -122,12 +122,12 @@ data class BargeInPolicy(
  * tests drive the clock deterministically. Wired into the session in
  * SessionManager.startListening via detections().gatedBy(BargeInPolicy.from(config), stateMachine.state).
  *
- * D5: the DEFAULT clock is monotonic (nanoTime/1e6), not wall time — a
+ * The DEFAULT clock is monotonic (nanoTime/1e6), not wall time — a
  * backwards wall-clock jump (NTP correction, manual time set) made
  * `now - lastAccepted` negative and suppressed every detection until the
  * wall clock caught back up. Monotonic differences are immune to that.
  *
- * FIXPLAN B: [Detection.StopPhrase] passes UNGATED in every state — the
+ * [Detection.StopPhrase] passes UNGATED in every state — the
  * whole point of the stop phrase is that ONE utterance cancels playback,
  * with no repeat-to-interrupt barrier and no cooldown. State-conditional
  * ROUTING (which states honor a stop) lives in SessionManager, which knows

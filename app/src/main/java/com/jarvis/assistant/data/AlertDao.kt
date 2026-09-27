@@ -130,14 +130,14 @@ interface AlertDao {
      * transaction next to the write, so two racing `onFired` passes or an
      * `onFired` racing a snooze cannot interleave a torn state.
      *
-     * FIRE-IDENTITY GUARD (REMEDIATION_PLAN P3.2): the broadcast carries the
+     * FIRE-IDENTITY GUARD: the broadcast carries the
      * trigger time the alarm was armed for. A NON-daily row is disabled ONLY
      * when [ScheduledAlertEntity.triggerAtMillis] still equals
      * [firedTriggerMillis]; otherwise it is a NoOp. This closes two races
      * structurally instead of by ordering luck:
-     *  - the snooze race (T7): a snooze moved the trigger forward before this
+     *  - the snooze race: a snooze moved the trigger forward before this
      *    pass ran, so the old fire must not disable the re-scheduled alert;
-     *  - the early-delivery drop (T10): a fire delivered for an earlier trigger
+     *  - the early-delivery drop: a fire delivered for an earlier trigger
      *    than the row now holds must not cancel the future occurrence.
      * Daily rows keep the existing roll-forward behavior (their identity is the
      * anchor, not one trigger).

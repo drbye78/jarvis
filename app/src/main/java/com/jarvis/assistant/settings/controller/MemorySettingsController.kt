@@ -257,7 +257,7 @@ class MemorySettingsController(
         }
     }
 
-    /** The opt-in vector build, disclosing the §9.2 egress of the chosen engine. */
+    /** The opt-in vector build, disclosing the egress of the chosen engine. */
     private fun confirmVectorBuild() {
         scope.launch {
             val graph = host.awaitAssistantGraph() ?: run {
@@ -271,7 +271,7 @@ class MemorySettingsController(
                 semanticVectorsStatus.setText(R.string.settings_semantic_vectors_no_engine)
                 return@launch
             }
-            // §12.4-4/§9.2: explicit opt-in; the cloud branch discloses the
+            // Explicit opt-in; the cloud branch discloses the
             // fact-value egress, the local branch confirms the on-device-only
             // guarantee.
             val message = if (engineId == CLOUD_ENGINE_ID) {

@@ -12,7 +12,7 @@ interface LlmClient {
     fun chatStream(request: ChatRequest): Flow<LlmChunk>
 
     /**
-     * COGNITIVE_PLAN 0.8: non-streaming convenience for the Cognitive Core's
+     * Non-streaming convenience for the Cognitive Core's
      * background callers (fact extraction, summarization) — they need the
      * full completion, not incremental chunks, and must never race the turn
      * lane's SSE transport. Default implementation rides on [chatStream] by
@@ -31,7 +31,7 @@ interface LlmClient {
 }
 
 /**
- * COGNITIVE_PLAN 0.8: bounded retry for TRANSIENT LLM failures (429/5xx per
+ * Bounded retry for TRANSIENT LLM failures (429/5xx per
  * [LlmHttpException.isTransient], plus [IOException] transport drops) with
  * exponential backoff. Built for the Cognitive Core's queue workers: an
  * offline/overloaded endpoint must degrade to "queued, try later", never to
@@ -39,7 +39,7 @@ interface LlmClient {
  *
  * - Fatal failures (any other [LlmHttpException] = 4xx, parsing errors, …)
  *   rethrow immediately — retrying a bad request is pointless.
- * - [CancellationException] always rethrows (the A8 class of bug is banned).
+ * - [CancellationException] always rethrows (this class of bug is banned).
  * - [attempts] is the TOTAL number of tries (1 = no retry).
  * - [onRetry] observes each retry (retryNumber starting at 1 for the first
  *   retry, the error that caused it, and the backoff actually slept).

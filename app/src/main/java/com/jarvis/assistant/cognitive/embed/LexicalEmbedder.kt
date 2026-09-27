@@ -3,21 +3,20 @@ package com.jarvis.assistant.cognitive.embed
 import com.jarvis.assistant.cognitive.recall.SearchTokenizer
 
 /**
- * COGNITIVE_PLAN Phase 3: the on-device embedding engine — a deterministic
+ * The on-device embedding engine — a deterministic
  * signed-hashing bag-of-stems vectorizer over the SAME Russian-normalized
  * token stream the FTS index uses ([SearchTokenizer.tokens]).
  *
- * Why this engine (honest scope note): the plan's alternative — a
- * runtime-downloaded int8 neural model — was REJECTED by the Phase 3
- * constraints review: onnxruntime-android adds ~15–25 MB to an APK the
- * project holds at ≈160 MB (Phase 0 spent real effort removing an 11 MB
- * dead asset), a runtime download-and-verify path on a wall device is a
- * reliability and integrity failure surface, and Kirin 710A CPU inference
- * for MiniLM-class models lands in the hundreds of milliseconds — well
- * outside the §7.2 40 ms gather budget. The hashed lexical engine is
- * instant, offline, zero-egress and fully deterministic. Whether vectors
- * add recall over the lexical baseline is NOT assumed — it is measured by
- * the §10.2 retrieval gate ([EmbedderBenchmark] / RetrievalEvalTest,
+ * Why this engine (honest scope note): a runtime-downloaded int8 neural
+ * model was REJECTED by the constraints review: onnxruntime-android adds
+ * ~15–25 MB to an APK the project holds at ≈160 MB (earlier work spent real
+ * effort removing an 11 MB dead asset), a runtime download-and-verify path
+ * on a wall device is a reliability and integrity failure surface, and
+ * Kirin 710A CPU inference for MiniLM-class models lands in the hundreds of
+ * milliseconds — well outside the 40 ms gather budget. The hashed lexical
+ * engine is instant, offline, zero-egress and fully deterministic. Whether
+ * vectors add recall over the lexical baseline is NOT assumed — it is
+ * measured by the retrieval gate ([EmbedderBenchmark] / RetrievalEvalTest,
  * ship-or-reject at ≥ 15 % recall@5 improvement); the cloud GigaChat
  * engine is the branch that can plausibly win it (true paraphrase /
  * synonym recall: «начальник» ↔ «руководитель»).

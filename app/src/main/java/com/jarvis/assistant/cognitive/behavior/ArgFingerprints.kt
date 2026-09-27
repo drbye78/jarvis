@@ -7,7 +7,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 
 /**
- * COGNITIVE_PLAN §8.1: per-tool slot-payload normalization — the ONLY thing
+ * Per-tool slot-payload normalization — the ONLY thing
  * telemetry stores about an execution. Free-form utterances are NEVER copied
  * into `command_events`; the fingerprint is a normalized, deterministic
  * projection of the structured arguments so identical intents cluster
@@ -58,7 +58,7 @@ object ArgFingerprints {
             .take(MAX_FINGERPRINT)
     }
 
-    /** 2-hour bucket (§8.2): hour 0..23 → 0..11. */
+    /** 2-hour bucket: hour 0..23 → 0..11. */
     fun hourBucket(hour: Int): Int = hour.coerceIn(0, 23) / 2
 
     /** Volume-style bucketing: floor to [LEVEL_BUCKET] steps. */
@@ -67,7 +67,7 @@ object ArgFingerprints {
     /**
      * Lowercase, trim, collapse whitespace, strip punctuation — enough
      * clustering for slot values while staying legible in the inspector
-     * (no hashing: transparency is a feature, plan §4).
+     * (no hashing: transparency is a feature).
      */
     fun normalize(raw: String): String = raw
         .lowercase()

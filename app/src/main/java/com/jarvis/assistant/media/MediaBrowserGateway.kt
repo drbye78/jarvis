@@ -13,7 +13,7 @@ package com.jarvis.assistant.media
  *
  * Even a player that REFUSES browsing (onGetRoot → empty root) still accepts
  * the connection and hands us its session token, which is exactly what the
- * S2 cold-start strategy needs. A player that returns null from onGetRoot
+ * cold-start strategy needs. A player that returns null from onGetRoot
  * refuses outright — connect() reports that as null and the cascade moves on.
  *
  * Pure contract (like [MediaGateway]): every decision — search scoring,

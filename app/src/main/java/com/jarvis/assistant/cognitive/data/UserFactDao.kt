@@ -8,9 +8,9 @@ import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 /**
- * COGNITIVE_PLAN §5: storage contract for user facts. All queries are
+ * Storage contract for user facts. All queries are
  * status-scoped — FORGOTTEN/ARCHIVED/QUARANTINED rows are audit trail and
- * never resurface in prompts (plan principle 1 & 7).
+ * never resurface in prompts.
  *
  * The interface is intentionally plain (no Android types beyond Room
  * annotations) so JVM tests can fake it for the queue worker and
@@ -32,12 +32,11 @@ interface UserFactDao {
     suspend fun activeFacts(): List<UserFactEntity>
 
     // ORDER BY factId (UUIDv7): time-ordered by construction and covered by
-    // the unique factId index — replaces the unindexed `createdAt` ordering
-    // (REMEDIATION_PLAN Phase 2).
+    // the unique factId index — replaces the unindexed `createdAt` ordering.
     @Query("SELECT * FROM user_facts ORDER BY factId ASC")
     suspend fun allFacts(): List<UserFactEntity>
 
-    /** Live feed for the Memory Inspector (plan §4: transparency is a feature). */
+    /** Live feed for the Memory Inspector (transparency is a feature). */
     @Query("SELECT * FROM user_facts ORDER BY factId DESC")
     fun observeAll(): Flow<List<UserFactEntity>>
 
@@ -45,7 +44,7 @@ interface UserFactDao {
     suspend fun activeCount(): Int
 
     /**
-     * Exact-identity dedup lookup (plan §6.3 rule 1): same normalized
+     * Exact-identity dedup lookup: same normalized
      * (subject, predicate, value). The paraphrase branch is handled in
      * FactNormalizer over the ACTIVE set.
      */
@@ -107,7 +106,7 @@ interface UserFactDao {
     suspend fun setContested(factId: String, contested: Boolean, now: Long)
 
     /**
-     * Write-behind recall statistics (plan §7.2): batched, never on the hot
+     * Write-behind recall statistics: batched, never on the hot
      * path — the honest "this memory is actually used" ranking signal.
      */
     @Query(
@@ -125,14 +124,14 @@ interface UserFactDao {
     )
     suspend fun searchActive(matchQuery: String, limit: Int = 20): List<UserFactEntity>
 
-    /** Compaction (plan §5): ACTIVE facts beyond the cap, lowest score first. */
+    /** Compaction: ACTIVE facts beyond the cap, lowest score first. */
     @Query(
         "SELECT * FROM user_facts WHERE status = 'ACTIVE' " +
             "ORDER BY confidence ASC, updatedAt ASC LIMIT :limit",
     )
     suspend fun weakestActive(limit: Int): List<UserFactEntity>
 
-    /** Supersession chains older than the retention window (plan §5). */
+    /** Supersession chains older than the retention window. */
     @Query(
         "SELECT * FROM user_facts WHERE status = 'SUPERSEDED' AND updatedAt < :cutoff",
     )
@@ -141,7 +140,7 @@ interface UserFactDao {
     @Query("DELETE FROM user_facts WHERE factId IN (:factIds)")
     suspend fun deleteByFactIds(factIds: List<String>)
 
-    /** «Забыть всё» (plan §9.2): one wipe, inspector-visible, not touching messages. */
+    /** «Забыть всё»: one wipe, inspector-visible, not touching messages. */
     @Query("DELETE FROM user_facts")
     suspend fun wipeAll()
 }

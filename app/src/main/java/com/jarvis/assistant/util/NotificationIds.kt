@@ -1,7 +1,7 @@
 package com.jarvis.assistant.util
 
 /**
- * Process-wide notification-id allocation (audit remediation decision #3).
+ * Process-wide notification-id allocation.
  *
  * Two DISJOINT bands, so an alarm notification can never overwrite (or be
  * cancelled by) a service notification:
@@ -11,7 +11,7 @@ package com.jarvis.assistant.util
  *    ids previously hardcoded in JarvisForegroundService) and [ALARM_DEGRADE]
  *    (the one-time exact-alarm degrade note previously hardcoded as
  *    `ExactAlarmPolicy.DEGRADE_NOTIFICATION_ID = 4`). The service lane
- *    aliases exactly these constants (P2 follow-through), so the band is one
+ *    aliases exactly these constants, so the band is one
  *    source of truth.
  *
  *  - ALARM band `>= [ALARM_BAND_BASE]` — one id per alert row:

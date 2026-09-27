@@ -12,8 +12,8 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 /**
- * §4/§9.2 (P4.4): the MemoryInspector JSON export, extracted from
- * [CognitiveCoordinator] — every fact + meta + the §11 derived entity
+ * The MemoryInspector JSON export, extracted from
+ * [CognitiveCoordinator] — every fact + meta + the derived entity
  * index, serialized for the user-facing export. Composition only: the
  * coordinator delegates and stays the ONE class the rest of the app sees.
  *
@@ -27,7 +27,7 @@ class FactExportService(
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
 
-    /** Export (plan §7 principle 7): every fact + meta, JSON. */
+    /** Export: every fact + meta, JSON. */
     suspend fun exportJson(): JsonObject {
         val facts = factDao.allFacts()
         val meta = metaDao.all()
@@ -55,7 +55,7 @@ class FactExportService(
                     )
                 }
             }
-            // Phase 3 (§11): the derived entity index + vector-store
+            // The derived entity index + vector-store
             // provenance are part of the memory the user can inspect/export.
             // Reads happen BEFORE the JSON builder (its lambdas are not
             // suspend).

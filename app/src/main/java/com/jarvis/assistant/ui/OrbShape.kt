@@ -10,7 +10,7 @@ import com.jarvis.assistant.model.AssistantState
 enum class OrbState { IDLE, LISTENING, THINKING, SPEAKING, FOLLOW_UP, MUTED, DEAF }
 
 /**
- * Pure state -> shape mapping for the orb (U12).
+ * Pure state -> shape mapping for the orb.
  *
  * The orb already changes colour per state, but colour alone must never be
  * the only channel: a colour-blind user, or anyone in bright sunlight, needs

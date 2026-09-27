@@ -5,7 +5,7 @@ import android.content.Context
 /**
  * Per-user credential store backed by a [SecretVault].
  *
- * Audit #30: this used to be an `object` with a `lateinit var ctx` filled by
+ * This used to be an `object` with a `lateinit var ctx` filled by
  * a separate `init(context)` call — any property access before that call
  * crashed with a bare `UninitializedPropertyAccessException`. It is a proper
  * class with an Application-owned singleton:
@@ -18,7 +18,7 @@ import android.content.Context
  *   lifecycle (JVM tests with injected fakes, wake-word engine failure
  *   reasons) — they degrade instead of crashing.
  *
- * A3: the backing store is now [KeystoreVault] (AndroidKeyStore AES-GCM).
+ * The backing store is now [KeystoreVault] (AndroidKeyStore AES-GCM).
  * The deprecated EncryptedSharedPreferences dependency is gone.
  */
 class CredentialsStore(private val vault: SecretVault) {
@@ -61,7 +61,7 @@ class CredentialsStore(private val vault: SecretVault) {
     /**
      * The MANDATORY keys: SaluteSpeech (ASR+TTS) and GigaChat (LLM).
      *
-     * Audit #16: the old `hasRequiredSber()` also demanded the Picovoice key,
+     * The old `hasRequiredSber()` also demanded the Picovoice key,
      * which is OPTIONAL — the default Sherpa-ONNX engine runs fully offline
      * without it. The predicate lied about what "required" means; the
      * Picovoice key is checked separately (only when the Porcupine engine is

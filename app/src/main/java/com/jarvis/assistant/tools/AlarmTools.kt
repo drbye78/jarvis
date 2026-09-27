@@ -9,7 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import java.util.Calendar
 
 /**
- * Pure renderer for the listAlarms tool output — JVM-testable (m16: the voice
+ * Pure renderer for the listAlarms tool output — JVM-testable (the voice
  * listing must show ALL alerts, including disabled ones, with a status field).
  */
 object AlertListRenderer {
@@ -33,11 +33,11 @@ object AlertListRenderer {
 
 /**
  * LLM tools for alarms and timers, all backed by the unified scheduled-alert
- * store through [AndroidAlarmScheduler] (PLAN.md §3.3).
+ * store through [AndroidAlarmScheduler].
  */
 class SetAlarmTool(
     private val scheduler: AndroidAlarmScheduler,
-    /** F6: locale-aware default label; FunctionRouter passes the
+    /** Locale-aware default label; FunctionRouter passes the
      *  `default_alarm_label` string resource (the values-en translation
      *  existed but was never referenced). Default keeps the RU literal for
      *  JVM tests. */
@@ -140,7 +140,7 @@ class CancelTimerTool(private val context: Context, private val scheduler: Andro
     }
 }
 
-/** m16: lists ALL alerts (alarms + timers, enabled AND disabled) with status. */
+/** Lists ALL alerts (alarms + timers, enabled AND disabled) with status. */
 class ListAlarmsTool(private val context: Context) : ToolContract {
     override val name = "listAlarms"
     override val risk = ToolRisk.READ_ONLY
@@ -159,7 +159,7 @@ private suspend fun alerts(context: Context, kind: String): List<ScheduledAlertE
 
 class SetTimerTool(
     private val scheduler: AndroidAlarmScheduler,
-    /** F6: locale-aware default label (see SetAlarmTool). */
+    /** Locale-aware default label (see SetAlarmTool). */
     private val defaultLabel: () -> String = { "Таймер" },
 ) : ToolContract {
     override val name = "setTimer"
@@ -185,7 +185,7 @@ class SetTimerTool(
         val label = obj.string("label")?.takeIf { it.isNotBlank() } ?: defaultLabel()
         val delayMs = (minutes * 60L + seconds) * 1000L
         // Persisted as a scheduled_alerts row + armed via the scheduler, so it
-        // survives reboot and has a collision-free request code (M9/S3).
+        // survives reboot and has a collision-free request code.
         val entity = scheduler.scheduleTimer(label, delayMs)
         return JsonOut.obj(
             "status" to "started",

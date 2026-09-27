@@ -51,7 +51,7 @@ class TokenManager(
     private val config: JarvisConfig = JarvisConfig(),
     vaultOverride: SecretVault? = null,
     private val credentials: (scope: String) -> Pair<String, String> = { scope ->
-        // Audit #30: peek() — outside the app lifecycle (JVM tests without a
+        // peek() — outside the app lifecycle (JVM tests without a
         // constructed store) this yields empty credentials, which fail the
         // request honestly (HTTP 401) instead of crashing a lateinit lookup.
         val store = CredentialsStore.peek()
@@ -206,7 +206,7 @@ class TokenManager(
                     (parsed["expires_at"]?.jsonPrimitive?.content?.toLongOrNull())
             } catch (e: Exception) {
                 // A bogus expiry hint must not kill a perfectly good token:
-                // degrade to the conservative fallback window (audit #14)
+                // degrade to the conservative fallback window
                 // instead of rethrowing — and still never carry the cause.
                 Timber.w(
                     "OAuth expiry field unparseable (HTTP %d for scope=%s, %s) — " +
@@ -221,7 +221,7 @@ class TokenManager(
                 expiresAt != null -> expiresAt * 1000L // Sber returns epoch seconds
                 expiresIn != null -> System.currentTimeMillis() + expiresIn * 1000L
                 else -> {
-                    // Audit #14: the response carried NO expiry hint. The old
+                    // The response carried NO expiry hint. The old
                     // 1-hour blind cache could serve a long-dead token (Sber
                     // tokens are short-lived); the conservative fallback is
                     // 5 minutes + a warning, so an odd provider response shape
@@ -246,14 +246,13 @@ class TokenManager(
         const val SCOPE_GIGACHAT = "GIGACHAT_API_PERS"
         const val SCOPE_SALUTE = "SALUTE_SPEECH_PERS"
 
-        /** Token cache lifetime when the OAuth response has no expiry hint (audit #14). */
+        /** Token cache lifetime when the OAuth response has no expiry hint. */
         const val FALLBACK_EXPIRY_MS = 5 * 60 * 1000L
     }
 }
 
 /**
- * A provider-response parse failure, rethrown WITHOUT its cause (audit
- * decision #11).
+ * A provider-response parse failure, rethrown WITHOUT its cause.
  *
  * The raw exception is what leaks: `kotlinx.serialization` messages quote the
  * offending input (`… but was '{"access_token":"<real-token>…'`), and so does

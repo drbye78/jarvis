@@ -12,24 +12,24 @@ import timber.log.Timber
  *  1. ACTIVE_SESSION  — the target app already has a live MediaSession:
  *     TransportControls.playFromSearch(query, extras), then VERIFY playback
  *     really started and MATCHES the request (VoiceQuery scoring).
- *  1b. BROWSER_SEARCH (S0) — the player's MediaBrowserService implements
+ *  1b. BROWSER_SEARCH — the player's MediaBrowserService implements
  *     onSearch: score the results against the request and play the best
  *     hit deterministically via playFromMediaId(mediaId).
- *  1c. BROWSER_COLD  (S2) — bind the MediaBrowserService and dispatch
+ *  1c. BROWSER_COLD — bind the MediaBrowserService and dispatch
  *     through the session token: no activity start (immune to Android 10+
  *     background-activity-launch restrictions) and NO permission needed.
  *     Works even when the player refuses browsing (empty root still hands
  *     out the token).
  *  2. COLD_START      — no session (app not running): cold-start the app,
  *     poll for its session to appear, then playFromSearch + verify.
- *  2b. LEGACY_INTENT (S4) — the pre-session android.media.action
+ *  2b. LEGACY_INTENT — the pre-session android.media.action
  *     .MEDIA_PLAY_FROM_SEARCH activity intent, if the player ships one.
  *  3. SEARCH_SCREEN   — deep-link the app to its search screen for the
  *     query. Hands-assisted: the user taps the track. Reported honestly as
  *     SEARCH_OPENED, never as success.
  *
  * The browser lane runs BEFORE any activity-starting strategy: binding is
- * the Assistant-grade headless cold start (plan §3.1 rationale), and it
+ * the Assistant-grade headless cold start, and it
  * also works when notification-listener access is missing — the token path
  * needs no permission at all.
  *
@@ -38,7 +38,7 @@ import timber.log.Timber
  * which work without notification-listener access but hit whichever app
  * owns media focus.
  *
- * M2 honesty rule: on Android 10+ a background app cannot reliably start
+ * Honesty rule: on Android 10+ a background app cannot reliably start
  * activities (no BAL exemption for a foreground service), and startActivity
  * fails SILENTLY. So whenever our UI is not visible ([MediaGateway.isUiVisible]),
  * deep-link and launch outcomes are phrased as attempts with a contingency
@@ -49,10 +49,10 @@ class MusicPlaybackOrchestrator(
     private val resolver: MusicAppResolver,
     private val browser: MediaBrowserGateway? = null,
     private val budgets: Budgets = Budgets(),
-    /** For the API-29 setPlaybackSpeed guard (plan risk R7); production
+    /** For the API-29 setPlaybackSpeed guard; production
      *  passes Build.VERSION.SDK_INT, JVM tests pin it explicitly. */
     private val deviceApiLevel: Int = 30,
-    /** Phase 5 (M5): spoken cascade progress («Секунду…»); null = silent. */
+    /** Spoken cascade progress («Секунду…»); null = silent. */
     private val feedback: com.jarvis.assistant.audio.SpeechFeedback? = null,
 ) {
 
@@ -65,7 +65,7 @@ class MusicPlaybackOrchestrator(
         val verifyTotalMs: Long = 4_500,
         val coldStartPollMs: Long = 400,
         val coldStartTotalMs: Long = 8_000,
-        /** S4: how long the legacy intent gets to produce a playing session. */
+        /** How long the legacy intent gets to produce a playing session. */
         val legacyWaitTotalMs: Long = 6_000,
         /** Tier 3: browser bind and per-op (search/children) budgets. */
         val browserConnectTimeoutMs: Long = 3_000,
@@ -151,7 +151,7 @@ class MusicPlaybackOrchestrator(
         // Tier 1: the dispatch is STRUCTURED (focus + slot extras) when the
         // request carried slots.
         val live = controllerFor(app.packageName)
-        // Phase 5 (M5): with a live session the fast path answers in ~1 s;
+        // With a live session the fast path answers in ~1 s;
         // anything else faces a cold start (bind/launch/verify) — say so
         // BEFORE the silence, not after it.
         feedback?.onCascadeStarted(predictedLong = live == null)
@@ -184,7 +184,7 @@ class MusicPlaybackOrchestrator(
         if (!gateway.hasNotificationListenerAccess()) {
             // The browser lane could not start playback either — deep-link
             // search still works without listener access, but say why
-            // hands-free failed. M2: phrase the launch as an attempt unless
+            // hands-free failed. Phrase the launch as an attempt unless
             // our UI is visible (BAL).
             val opened = gateway.openAppSearch(app, flat)
             return if (opened) {
@@ -209,7 +209,7 @@ class MusicPlaybackOrchestrator(
 
         // Strategy 2: cold start, wait for a session, retry the command.
         var launched = false
-        feedback?.onLaunchingPlayer(app.label) // M5: heard while the app opens
+        feedback?.onLaunchingPlayer(app.label) // Heard while the app opens
         if (gateway.launchApp(app)) {
             launched = true
             val fresh = awaitControllerFor(app.packageName, budgets.coldStartTotalMs, budgets.coldStartPollMs)
@@ -243,7 +243,7 @@ class MusicPlaybackOrchestrator(
             }
         }
 
-        // Strategy 5: hands-assisted search screen. M2: BAL-honest phrasing.
+        // Strategy 5: hands-assisted search screen. BAL-honest phrasing.
         val opened = gateway.openAppSearch(app, flat)
         return if (opened) {
             Outcome(
@@ -276,8 +276,8 @@ class MusicPlaybackOrchestrator(
     // ------------------------------------------------------------------
 
     /**
-     * S0 (browser search → deterministic playFromMediaId) then S2 (session
-     * token → playFromSearch). Returns a PLAYING outcome when a strategy
+     * Browser search (→ deterministic playFromMediaId) then the session
+     * token (→ playFromSearch). Returns a PLAYING outcome when a strategy
      * verifies, or null to continue the cascade. The session — when one is
      * opened — is always disconnected (try/finally): one bind per attempt,
      * no leaks across attempts.
@@ -295,7 +295,7 @@ class MusicPlaybackOrchestrator(
         val session = browserGateway.connect(app.packageName, budgets.browserConnectTimeoutMs)
             ?: return null // not installed / refused / timed out
         try {
-            // S0: search results scored against the request; a strong match
+            // Search results scored against the request; a strong match
             // plays deterministically by mediaId.
             val results = session.search(command.query, budgets.browserSearchTimeoutMs)
             val best = results?.let { BrowserResultMatcher.bestMatch(it, vq) }
@@ -322,7 +322,7 @@ class MusicPlaybackOrchestrator(
                 }
             }
 
-            // S2: cold start through the session token — the BAL-immune,
+            // Cold start through the session token — the BAL-immune,
             // permission-free dispatch. Even an empty (unbrowsable) root
             // hands out the token, so this works for players that refuse
             // browsing but still implement onPlayFromSearch.
@@ -429,7 +429,7 @@ class MusicPlaybackOrchestrator(
      * Tier 2: rich transport with per-action capability gating. A player
      * whose action mask (or rating type) says it cannot honor the command
      * gets an honest Russian refusal — never a silent no-op, never a fake
-     * success. Selection (M4) and the media-key fallback are unchanged for
+     * success. Selection and the media-key fallback are unchanged for
      * the basic six; the rich actions require a live session (a media key
      * cannot seek/like/repeat).
      */
@@ -480,7 +480,7 @@ class MusicPlaybackOrchestrator(
     )
 
     /**
-     * Pure gating table (plan risk R7): which capability bit(s) an action
+     * Pure gating table: which capability bit(s) an action
      * requires, and the extra conditions no bitmask can express. An empty set
      * = no session-bit requirement (basic transport).
      */
@@ -528,11 +528,11 @@ class MusicPlaybackOrchestrator(
     }
 
     // ------------------------------------------------------------------
-    // M2: BAL honesty — background launch outcomes are attempts, not facts
+    // BAL honesty — background launch outcomes are attempts, not facts
     // ------------------------------------------------------------------
 
     /**
-     * M2: how to describe a deep-link launch, depending on whether we are
+     * How to describe a deep-link launch, depending on whether we are
      * allowed to start activities at all. In the foreground the start either
      * happened or threw; in the background Android may have silently dropped
      * it — so we say we TRIED and tell the user what to do if nothing opened.
@@ -618,7 +618,7 @@ class MusicPlaybackOrchestrator(
     }
 
     /**
-     * Verification v2 (audit M3, full fix): wait until what is playing
+     * Verification: wait until what is playing
      * MATCHES THE REQUEST — score(now-playing vs the requested slots) at or
      * above [VoiceQueryMatcher.STRONG_THRESHOLD], or a position reset while
      * at least partially matching. The pre-Tier-1 heuristics (title changed,
@@ -671,7 +671,7 @@ class MusicPlaybackOrchestrator(
     }
 
     /**
-     * S4 verification: no `before` baseline exists (the legacy intent may
+     * Legacy-intent verification: no `before` baseline exists (the intent may
      * have created the session), so the ONLY acceptable evidence is a
      * strong score against the request.
      */

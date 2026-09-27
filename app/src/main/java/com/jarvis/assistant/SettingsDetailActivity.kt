@@ -50,7 +50,7 @@ import timber.log.Timber
  * permission launchers, Activity results and lifecycle stay in ONE place, and a
  * controller reaches the outside world only through the narrow host interface.
  *
- * HOST-OWNED (not a controller), per the FLIP plan's behavioural checklist:
+ * HOST-OWNED (not a controller), with this behavioural checklist:
  *  - [awaitAssistantGraph]: the 45 s bounded bootstrap wait
  *    ([GRAPH_READY_TIMEOUT_MS]) preserved verbatim from the old Activity, so a
  *    mid-bootstrap service reads as «запускается», never as «не запущен»;
@@ -257,7 +257,7 @@ class SettingsDetailActivity : AppCompatActivity(), SettingsHost {
             // playback-capture lane (SOFTWARE mode only).
             val graph = GraphHolder.graph
             if (graph == null) {
-                // F8: the consent returned after the service was stopped — the
+                // The consent returned after the service was stopped — the
                 // old toast claimed "credentials saved", which was wrong.
                 toast(R.string.aec_service_not_running)
             } else if (graph.aecMode != AecMode.SOFTWARE) {
@@ -274,7 +274,7 @@ class SettingsDetailActivity : AppCompatActivity(), SettingsHost {
         }
         if (requestCode == PPN_REQUEST && resultCode == RESULT_OK && data != null) {
             val uri = data.data ?: return
-            // L2: only a .ppn file is valid.
+            // Only a .ppn file is valid.
             if (!WakeWordImport.isPpnFileName(uri.lastPathSegment)) {
                 toast(R.string.error_ppn_file)
                 return
@@ -282,11 +282,11 @@ class SettingsDetailActivity : AppCompatActivity(), SettingsHost {
             val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
             // A provider may hand out a non-persistable grant; that is not fatal
             // for a one-shot copy, so it is reported and the copy proceeds.
-            // (L4: the URI is only read once, below, so the grant is released
+            // The URI is only read once, below, so the grant is released
             // again immediately after.)
             runCatching { contentResolver.takePersistableUriPermission(uri, takeFlags) }
                 .onFailure { Timber.w("wake-word import: the URI grant is not persistable") }
-            // L3: copy into a private app file; the copy lands in a temp file and
+            // Copy into a private app file; the copy lands in a temp file and
             // replaces the model only once verified, and the outcome is reported
             // instead of silently skipped.
             val destination = getFileStreamPath(WakeWordImport.PPN_FILE_NAME)

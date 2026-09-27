@@ -26,15 +26,15 @@ import kotlin.coroutines.coroutineContext
  * [com.jarvis.assistant.audio.aec.FarEndMixer].
  *
  * One defensive copy remains here even though [AudioRecordSource.read] now
- * always returns a private copy (audit #8): an injected [EchoCanceller] may
+ * always returns a private copy: an injected [EchoCanceller] may
  * return its OWN internal buffer (the bypass path returns the input
  * instance), so the single copy below is what guarantees the ring buffer and
  * the flow share one immutable snapshot that no later stage can overwrite.
  *
- * M8: ring capacity derives from [JarvisConfig.preRollMs] instead of a fixed
+ * Ring capacity derives from [JarvisConfig.preRollMs] instead of a fixed
  * 160 ms; evictions of unread pre-roll frames are counted and logged.
  *
- * m5: when the source reports itself not started/closed ([IllegalStateException]
+ * When the source reports itself not started/closed ([IllegalStateException]
  * from [AudioSource.read]) the producer exits cleanly with a single log line
  * instead of spamming retry delays; [start] revives it.
  */
@@ -52,13 +52,13 @@ class AudioPipeline(
         /** After the first eviction, re-log only every Nth eviction to avoid log floods. */
         private const val EVICTION_LOG_STRIDE = 50L
 
-        /** Park interval while the producer waits for [start] (m5). */
+        /** Park interval while the producer waits for [start]. */
         private const val PRODUCER_IDLE_PARK_MS = 10L
 
         /** Backoff between consecutive read retries. */
         private const val READ_RETRY_DELAY_MS = 100L
 
-        /** Consecutive read failures after which the producer gives up (#25). */
+        /** Consecutive read failures after which the producer gives up. */
         private const val GIVE_UP_AFTER_CONSECUTIVE_FAILURES = 50
 
         /**
@@ -118,7 +118,7 @@ class AudioPipeline(
 
     /**
      * True while the native source is OPEN — tracked independently of
-     * [running] (A3). A producer that gave up after repeated read failures
+     * [running]. A producer that gave up after repeated read failures
      * leaves `running == false` while the AudioRecord may still be open, so a
      * [stop] in that state must still release the mic. Mutated only under
      * [producerLock] (see [closeSourceLocked]).
@@ -127,7 +127,7 @@ class AudioPipeline(
 
     /**
      * True when the producer exited after [GIVE_UP_AFTER_CONSECUTIVE_FAILURES]
-     * consecutive read failures (audit #25). Distinct from a clean stop
+     * consecutive read failures. Distinct from a clean stop
      * ([stop]) or a source-unavailable exit: only a give-up means "the source
      * itself is failing repeatedly", which is exactly the condition the
      * service watchdog should retry. Cleared by a successful [start].
@@ -137,7 +137,7 @@ class AudioPipeline(
     private var producerJob: Job? = null
 
     /**
-     * Serializes [producerJob] hand-offs (audit #11): [start] can be called
+     * Serializes [producerJob] hand-offs: [start] can be called
      * from the init thread, a binder thread (unmute) and the power receiver,
      * and two overlapping `ensureProducer()` calls used to race their
      * `isActive` check and launch DUPLICATE capture coroutines (double
@@ -286,7 +286,7 @@ class AudioPipeline(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: IllegalStateException) {
-                // Source not started / closed underneath us (m5): producing is
+                // Source not started / closed underneath us: producing is
                 // pointless until the next start(); exit cleanly, once.
                 // Log FIRST: isRunning()==false must be the LAST observable
                 // event, so observers never miss this line.
@@ -301,7 +301,7 @@ class AudioPipeline(
                 consecutiveFailures++
                 if (consecutiveFailures >= GIVE_UP_AFTER_CONSECUTIVE_FAILURES) {
                     Timber.e(e, "AudioPipeline: %d consecutive failures, giving up", consecutiveFailures)
-                    // #25: leave observable, actionable state behind. With
+                    // Leave observable, actionable state behind. With
                     // running still true the pipeline REPORTED active while
                     // producing nothing, and the only revival path (an
                     // external start()) never fires on its own. running=false
@@ -341,7 +341,7 @@ class AudioPipeline(
      * cover the producer's blocking `source.read()` (that would let a stalled
      * HAL park a binder/main-thread caller).
      *
-     * P1-S #4: read-vs-teardown safety is the SOURCE's job — [AudioRecordSource]
+     * Read-vs-teardown safety is the SOURCE's job — [AudioRecordSource]
      * counts in-flight native reads and defers the record release to the last
      * one, so [AudioSource.stop] returns promptly without ever pulling the
      * record out from under a reader.
@@ -351,7 +351,7 @@ class AudioPipeline(
             wantRunning = false
             // Close based on sourceOpen, NOT running: after a give-up the
             // producer leaves running=false while the AudioRecord is still
-            // open, and the user's stop must actually release the mic (A3).
+            // open, and the user's stop must actually release the mic.
             running = false
             closeSourceLocked()
         }
@@ -359,7 +359,7 @@ class AudioPipeline(
 
     fun isRunning(): Boolean = running
 
-    /** True when the producer gave up after repeated read failures (audit #25). */
+    /** True when the producer gave up after repeated read failures. */
     fun hasGivenUp(): Boolean = gaveUp
 
     fun release() {

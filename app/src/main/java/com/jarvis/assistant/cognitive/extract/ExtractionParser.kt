@@ -12,11 +12,11 @@ import kotlinx.serialization.json.put
 import timber.log.Timber
 
 /**
- * COGNITIVE_PLAN §6.2: strict local validation of the extraction LLM's
+ * Strict local validation of the extraction LLM's
  * response — the evidence-anchored anti-hallucination gate. Nothing reaches
  * the normalizer (and therefore storage) without passing here.
  *
- * Validation rules (plan §6.2 + Appendix A):
+ * Validation rules:
  * 1. The response must CONTAIN a JSON object (models sometimes wrap JSON in
  *    prose or ``` fences — the first `{` to the last `}` is parsed; failure
  *    → [Result.ParseError], the queue row is QUARANTINED, never retried
@@ -75,7 +75,7 @@ class ExtractionParser {
         val root = try {
             json.parseToJsonElement(extracted).jsonObject
         } catch (e: Exception) {
-            // P1-C (audit rule 11): kotlinx JSON messages quote the raw
+            // kotlinx JSON messages quote the raw
             // fragment they tripped on — that is fact content. The detail
             // flows into the worker's WARN line, which FileLoggingTree
             // persists, so only the exception CLASS may cross here.
@@ -179,7 +179,7 @@ class ExtractionParser {
     }
 }
 
-/** Structured summary of one batch outcome for counters/telemetry (plan §6.2). */
+/** Structured summary of one batch outcome for counters/telemetry. */
 data class ExtractionBatchReport(
     val batchId: String,
     val messages: Int,

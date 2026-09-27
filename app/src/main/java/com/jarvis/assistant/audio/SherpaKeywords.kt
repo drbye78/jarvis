@@ -13,7 +13,7 @@ package com.jarvis.assistant.audio
  *
  * The stop phrase is the English word "stop" — acoustically the SAME word
  * as Russian «стоп» (/stɒp/), which is why the English-BPE gigaspeech model
- * can spot it: FIXPLAN B's voice stop works in both product languages with
+ * can spot it: voice stop works in both product languages with
  * zero extra models.
  */
 object SherpaKeywords {
@@ -23,7 +23,7 @@ object SherpaKeywords {
     /** BPE("Jarvis".uppercase()) — must stay identical to assets/sherpa_kws/keywords.txt. */
     const val WAKE_TOKEN_LINE = "▁JA R VI S"
 
-    /** Id routed for the stop phrase (FIXPLAN B). */
+    /** Id routed for the stop phrase. */
     const val STOP_ID = "stop"
 
     /** BPE("stop".uppercase()) — must stay identical to the shipped asset lines. */
@@ -48,7 +48,7 @@ object SherpaKeywords {
     /** The wake phrase entry. */
     fun wake(): Entry = Entry(WAKE_TOKEN_LINE, WAKE_ID, isStop = false)
 
-    /** The stop phrase entry (FIXPLAN B). */
+    /** The stop phrase entry. */
     fun stop(): Entry = Entry(STOP_TOKEN_LINE, STOP_ID, isStop = true)
 
     /**

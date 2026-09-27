@@ -71,7 +71,7 @@ object AlarmTimes {
 }
 
 /**
- * REMEDIATION_PLAN P3.1: pure decision logic for exact-alarm availability.
+ * Pure decision logic for exact-alarm availability.
  * NO Android imports: [sdkInt] and the `AlarmManager.canScheduleExactAlarms()`
  * result (null = not queried, API < 31) come in as plain values so the
  * degrade-vs-exact matrix is JVM-testable without Robolectric.
@@ -156,7 +156,7 @@ fun canScheduleExactAlarms(context: Context): Boolean {
 }
 
 /**
- * T13: pure decision for an alert discovered OVERDUE (boot / re-arm sweep).
+ * Pure decision for an alert discovered OVERDUE (boot / re-arm sweep).
  * NO Android imports — the overdue delta and row fields come in as plain
  * values so the ring-vs-roll-forward-vs-disable matrix is JVM-testable.
  *
@@ -242,7 +242,7 @@ fun alertArmClockFor(alert: ScheduledAlertEntity): AlertArmClock =
 /**
  * Production armer. EVERY PendingIntent is built through the private helpers
  * below, so arm and cancel are structurally identical (same action, class,
- * request code and flags) — parity by construction, not convention (cf. M2).
+ * request code and flags) — parity by construction, not convention.
  *
  * The request code is always the alert row id ([ScheduledAlertEntity.id],
  * Int, no narrowing): collision-free by construction. The old scheme of
@@ -250,7 +250,7 @@ fun alertArmClockFor(alert: ScheduledAlertEntity): AlertArmClock =
  * (wrapping mod 2³², colliding under FLAG_UPDATE_CURRENT) is deleted.
  * Request codes are a DIFFERENT namespace from notification ids — the
  * ringing notification id is row-id-banded via
- * [com.jarvis.assistant.util.NotificationIds.ringingId] (decision #3);
+ * [com.jarvis.assistant.util.NotificationIds.ringingId];
  * these arm/cancel codes stay raw.
  */
 class SystemAlertArmer(private val context: Context) : AlertArmer {
@@ -265,7 +265,7 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
                 }
             putExtra(AlarmReceiver.EXTRA_ALERT_ID, id)
             putExtra(AlarmReceiver.EXTRA_LABEL, label)
-            // Fire identity (P3.2): the receiver hands this back to
+            // Fire identity: the receiver hands this back to
             // AlertDao.applyFired so a snooze/edit racing the fire cannot be
             // clobbered by a stale delivery.
             putExtra(AlarmReceiver.EXTRA_TRIGGER_AT, triggerAtMillis)
@@ -293,7 +293,7 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
         )
 
     override fun arm(alert: ScheduledAlertEntity) {
-        // Audit #12: null-safe lookups — a missing manager logs and skips
+        // Null-safe lookups — a missing manager logs and skips
         // instead of crashing the scheduling call.
         val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
             ?: run {
@@ -333,7 +333,7 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
             }
 
             is ExactAlarmPolicy.AlertDeliveryPlan.Degraded -> {
-                // P3.1 honest degradation: bounded-latency inexact window for
+                // Honest degradation: bounded-latency inexact window for
                 // timers, `setAndAllowWhileIdle` for alarms (no exact-alarm
                 // permission needed for either) + a ONE-TIME user-visible
                 // notification (Timber alone would hide the degraded precision).
@@ -366,13 +366,13 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
      * User-visible signal for the inexact degradation (timer OR alarm): once
      * per armer instance, NOT once per alert, so every timer/alarm/toggle does
      * not spam a notification. Call sites must share ONE armer
-     * ([AlarmSchedulerProvider], AppGraph-owned — decision #10);
+     * ([AlarmSchedulerProvider], AppGraph-owned);
      * a per-call-site armer would silently re-arm this gate and re-post the
      * note on every toggle.
      *
      * The note carries a contentIntent to the system «Alarms & reminders»
      * grant screen (API 31+): asking for the permission in text without a way
-     * to grant it was the audit finding — the tap now lands the user exactly
+     * to grant it — the tap now lands the user exactly
      * where the text points.
      */
     private val degradeNoteGate = OneShotGate()
@@ -441,11 +441,11 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
 }
 
 /**
- * Single authority for everything that rings (M9/S3/M3): persists rows in
+ * Single authority for everything that rings: persists rows in
  * `scheduled_alerts` and arms/cancels [AlarmManager] through [AlertArmer].
  * Request code == row id, so schedule/cancel parity is exact and codes are
  * unique by construction; the ringing NOTIFICATION id is that row id banded
- * through [com.jarvis.assistant.util.NotificationIds.ringingId] (decision #3)
+ * through [com.jarvis.assistant.util.NotificationIds.ringingId]
  * so it can never intersect the assistant notification band 0..999.
  *
  * All mutations go through here; the ringing activity, BootReceiver and the
@@ -456,7 +456,7 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
  * the armer holds one-shot degradation state ([OneShotGate]) and the whole
  * scheduler is state-bearing; use the shared instance from
  * [AlarmSchedulerProvider]; AppGraph installs the graph-owned one at
- * construction (decision #10, P2-A wired).
+ * construction.
  */
 class AndroidAlarmScheduler(
     private val dao: AlertDao,
@@ -508,7 +508,7 @@ class AndroidAlarmScheduler(
     }
 
     /**
-     * Persists a TIMER row and arms it — timers survive reboot now (M9/S3);
+     * Persists a TIMER row and arms it — timers survive reboot now;
      * previously they existed only inside AlarmManager and vanished on reboot.
      *
      * Both clock domains are computed at arm time: the countdown is anchored
@@ -533,7 +533,7 @@ class AndroidAlarmScheduler(
 
     /**
      * Cancels the pending intent and deletes the row. ALSO stops a live ring
-     * for that alert (REMEDIATION_PLAN P3.9): the voice/UI cancel tools used
+     * for that alert: the voice/UI cancel tools used
      * to delete the DB row while the ringer kept sounding and the notification
      * stayed up. The ring stop is owned by [RingCoordinatorProvider].
      */
@@ -549,7 +549,7 @@ class AndroidAlarmScheduler(
      * Lying-switch fix: `enabled=1` used to be persisted BEFORE the trigger
      * was computed, so re-enabling an expired one-shot left a row claiming
      * armed while nothing was scheduled (UI switch ON, nothing ever rings).
-     * Atomicity fix (audit P1-D): the whole read → compute → write sequence
+     * Atomicity fix: the whole read → compute → write sequence
      * now runs inside [AlertDao.applyEnable]'s single transaction — a snooze
      * or a fire racing this toggle can no longer be silently clobbered by a
      * full-row update from a stale snapshot — and the arming value comes from
@@ -573,19 +573,19 @@ class AndroidAlarmScheduler(
     }
 
     /**
-     * Called when an alert actually rang (M3). IDEMPOTENT, and invoked from
-     * [AlarmReceiver]'s ring-begin (REMEDIATION_PLAN P3.1) — NOT from the
+     * Called when an alert actually rang. IDEMPOTENT, and invoked from
+     * [AlarmReceiver]'s ring-begin — NOT from the
      * ringing activity and NOT from button handlers — so the terminal DB
      * transition survives "the activity never launched or was killed".
      *
-     * Atomicity fix (audit P1-D): the read, the idempotency guards and the
+     * Atomicity fix: the read, the idempotency guards and the
      * write now happen inside ONE [AlertDao.applyFired] transaction, so a
      * snooze racing this call cannot lose either write — whichever
      * transaction commits last fully defines the row, and the arm/cancel
      * below acts on THAT transaction's returned values, never on a snapshot
      * taken before it. Arming stays outside the transaction.
      *
-     * Fire-identity guard (P3.2): [firedTriggerMillis] is the trigger the
+     * Fire-identity guard: [firedTriggerMillis] is the trigger the
      * delivered broadcast was armed for; a non-daily row whose stored trigger
      * no longer equals it (snoozed/edited concurrently) is left alone.
      *
@@ -596,7 +596,7 @@ class AndroidAlarmScheduler(
      * - One-shot (timer or single alarm): disables the row.
      *
      * Returns the [FiredResolution] so the ring-begin can distinguish a live
-     * fire from a stale/snoozed one and suppress the ring accordingly (P3.2).
+     * fire from a stale/snoozed one and suppress the ring accordingly.
      */
     suspend fun onFired(id: Int, firedTriggerMillis: Long): FiredResolution =
         when (
@@ -641,7 +641,7 @@ class AndroidAlarmScheduler(
     }
 
     /**
-     * Boot / package-replace re-arm (M9): enabled ALARMs are always armed
+     * Boot / package-replace re-arm: enabled ALARMs are always armed
      * (dailies rolled forward past missed days); TIMERs only while their
      * wall-clock trigger is still in the future — expired ones are disabled so
      * they do not linger as armed-able ghosts. Each alarm's roll-forward write
@@ -800,8 +800,7 @@ private fun FiredResolution.DailyRearmed.toAlert(): ScheduledAlertEntity = Sched
 
 /**
  * Process-wide shared [AndroidAlarmScheduler] for lanes that do not (yet)
- * receive one by construction — the alarms UI and the ringing activity
- * (audit P1-D / decision #10).
+ * receive one by construction — the alarms UI and the ringing activity.
  *
  * Why a provider at all: constructing a scheduler per call-site (the old
  * `AndroidAlarmScheduler(dao, SystemAlertArmer(this))` in every click
@@ -810,7 +809,7 @@ private fun FiredResolution.DailyRearmed.toAlert(): ScheduledAlertEntity = Sched
  * notification then re-posted on every toggle. The provider guarantees ONE
  * armer per process, so the note is honest and the instance graph is stable.
  *
- * Lifecycle (P2-A wired):
+ * Lifecycle:
  *  - AppGraph builds the graph-owned scheduler (same DAO + armer it hands
  *    to FunctionRouter) and calls [install] at construction — every graph
  *    (re)build re-installs, last graph wins;
@@ -863,8 +862,8 @@ object AlarmSchedulerProvider {
 }
 
 /**
- * Fired by AlarmManager when an alarm or timer triggers (REMEDIATION_PLAN
- * P3.1). The receiver OWNS the terminal transition: it `goAsync()`es and runs
+ * Fired by AlarmManager when an alarm or timer triggers. The receiver OWNS
+ * the terminal transition: it `goAsync()`es and runs
  * [RingCoordinator.beginRing] on the process app scope ([RingCoordinatorProvider.scope])
  * BEFORE posting the notification / launching the full-screen activity. The
  * old flow was fire-and-forget from the ringing activity's ioScope, so a ring
@@ -955,8 +954,7 @@ class AlarmReceiver : BroadcastReceiver() {
         const val ACTION_DISMISS = "com.jarvis.assistant.ALARM_DISMISS"
 
         /**
-         * Notification identity for an alert's ringing notification (audit
-         * #20 + remediation decision #3).
+         * Notification identity for an alert's ringing notification.
          *
          * The row id stays the AlarmManager request code AND the
          * full-screen-intent PendingIntent request code (parity by
@@ -973,7 +971,7 @@ class AlarmReceiver : BroadcastReceiver() {
         const val EXTRA_LABEL = "label"
         const val EXTRA_IS_TIMER = "is_timer"
 
-        /** Trigger time the broadcast was armed for (fire identity, P3.2). */
+        /** Trigger time the broadcast was armed for (fire identity). */
         const val EXTRA_TRIGGER_AT = "trigger_at_millis"
 
         /** Durable ring-session token carried by the activity + action intents. */

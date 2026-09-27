@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
  * Reacts to boot / app update AND re-arms every persisted alert through the
  * unified scheduler: alarms always (dailies rolled past missed days) and
  * timers while still in the future — before the unified store timers vanished
- * on reboot entirely (M9/S3).
+ * on reboot entirely.
  *
  * The receiver no longer starts the assistant service itself. Since minSdk 29
  * (Android 10 / HarmonyOS 2.0 wall device) a foreground service started from

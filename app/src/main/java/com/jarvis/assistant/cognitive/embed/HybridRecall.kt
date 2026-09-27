@@ -1,8 +1,8 @@
 package com.jarvis.assistant.cognitive.embed
 
 /**
- * COGNITIVE_PLAN Phase 3 (§11: "brute-force cosine + RRF hybrid"): pure
- * Reciprocal-Rank-Fusion of the lexical lane with the vector lane.
+ * Pure Reciprocal-Rank-Fusion of the lexical lane with a brute-force
+ * cosine vector lane.
  *
  * RRF is rank-based on purpose: the two channels produce scores on
  * incomparable scales (the ranker's 0..1 weighted mix vs cosine), and only
@@ -11,7 +11,7 @@ package com.jarvis.assistant.cognitive.embed
  * little, and a fact surfaced by BOTH channels rises above either alone.
  *
  * Determinism: ties break by first-listed-channel order (primary = the
- * lexical/ranker lane, the Phase 1 behavior), so a fixture test can assert
+ * lexical/ranker lane), so a fixture test can assert
  * exact orderings. Pure Kotlin, no I/O.
  */
 object HybridRecall {

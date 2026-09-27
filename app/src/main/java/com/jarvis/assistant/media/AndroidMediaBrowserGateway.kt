@@ -23,9 +23,9 @@ import kotlin.coroutines.resume
  * Behavior matrix (ground truth per player, revealed by the MusicDiag dump):
  *  - onGetRoot returns null          → onConnectionFailed → connect() = null
  *  - onGetRoot returns EMPTY root    → onConnected, token available (no
- *    browsing, but S2 cold start still works)
+ *    browsing, but cold start still works)
  *  - browsable root                  → children() returns the library tree
- *  - onSearch implemented            → search() returns scored results (S0)
+ *  - onSearch implemented            → search() returns scored results
  *
  * Permission model: binding needs NO permission and NO notification-listener
  * access; the session token controller is the Assistant-grade headless path.
@@ -84,7 +84,7 @@ class AndroidMediaBrowserGateway(private val context: Context) : MediaBrowserGat
                     val callback = object : MediaBrowserCompat.ConnectionCallback() {
                         override fun onConnected() {
                             // Refused-root services never reach here; empty-root
-                            // services DO (token, no browse) — that is S2's lane.
+                            // services DO (token, no browse) — that is the cold-start lane.
                             val b = browser
                             if (cont.isActive) {
                                 if (b != null) {
