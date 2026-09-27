@@ -304,6 +304,7 @@ storing results beyond 30 days.
 
 ## Docs
 - [ARCHITECTURE.md](ARCHITECTURE.md) — component and concurrency model.
+- [THREAT_MODEL.md](THREAT_MODEL.md) — assets, attackers, egress, authorization model.
 - [RUNBOOK.md](RUNBOOK.md) — troubleshooting, debugging, performance targets.
 
 ## Tech stack

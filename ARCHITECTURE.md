@@ -538,6 +538,10 @@ base URL).
 
 ## Security
 
+See **`THREAT_MODEL.md`** for the assets, the local/remote attacker analysis, the
+complete egress list and the authorization model. The invariants below are the
+architectural summary.
+
 - **Per-user credentials, no shared secrets.** Provider keys (Picovoice, Sber
   Salute, GigaChat, Yandex Cloud API key) are entered in-app via
   **Settings** and stored in `KeystoreVault` (AndroidKeyStore AES-256-GCM; the

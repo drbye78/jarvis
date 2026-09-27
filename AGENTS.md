@@ -102,4 +102,4 @@ The full contract:
 - Cloud calls are gated, batched, capped, and honestly degradable — `memory.cloudEnabled=false` must yield zero new egress classes.
 
 ## References
-- `README.md` (setup/usage), `RUNBOOK.md` (troubleshooting + Known limitations), `ARCHITECTURE.md` (data flow, layers, security). This file is the quick-start; those are the spec.
+- `THREAT_MODEL.md` (assets, attackers, egress, the authorization model), `README.md` (setup/usage), `RUNBOOK.md` (troubleshooting + Known limitations), `ARCHITECTURE.md` (data flow, layers, security). This file is the quick-start; those are the spec.
