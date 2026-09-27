@@ -13,6 +13,8 @@ import com.jarvis.assistant.llm.withLlmRetry
 import com.jarvis.assistant.model.ChatRequest
 import com.jarvis.assistant.model.Message
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import timber.log.Timber
 import java.io.IOException
 
@@ -49,6 +51,12 @@ class ExtractionQueueWorker(
     private val normalizer: FactNormalizer = FactNormalizer(),
     private val parser: ExtractionParser = ExtractionParser(),
     private val inTransaction: suspend (suspend () -> Unit) -> Unit = { block -> block() },
+    /**
+     * Master memory switch. The opt-in backfill must not create extraction
+     * rows that nothing will drain while memory is off (the drain loop is
+     * gated on the same switch). Read live; never a construction snapshot.
+     */
+    private val memoryEnabled: StateFlow<Boolean> = MutableStateFlow(true),
 ) {
 
     private val writer = MemoryWriter(factDao, normalizer, inTransaction)
@@ -279,6 +287,10 @@ class ExtractionQueueWorker(
         limit: Int = BACKFILL_LIMIT,
         force: Boolean = false,
     ): Int {
+        // Frozen while memory is off: return 0 WITHOUT consuming the one-shot
+        // `extractionBackfillDone` flag, so the user's backfill still runs
+        // after re-enabling memory.
+        if (!memoryEnabled.value) return 0
         if (!force && metaDao.get(MemoryMetaEntity.KEY_EXTRACTION_BACKFILL_DONE) != null) {
             return -1 // already done (UI shows the "done" state)
         }

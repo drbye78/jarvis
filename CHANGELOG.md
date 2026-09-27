@@ -6,6 +6,24 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Fixed — turning memory OFF could still destroy stored facts
+- **The nightly maintenance pass silently ignored the memory switch.** With
+  «Долговременная память» OFF the app correctly stopped *learning* (prompt reads
+  return empty, the tools answer `Disabled`, ingest is gated, the extraction
+  loop idles) — but `onMaintenance()` ran every step unconditionally, so stored
+  facts were still decayed and archived, and `SUPERSEDED` rows older than the
+  90-day retention were **hard-deleted**, while the user believed memory was
+  off. The UI scopes deletion explicitly to the manual wipe
+  («Все воспоминания… будут удалены… Отменить это нельзя»), so this contradicted
+  the product's own promise. Every memory-mutating step now routes through a
+  `memoryStep` guard that skips it while the switch is off, leaving facts,
+  queued rows, vectors and entities **frozen** until memory is re-enabled;
+  the behaviour-layer retention (command events, behaviour log) and the
+  maintenance stamp still run, and both backfill entry points now enqueue
+  nothing without consuming the one-shot flag. The manual «Забыть всё» wipe
+  remains the only path that deletes stored memory.
+  (`MemoryFreezeMaintenanceTest` pins both directions.)
+
 ### Added — THREAT_MODEL.md
 - **A formal threat model, the audit's "biggest missing artifact".** It covers a
   local attacker (filesystem / `adb` / backup / physical), a remote attacker

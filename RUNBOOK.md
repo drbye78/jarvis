@@ -596,7 +596,12 @@ Pass: all seven observations hold, no crashes, and the stop-phrase behavior
 is unchanged throughout the scenario. Turn the «Долговременная память»
 switch OFF mid-session and repeat (4) → the assistant must not inject
 memory content (kill-switch degrades to the pre-cognitive prompt,
-snapshot-tested).
+snapshot-tested). While the switch is OFF the stored memory is also
+**frozen**: the nightly maintenance pass skips every memory-mutating step
+(no decay, no archiving, no superseded-retention delete, no vector/entity
+work), so nothing is silently destroyed — the manual «Забыть всё» wipe is
+the only path that deletes stored memory. Re-enabling the switch resumes
+the pass against the untouched data.
 
 ### E2E scenario: proactive suggestion, accept and reject paths (Phase 2)
 

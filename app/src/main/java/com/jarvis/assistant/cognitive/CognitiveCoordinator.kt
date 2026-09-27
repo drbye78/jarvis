@@ -151,6 +151,7 @@ class CognitiveCoordinator(
         llm = llm,
         normalizer = normalizer,
         inTransaction = inTransaction,
+        memoryEnabled = memoryEnabled,
     )
 
     /** Export (Inspector support) extracted; composition only. */
@@ -977,14 +978,38 @@ class CognitiveCoordinator(
         }
     }
 
+    /**
+     * Memory-freeze guard for the nightly pass. While the master
+     * `memoryEnabled` switch is OFF, every step that MUTATES memory tables
+     * (facts, vectors, entities, summaries) is skipped: stored facts, queued
+     * rows, vectors and entities are left EXACTLY as they were and resume
+     * when the switch flips back on. The manual «Забыть всё» wipe is the ONLY
+     * path that deletes stored memory — maintenance-off must never silently
+     * destroy it. The flag is read live from the reactive source, never
+     * snapshotted at construction.
+     *
+     * Composes [maintenanceStep], so a skipped step is silent (not logged as
+     * a failure) and a genuine failure in a running step still cannot skip
+     * the rest of the pass.
+     */
+    private suspend fun memoryStep(
+        name: String,
+        block: suspend () -> Unit,
+    ) {
+        if (!memoryEnabled.value) return
+        maintenanceStep(name, block)
+    }
+
     suspend fun onMaintenance() {
         val now = nowMs()
         // Every step individually guarded so one failure cannot
-        // skip the others.
-        maintenanceStep("decay step") { decayInactiveFacts(now) }
-        maintenanceStep("compaction step") { compactOverCap() }
-        maintenanceStep("superseded-retention step") { deleteExpiredSuperseded(now) }
-        // ---- Behaviour + summary + compaction steps ----
+        // skip the others. Memory steps additionally freeze while the master
+        // switch is off (see [memoryStep]).
+        // ---- Memory steps: frozen while `memoryEnabled` is OFF ----------
+        memoryStep("decay step") { decayInactiveFacts(now) }
+        memoryStep("compaction step") { compactOverCap() }
+        memoryStep("superseded-retention step") { deleteExpiredSuperseded(now) }
+        // ---- Behaviour steps: NOT memory, always run --------------------
         // ONE acquisition of `ruleWriteMutex` for all three habit passes,
         // so no session-lane reject/accept can land between them.
         maintenanceStep("habit maintenance") { habitDetector.nightly(now) }
@@ -994,14 +1019,17 @@ class CognitiveCoordinator(
         maintenanceStep("behavior-log retention") {
             behaviorLogDao.deleteOlderThan(now - BEHAVIOR_LOG_RETENTION_MS)
         }
-        maintenanceStep("summary compaction") { compactSummaries() }
-        maintenanceStep("summarization step") {
+        // ---- Memory steps (continued): frozen while OFF ------------------
+        memoryStep("summary compaction") { compactSummaries() }
+        memoryStep("summarization step") {
             val made = summarizer.runBacklogAndDigest()
             if (made > 0) Timber.i("Cognitive: %d summary batch(es) produced", made)
         }
-        // ---- Semantic-recall steps ----
-        maintenanceStep("vector maintenance") { vectorMaintenance() }
-        maintenanceStep("entity derivation") { deriveEntities() }
+        // ---- Semantic-recall steps: memory, frozen while OFF -------------
+        memoryStep("vector maintenance") { vectorMaintenance() }
+        memoryStep("entity derivation") { deriveEntities() }
+        // The stamp is NOT memory: it must still advance while frozen, or
+        // the staleness check re-triggers maintenance on every launch.
         maintenanceStep("maintenance stamp") {
             metaDao.putValue(MemoryMetaEntity.KEY_LAST_MAINTENANCE_AT, now.toString())
         }
@@ -1217,6 +1245,10 @@ class CognitiveCoordinator(
      * means "already done" (the UI shows the done state).
      */
     suspend fun backfillRecent(limit: Int = ExtractionQueueWorker.BACKFILL_LIMIT): Int {
+        // Frozen with the rest of memory: enqueuing rows the drain loop will
+        // not process (it is gated on the same switch) would just accumulate
+        // extraction work until — and unless — memory comes back on.
+        if (!memoryEnabled.value) return 0
         val enqueued = worker.backfillRecent(limit)
         if (enqueued > 0) queueLoop.wake()
         return enqueued
