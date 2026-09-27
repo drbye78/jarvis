@@ -27,16 +27,58 @@ semver (pre-1.0: breaking changes bump the minor).
   **strictly later** turn with the identical candidate set. Same-turn, absent,
   stale and mismatched confirmations all fail closed (re-list, never a silent
   success). The soft-delete (status update, rows retained) is unchanged.
-  **Known residual risk, deliberately not claimed as closed:** the gate does
-  not verify that the user actually affirmed — any later utterance satisfies
-  `N' > N`, and `pendingForget` currently has no TTL. Closing that (an explicit
-  affirmative requirement plus expiry) is tracked as follow-up work.
+  **An independent adversarial review found the first cut was still one turn
+  wide** — it required only "a later turn", so any later utterance (including
+  «нет» or an unrelated question) would have confirmed it, and the pending
+  record never expired. The gate now additionally requires the user's **own
+  affirmative** in the **immediately-next** finalized utterance (a pure RU/EN
+  matcher, whole-token with negation and question vetoes), is bounded by both
+  turn age and a 5-minute wall-clock TTL, runs check-and-act atomically under a
+  coroutine mutex, and never consumes the confirmation before the delete loop
+  succeeds. Documented residual: a partial delete still leaves already-forgotten
+  rows forgotten (there is no cross-row rollback); it reports `Failed` rather
+  than a false success.
 - **The transcript's resting prompt now appears deterministically.** The empty
   state was only ever recomputed from `AdapterDataObserver` callbacks, but the
   adapter is a `ListAdapter`/`AsyncListDiffer` (per-range DiffUtil callbacks,
   never `notifyDataSetChanged`), so the hint's reveal depended on a zero-count
   range notification. `updateEmptyState()` is now also driven from the single
   submit site, and the unreachable `onChanged()` override is gone.
+- **Tool execution now has an authorization boundary.** Audited: the LLM's tool
+  calls went straight to `ToolRegistry.executeResult` with no policy — the only
+  guards were per-tool runtime checks and two prompt-level instructions, i.e.
+  model-judged. Every one of the 24 runtime tools now declares a `ToolRisk`
+  (`READ_ONLY`/`STATEFUL`/`IRREVERSIBLE`) pinned in a single table, and the
+  decision is enforced at the one choke point every call traverses; a denial is
+  an honest error result and `execute` is never invoked. **A first cut was
+  caught by adversarial review as decorative** — it bound
+  `explicitUserCommand = true` unconditionally, so every tool was allowed on the
+  only live path. It is now derived from the turn's own final ASR text by a
+  pure, negation-aware matcher, bound after ASR finalizes and before any
+  dispatch (a fail-closed `false` baseline before that), with `STATEFUL`
+  denying on an absent context and the one off-turn caller (pause-on-wake)
+  given an explicit system-authored context. `forget_fact` keeps its own
+  independent confirmation gate rather than relying on this layer. Known
+  limits: the gate is turn-granular, not per-argument; and the matcher is
+  deliberately conservative, so an unlisted phrasing simply asks again.
+- **Memory facts can no longer carry an unanchored `subject`.** The extraction
+  validator checked `value`, `messageId`, `evidence` and `confidence` but
+  accepted any `subject`, which was then stored and rendered verbatim into the
+  per-turn `<memory-context>` prompt — a second-order injection carrier. The
+  subject is now whitelisted (`user`) with a length cap and dropped-and-counted
+  when outside it, on **both** ingresses (extraction and `remember_fact`); the
+  extraction prompt and the tool schema were aligned to the same contract
+  (named people are expressed as a RELATION predicate with the name in `value`)
+  and the drifted eval fixtures re-encoded. Eval: precision 1.00 / recall 1.00.
+- **One malformed extraction response no longer quarantines its whole batch.**
+  A bad row is now attributed to its own `messageId` and only that row burns an
+  attempt, while a genuinely incoherent response still fails the batch together;
+  and an undecodable 2xx envelope from Yandex is surfaced as a typed transport
+  failure (retry) instead of an empty string that looked like a parse failure.
+  Yandex folder discovery gained its own bounded timeout and single-flight
+  resolution, the cognitive queue no longer registers a duplicate settings
+  watcher on restart, and the audio frame buffer was raised to ~500 ms (a
+  capacity change only — the overflow policy is unchanged).
 
 ### Changed — build
 - **JDK 17 is pinned per-repo** (`mise.toml`), so a fresh shell no longer
