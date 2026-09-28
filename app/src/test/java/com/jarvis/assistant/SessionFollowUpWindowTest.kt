@@ -43,16 +43,38 @@ import timber.log.Timber
  */
 class SessionFollowUpWindowTest {
 
-    /** Mic fake whose content flips between silence and loud speech. */
+    /** Mic fake whose content flips between silence, loud speech and a
+     *  decaying "echo" tail (the assistant's own reply heard by the mic). */
     private class SpeechPumpAudioSource : AudioSource {
         @Volatile var speech = false
+
+        /** Frames of the decaying "echo" tail still to emit. */
+        @Volatile private var tailFramesLeft = 0
+
+        /** Total frames in the current tail, for the decay denominator. */
+        @Volatile private var tailFramesTotal = 1
+
+        /** Emit a decaying tail of [frames] frames (3000 → 0 amplitude). */
+        fun startTail(frames: Int) {
+            tailFramesTotal = frames
+            tailFramesLeft = frames
+        }
+
         override fun start() {}
         override fun stop() {}
         override fun read(): ShortArray {
             // Real-time pacing (20 ms frames): a busy-loop fake would starve
             // the dispatcher and flake the collectors.
             Thread.sleep(20)
-            val amp = if (speech) 3000 else 0
+            val remaining = tailFramesLeft
+            val amp = when {
+                speech -> 3000
+                remaining > 0 -> {
+                    tailFramesLeft = remaining - 1
+                    (3000.0 * remaining / tailFramesTotal).toInt()
+                }
+                else -> 0
+            }
             return ShortArray(320) { (if (it % 2 == 0) amp else -amp).toShort() }
         }
     }
@@ -178,6 +200,40 @@ class SessionFollowUpWindowTest {
             }
             h.awaitState(AssistantState.LISTENING)
             assertEquals(2, h.asr.streams.size)
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `the assistant's own decaying reply tail starts no phantom turn`() = runBlocking {
+        // The window opens when TTS DRAINS — not when the speaker goes quiet.
+        // With AEC off the mic still hears the reply, so the old fixed 200 ms
+        // lead-in fired a follow-up turn from the assistant's own last words:
+        // measured on-device at 233/470/233 ms, i.e. lead-in + 2 onset frames.
+        val h = MiniHarness()
+        try {
+            h.startMic()
+            h.manager.setFollowUpWindow(enabled = true, windowMs = 4_000)
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) {
+                while (h.asr.streams.isEmpty()) delay(20)
+            }
+            // The reply is still ringing out as the turn ends and the window
+            // opens (~1.2 s decaying tail).
+            h.source.startTail(60)
+            h.asr.streams.last().emitFinal("расскажи анекдот")
+
+            h.awaitState(AssistantState.FOLLOW_UP_WINDOW)
+            // Well past the old lead-in: the tail must not have started a turn.
+            delay(2_500)
+            assertEquals(
+                "the assistant's own reply must not start a follow-up turn",
+                1,
+                h.asr.streams.size,
+            )
         } finally {
             h.shutdown()
         }

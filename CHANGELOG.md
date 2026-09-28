@@ -6,6 +6,24 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Fixed — phantom follow-up turns from the assistant's own voice
+- **The follow-up window («Продолжение диалога») started turns from the
+  assistant's own reply.** The window opens when TTS *drains* — the player's
+  buffer end, not when the speaker goes acoustically quiet — and with echo
+  cancellation off the mic still hears the reply. A fixed 200 ms lead-in
+  therefore armed the VAD while the last word was still ringing, and two
+  frames above the onset ratio began a new turn: on-device the phantom turns
+  fired **233 / 470 / 233 ms** after the window opened, i.e. `lead-in + 2
+  onset frames` — the earliest instant the code allowed, which only happens
+  when something is already loud at arming time. `session/FollowUpTailGate`
+  now arms the VAD only once the input has decayed to the room's noise floor
+  for three consecutive frames, with a bounded 800 ms fallback so a
+  permanently loud room is not left permanently deaf. In a quiet room the
+  gate opens exactly at the lead-in boundary, so AEC-on users gain no latency.
+- The gate is a pure, clock-free unit (`FollowUpTailGateTest`) and the
+  integration test reproduces the tail case against the real pipeline,
+  energy VAD and state machine — it fails if the gate is neutered.
+
 ### Fixed — the wake word never fired (a silent detection-discard bug)
 - **Jarvis detected "Jarvis" and then threw the result away.** The bundled
   Sherpa-ONNX spotter matched the phrase correctly, but `SherpaKwsEngine`

@@ -273,14 +273,14 @@ class SessionManager(
     val followUpProgress: StateFlow<Float> = _followUpProgress.asStateFlow()
 
     /**
-     * Frames at window open whose onset is IGNORED — the TTS tail may still
-     * be audible (and the VAD floor cold); 200 ms keeps both from firing a
-     * phantom follow-up turn.
-     *
-     * @Volatile: written by the session coroutine that opens the
+     * Arms the follow-up VAD only after the assistant's own TTS tail has
+     * decayed to the room's noise floor (with a bounded fallback so a noisy
+     * room is not left deaf). Written by the session coroutine that opens the
      * window, read by the window collector coroutine.
+     *
+     * @Volatile: the hand-off crosses coroutines.
      */
-    @Volatile private var followUpLeadIn = 0
+    @Volatile private var followUpGate = FollowUpTailGate()
 
     /** Live ASR partials for the UI (UI wiring happens in a later phase).
      * Written ONLY via [publishPartial] (turn-id guarded) and the guarded
@@ -875,58 +875,56 @@ class SessionManager(
                 return
             }
             windowJob?.cancel()
-            followUpLeadIn = LEAD_IN_SLOTS
+            followUpGate = FollowUpTailGate()
             followUpVad.reset()
             _followUpProgress.value = 1f
             windowJob = scope.launch {
                 try {
                     audioPipeline.frames.collect { frame ->
-                        if (followUpLeadIn > 0) {
-                            followUpLeadIn--
-                            // Still feeding the VAD so the noise floor adapts.
-                            followUpVad.process(frame)
-                            if (followUpLeadIn == 0) {
-                                // The lead-in may have swallowed a genuine onset
-                                // (speech already in progress when the window
-                                // opened). Forget the edge, keep the floor:
-                                // continuous speech re-fires within 2 frames.
+                        // Feed the VAD every frame so the noise floor adapts,
+                        // but ignore onsets until the tail gate opens.
+                        followUpVad.process(frame)
+                        if (!followUpGate.armed) {
+                            if (followUpGate.onFrame(followUpVad.lastRms, followUpVad.noiseFloor)) {
+                                // The ignored tail may have contained a genuine
+                                // onset (speech already in progress when the
+                                // window opened). Forget the edge, keep the
+                                // floor: continuous speech re-fires within two
+                                // frames against the kept floor.
                                 followUpVad.forceSilent()
                             }
-                        } else {
-                            followUpVad.process(frame)
-                            if (followUpVad.onset) {
-                                // Re-validate AT ONSET — the
-                                // collector may still be draining its last
-                                // frames when a barge-in bumps the seq (the
-                                // windowJob.cancel() cancellation is async).
-                                // Firing startSession here would cancel the
-                                // user's live ASR utterance. An expired/superseded
-                                // machine state is equally disqualifying —
-                                // applyMachineEvent would reject the transition
-                                // but startSession would still fire.
-                                if ((validSeq != null && validSeq != sessionSeq.get()) ||
-                                    stateMachine.currentState() != AssistantState.FOLLOW_UP_WINDOW
-                                ) {
-                                    Timber.i("Follow-up onset dropped — window superseded or closed")
-                                    throw CancellationException("follow-up window superseded")
-                                }
-                                Timber.i("Follow-up speech detected — starting turn")
-                                // The controller's onset verdict IS the
-                                // gate — it returns StartFollowUpTurn only
-                                // while the window is OPEN (its own state is
-                                // independent of the machine's, so consuming
-                                // the effect before the transition is
-                                // order-free).
-                                when (followUp.onVadActive()) {
-                                    FollowUpWindowController.Effect.StartFollowUpTurn -> {
-                                        applyMachineEvent(SessionEvent.FollowUpSpeechDetected)
-                                        // Tag the turn origin.
-                                        startSession(fromFollowUp = true) // cancels this collector via windowJob
-                                    }
-                                    null -> Unit // window already closed — drop the onset
-                                }
-                                throw CancellationException("follow-up turn started")
+                        } else if (followUpVad.onset) {
+                            // Re-validate AT ONSET — the
+                            // collector may still be draining its last
+                            // frames when a barge-in bumps the seq (the
+                            // windowJob.cancel() cancellation is async).
+                            // Firing startSession here would cancel the
+                            // user's live ASR utterance. An expired/superseded
+                            // machine state is equally disqualifying —
+                            // applyMachineEvent would reject the transition
+                            // but startSession would still fire.
+                            if ((validSeq != null && validSeq != sessionSeq.get()) ||
+                                stateMachine.currentState() != AssistantState.FOLLOW_UP_WINDOW
+                            ) {
+                                Timber.i("Follow-up onset dropped — window superseded or closed")
+                                throw CancellationException("follow-up window superseded")
                             }
+                            Timber.i("Follow-up speech detected — starting turn")
+                            // The controller's onset verdict IS the
+                            // gate — it returns StartFollowUpTurn only
+                            // while the window is OPEN (its own state is
+                            // independent of the machine's, so consuming
+                            // the effect before the transition is
+                            // order-free).
+                            when (followUp.onVadActive()) {
+                                FollowUpWindowController.Effect.StartFollowUpTurn -> {
+                                    applyMachineEvent(SessionEvent.FollowUpSpeechDetected)
+                                    // Tag the turn origin.
+                                    startSession(fromFollowUp = true) // cancels this collector via windowJob
+                                }
+                                null -> Unit // window already closed — drop the onset
+                            }
+                            throw CancellationException("follow-up turn started")
                         }
                         _followUpProgress.value = followUp.remainingFraction()
                         // The effect is the expiry verdict (emitted exactly
@@ -974,11 +972,6 @@ class SessionManager(
                 requireState = AssistantState.FOLLOW_UP_WINDOW,
             )
         }
-    }
-
-    private companion object {
-        /** Ignored-onset frames at window open (TTS tail + VAD warm-up). */
-        const val LEAD_IN_SLOTS = 10 // 200 ms
     }
 
     // ------------------------------------------------------------------
