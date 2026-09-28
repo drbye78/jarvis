@@ -252,7 +252,12 @@ class AudioPipeline(
                         (loggedEvictions == 0L || evicted - loggedEvictions >= EVICTION_LOG_STRIDE)
                     ) {
                         loggedEvictions = evicted
-                        Timber.w(
+                        // DEBUG, not WARN: evictions are the ring buffer's
+                        // normal idle behaviour (it is drained only when a turn
+                        // starts), so this fires ~1/s forever. At INFO+ it was
+                        // 80% of the persisted log and rotated away the
+                        // diagnostics that actually matter.
+                        Timber.d(
                             "Pre-roll overflow: %d unread frames evicted so far (capacity=%d frames)",
                             evicted,
                             ringBuffer.capacity,
@@ -266,7 +271,10 @@ class AudioPipeline(
                         sharedFlowDropCount++
                         val now = System.currentTimeMillis()
                         if (sharedFlowDropCount >= 100 || now - lastSharedFlowDropLog >= 5_000) {
-                            Timber.w(
+                            // DEBUG for the same reason as the pre-roll line:
+                            // "no subscriber" is the normal idle state, so this
+                            // is expected traffic, not a fault.
+                            Timber.d(
                                 "SharedFlow: %d frames emitted with no active subscribers (potential drops)",
                                 sharedFlowDropCount,
                             )

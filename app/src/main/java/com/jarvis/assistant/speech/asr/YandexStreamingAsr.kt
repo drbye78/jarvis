@@ -108,6 +108,16 @@ class YandexStreamingAsr(
         private val closed = AtomicBoolean(false)
 
         /**
+         * Set by [cancel] before tearing the context down. Our own teardown
+         * (barge-in, or the caller's `finally { stream.cancel() }` that runs on
+         * EVERY turn completion) surfaces in [onError] as a synthetic
+         * `CANCELLED` — that is control flow, not a failure. Logging it as an
+         * error wrote a ~24-line stack trace to disk on every single turn and
+         * is the second-largest log consumer after the pre-roll warnings.
+         */
+        private val intentionalCancel = AtomicBoolean(false)
+
+        /**
          * Audio frames dropped because the RPC was already closing or never
          * opened. Expected during teardown, but a silently growing counter
          * would hide a mis-paced producer — hence bounded, content-free
@@ -182,9 +192,18 @@ class YandexStreamingAsr(
                         val cause = (t as? StatusException)?.status?.code?.toString()
                             ?: (t as? io.grpc.StatusRuntimeException)?.status?.code?.toString()
                             ?: t.message
-                        Timber.e(t, "Yandex ASR stream error ($cause)")
+                        if (intentionalCancel.get()) {
+                            // A CANCELLED we caused ourselves — expected on every
+                            // turn teardown. Keep it out of INFO+ (which persists
+                            // to disk); no stack trace, no error voice.
+                            Timber.d("Yandex ASR stream cancelled by caller")
+                        } else {
+                            Timber.e(t, "Yandex ASR stream error ($cause)")
+                        }
                         // Shut the feeder gate BEFORE the terminal event so
-                        // send() stops feeding the dead RPC.
+                        // send() stops feeding the dead RPC. [emitTerminal] is
+                        // idempotent, so this is a no-op when a Final already
+                        // went out on the normal path.
                         closed.set(true)
                         emitTerminal(AsrEvent.Failed(t))
                     }
@@ -289,6 +308,8 @@ class YandexStreamingAsr(
 
         override fun cancel() {
             if (closed.getAndSet(true)) return
+            // Mark BEFORE the cancel: the resulting onError(CANCELLED) is ours.
+            intentionalCancel.set(true)
             cancellableContext.cancel(Status.CANCELLED.asException())
         }
 

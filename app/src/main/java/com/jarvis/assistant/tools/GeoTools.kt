@@ -104,7 +104,7 @@ class GeoPlaceTool(
     override val parametersJson = schema(
         mapOf(
             "query" to
-                """{"type":"string","description":"What to find — an organization, address or """" +
+                """{"type":"string","description":"What to find — an organization, address or """ +
                 """place, e.g. 'аптека' or 'улица Тверская 1'. Required."}""",
             "near" to
                 """{"type":"string","description":"City or area to search near, e.g. 'Москва'. """ +

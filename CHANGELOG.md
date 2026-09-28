@@ -6,6 +6,40 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Fixed — `findPlace` shipped an invalid parameter schema
+- **The geo search tool was advertised with no parameters on every turn.**
+  The `findPlace` query description contained an unescaped `"` (a stray quote
+  at the Kotlin raw-string boundary), so the assembled JSON was invalid. The
+  registry caught the parse failure and substituted an empty `properties`
+  object, so `findPlace` still appeared in the tool list but the model lost the
+  `query` argument — geo search was silently degraded, with a per-turn ERROR
+  log as the only symptom none of the audits or the test suite caught.
+- **Every tool now validates its schema at construction.** All 24 tools build
+  their `parametersJson` through the shared `schema()` helper, so it now parses
+  the assembled string there — the single choke point. A malformed fragment is
+  logged loudly once at construction and falls back to the empty schema instead
+  of being discovered per turn. It deliberately does not throw: a typo in one
+  description must not fail `AppGraph` construction and retry forever.
+- `ToolSchemaValidityTest` pins both the helper's contract and the real geo
+  tools' schemas; it fails if the `findPlace` defect is reintroduced.
+
+### Fixed — log hygiene: the persisted log was 80 % one benign warning
+- **The follow-up diagnostic history was being destroyed by expected traffic.**
+  `AudioPipeline` logged the pre-roll ring-buffer eviction — its *normal* idle
+  behaviour, since the buffer is drained only when a turn starts — at WARN
+  about once per second, forever. That was 8,531 of 10,702 persisted lines
+  (79.7 %), rotating away the diagnostics that actually matter. It and the
+  no-subscriber `SharedFlow` line are now DEBUG; `FileLoggingTree` persists
+  INFO+ only, so both stay available via logcat while idle traffic stops
+  evicting real history.
+- **The Yandex ASR `CANCELLED` was logged as an error on every turn.** The
+  caller cancels the stream on every turn teardown (and on barge-in), and gRPC
+  surfaces that as `StatusRuntimeException: CANCELLED` to the response
+  observer — normal control flow, which was written to disk as a ~24-line
+  stack trace on every single turn. The session now marks an intentional
+  cancel before tearing the context down and logs it at DEBUG without a stack
+  trace; genuine stream failures still log at ERROR.
+
 ### Fixed — phantom follow-up turns from the assistant's own voice
 - **The follow-up window («Продолжение диалога») started turns from the
   assistant's own reply.** The window opens when TTS *drains* — the player's

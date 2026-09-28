@@ -241,9 +241,32 @@ fun kotlinx.serialization.json.JsonObject.bool(key: String): Boolean? =
         }
     }
 
-/** Builds a JSON-schema string. */
+/** The safe fallback when a tool's schema fragments do not assemble to JSON. */
+const val EMPTY_PARAMETER_SCHEMA = """{"type":"object","properties":{}}"""
+
+/**
+ * Builds a JSON-schema string.
+ *
+ * Property values are RAW JSON fragments, so an unescaped `"` inside a
+ * description silently produces invalid JSON. That is exactly how `findPlace`
+ * shipped a schema that failed to parse and degraded to an empty parameter
+ * object on EVERY LLM turn, the only symptom being a per-turn ERROR log.
+ *
+ * The assembled string is validated here — the single choke point every tool's
+ * `parametersJson` goes through — so a malformed schema is caught once at
+ * construction (logged loudly) and replaced with [EMPTY_PARAMETER_SCHEMA]
+ * rather than being discovered per turn. It deliberately does NOT throw: a
+ * typo in one description must not fail `AppGraph` construction and retry
+ * forever; losing one tool's parameters is the honest degradation.
+ */
 fun schema(properties: Map<String, String>, required: List<String> = emptyList()): String {
     val props = properties.entries.joinToString(",") { (k, v) -> "\"$k\":$v" }
     val req = if (required.isEmpty()) "" else ",\"required\":[${required.joinToString(",") { "\"$it\"" }}]"
-    return """{"type":"object","properties":{$props}$req}"""
+    val json = """{"type":"object","properties":{$props}$req}"""
+    val valid = runCatching { Json.parseToJsonElement(json) }.isSuccess
+    if (!valid) {
+        Timber.e("Tool parameter schema is not valid JSON — falling back to the empty schema: %s", json)
+        return EMPTY_PARAMETER_SCHEMA
+    }
+    return json
 }
