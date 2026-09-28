@@ -38,16 +38,19 @@ sealed interface SherpaModelSource {
  * (zipformer2 transducer, xnnpack CPU backend). No account, no network.
  *
  * Keyword identity: the engine is built from ordered
- * [SherpaKeywords.Entry] items; the native `KeywordSpotterResult.keyword`
- * (the matched token line) is mapped back through whitespace-normalized
- * (and space-stripped) comparison, so a result that arrives space-joined or
- * compact still resolves to the right phrase. A non-empty result that
- * matches NOTHING is treated as -1 (never as the wake phrase) — a keywords
- * file whose lines disagree with [entries] degrades to silence, not to a
+ * [SherpaKeywords.Entry] items; the native `KeywordSpotterResult.keyword` is
+ * DETOKENIZED (the BPE marker `▁` becomes a space, whitespace is removed and
+ * the phrase is uppercased, e.g. the token line `▁JA R VI S` is reported as
+ * `"JARVIS"`). [matchEntry] therefore compares the normalized phrase on BOTH
+ * sides. A non-empty result that matches NOTHING is logged at WARN and
+ * treated as -1 (never as the wake phrase) — a keywords file whose lines
+ * disagree with [entries] degrades to a diagnosable miss, not to a
  * self-triggering assistant.
  *
- * The sensitivity→threshold mapping is unchanged: higher sensitivity →
- * lower `keywordsThreshold` → easier trigger.
+ * Sensitivity→threshold: higher sensitivity → lower `keywordsThreshold` →
+ * easier trigger; the default sensitivity 0.6 maps back to the historical
+ * effective 0.25 so removing the per-line `#` from the keywords files does
+ * not regress recall.
  */
 class SherpaKwsEngine(
     context: Context?,
@@ -68,8 +71,9 @@ class SherpaKwsEngine(
     private val workDir: File? = null,
 ) : WakeWordEngine {
 
-    // Map the 0.0–1.0 sensitivity to Sherpa's `keywordsThreshold`.
-    private val keywordsThreshold = 0.25f + (1f - sensitivity.coerceIn(0f, 1f)) * 0.5f
+    // Map the 0.0–1.0 sensitivity to Sherpa's `keywordsThreshold`; see
+    // [keywordsThresholdFor] for the anchored endpoints.
+    private val keywordsThreshold = keywordsThresholdFor(sensitivity)
 
     override val phrases: List<WakeWordEngine.Phrase> =
         entries.map { WakeWordEngine.Phrase(id = it.id, isStop = it.isStop) }
@@ -225,19 +229,18 @@ class SherpaKwsEngine(
 
     /**
      * Map the native result's keyword text to one of OUR entries.
-     * Comparison is whitespace-normalized AND space-stripped — the native
-     * side has historically rendered the line's tokens both joined with
-     * spaces and compact, and both must match the configured phrase.
+     *
+     * The native `KeywordSpotterResult.keyword` is DETOKENIZED before it
+     * reaches us: sherpa-onnx's `SymbolTable` replaces the BPE word-boundary
+     * marker `▁` (U+2581) with a space, joins the decoded symbols, strips the
+     * leading space and leaves the tokens uppercase — so the token line
+     * `▁JA R VI S` arrives as `"JARVIS"`. Comparison therefore normalizes the
+     * SAME way on both sides ([normalizeKeyword]): drop `▁` and all
+     * whitespace, then uppercase. This also still accepts a binding that
+     * returns the raw, un-detokenized token line.
      */
-    private fun matchEntry(rawKeyword: String): SherpaKeywords.Entry? {
-        val normalized = rawKeyword.trim()
-        if (normalized.isEmpty()) return null
-        val exact = normalized
-        val compact = normalized.filterNot { it.isWhitespace() }
-        return entries.firstOrNull { it.tokenLine.trim() == exact } ?: run {
-            entries.firstOrNull { it.tokenLine.filterNot { ch -> ch.isWhitespace() } == compact }
-        }
-    }
+    private fun matchEntry(rawKeyword: String): SherpaKeywords.Entry? =
+        matchEntry(entries, rawKeyword)
 
     override fun process(chunk: ShortArray): Int {
         // 16-bit PCM → float in [-1, 1).
@@ -249,6 +252,18 @@ class SherpaKwsEngine(
         val r = spotter.getResult(stream)
         if (r.keyword.isEmpty()) return -1
         val matched = matchEntry(r.keyword)
+        if (matched == null) {
+            // A non-empty native result that matches no configured entry used
+            // to vanish with no signal at all — the failure mode that hid the
+            // detokenization bug. The value is engine output about a
+            // CONFIGURED keyword (never user utterance content), so WARN is
+            // safe under the content-logging rule.
+            Timber.w(
+                "Sherpa KWS: unmatched keyword '%s' — expected one of %s",
+                r.keyword,
+                entries.map { it.tokenLine },
+            )
+        }
         spotter.reset(stream)
         return matched?.let { entries.indexOf(it) } ?: -1
     }
@@ -270,5 +285,42 @@ class SherpaKwsEngine(
         private const val ASSET_ENCODER_INT8 =
             "sherpa_kws/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
         const val GENERATED_KEYWORDS_FILE_NAME = "keywords_generated.txt"
+
+        /**
+         * Native `KeywordSpotterResult.keyword` is DETOKENIZED: `▁`→space,
+         * the leading space stripped and all whitespace removed → the phrase
+         * (e.g. `▁JA R VI S` → "JARVIS"). Normalize the SAME way on both the
+         * native result and our configured token line.
+         */
+        internal fun normalizeKeyword(s: String): String =
+            s.filterNot { it.isWhitespace() || it == '\u2581' }.uppercase()
+
+        /**
+         * Pure matcher seam (unit-testable without the native spotter):
+         * resolve [rawKeyword] against [entries] by normalized-phrase
+         * equality. Empty input matches nothing.
+         */
+        internal fun matchEntry(
+            entries: List<SherpaKeywords.Entry>,
+            rawKeyword: String,
+        ): SherpaKeywords.Entry? {
+            if (rawKeyword.isBlank()) return null
+            val normalized = normalizeKeyword(rawKeyword)
+            if (normalized.isEmpty()) return null
+            return entries.firstOrNull { normalizeKeyword(it.tokenLine) == normalized }
+        }
+
+        /**
+         * Map the 0.0–1.0 sensitivity to Sherpa's `keywordsThreshold`.
+         * Higher sensitivity → LOWER threshold → easier trigger.
+         *
+         * Anchored so the DEFAULT sensitivity 0.6 reproduces the 0.25 that
+         * the old per-line `#0.25` forced in the keywords files (a non-zero
+         * per-line `#value` overrides `config.keywordsThreshold`, so removing
+         * it would otherwise jump the default to 0.45 — stricter, a real
+         * recall regression). Endpoints: s=1.0 → 0.05, s=0.0 → 0.55.
+         */
+        internal fun keywordsThresholdFor(sensitivity: Float): Float =
+            (0.25f + (0.6f - sensitivity.coerceIn(0f, 1f)) * 0.5f).coerceIn(0.05f, 0.75f)
     }
 }

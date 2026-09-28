@@ -6,6 +6,37 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Fixed — the wake word never fired (a silent detection-discard bug)
+- **Jarvis detected "Jarvis" and then threw the result away.** The bundled
+  Sherpa-ONNX spotter matched the phrase correctly, but `SherpaKwsEngine`
+  compared the native result against the wrong string and discarded every
+  match: sherpa reports the DETOKENIZED phrase (`"JARVIS"` — it replaces the
+  `▁` word boundary with a space, joins the pieces and strips the leading
+  space), while the matcher compared it against the raw BPE token line
+  (`"▁JA R VI S"`). They can never be equal, so `matchEntry` returned null,
+  `process()` returned -1, the detector actor's `when` matched no branch, and
+  **nothing was logged anywhere** — the assistant was completely deaf while
+  every existing test passed and the UI looked healthy. Matching now
+  normalizes BOTH sides (drop `▁` + all whitespace, uppercase), and a
+  non-empty native result that matches no configured keyword is logged as a
+  WARN so this can never hide again.
+- **The sensitivity slider did nothing.** The shipped keyword lines carried a
+  per-line trigger threshold (`#0.25`), and a non-zero per-line value
+  overrides the config threshold in sherpa-onnx — so the slider's
+  sensitivity→threshold mapping was never consulted. The per-line override is
+  removed (the sensitivity-derived config value is now the single source of
+  truth) and the mapping is re-anchored so the DEFAULT sensitivity 0.6 still
+  yields 0.25, i.e. identical recall to before, with the slider live.
+- **The keyword-file format was documented backwards.** In
+  `tokens :score #threshold`, `:1.5` is the boosting score and `#0.25` is the
+  trigger threshold — `SherpaKeywords` said the opposite and named the
+  constant `KEYWORDS_BOOST` for what was actually a threshold.
+- **New device test closes the gap that hid it.** `SherpaSmokeTest` explicitly
+  did not assert "audio in → matched id". `SherpaDetectionTest` now feeds real
+  16 kHz PCM through the compiled engine on-device and asserts the wake and
+  stop phrase ids (plus that silence is never a keyword). Verified on the
+  target tablet: **OK (1 test)**.
+
 ### Fixed — turning memory OFF could still destroy stored facts
 - **The nightly maintenance pass silently ignored the memory switch.** With
   «Долговременная память» OFF the app correctly stopped *learning* (prompt reads

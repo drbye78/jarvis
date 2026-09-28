@@ -9,7 +9,11 @@ package com.jarvis.assistant.audio
  * repo's `sherpa_kws/bpe.model` (the same toolchain that produced the
  * original `▁JA R VI S` line — verified byte-identical on 77 probe words,
  * see [BpeTokenizer]). The keywords-file format is sherpa-onnx's
- * `tokens : threshold # boost` per line.
+ * `tokens : score` per line, where `score` is the BOOSTING SCORE (`:1.5`),
+ * NOT the trigger threshold. The trigger threshold comes from the engine
+ * config (`keywordsThreshold`, derived from the sensitivity slider); a
+ * non-zero per-line `#value` would OVERRIDE that config and make the slider
+ * inert, so it is deliberately omitted.
  *
  * The stop phrase is the English word "stop" — acoustically the SAME word
  * as Russian «стоп» (/stɒp/), which is why the English-BPE gigaspeech model
@@ -29,9 +33,8 @@ object SherpaKeywords {
     /** BPE("stop".uppercase()) — must stay identical to the shipped asset lines. */
     const val STOP_TOKEN_LINE = "▁ST O P"
 
-    /** Per-keyword score/boost written into generated files (matches the bundled asset). */
+    /** Per-keyword BOOSTING SCORE (`:score`) written into generated files (matches the bundled asset). */
     const val KEYWORDS_SCORE = 1.5f
-    const val KEYWORDS_BOOST = 0.25f
 
     /** Asset-relative locations. */
     const val ASSET_DIR = "sherpa_kws"
@@ -52,12 +55,15 @@ object SherpaKeywords {
     fun stop(): Entry = Entry(STOP_TOKEN_LINE, STOP_ID, isStop = true)
 
     /**
-     * Render entries into a keywords-file body: one `tokens : score # boost`
-     * line per entry. Pure — unit-tested against the shipped asset files.
+     * Render entries into a keywords-file body: one `tokens : score` line per
+     * entry, where `score` is the boosting score ([KEYWORDS_SCORE]). The
+     * per-line trigger threshold (`#value`) is intentionally NOT emitted — it
+     * would override the engine's sensitivity-derived `keywordsThreshold`.
+     * Pure — unit-tested against the shipped asset files.
      */
     fun toKeywordsFileContent(entries: List<Entry>): String =
         entries.joinToString(separator = "\n", postfix = "\n") { e ->
-            "${e.tokenLine} :${KEYWORDS_SCORE} #${KEYWORDS_BOOST}"
+            "${e.tokenLine} :${KEYWORDS_SCORE}"
         }
 
     /**
