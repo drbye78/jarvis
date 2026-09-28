@@ -43,21 +43,50 @@ import timber.log.Timber
  */
 class SessionFollowUpWindowTest {
 
+    /**
+     * Decodes a PCM frame the way [com.jarvis.assistant.util.toByteArray] encodes
+     * it (little-endian int16), so amplitude assertions compare real sample
+     * values instead of raw bytes — a byte comparison makes every 16-bit sample
+     * look like it is under 256 and silently passes.
+     */
+    private fun ByteArray.littleEndianShorts(): IntArray {
+        val out = IntArray(size / 2)
+        for (i in out.indices) {
+            val lo = this[i * 2].toInt() and 0xFF
+            val hi = this[i * 2 + 1].toInt() and 0xFF
+            var v = lo or (hi shl 8)
+            if (v >= 0x8000) v -= 0x10000 // sign-extend
+            out[i] = v
+        }
+        return out
+    }
+
     /** Mic fake whose content flips between silence, loud speech and a
      *  decaying "echo" tail (the assistant's own reply heard by the mic). */
     private class SpeechPumpAudioSource : AudioSource {
         @Volatile var speech = false
 
-        /** Frames of the decaying "echo" tail still to emit. */
+        /** Frames of the "echo" tail still to emit. */
         @Volatile private var tailFramesLeft = 0
 
         /** Total frames in the current tail, for the decay denominator. */
         @Volatile private var tailFramesTotal = 1
 
-        /** Emit a decaying tail of [frames] frames (3000 → 0 amplitude). */
-        fun startTail(frames: Int) {
+        @Volatile private var tailAmp = 0
+
+        @Volatile private var tailDecay = true
+
+        /**
+         * Emit a tail of [frames] frames at [amp] amplitude. [decay]=true fades
+         * linearly to zero (a real reply); false holds [amp] (a reply still
+         * clearly audible). [amp] is deliberately settable so a test can tell
+         * the assistant's voice (its own level) from the user's speech (3000).
+         */
+        fun startTail(frames: Int, amp: Int = 3000, decay: Boolean = true) {
             tailFramesTotal = frames
             tailFramesLeft = frames
+            tailAmp = amp
+            tailDecay = decay
         }
 
         override fun start() {}
@@ -71,7 +100,7 @@ class SessionFollowUpWindowTest {
                 speech -> 3000
                 remaining > 0 -> {
                     tailFramesLeft = remaining - 1
-                    (3000.0 * remaining / tailFramesTotal).toInt()
+                    if (tailDecay) tailAmp * remaining / tailFramesTotal else tailAmp
                 }
                 else -> 0
             }
@@ -233,6 +262,53 @@ class SessionFollowUpWindowTest {
                 "the assistant's own reply must not start a follow-up turn",
                 1,
                 h.asr.streams.size,
+            )
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `the follow-up turn never replays the assistant's own tail into ASR`() = runBlocking {
+        // The ring buffer is replayed into ASR at turn start to un-clip the
+        // first word. This window opened when TTS DRAINED, so the buffer still
+        // holds the reply — and the live transcript began with the reply's own
+        // last words ("чем могу помочь" + the user's "расскажи анекдот").
+        val h = MiniHarness()
+        try {
+            h.startMic()
+            h.manager.setFollowUpWindow(enabled = true, windowMs = 8_000)
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) {
+                while (h.asr.streams.isEmpty()) delay(20)
+            }
+            // A loud reply ringing in the room fills the pre-roll buffer; its
+            // amplitude (10200) is well above the user's speech (3000), so the
+            // origin of any replayed frame is unambiguous. It decays to silence
+            // on its own before the window opens, so it cannot self-trigger.
+            h.source.startTail(frames = 24, amp = 10_200, decay = false)
+            delay(500)
+            h.asr.streams.last().emitFinal("расскажи анекдот")
+
+            h.awaitState(AssistantState.FOLLOW_UP_WINDOW)
+            // Room is quiet again; the gate arms at the lead-in boundary. The
+            // user replies while the reply is STILL inside the 3 s ring buffer —
+            // the exact real-world timing that polluted the transcript.
+            delay(400)
+            h.source.speech = true
+            withTimeout(5_000) {
+                while (h.asr.streams.size < 2) delay(20)
+            }
+            delay(400) // let the feeder push frames to the follow-up stream
+
+            val sent = h.asr.streams[1].sent
+            assertTrue("the follow-up stream received no audio", sent.isNotEmpty())
+            val loudest = sent.maxOf { frame -> frame.littleEndianShorts().maxOf { kotlin.math.abs(it) } }
+            assertTrue(
+                "the reply's tail must not be replayed into the follow-up turn (loudest=$loudest)",
+                loudest <= 4_500,
             )
         } finally {
             h.shutdown()

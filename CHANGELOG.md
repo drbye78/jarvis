@@ -6,6 +6,21 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Fixed — the follow-up turn replayed the assistant's reply into the transcript
+- **The user's utterance was prefixed with the assistant's own last words.**
+  `TurnRunner` replays the pre-roll ring buffer into ASR at turn start to un-clip
+  the first word. A follow-up window opens when TTS *drains*, so that buffer
+  still holds the reply — and because nothing discarded it, the replay fed the
+  reply's tail into the user's turn. Observed live: replying within ~1.5 s gave
+  `ASR final: "чем могу помочь расскажи анекдот"` and `"я с радостью помогу
+  расскажи рецепт горохового супа"`, the first phrase in each being the
+  assistant's own words. The follow-up turn now discards the buffer at the
+  instant it starts, so only the user's own onset is sent. A follow-up turn has
+  no wake word to un-clip, so nothing of value is lost.
+- `SessionFollowUpWindowTest` pins it by decoding the PCM the ASR stream
+  actually receives (a byte-level assertion would silently pass, since every
+  16-bit sample looks like it is under 256) and fails if the discard is removed.
+
 ### Fixed — `findPlace` shipped an invalid parameter schema
 - **The geo search tool was advertised with no parameters on every turn.**
   The `findPlace` query description contained an unescaped `"` (a stray quote

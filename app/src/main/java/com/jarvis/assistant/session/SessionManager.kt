@@ -919,6 +919,21 @@ class SessionManager(
                             when (followUp.onVadActive()) {
                                 FollowUpWindowController.Effect.StartFollowUpTurn -> {
                                     applyMachineEvent(SessionEvent.FollowUpSpeechDetected)
+                                    // Discard the pre-roll BEFORE the turn opens
+                                    // its ASR stream: TurnRunner replays the ring
+                                    // buffer into ASR to un-clip the first word,
+                                    // and this window opened when TTS *drained*,
+                                    // so the buffer still holds the assistant's
+                                    // own reply. Replaying it prepends the
+                                    // reply's last words to the user's utterance
+                                    // (observed live: ASR returned
+                                    // "чем могу помочь" + the user's actual
+                                    // "расскажи анекдот"). A follow-up turn has no
+                                    // wake word to un-clip, so the buffer's only
+                                    // remaining content IS the tail; the few
+                                    // frames that refill before the stream opens
+                                    // are the user's own onset.
+                                    audioPipeline.ringBuffer.drain()
                                     // Tag the turn origin.
                                     startSession(fromFollowUp = true) // cancels this collector via windowJob
                                 }
