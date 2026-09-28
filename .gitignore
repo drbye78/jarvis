@@ -10,6 +10,9 @@ secrets.properties
 # REMEDIATION_PLAN P2.1: live-service integration credentials (local only)
 local.secrets.properties
 
+# opencode local config (machine-specific absolute paths for adb-mcp wiring)
+opencode.json
+
 # IDE
 .idea/
 *.iml
