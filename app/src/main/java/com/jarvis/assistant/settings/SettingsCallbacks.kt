@@ -49,6 +49,12 @@ interface SettingsCallbacks {
     /** The weather default city changed (blank = auto-detect via GPS). */
     fun onWeatherLocationSaved(location: String)
 
+    /**
+     * The active weather data provider changed (`open_meteo` | `project_eol`).
+     * LIVE: the weather tool reads it on every turn, so no restart is needed.
+     */
+    fun onWeatherProviderSelected(providerId: String)
+
     /** The chosen wake-word model changed (`builtin` | `custom_bundled`). */
     fun onWakeWordSelected(modelId: String)
 

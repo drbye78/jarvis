@@ -9,8 +9,8 @@ import com.jarvis.assistant.tools.SetAlarmTool
 import com.jarvis.assistant.tools.SetTimerTool
 import com.jarvis.assistant.tools.ToolContract
 import com.jarvis.assistant.tools.ToolRegistry
-import com.jarvis.assistant.tools.WeatherClient
-import com.jarvis.assistant.tools.WeatherTool
+import com.jarvis.assistant.weather.WeatherClient
+import com.jarvis.assistant.weather.WeatherTool
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
@@ -54,7 +54,7 @@ class FunctionRouterTest {
 
     private class NoopWeather : WeatherClient {
         override suspend fun getWeather(
-            query: com.jarvis.assistant.tools.WeatherQuery,
+            query: com.jarvis.assistant.weather.WeatherQuery,
         ): String = "{}"
     }
 

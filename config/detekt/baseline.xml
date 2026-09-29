@@ -69,7 +69,7 @@
     <ID>SwallowedException:SherpaModelStore.kt$SherpaModelStore$e: Exception</ID>
     <ID>SwallowedException:SseParser.kt$SseParser$e: Exception</ID>
     <ID>SwallowedException:ToolContract.kt$ToolArgs$e: Exception</ID>
-    <ID>SwallowedException:WeatherTool.kt$OpenMeteoWeatherClient$e: Exception</ID>
+    <ID>SwallowedException:OpenMeteoWeatherClient.kt$OpenMeteoWeatherClient$e: Exception</ID>
     <ID>ThrowsCount:LlmClient.kt$suspend fun &lt;T&gt; withLlmRetry( attempts: Int = 3, initialDelayMs: Long = 2_000, maxDelayMs: Long = 30_000, factor: Double = 3.0, onRetry: (attempt: Int, error: Throwable, delayMs: Long) -&gt; Unit = { _, _, _ -&gt; }, block: suspend (attempt: Int) -&gt; T, ): T</ID>
     <ID>TooGenericExceptionCaught:AppGraph.kt$AppGraph$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:SpeechFeedback.kt$TtsSpeechFeedback$t: Throwable</ID>

@@ -99,6 +99,15 @@ data class JarvisConfig(
     // constructor seams so the JVM tests stay hermetic against MockWebServer.
     val openMeteoForecastBaseUrl: String = "https://api.open-meteo.com",
     val openMeteoGeocodingBaseUrl: String = "https://geocoding-api.open-meteo.com",
+    /**
+     * Project EOL weather — a free MCP (Model Context Protocol) endpoint over
+     * NOAA GFS, no API key. Weather is a SELECTABLE capability
+     * ([com.jarvis.assistant.weather.SelectingWeatherClient]): this host is the
+     * alternative to Open-Meteo, chosen in Settings. Unlike Open-Meteo it
+     * publishes an HOURLY series in physical units (Kelvin, m/s, kg m⁻²), so
+     * the client aggregates days on-device and converts units at the edge.
+     */
+    val projectEolMcpUrl: String = "https://weatherapi.projecteol.ru/mcp/",
     /** Forecast horizon for a weather turn (Open-Meteo max is 16; voice UX caps at a week). */
     val weatherForecastDays: Int = 7,
     /** Longest we will wait for a fresh GPS fix before degrading honestly. */

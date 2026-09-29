@@ -224,6 +224,9 @@
     <string name="weather_thunderstorm_hail">гроза с градом</string>
     <!-- Weather settings card + tool fallbacks -->
     <string name="weather_card_title">Погода</string>
+    <string name="weather_provider_label">Источник прогноза</string>
+    <string name="weather_provider_open_meteo">Open-Meteo — по умолчанию</string>
+    <string name="weather_provider_project_eol">Project EOL (NOAA GFS)</string>
     <string name="weather_location_label">Город по умолчанию</string>
     <string name="weather_location_hint">Оставьте пустым — местоположение определится автоматически. Указанный город всегда имеет приоритет.</string>
     <string name="weather_permission_request">Разрешить доступ к местоположению</string>

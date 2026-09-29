@@ -226,6 +226,9 @@
     <string name="weather_thunderstorm_hail">thunderstorm with hail</string>
     <!-- Weather settings card + tool fallbacks -->
     <string name="weather_card_title">Weather</string>
+    <string name="weather_provider_label">Forecast source</string>
+    <string name="weather_provider_open_meteo">Open-Meteo — default</string>
+    <string name="weather_provider_project_eol">Project EOL (NOAA GFS)</string>
     <string name="weather_location_label">Default city</string>
     <string name="weather_location_hint">Leave empty to detect your location automatically. A configured city always takes priority.</string>
     <string name="weather_permission_request">Allow location access</string>

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
+import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.google.android.material.textfield.TextInputEditText
@@ -18,6 +19,7 @@ import com.jarvis.assistant.settings.SettingsLinks
 import com.jarvis.assistant.ui.SettingsMapping
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.CredentialsStore
+import com.jarvis.assistant.weather.WeatherProvider
 
 /**
  * WEATHER_MAPS («Погода и карты») detail screen controller (settings redesign).
@@ -27,7 +29,9 @@ import com.jarvis.assistant.util.CredentialsStore
  * `commitMapKitKey` / `openExternalUrl` behaviour onto the new
  * `screen_settings_weather_maps.xml`.
  *
- * TWO settings, two levels:
+ * THREE settings, two levels:
+ *  - `weatherProvider` is ESSENTIAL and LIVE: the forecast source
+ *    (`open_meteo` | `project_eol`), read per weather turn.
  *  - `weatherLocation` is ESSENTIAL and LIVE: the configured city is the
  *    primary path on GMS-free, WiFi-only devices and the pref is read per
  *    weather turn.
@@ -52,6 +56,7 @@ class WeatherMapsSettingsController(
 
     private lateinit var context: Context
 
+    private lateinit var weatherProviderGroup: RadioGroup
     private lateinit var weatherLocationInput: TextInputEditText
     private lateinit var weatherLocationPermissionStatus: TextView
 
@@ -61,16 +66,40 @@ class WeatherMapsSettingsController(
 
     override fun bind(root: View) {
         context = root.context
+        weatherProviderGroup = root.findViewById(R.id.weatherProviderGroup)
         weatherLocationInput = root.findViewById(R.id.weatherLocationInput)
         weatherLocationPermissionStatus = root.findViewById(R.id.weatherLocationPermissionStatus)
         mapKitApiKey = root.findViewById(R.id.mapKitApiKey)
         advancedContainer = root.findViewById(R.id.settingsWeatherMapsAdvanced)
 
+        bindWeatherProvider()
         bindWeatherCard(root)
         bindMapsCard(root)
         bindDisclosure(root)
 
         refreshWeatherPermissionStatus()
+    }
+
+    /**
+     * Weather data provider radio. Mirrors the BRAIN screen's LLM-provider
+     * binding: the STORED value is applied BEFORE the listener is attached, so
+     * the programmatic `check()` can never be mistaken for a user edit; the
+     * listener then reports the picked provider id, which lands in the pref the
+     * weather tool reads on every turn (LIVE — no restart hint).
+     */
+    private fun bindWeatherProvider() {
+        weatherProviderGroup.check(radioIdFor(WeatherProvider.fromId(prefs.weatherProvider)))
+        weatherProviderGroup.setOnCheckedChangeListener { _, checkedId ->
+            WeatherProvider.entries
+                .firstOrNull { radioIdFor(it) == checkedId }
+                ?.let { callbacks.onWeatherProviderSelected(it.id) }
+        }
+    }
+
+    /** Exhaustive with no `else`: a new provider is a compile error until wired. */
+    private fun radioIdFor(provider: WeatherProvider): Int = when (provider) {
+        WeatherProvider.OPEN_METEO -> R.id.weatherProviderOpenMeteo
+        WeatherProvider.PROJECT_EOL -> R.id.weatherProviderProjectEol
     }
 
     override fun onResume() {

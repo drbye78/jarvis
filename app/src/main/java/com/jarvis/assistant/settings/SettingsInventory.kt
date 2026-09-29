@@ -61,6 +61,7 @@ object SettingsInventory {
         entry("aecMode", SettingsCategory.LISTENING, essential = false),
 
         // --- WEATHER_MAPS ---
+        entry("weatherProvider", SettingsCategory.WEATHER_MAPS, essential = true),
         entry("weatherLocation", SettingsCategory.WEATHER_MAPS, essential = true),
         entry("mapKitApiKey", SettingsCategory.WEATHER_MAPS, essential = false),
 

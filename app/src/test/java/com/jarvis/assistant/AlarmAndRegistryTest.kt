@@ -6,9 +6,9 @@ import com.jarvis.assistant.tools.AlarmTimes
 import com.jarvis.assistant.tools.ToolContract
 import com.jarvis.assistant.tools.ToolRegistry
 import com.jarvis.assistant.tools.ToolRisk
-import com.jarvis.assistant.tools.WeatherClient
-import com.jarvis.assistant.tools.WeatherTool
 import com.jarvis.assistant.util.NotificationIds
+import com.jarvis.assistant.weather.WeatherClient
+import com.jarvis.assistant.weather.WeatherTool
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -292,7 +292,7 @@ class ToolRegistryTest {
         val tool = WeatherTool(
             object : WeatherClient {
                 override suspend fun getWeather(
-                    query: com.jarvis.assistant.tools.WeatherQuery,
+                    query: com.jarvis.assistant.weather.WeatherQuery,
                 ): String {
                     entered.complete(Unit)
                     kotlinx.coroutines.awaitCancellation()

@@ -2,6 +2,7 @@ package com.jarvis.assistant.tools
 
 import android.content.Context
 import com.jarvis.assistant.R
+import com.jarvis.assistant.weather.WeatherToolMessages
 
 /**
  * Strings the TOOL layer returns as JSON error/details — these are read by

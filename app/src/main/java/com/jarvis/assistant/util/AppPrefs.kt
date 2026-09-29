@@ -177,6 +177,20 @@ class AppPrefs(
         set(value) = prefs.edit().putString(KEY_WEATHER_LOCATION, value.trim()).apply()
 
     /**
+     * Active weather data provider (Settings «Погода»): "open_meteo" |
+     * "project_eol". Stored as a plain string so [AppPrefs] stays free of the
+     * weather lane's types; [com.jarvis.assistant.weather.WeatherProvider.fromId]
+     * parses it tolerantly (unknown → the default).
+     *
+     * Read live on every weather turn, so a change applies without a restart.
+     * The literal default MUST match [com.jarvis.assistant.weather.WeatherProvider.OPEN_METEO]'s
+     * id — a test asserts they agree.
+     */
+    var weatherProvider: String
+        get() = prefs.getString(KEY_WEATHER_PROVIDER, "open_meteo") ?: "open_meteo"
+        set(value) = prefs.edit().putString(KEY_WEATHER_PROVIDER, value.trim()).apply()
+
+    /**
      * Echo-cancellation mode (Settings «Эхоподавление»): "off" | "hardware" |
      * "software". Default OFF — all AEC modes are opt-in; HARDWARE switches
      * capture to VOICE_COMMUNICATION + platform AEC (Phase A), SOFTWARE runs
@@ -399,6 +413,9 @@ class AppPrefs(
         internal const val KEY_MUSIC_PLAYER = "preferred_music_player"
         internal const val KEY_AEC_MODE = "aec_mode"
         internal const val KEY_WEATHER_LOCATION = "weather_location"
+
+        /** Active weather provider id; see [weatherProvider]. */
+        internal const val KEY_WEATHER_PROVIDER = "weather_provider"
         internal const val KEY_FOLLOW_UP_ENABLED = "follow_up_enabled"
         internal const val KEY_FOLLOW_UP_WINDOW_MS = "follow_up_window_ms"
         internal const val KEY_TTS_VOICE = "tts_voice"

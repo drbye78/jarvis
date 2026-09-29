@@ -12,6 +12,12 @@ import com.jarvis.assistant.media.AndroidMediaGateway
 import com.jarvis.assistant.media.MusicPlaybackOrchestrator
 import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.model.ToolDefinition
+import com.jarvis.assistant.weather.OpenMeteoWeatherClient
+import com.jarvis.assistant.weather.ProjectEolWeatherClient
+import com.jarvis.assistant.weather.SelectingWeatherClient
+import com.jarvis.assistant.weather.StreamableHttpMcpClient
+import com.jarvis.assistant.weather.WeatherProvider
+import com.jarvis.assistant.weather.WeatherTool
 import okhttp3.OkHttpClient
 
 /**
@@ -127,19 +133,36 @@ class FunctionRouter(
             ),
             CancelTimerTool(appContext, alarmScheduler),
             WeatherTool(
-                OpenMeteoWeatherClient(
-                    httpClient,
-                    // Condition names follow the device locale.
-                    conditionFor = { code ->
-                        com.jarvis.assistant.tools.weatherConditionName(appContext, code)
-                    },
-                    // Geocoding answers in the device language; missing
-                    // readings render locale-aware instead of a hardcoded «н/д».
-                    languageTag = weatherLanguageTag,
-                    notAvailable = toolStrings.weatherNotAvailable,
-                    forecastDays = config.weatherForecastDays,
-                    geoBaseUrl = config.openMeteoGeocodingBaseUrl,
-                    forecastBaseUrl = config.openMeteoForecastBaseUrl,
+                SelectingWeatherClient(
+                    // Read LIVE per call, so the Settings radio applies to the
+                    // next weather turn without a graph rebuild.
+                    providerFor = { WeatherProvider.fromId(appPrefs.weatherProvider) },
+                    openMeteo = OpenMeteoWeatherClient(
+                        httpClient,
+                        // Condition names follow the device locale.
+                        conditionFor = { code ->
+                            com.jarvis.assistant.weather.weatherConditionName(appContext, code)
+                        },
+                        // Geocoding answers in the device language; missing
+                        // readings render locale-aware instead of a hardcoded «н/д».
+                        languageTag = weatherLanguageTag,
+                        notAvailable = toolStrings.weatherNotAvailable,
+                        forecastDays = config.weatherForecastDays,
+                        geoBaseUrl = config.openMeteoGeocodingBaseUrl,
+                        forecastBaseUrl = config.openMeteoForecastBaseUrl,
+                    ),
+                    projectEol = ProjectEolWeatherClient(
+                        mcp = StreamableHttpMcpClient(
+                            httpClient = httpClient,
+                            endpointUrl = config.projectEolMcpUrl,
+                        ),
+                        // Same locale-aware naming as Open-Meteo: one vocabulary.
+                        conditionFor = { code ->
+                            com.jarvis.assistant.weather.weatherConditionName(appContext, code)
+                        },
+                        notAvailable = toolStrings.weatherNotAvailable,
+                        forecastDays = config.weatherForecastDays,
+                    ),
                 ),
                 // Configured city wins (read LIVE, so a Settings change applies
                 // to the next turn); else a bounded GPS fix; else an honest

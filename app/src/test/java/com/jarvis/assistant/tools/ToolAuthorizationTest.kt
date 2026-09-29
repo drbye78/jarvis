@@ -333,7 +333,7 @@ class ToolAuthorizationTest {
             "listAlarms" to ListAlarmsTool::class.java,
             "setTimer" to SetTimerTool::class.java,
             "cancelTimer" to CancelTimerTool::class.java,
-            "getWeather" to WeatherTool::class.java,
+            "getWeather" to com.jarvis.assistant.weather.WeatherTool::class.java,
             "findPlace" to GeoPlaceTool::class.java,
             "getRoute" to GeoRouteTool::class.java,
             "setVolume" to DeviceTools.SetVolumeTool::class.java,

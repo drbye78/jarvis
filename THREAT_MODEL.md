@@ -229,7 +229,8 @@ The complete egress list (see §1 of the inventory this was built from):
 | Yandex AI Studio `/v1/models` | API key only (GET) | lazy folder discovery, once |
 | Sber ASR/TTS (`smartspeech.sber.ru`) | **microphone audio** / TTS text | a turn |
 | Yandex STT/TTS (`stt|tts.api.cloud.yandex.net`) | **microphone audio** / TTS text | a turn |
-| Open-Meteo forecast + geocoding | lat/lon (or place name), fields | weather tool |
+| Open-Meteo forecast + geocoding | lat/lon (or place name), fields | weather tool (default provider) |
+| Project EOL weather MCP (`weatherapi.projecteol.ru`, NOAA GFS) | lat/lon (or place name to `search_locations`), parameter names | weather tool (selected provider) |
 | Yandex MapKit (host in the native SDK) | search query / route endpoints + key | geo tools |
 | `music.yandex.ru` search URL | search query, handed to another app | music tool |
 | `yandex.ru` legal/maps URLs | fixed constants, handed to browser | About row |
@@ -238,8 +239,9 @@ The complete egress list (see §1 of the inventory this was built from):
 Notes:
 - **Microphone audio always leaves the device** when a cloud speech backend is
   selected; wake-word detection itself is on-device.
-- **Location** leaves only as coordinates/place-name to the two weather hosts and
-  as a route endpoint to MapKit; no city name is ever persisted from a GPS fix.
+- **Location** leaves only as coordinates/place-name to the ONE weather host the
+  selected provider uses, and as a route endpoint to MapKit; no city name is ever
+  persisted from a GPS fix.
 - **Web-search citations are deliberately discarded** and never spoken
   (`llm/GigaChatSseParser.kt`, `llm/YandexSseParser.kt`).
 - The **memory export** is the one path by which the whole memory can leave in

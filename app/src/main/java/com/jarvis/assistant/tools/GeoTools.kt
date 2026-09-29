@@ -16,7 +16,7 @@ import timber.log.Timber
 
 /**
  * Spoken/LLM-facing strings for the geography tools. Mirrors
- * [WeatherToolMessages]: the tool lane stays Android-free, production passes
+ * [com.jarvis.assistant.weather.WeatherToolMessages]: the tool lane stays Android-free, production passes
  * the resource-backed `AndroidToolStrings` (which implements this interface),
  * and JVM tests use [DefaultGeoToolMessages].
  *

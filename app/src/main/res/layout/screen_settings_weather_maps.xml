@@ -24,7 +24,10 @@
   mapKitOpenMapsButton.
 
   NEW ID introduced by this screen (controller contract):
-  settingsWeatherMapsAdvanced. Disclosure ids come from settings_disclosure.xml.
+  settingsWeatherMapsAdvanced. The WEATHER section also carries the provider
+  radio: weatherProviderGroup / weatherProviderOpenMeteo /
+  weatherProviderProjectEol (LIVE — no restart hint).
+  Disclosure ids come from settings_disclosure.xml.
 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -51,6 +54,36 @@
             android:text="@string/weather_card_title"
             style="@style/TextAppearance.Jarvis.SectionHeader"
             android:accessibilityHeading="true" />
+
+        <!-- Weather data provider. LIVE (the tool reads the pref on every
+             turn), so no restart hint. Mirrors the BRAIN screen's LLM radio. -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/weather_provider_label"
+            style="@style/TextAppearance.Jarvis.Hint" />
+
+        <RadioGroup
+            android:id="@+id/weatherProviderGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_control_gap">
+
+            <RadioButton
+                android:id="@+id/weatherProviderOpenMeteo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/weather_provider_open_meteo" />
+
+            <RadioButton
+                android:id="@+id/weatherProviderProjectEol"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/weather_provider_project_eol" />
+        </RadioGroup>
 
         <com.google.android.material.textfield.TextInputLayout
             style="@style/Widget.Material3.TextInputLayout.OutlinedBox"

@@ -12,7 +12,7 @@ import kotlin.math.roundToInt
  * Domain -> LLM-legible JSON for the geo tools.
  *
  * Deliberately pure and Android-free (the house `buildJsonObject` idiom, same
- * as `OpenMeteoWeatherClient`): the tool lane composes these with its own
+ * as the weather clients): the tool lane composes these with its own
  * localized error text, so there are no user-facing strings here. Numbers are
  * emitted as JSON NUMBERS, never quoted strings — the LLM must be able to read
  * `lat`/`lon`/`duration_min`/`transfers` directly.

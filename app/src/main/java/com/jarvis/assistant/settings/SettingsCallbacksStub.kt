@@ -49,6 +49,10 @@ object SettingsCallbacksStub : SettingsCallbacks {
         notReady("onWeatherLocationSaved")
     }
 
+    override fun onWeatherProviderSelected(providerId: String) {
+        notReady("onWeatherProviderSelected")
+    }
+
     override fun onWakeWordSelected(modelId: String) {
         notReady("onWakeWordSelected")
     }

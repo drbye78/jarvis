@@ -32,7 +32,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `speech/tts/` | `TtsClient` (cancellable + deadline) and `TtsPlayer` contract. Implementations: `SaluteSpeechTts` and `YandexSpeechTts` (Yandex v3, 24 kHz `RawAudio`); voice/role packing via `YandexVoiceSpec`. `VoiceCatalog` is the per-backend voice catalog and the single source of truth for the Settings «Голос» card (`SBER_VOICES`, `YANDEX_VOICES`, `yandexRolesFor()`), keyed by backend because the two providers have disjoint voice namespaces. |
 | `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loads BOTH ways per FIXPLAN C — bundled models asset-relative (`newFromAsset`), custom/extracted models from the filesystem (`newFromFile` via `SherpaModelStore`)), player (generations), and the Phase-5 etiquette pair: `AssistantAudioFocus` (duck-during-TTS state machine + `AndroidAudioFocusAdapter`) and `SpeechFeedback` (spoken cascade progress). |
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns (job hand-offs under a monitor, seq-guarded supersede/cancel); TurnRunner (bounded tool loop; error turns end via reportFailure only); `SpeechPhrases` — locale-aware runtime spoken phrases (RU default + resource-backed values/values-en). |
-| `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. Weather: `WeatherTool` (Open-Meteo, current + 7-day daily) over a `WeatherClient`, with the default location resolved by the shared `location/` subsystem. Geo: `findPlace` / `getRoute` (`GeoTools.kt`) over `geo/GeoToolClient`. |
+| `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. Weather: `weather/WeatherTool` over a `WeatherClient`, with the provider picked by `weather/SelectingWeatherClient` (Open-Meteo REST by default, or Project EOL over MCP); the default location comes from the shared `location/` subsystem. Geo: `findPlace` / `getRoute` (`GeoTools.kt`) over `geo/GeoToolClient`. |
 | `geo/` | Geography capability: `GeoModels` (`GeoPoint`/`GeoPlace`/`GeoLeg`/`GeoRoute`/`GeoError`/`GeoResult`), `GeoToolClient` (narrow interface, one impl), `GeoJson` (pure domain→JSON), and `geo/mapkit/**` (`MapKitFactoryBridge`, `MapKitInitializer` + `MapKitInitializerProvider`, `MapKitSearch`, `MapKitRouting`, `MapKitRouteMapper`, `YandexMapKitGeoClient`). `com.yandex.*` imports exist ONLY under `geo/mapkit/**`; no MapKit type escapes. |
 | `location/` | Shared, weather-agnostic location subsystem (extracted from the former `tools/weather/`): `LocationProvider`/`LocationFix`, `ResolvedLocation`, `LocationOutcome`, `LocationResolver`/`DefaultLocationResolver` (configured location wins, else a bounded device fix), and the GMS-free `AndroidLocationProvider` (framework `LocationManager` only). Weather and geo share ONE resolver. |
 | `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure capability-gated strategy cascade (structured playFromSearch, MediaBrowser search/token lane, query-aware verification) with rich transport; `MediaBrowserGateway` + `AndroidMediaBrowserGateway` (bind/search/children); `MediaCapabilities`/`VoiceQuery`/`MediaDiagnostics` (pure models). Android adapters: `AndroidMediaGateway` (compat-wrapped controllers), `AndroidMediaBrowserGateway`. Threading invariant: `AndroidMediaBrowserGateway.connect()` must construct `MediaBrowserCompat` on a Looper thread and therefore hops to `Dispatchers.Main` internally — the production tool lane is `Dispatchers.IO`, and without that hop every bind silently returns null (the throw is swallowed by `runCatching`), so the whole browser strategy is dead. Pinned only on-device. |
@@ -119,11 +119,12 @@ Lane flow: `TurnRunner` → tool (`tools/GeoTools.kt`) → `geo/GeoToolClient`
 `MapKitRouting` → `MapKitRouteMapper` → domain `GeoRoute` → `GeoJson`.
 
 - **A narrow interface with one impl, not a sealed provider.** `GeoToolClient`
-  mirrors `WeatherClient`/`OpenMeteoWeatherClient`: exactly one implementation
-  and no Settings radio, because the user does not choose a geo backend.
-  Contrast the LLM/speech backends, which ARE sealed `when` providers (a new one
-  is a compile error until wired) — that machinery is deliberately not spent on
-  a capability with a single provider.
+  has exactly one implementation and no Settings radio, because the user does not
+  choose a geo backend. Contrast the weather lane, which DOES have a Settings
+  radio and therefore a thin `SelectingWeatherClient` dispatcher over its
+  `WeatherClient` implementations (`OpenMeteoWeatherClient` /
+  `ProjectEolWeatherClient`), and the LLM/speech backends, which are sealed
+  `when` providers (a new one is a compile error until wired).
 - **The location subsystem was extracted out of the weather lane.** The former
   `tools/weather/` package is gone; `location/` now owns `LocationProvider`,
   `LocationFix`, `ResolvedLocation`, `LocationOutcome`, `LocationResolver`,
@@ -595,7 +596,13 @@ the Yandex AI Studio Responses parser + transport (`YandexSseParserTest` and
 `YandexWireTest` replay real recorded fixtures; folder discovery, `call_id`
 preservation and the one-`Done` latch are pinned),
 weather (`WeatherClientTest` pins `timezone=auto`, index-aligned daily columns,
-the coords-bypasses-geocoding path and the 1–7 day clamp; `DefaultLocationResolverTest`
+the coords-bypasses-geocoding path and the 1–7 day clamp;
+`ProjectEolWeatherClientTest` pins the MCP lane: K→°C and m/s→km/h conversion,
+per-LOCAL-day aggregation of the hourly series, derived conditions, the
+`search_locations` exact-name preference, and every honest failure path;
+`StreamableHttpMcpClientTest` covers the JSON and SSE envelopes;
+`WeatherProviderTest` covers tolerant id parsing and live provider routing;
+`DefaultLocationResolverTest`
 pins configured-wins, never-throw and cancellation propagation),
 geography (`GeoToolsTest` pins the typed `GeoError` → message mapping, the
 lenient `findPlace` origin and the strict `getRoute` origin; `GeoJsonTest` pins

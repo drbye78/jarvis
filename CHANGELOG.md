@@ -6,6 +6,33 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — a second weather provider (Project EOL over MCP)
+- **The forecast source is now selectable.** Settings → «Погода и карты» carries
+  a provider radio (Open-Meteo, the default, or **Project EOL**), applied LIVE:
+  the tool reads the preference on every turn, so switching needs no restart.
+  Both services are free and keyless.
+- **Project EOL is a different kind of feed, and the client hides that.**
+  `weather/ProjectEolWeatherClient` speaks **MCP** (JSON-RPC `tools/call` over
+  Streamable HTTP, `weather/StreamableHttpMcpClient`), not REST: there is no
+  query string and no key, and geocoding is a separate `search_locations` call.
+  It publishes an **hourly** NOAA GFS series (capped at 168 h) in **physical
+  units** — Kelvin, m/s, kg m⁻² — with **no weather code**, so days are
+  aggregated on-device in the device's time zone, units are converted at the
+  edge, and the spoken condition is derived from precipitation, temperature and
+  cloud cover. Both providers emit the SAME document shape
+  (`weather/WeatherContract.kt`), so the LLM sees one vocabulary.
+- **The whole weather lane moved out of `tools/` into `weather/`** — the client
+  interface had been living inside a tool file, which no longer fitted two
+  providers. `SelectingWeatherClient` routes with an exhaustive `when` (a third
+  provider is a compile error until wired), mirroring the LLM/speech backends.
+- Tests: mapping, unit conversion, per-local-day aggregation, derived
+  conditions, the exact-name geocoding preference and every failure path
+  (`ProjectEolWeatherClientTest`); the JSON **and** SSE MCP envelopes plus the
+  `initialize` retry (`StreamableHttpMcpClientTest`); tolerant id parsing and
+  live routing (`WeatherProviderTest`). A live end-to-end check
+  (`integration/ProjectEolLiveSmokeTest`) is opt-in via `JARVIS_LIVE_NETWORK=1`
+  and self-skips, so the gate stays hermetic.
+
 ### Fixed — the follow-up turn replayed the assistant's reply into the transcript
 - **The user's utterance was prefixed with the assistant's own last words.**
   `TurnRunner` replays the pre-roll ring buffer into ASR at turn start to un-clip

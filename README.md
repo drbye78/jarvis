@@ -95,7 +95,9 @@ Answers arbitrary questions and holds a conversation on any topic.
    other secret and read live, but **changing it requires a FULL app-process
    restart** — MapKit cannot be re-keyed inside a running process, and Стоп →
    Запустить is not enough.
-8. **Weather (optional).** **Настройки → Погода и карты** sets the default city for weather
+8. **Weather (optional).** **Настройки → Погода и карты** picks the **forecast
+   source** (Open-Meteo by default, or Project EOL / NOAA GFS) and sets the
+   default city for weather
    questions; leave it empty to use the device location instead. A configured
    city always wins and needs no location access. To use auto-detect, tap
    **Allow location access** in that screen — the permission dialog lives there
@@ -268,7 +270,10 @@ keystore with `keytool` and update `local.properties` accordingly.
 - **Alarms & timers**: set/cancel/list by voice or UI; ring over the lock
   screen; survive reboots.
 - **Weather**: current conditions plus a **daily forecast up to 7 days** for
-  any city (Open-Meteo). Weather questions default to your location: a city
+  any city. The forecast **source is selectable** in **Настройки → Погода и
+  карты**: Open-Meteo (default) or Project EOL (NOAA GFS); both are free and
+  need no key, and switching applies to the next question. Weather questions
+  default to your location: a city
   set in **Настройки → Погода и карты** (always wins), otherwise auto-detected GPS. Follow-up
   questions work naturally («а завтра?», «а в Сочи?»).
 - **Maps & routes**: «Джарвис, найди аптеку рядом», «построй маршрут до
@@ -287,9 +292,17 @@ keystore with `keytool` and update `local.properties` accordingly.
 
 ## Data sources & attribution
 Jarvis talks to a few external services with the credentials **you** supply.
-Weather data comes from [Open-Meteo](https://open-meteo.com/), which is free for
-non-commercial use and licensed [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) —
-attribution is required, hence this notice. Speech and LLM providers (Sber
+Weather is a **selectable** capability (Настройки → Погода и карты):
+
+- **Open-Meteo** (the default) is free for non-commercial use and licensed
+  [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) — attribution is
+  required, hence this notice.
+- **Project EOL** (`weatherapi.projecteol.ru`) is a free MCP endpoint serving the
+  **NOAA/NCEP Global Forecast System (GFS)**; attribution: *NOAA/NCEP Global
+  Forecast System (GFS)*. It publishes hourly values in physical units, so
+  Jarvis aggregates them into daily rows on the device.
+
+Speech and LLM providers (Sber
 SaluteSpeech, Yandex SpeechKit v3, GigaChat, Yandex AI Studio) are used under
 your own accounts and their respective terms. Wake-word and on-device ASR/TTS
 models run locally: Sherpa-ONNX (Apache-2.0) and Porcupine (Picovoice licence).

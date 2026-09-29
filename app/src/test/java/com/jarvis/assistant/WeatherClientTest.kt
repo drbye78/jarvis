@@ -3,11 +3,11 @@ package com.jarvis.assistant
 import com.jarvis.assistant.location.LocationOutcome
 import com.jarvis.assistant.location.LocationResolver
 import com.jarvis.assistant.location.ResolvedLocation
-import com.jarvis.assistant.tools.OpenMeteoWeatherClient
-import com.jarvis.assistant.tools.WeatherClient
-import com.jarvis.assistant.tools.WeatherQuery
-import com.jarvis.assistant.tools.WeatherTool
-import com.jarvis.assistant.tools.WeatherToolMessages
+import com.jarvis.assistant.weather.OpenMeteoWeatherClient
+import com.jarvis.assistant.weather.WeatherClient
+import com.jarvis.assistant.weather.WeatherQuery
+import com.jarvis.assistant.weather.WeatherTool
+import com.jarvis.assistant.weather.WeatherToolMessages
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray

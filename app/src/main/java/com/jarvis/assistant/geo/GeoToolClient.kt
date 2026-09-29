@@ -5,8 +5,9 @@ package com.jarvis.assistant.geo
  *
  * Geo is a CAPABILITY, not a selectable provider — there is exactly one
  * implementation ([com.jarvis.assistant.geo.mapkit.YandexMapKitGeoClient]) and
- * no Settings radio. This mirrors `WeatherClient`/`OpenMeteoWeatherClient`
- * rather than the sealed-provider pattern used for user-selectable backends.
+ * no Settings radio. Contrast the weather lane, whose clients ARE
+ * user-selectable and therefore sit behind a `SelectingWeatherClient`
+ * dispatcher.
  *
  * This lane takes ALREADY-RESOLVED coordinates: it intentionally does NOT
  * depend on `com.jarvis.assistant.location.*`. Resolving a city name or a GPS

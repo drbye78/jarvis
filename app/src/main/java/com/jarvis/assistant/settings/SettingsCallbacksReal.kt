@@ -91,6 +91,12 @@ class SettingsCallbacksReal(
         prefs.weatherLocation = location
     }
 
+    override fun onWeatherProviderSelected(providerId: String) {
+        // Pref only: SelectingWeatherClient reads it on every weather turn, so
+        // switching providers needs neither a service restart nor a rebuild.
+        prefs.weatherProvider = providerId
+    }
+
     override fun onWakeWordSelected(modelId: String) {
         prefs.wakeWordModel = modelId
         scope.launch(Dispatchers.Default) {
