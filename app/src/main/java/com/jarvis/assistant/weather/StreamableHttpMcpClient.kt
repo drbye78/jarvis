@@ -27,14 +27,26 @@ import okhttp3.RequestBody.Companion.toRequestBody
 data class McpToolResult(val text: String, val isError: Boolean)
 
 /**
+ * A classified MCP round-trip result. [Unreachable] is a transport failure
+ * (DNS/TCP/TLS/timeout) that may justify weather failover; [BadResponse] is an
+ * ANSWER from a reachable server that could not be used (non-2xx, blank body,
+ * unparseable envelope) and must NOT trigger failover.
+ */
+sealed interface McpCall {
+    data class Ok(val result: McpToolResult) : McpCall
+    data object Unreachable : McpCall
+    data object BadResponse : McpCall
+}
+
+/**
  * The narrow MCP surface the weather lane needs: call a named tool with a JSON
  * argument object. A test seam — [StreamableHttpMcpClient] is the only
  * production implementation, and JVM tests substitute a fake so no unit test
  * ever opens a socket.
  */
 interface McpToolClient {
-    /** Returns null when the endpoint is unreachable or the reply is unusable. */
-    suspend fun callTool(name: String, argumentsJson: String): McpToolResult?
+    /** A classified outcome: [McpCall.Unreachable] only for transport failure. */
+    suspend fun callTool(name: String, argumentsJson: String): McpCall
 }
 
 /**
@@ -65,22 +77,24 @@ class StreamableHttpMcpClient(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun callTool(name: String, argumentsJson: String): McpToolResult? =
+    override suspend fun callTool(name: String, argumentsJson: String): McpCall =
         post(toolCallBody(name, argumentsJson, requestId = 1))
 
     /** One round trip. A rejected un-initialized session initializes, then RETRIES the call. */
-    private suspend fun post(body: String): McpToolResult? {
-        val first = exchange(body) ?: return null
-        if (!first.isError || !looksUninitialized(first.text)) return first
+    private suspend fun post(body: String): McpCall {
+        val first = exchange(body)
+        if (first !is McpCall.Ok || !first.result.isError || !looksUninitialized(first.result.text)) {
+            return first
+        }
         // The server wants a session first. Initialize, then re-issue the
         // ORIGINAL call — returning the initialize reply would look like a
         // successful tool result with no payload.
-        val initialized = exchange(initializeBody()) ?: return null
-        if (initialized.isError) return initialized
+        val initialized = exchange(initializeBody())
+        if (initialized !is McpCall.Ok || initialized.result.isError) return initialized
         return exchange(body)
     }
 
-    private suspend fun exchange(body: String): McpToolResult? = try {
+    private suspend fun exchange(body: String): McpCall = try {
         val response = httpClient.newCall(
             Request.Builder()
                 .url(endpointUrl)
@@ -91,11 +105,10 @@ class StreamableHttpMcpClient(
         ).await()
         response.use { resp ->
             val payload = resp.body?.string()
-            // A non-2xx reply carries no JSON-RPC envelope: degrade to null so
-            // the caller reports one honest "unreachable" outcome rather than
-            // inventing a tool-level error from a transport one.
+            // A non-2xx reply or a blank body is a reachable server's answer:
+            // BadResponse, not a transport failure — failover must not fire.
             if (!resp.isSuccessful || payload.isNullOrBlank()) {
-                null
+                McpCall.BadResponse
             } else {
                 parse(payload, resp.header("Content-Type"))
             }
@@ -106,17 +119,19 @@ class StreamableHttpMcpClient(
         // Transport failure (timeout, DNS, TLS, malformed body): the caller
         // reports one honest "unreachable" outcome; there is no partial result
         // to salvage and the reason is not user-actionable.
-        null
+        McpCall.Unreachable
     }
 
     /** Extracts the JSON-RPC envelope from either a plain body or an SSE stream. */
-    private fun parse(payload: String, contentType: String?): McpToolResult? {
+    private fun parse(payload: String, contentType: String?): McpCall {
         val envelope = if (contentType?.contains("text/event-stream", ignoreCase = true) == true) {
             sseJson(payload)
         } else {
             payload
-        } ?: return null
-        return runCatching { json.parseToJsonElement(envelope).jsonObject }.getOrNull()?.let(::toResult)
+        } ?: return McpCall.BadResponse
+        val parsed = runCatching { json.parseToJsonElement(envelope).jsonObject }.getOrNull()
+            ?: return McpCall.BadResponse
+        return McpCall.Ok(toResult(parsed))
     }
 
     /** Last `data:` frame wins — that is the terminal JSON-RPC message. */

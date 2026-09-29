@@ -1,6 +1,7 @@
 package com.jarvis.assistant
 
 import com.jarvis.assistant.location.ResolvedLocation
+import com.jarvis.assistant.weather.McpCall
 import com.jarvis.assistant.weather.McpToolClient
 import com.jarvis.assistant.weather.McpToolResult
 import com.jarvis.assistant.weather.ProjectEolWeatherClient
@@ -42,13 +43,14 @@ class ProjectEolWeatherClientTest {
     ) : McpToolClient {
         val calls = mutableListOf<Pair<String, String>>()
 
-        override suspend fun callTool(name: String, argumentsJson: String): McpToolResult? {
+        override suspend fun callTool(name: String, argumentsJson: String): McpCall {
             calls += name to argumentsJson
-            return when {
+            val result = when {
                 name.contains("search_locations") -> search
                 name.contains("forecast") -> forecast
                 else -> null
             }
+            return if (result == null) McpCall.Unreachable else McpCall.Ok(result)
         }
     }
 

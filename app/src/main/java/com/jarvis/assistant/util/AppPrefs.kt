@@ -183,11 +183,14 @@ class AppPrefs(
      * parses it tolerantly (unknown → the default).
      *
      * Read live on every weather turn, so a change applies without a restart.
-     * The literal default MUST match [com.jarvis.assistant.weather.WeatherProvider.OPEN_METEO]'s
-     * id — a test asserts they agree.
+     * The stored default is [DEFAULT_WEATHER_PROVIDER], which MUST agree with
+     * [com.jarvis.assistant.weather.WeatherProvider.DEFAULT] — a test asserts
+     * they agree. Project EOL is the default because
+     * `api.open-meteo.com` is DPI-blocked from Russian networks; an explicitly
+     * stored "open_meteo" is preserved as-is (no migration).
      */
     var weatherProvider: String
-        get() = prefs.getString(KEY_WEATHER_PROVIDER, "open_meteo") ?: "open_meteo"
+        get() = prefs.getString(KEY_WEATHER_PROVIDER, DEFAULT_WEATHER_PROVIDER) ?: DEFAULT_WEATHER_PROVIDER
         set(value) = prefs.edit().putString(KEY_WEATHER_PROVIDER, value.trim()).apply()
 
     /**
@@ -416,6 +419,12 @@ class AppPrefs(
 
         /** Active weather provider id; see [weatherProvider]. */
         internal const val KEY_WEATHER_PROVIDER = "weather_provider"
+
+        /**
+         * The provider a fresh install uses; MUST match
+         * [com.jarvis.assistant.weather.WeatherProvider.DEFAULT], pinned by test.
+         */
+        internal const val DEFAULT_WEATHER_PROVIDER = "project_eol"
         internal const val KEY_FOLLOW_UP_ENABLED = "follow_up_enabled"
         internal const val KEY_FOLLOW_UP_WINDOW_MS = "follow_up_window_ms"
         internal const val KEY_TTS_VOICE = "tts_voice"

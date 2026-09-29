@@ -1,7 +1,6 @@
 package com.jarvis.assistant.weather
 
 import com.jarvis.assistant.location.ResolvedLocation
-import com.jarvis.assistant.util.JsonOut
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -63,19 +62,20 @@ class ProjectEolWeatherClient(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun getWeather(query: WeatherQuery): String = withContext(Dispatchers.IO) {
-        val days = (if (query.days >= 1) query.days else forecastDays).coerceIn(1, MAX_FORECAST_DAYS)
-        when (val location = query.location) {
-            is ResolvedLocation.Place -> fromPlace(location, days)
-            is ResolvedLocation.Coords -> fetchForecast(
-                latitude = location.latitude,
-                longitude = location.longitude,
-                displayName = location.label,
-                country = null,
-                days = days,
-            )
+    override suspend fun getWeatherOutcome(query: WeatherQuery): WeatherOutcome =
+        withContext(Dispatchers.IO) {
+            val days = (if (query.days >= 1) query.days else forecastDays).coerceIn(1, MAX_FORECAST_DAYS)
+            when (val location = query.location) {
+                is ResolvedLocation.Place -> fromPlace(location, days)
+                is ResolvedLocation.Coords -> fetchForecast(
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    displayName = location.label,
+                    country = null,
+                    days = days,
+                )
+            }
         }
-    }
 
     /**
      * `search_locations` → coordinates; exact name match preferred, else the
@@ -88,18 +88,27 @@ class ProjectEolWeatherClient(
             PlaceResolution
 
         data object Unreachable : PlaceResolution
+        data object BadResponse : PlaceResolution
         data object NotFound : PlaceResolution
         data object Malformed : PlaceResolution
     }
 
-    private suspend fun fromPlace(place: ResolvedLocation.Place, days: Int): String =
+    private suspend fun fromPlace(place: ResolvedLocation.Place, days: Int): WeatherOutcome =
         when (val resolved = resolvePlace(place.name.trim())) {
             is PlaceResolution.Ok ->
                 fetchForecast(resolved.latitude, resolved.longitude, resolved.name, resolved.country, days)
 
-            PlaceResolution.Unreachable -> JsonOut.error("Weather service unreachable")
-            PlaceResolution.NotFound -> JsonOut.error("Location not found: ${place.name}")
-            PlaceResolution.Malformed -> JsonOut.error("Bad geocoding response")
+            PlaceResolution.Unreachable ->
+                WeatherOutcome.Error("Weather service unreachable", unreachable = true)
+
+            PlaceResolution.BadResponse ->
+                WeatherOutcome.Error("Weather service unreachable", unreachable = false)
+
+            PlaceResolution.NotFound ->
+                WeatherOutcome.Error("Location not found: ${place.name}", unreachable = false)
+
+            PlaceResolution.Malformed ->
+                WeatherOutcome.Error("Bad geocoding response", unreachable = false)
         }
 
     private suspend fun resolvePlace(name: String): PlaceResolution {
@@ -108,7 +117,15 @@ class ProjectEolWeatherClient(
             put("limit", JsonPrimitive(SEARCH_CANDIDATES))
         }.toString()
 
-        val result = mcp.callTool(SEARCH_LOCATIONS, args) ?: return PlaceResolution.Unreachable
+        val call = mcp.callTool(SEARCH_LOCATIONS, args)
+        if (call !is McpCall.Ok) {
+            return if (call is McpCall.Unreachable) {
+                PlaceResolution.Unreachable
+            } else {
+                PlaceResolution.BadResponse
+            }
+        }
+        val result = call.result
         if (result.isError) return PlaceResolution.Malformed
 
         val root = runCatching { json.parseToJsonElement(result.text).jsonObject }.getOrNull()
@@ -142,7 +159,7 @@ class ProjectEolWeatherClient(
         displayName: String,
         country: String?,
         days: Int,
-    ): String {
+    ): WeatherOutcome {
         val zoneId = zone()
         val start = startOfToday(zoneId)
         val args = buildJsonObject {
@@ -153,20 +170,28 @@ class ProjectEolWeatherClient(
             put("parameters", buildJsonArray { FORECAST_PARAMETERS.forEach { add(JsonPrimitive(it)) } })
         }.toString()
 
-        val result = mcp.callTool(GET_WEATHER_FORECAST, args)
-            ?: return JsonOut.error("Weather service unreachable")
-        if (result.isError) return JsonOut.error("Weather service error")
+        val call = mcp.callTool(GET_WEATHER_FORECAST, args)
+        if (call !is McpCall.Ok) {
+            return WeatherOutcome.Error(
+                "Weather service unreachable",
+                unreachable = call is McpCall.Unreachable,
+            )
+        }
+        val result = call.result
+        if (result.isError) return WeatherOutcome.Error("Weather service error", unreachable = false)
         val root = runCatching { json.parseToJsonElement(result.text).jsonObject }.getOrNull()
-            ?: return JsonOut.error("Bad weather response")
+            ?: return WeatherOutcome.Error("Bad weather response", unreachable = false)
 
         val hours = parseHours(root, zoneId)
-        if (hours.isEmpty()) return JsonOut.error("No forecast data")
+        if (hours.isEmpty()) return WeatherOutcome.Error("No forecast data", unreachable = false)
 
-        return weatherDocument(
-            displayName = displayName,
-            country = country,
-            current = currentReadings(hours),
-            daily = dailyRows(hours),
+        return WeatherOutcome.Ok(
+            weatherDocument(
+                displayName = displayName,
+                country = country,
+                current = currentReadings(hours),
+                daily = dailyRows(hours),
+            ),
         )
     }
 

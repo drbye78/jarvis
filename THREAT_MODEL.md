@@ -229,8 +229,8 @@ The complete egress list (see §1 of the inventory this was built from):
 | Yandex AI Studio `/v1/models` | API key only (GET) | lazy folder discovery, once |
 | Sber ASR/TTS (`smartspeech.sber.ru`) | **microphone audio** / TTS text | a turn |
 | Yandex STT/TTS (`stt|tts.api.cloud.yandex.net`) | **microphone audio** / TTS text | a turn |
-| Open-Meteo forecast + geocoding | lat/lon (or place name), fields | weather tool (default provider) |
-| Project EOL weather MCP (`weatherapi.projecteol.ru`, NOAA GFS) | lat/lon (or place name to `search_locations`), parameter names | weather tool (selected provider) |
+| Open-Meteo forecast + geocoding | lat/lon (or place name), fields | weather tool (selected provider or failover target) |
+| Project EOL weather MCP (`weatherapi.projecteol.ru`, NOAA GFS) | lat/lon (or place name to `search_locations`), parameter names | weather tool (default provider) |
 | Yandex MapKit (host in the native SDK) | search query / route endpoints + key | geo tools |
 | `music.yandex.ru` search URL | search query, handed to another app | music tool |
 | `yandex.ru` legal/maps URLs | fixed constants, handed to browser | About row |

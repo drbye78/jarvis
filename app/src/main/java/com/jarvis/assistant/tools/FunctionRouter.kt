@@ -163,6 +163,9 @@ class FunctionRouter(
                         notAvailable = toolStrings.weatherNotAvailable,
                         forecastDays = config.weatherForecastDays,
                     ),
+                    // Bounded per-provider attempt; two attempts + GPS stay
+                    // under the tool's own budget (see JarvisConfig).
+                    attemptTimeoutMs = config.weatherProviderAttemptTimeoutMs,
                 ),
                 // Configured city wins (read LIVE, so a Settings change applies
                 // to the next turn); else a bounded GPS fix; else an honest

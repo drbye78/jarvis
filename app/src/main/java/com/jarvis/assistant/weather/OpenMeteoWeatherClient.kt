@@ -2,7 +2,6 @@ package com.jarvis.assistant.weather
 
 import com.jarvis.assistant.llm.await
 import com.jarvis.assistant.location.ResolvedLocation
-import com.jarvis.assistant.util.JsonOut
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -76,19 +75,20 @@ class OpenMeteoWeatherClient(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun getWeather(query: WeatherQuery): String = withContext(Dispatchers.IO) {
-        val days = normalizeDays(query.days)
-        when (val location = query.location) {
-            is ResolvedLocation.Place -> fromPlace(location, days)
-            is ResolvedLocation.Coords -> fromCoords(location, days)
+    override suspend fun getWeatherOutcome(query: WeatherQuery): WeatherOutcome =
+        withContext(Dispatchers.IO) {
+            val days = normalizeDays(query.days)
+            when (val location = query.location) {
+                is ResolvedLocation.Place -> fromPlace(location, days)
+                is ResolvedLocation.Coords -> fromCoords(location, days)
+            }
         }
-    }
 
     /** 1..7, falling back to [forecastDays] when the caller sent no valid day. */
     private fun normalizeDays(days: Int): Int =
         (if (days >= 1) days else forecastDays).coerceIn(1, MAX_FORECAST_DAYS)
 
-    private suspend fun fromPlace(place: ResolvedLocation.Place, days: Int): String {
+    private suspend fun fromPlace(place: ResolvedLocation.Place, days: Int): WeatherOutcome {
         val encoded = URLEncoder.encode(place.name.trim(), "UTF-8")
         val lang = languageTag.ifBlank { "ru" }
         val geoUrl = (
@@ -96,14 +96,16 @@ class OpenMeteoWeatherClient(
                 "?name=$encoded&count=5&language=$lang"
             ).toHttpUrl()
 
-        val geoBody = httpGet(geoUrl.toString())
-            ?: return JsonOut.error("Weather service unreachable")
+        val geoBody = when (val response = httpGet(geoUrl.toString())) {
+            is HttpResult.Body -> response.text
+            else -> return unreachableOrBad(response)
+        }
         val geoJson = runCatching { json.parseToJsonElement(geoBody).jsonObject }
-            .getOrNull() ?: return JsonOut.error("Bad geocoding response")
+            .getOrNull() ?: return WeatherOutcome.Error("Bad geocoding response", unreachable = false)
 
         val results = geoJson["results"]?.jsonArray
         if (results.isNullOrEmpty()) {
-            return JsonOut.error("Location not found: ${place.name}")
+            return WeatherOutcome.Error("Location not found: ${place.name}", unreachable = false)
         }
         // Prefer an exact-name match among the candidates; else the first hit.
         val first = results
@@ -117,7 +119,7 @@ class OpenMeteoWeatherClient(
         // return (a per-field early return pushed this function over the
         // detekt ReturnCount budget).
         val coordinates = first.coordinates()
-            ?: return JsonOut.error("Could not resolve coordinates")
+            ?: return WeatherOutcome.Error("Could not resolve coordinates", unreachable = false)
         val displayName = first["name"]?.jsonPrimitive?.contentOrNull ?: place.name
         val country = first["country"]?.jsonPrimitive?.contentOrNull
 
@@ -132,7 +134,7 @@ class OpenMeteoWeatherClient(
     }
 
     /** GPS coordinates: no geocoding, no country — the label is what we report. */
-    private suspend fun fromCoords(coords: ResolvedLocation.Coords, days: Int): String =
+    private suspend fun fromCoords(coords: ResolvedLocation.Coords, days: Int): WeatherOutcome =
         fetchForecast(coords.latitude.toString(), coords.longitude.toString(), coords.label, null, days)
 
     private suspend fun fetchForecast(
@@ -141,7 +143,7 @@ class OpenMeteoWeatherClient(
         displayName: String,
         country: String?,
         days: Int,
-    ): String {
+    ): WeatherOutcome {
         val weatherUrl = (
             "$forecastBaseUrl/v1/forecast" +
                 "?latitude=$latitude&longitude=$longitude" +
@@ -153,21 +155,25 @@ class OpenMeteoWeatherClient(
                 "&timezone=auto"
             ).toHttpUrl()
 
-        val weatherBody = httpGet(weatherUrl.toString())
-            ?: return JsonOut.error("Weather service unreachable")
+        val weatherBody = when (val response = httpGet(weatherUrl.toString())) {
+            is HttpResult.Body -> response.text
+            else -> return unreachableOrBad(response)
+        }
         val weatherJson = runCatching { json.parseToJsonElement(weatherBody).jsonObject }
-            .getOrNull() ?: return JsonOut.error("Bad weather response")
+            .getOrNull() ?: return WeatherOutcome.Error("Bad weather response", unreachable = false)
 
         val current = weatherJson["current"]?.jsonObject
-            ?: return JsonOut.error("No current conditions")
+            ?: return WeatherOutcome.Error("No current conditions", unreachable = false)
         val daily = weatherJson["daily"]?.let { runCatching { it.jsonObject }.getOrNull() }
 
-        return buildJsonObject {
-            put("location", JsonPrimitive(displayName))
-            if (!country.isNullOrBlank()) put("country", JsonPrimitive(country))
-            put("current", buildCurrent(current))
-            put("daily", buildDaily(daily))
-        }.toString()
+        return WeatherOutcome.Ok(
+            buildJsonObject {
+                put("location", JsonPrimitive(displayName))
+                if (!country.isNullOrBlank()) put("country", JsonPrimitive(country))
+                put("current", buildCurrent(current))
+                put("daily", buildDaily(daily))
+            }.toString(),
+        )
     }
 
     private fun buildCurrent(current: JsonObject): JsonObject = buildJsonObject {
@@ -238,13 +244,30 @@ class OpenMeteoWeatherClient(
         }.getOrDefault(notAvailable)
     }
 
-    private suspend fun httpGet(url: String): String? = try {
+    private fun unreachableOrBad(result: HttpResult): WeatherOutcome.Error =
+        WeatherOutcome.Error("Weather service unreachable", unreachable = result is HttpResult.Unreachable)
+
+    private suspend fun httpGet(url: String): HttpResult = try {
         httpClient.newCall(Request.Builder().url(url).build()).await().use { resp ->
-            if (resp.isSuccessful) resp.body?.string() else null
+            val body = resp.body?.string()
+            if (resp.isSuccessful && !body.isNullOrBlank()) {
+                HttpResult.Body(body)
+            } else {
+                // Answered, but unusable: a non-2xx status or an empty body is
+                // a reachable server's logical answer, never a failover trigger.
+                HttpResult.BadResponse
+            }
         }
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e // cancellation must not be swallowed into "unreachable"
-    } catch (e: Exception) {
-        null
+    } catch (_: Exception) {
+        HttpResult.Unreachable
+    }
+
+    /** Transport result, kept apart so a non-2xx/blank reply is not "unreachable". */
+    private sealed interface HttpResult {
+        data class Body(val text: String) : HttpResult
+        data object Unreachable : HttpResult
+        data object BadResponse : HttpResult
     }
 }

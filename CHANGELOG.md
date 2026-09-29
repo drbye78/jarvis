@@ -6,9 +6,32 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Changed — Project EOL is the default weather provider; automatic failover
+- **The default forecast source is now Project EOL (NOAA GFS, Russian-hosted),
+  not Open-Meteo.** `api.open-meteo.com` is DPI-blocked from Russian networks
+  (first reported Jun 2026), so a fresh Russian install got a ~20 s hang then a
+  failure; `AppPrefs.weatherProvider` now defaults to `"project_eol"`. An
+  explicitly stored `"open_meteo"` is preserved — no migration.
+- **A network-class failure of the selected provider now fails over to the
+  other one.** `WeatherClient` gains a classified `WeatherOutcome` (with
+  `unreachable` true ONLY for DNS/TCP/TLS/timeout); `McpToolClient` gains a
+  matching `McpCall`. `SelectingWeatherClient` tries the selected provider
+  first, then the other, each bounded by `withTimeoutOrNull` — never
+  `withTimeout`, because `TimeoutCancellationException` is a
+  `CancellationException` and would masquerade as a barge-in. A reachable
+  server's logical answer (non-2xx, blank body, malformed payload, "not
+  found"/"no data") is returned immediately and never triggers failover. A
+  provider that fails unreachable is deprioritized for `degradedTtlMs`
+  (default 10 min); a SUCCESSFUL attempt clears the demotion immediately, and
+  when both providers are demoted the user's selected one stays first.
+- Tests: `SelectingWeatherClientTest` (failover on unreachable, no failover on
+  a logical answer, timeout-as-unreachable, cancellation propagation, the
+  negative cache, plus a falsification test) and the updated provider/MCP fakes.
+  `WeatherClientTest` is unchanged.
+
 ### Added — a second weather provider (Project EOL over MCP)
 - **The forecast source is now selectable.** Settings → «Погода и карты» carries
-  a provider radio (Open-Meteo, the default, or **Project EOL**), applied LIVE:
+  a provider radio (Open-Meteo or **Project EOL**), applied LIVE:
   the tool reads the preference on every turn, so switching needs no restart.
   Both services are free and keyless.
 - **Project EOL is a different kind of feed, and the client hides that.**

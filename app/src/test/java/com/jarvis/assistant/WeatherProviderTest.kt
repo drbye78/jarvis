@@ -1,8 +1,10 @@
 package com.jarvis.assistant
 
 import com.jarvis.assistant.location.ResolvedLocation
+import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.weather.SelectingWeatherClient
 import com.jarvis.assistant.weather.WeatherClient
+import com.jarvis.assistant.weather.WeatherOutcome
 import com.jarvis.assistant.weather.WeatherProvider
 import com.jarvis.assistant.weather.WeatherQuery
 import kotlinx.coroutines.runBlocking
@@ -17,7 +19,8 @@ import org.junit.Test
 class WeatherProviderTest {
 
     private class NamedClient(private val tag: String) : WeatherClient {
-        override suspend fun getWeather(query: WeatherQuery) = tag
+        override suspend fun getWeatherOutcome(query: WeatherQuery): WeatherOutcome =
+            WeatherOutcome.Ok(tag)
     }
 
     private val query = WeatherQuery(ResolvedLocation.Place("Москва"), 1)
@@ -33,12 +36,20 @@ class WeatherProviderTest {
     }
 
     @Test
+    fun `the stored default and the parse fallback agree`() {
+        // The AppPrefs literal and the enum fallback must not silently diverge.
+        assertEquals(AppPrefs.DEFAULT_WEATHER_PROVIDER, WeatherProvider.DEFAULT.id)
+        assertEquals(WeatherProvider.DEFAULT, WeatherProvider.fromId(null))
+    }
+
+    @Test
     fun `an unknown or blank id degrades to the default instead of throwing`() {
         // A stale/renamed/absent value must never crash a weather turn.
-        assertEquals(WeatherProvider.OPEN_METEO, WeatherProvider.fromId(null))
-        assertEquals(WeatherProvider.OPEN_METEO, WeatherProvider.fromId(""))
-        assertEquals(WeatherProvider.OPEN_METEO, WeatherProvider.fromId("   "))
-        assertEquals(WeatherProvider.OPEN_METEO, WeatherProvider.fromId("some_future_provider"))
+        // Project EOL is the default: Open-Meteo is DPI-blocked from Russia.
+        assertEquals(WeatherProvider.PROJECT_EOL, WeatherProvider.fromId(null))
+        assertEquals(WeatherProvider.PROJECT_EOL, WeatherProvider.fromId(""))
+        assertEquals(WeatherProvider.PROJECT_EOL, WeatherProvider.fromId("   "))
+        assertEquals(WeatherProvider.PROJECT_EOL, WeatherProvider.fromId("some_future_provider"))
     }
 
     @Test

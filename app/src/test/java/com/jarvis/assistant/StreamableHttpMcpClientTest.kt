@@ -1,5 +1,7 @@
 package com.jarvis.assistant
 
+import com.jarvis.assistant.weather.McpCall
+import com.jarvis.assistant.weather.McpToolResult
 import com.jarvis.assistant.weather.StreamableHttpMcpClient
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -13,7 +15,6 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -45,6 +46,12 @@ class StreamableHttpMcpClientTest {
         endpointUrl = server.url("/mcp/").toString(),
     )
 
+    /** Unwraps a successful call, failing loudly on a non-Ok classification. */
+    private fun ok(call: McpCall): McpToolResult {
+        assertTrue("expected Ok but was $call", call is McpCall.Ok)
+        return (call as McpCall.Ok).result
+    }
+
     private fun toolResultEnvelope(structured: String, isError: Boolean = false): String =
         buildJsonObject {
             put("jsonrpc", JsonPrimitive("2.0"))
@@ -75,9 +82,9 @@ class StreamableHttpMcpClientTest {
     fun `parses a plain JSON tool result`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(200).setBody(toolResultEnvelope("""{"ok":true}""")))
 
-        val result = client().callTool("search_locations", """{"query":"Paris"}""")
+        val result = ok(client().callTool("search_locations", """{"query":"Paris"}"""))
 
-        assertEquals("""{"ok":true}""", result!!.text)
+        assertEquals("""{"ok":true}""", result.text)
         assertFalse(result.isError)
     }
 
@@ -92,9 +99,9 @@ class StreamableHttpMcpClientTest {
                 .setBody(body),
         )
 
-        val result = client().callTool("search_locations", """{"query":"Paris"}""")
+        val result = ok(client().callTool("search_locations", """{"query":"Paris"}"""))
 
-        assertEquals("""{"ok":true}""", result!!.text)
+        assertEquals("""{"ok":true}""", result.text)
         assertFalse(result.isError)
     }
 
@@ -107,9 +114,9 @@ class StreamableHttpMcpClientTest {
             ),
         )
 
-        val result = client().callTool("get_weather_forecast", "{}")
+        val result = ok(client().callTool("get_weather_forecast", "{}"))
 
-        assertTrue(result!!.isError)
+        assertTrue(result.isError)
         assertTrue(result.text.contains("hours"))
     }
 
@@ -121,9 +128,9 @@ class StreamableHttpMcpClientTest {
             ),
         )
 
-        val result = client().callTool("nope", "{}")
+        val result = ok(client().callTool("nope", "{}"))
 
-        assertTrue(result!!.isError)
+        assertTrue(result.isError)
         assertTrue(result.text.contains("Method not found"))
     }
 
@@ -141,10 +148,10 @@ class StreamableHttpMcpClientTest {
         )
         server.enqueue(MockResponse().setResponseCode(200).setBody(toolResultEnvelope("""{"ok":true}""")))
 
-        val result = client().callTool("search_locations", """{"query":"Paris"}""")
+        val result = ok(client().callTool("search_locations", """{"query":"Paris"}"""))
 
         // The retry succeeded, and the FIRST request really preceded an initialize.
-        assertEquals("""{"ok":true}""", result!!.text)
+        assertEquals("""{"ok":true}""", result.text)
         val first = server.takeRequest()
         val second = server.takeRequest()
         assertTrue(first.body.readUtf8().contains("tools/call"))
@@ -152,22 +159,23 @@ class StreamableHttpMcpClientTest {
     }
 
     @Test
-    fun `an HTTP failure degrades to null rather than throwing`() = runBlocking {
+    fun `an HTTP failure classifies as an answered-but-unusable reply`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
 
         val result = client().callTool("search_locations", "{}")
 
-        assertNull(result)
+        // Reachable server, non-2xx: BadResponse (NOT a failover trigger).
+        assertEquals(McpCall.BadResponse, result)
     }
 
     @Test
-    fun `an unreachable endpoint degrades to null`() = runBlocking {
+    fun `an unreachable endpoint classifies as Unreachable`() = runBlocking {
         val url = server.url("/mcp/").toString()
         server.shutdown() // simulate the service being down
 
         val result = StreamableHttpMcpClient(OkHttpClient(), url).callTool("search_locations", "{}")
 
-        assertNull(result)
+        assertEquals(McpCall.Unreachable, result)
     }
 
     @Test

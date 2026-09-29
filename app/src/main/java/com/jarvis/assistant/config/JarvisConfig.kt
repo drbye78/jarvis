@@ -103,9 +103,10 @@ data class JarvisConfig(
      * Project EOL weather — a free MCP (Model Context Protocol) endpoint over
      * NOAA GFS, no API key. Weather is a SELECTABLE capability
      * ([com.jarvis.assistant.weather.SelectingWeatherClient]): this host is the
-     * alternative to Open-Meteo, chosen in Settings. Unlike Open-Meteo it
-     * publishes an HOURLY series in physical units (Kelvin, m/s, kg m⁻²), so
-     * the client aggregates days on-device and converts units at the edge.
+     * DEFAULT (Russian-hosted, so it survives RKN egress blocking), with
+     * Open-Meteo selectable as the alternative. Unlike Open-Meteo it publishes
+     * an HOURLY series in physical units (Kelvin, m/s, kg m⁻²), so the client
+     * aggregates days on-device and converts units at the edge.
      */
     val projectEolMcpUrl: String = "https://weatherapi.projecteol.ru/mcp/",
     /** Forecast horizon for a weather turn (Open-Meteo max is 16; voice UX caps at a week). */
@@ -120,6 +121,12 @@ data class JarvisConfig(
      * raise without owner sign-off.
      */
     val weatherToolTimeoutMs: Long = 20_000,
+    /**
+     * Bounded budget for ONE provider attempt inside `SelectingWeatherClient`.
+     * With two attempts plus the GPS fix (≤[weatherGpsFixTimeoutMs]) the worst
+     * case must stay under [weatherToolTimeoutMs] (6 s + 6 s + 6 s = 18 s < 20 s).
+     */
+    val weatherProviderAttemptTimeoutMs: Long = 6_000,
 
     // GEO lane (findPlace / getRoute). Both run geocoding via MapKit, whose
     // FIRST call also loads the native libraries — so the route budget is
