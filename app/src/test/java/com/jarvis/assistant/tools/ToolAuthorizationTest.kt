@@ -237,14 +237,14 @@ class ToolAuthorizationTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `the canonical risk map pins exactly 24 values`() {
-        assertEquals(24, EXPECTED.size)
+    fun `the canonical risk map pins exactly 25 values`() {
+        assertEquals(25, EXPECTED.size)
         assertEquals("ToolRisks.byName must equal the pinned table", EXPECTED, ToolRisks.byName)
     }
 
     @Test
     fun `every production tool class declares its risk explicitly`() {
-        assertEquals(24, TOOL_CLASSES.size)
+        assertEquals(25, TOOL_CLASSES.size)
         TOOL_CLASSES.forEach { (name, clazz) ->
             assertTrue(
                 "$name must declare ToolContract.risk",
@@ -289,7 +289,7 @@ class ToolAuthorizationTest {
 
     private companion object {
         /**
-         * The 24-tool runtime surface (21 base + 3 cognitive) with its
+         * The 25-tool runtime surface (22 base + 3 cognitive) with its
          * canonical classification. This is the PINNED expectation; it must
          * stay byte-for-byte in step with [ToolRisks.byName] and with each
          * production tool class.
@@ -305,6 +305,7 @@ class ToolAuthorizationTest {
             "getWeather" to ToolRisk.READ_ONLY,
             "findPlace" to ToolRisk.READ_ONLY,
             "getRoute" to ToolRisk.READ_ONLY,
+            "getCurrentLocation" to ToolRisk.READ_ONLY,
             // device control
             "setVolume" to ToolRisk.STATEFUL,
             "setBrightness" to ToolRisk.STATEFUL,
@@ -336,6 +337,7 @@ class ToolAuthorizationTest {
             "getWeather" to com.jarvis.assistant.weather.WeatherTool::class.java,
             "findPlace" to GeoPlaceTool::class.java,
             "getRoute" to GeoRouteTool::class.java,
+            "getCurrentLocation" to GetCurrentLocationTool::class.java,
             "setVolume" to DeviceTools.SetVolumeTool::class.java,
             "setBrightness" to DeviceTools.SetBrightnessTool::class.java,
             "setWifi" to DeviceTools.SetWifiTool::class.java,

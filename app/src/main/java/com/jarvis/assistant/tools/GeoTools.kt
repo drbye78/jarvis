@@ -100,7 +100,10 @@ class GeoPlaceTool(
         "Find an organization, address or place on the map by name or a descriptive query. " +
             "Returns the matching places with their names, addresses and coordinates. Use it to " +
             "locate a specific place (a pharmacy, a shop, an address) or to turn a place name " +
-            "into coordinates. The optional `near` hint biases the search toward a city or area."
+            "into coordinates. The optional `near` hint biases the search toward a city or area; " +
+            "`near_user=true` biases it toward the device's ACTUAL position (for «рядом», " +
+            "«поблизости»). The bias is a ranking hint, NOT a guaranteed radius — do not promise " +
+            "a precise radius."
     override val parametersJson = schema(
         mapOf(
             "query" to
@@ -108,7 +111,12 @@ class GeoPlaceTool(
                 """place, e.g. 'аптека' or 'улица Тверская 1'. Required."}""",
             "near" to
                 """{"type":"string","description":"City or area to search near, e.g. 'Москва'. """ +
-                """OMIT to search near the user's default location."}""",
+                """OMIT to search near the user's default location (configured city, or a """ +
+                """device fix when no city is set)."}""",
+            "near_user" to
+                """{"type":"boolean","description":"Set true to search near the device's """ +
+                """CURRENT position, ignoring the configured city — use for «рядом», """ +
+                """«поблизости», «в радиусе». This biases ranking, it is NOT a radius."}""",
         ),
         required = listOf("query"),
     )
@@ -121,9 +129,16 @@ class GeoPlaceTool(
         val query = args.string("query")?.trim().orEmpty()
         if (query.isEmpty()) return JsonOut.error("Missing required parameter: query")
         val nearArg = args.string("near")?.trim()?.takeIf { it.isNotEmpty() }
+        val nearUser = args.bool("near_user") == true
 
         return try {
-            val near = searchOrigin(nearArg)
+            val near = when (val origin = searchOrigin(nearArg, nearUser)) {
+                is GeoResult.Ok -> origin.value
+                is GeoResult.Err ->
+                    return JsonOut.error(
+                        geoErrorText(messages, origin.error, messages.placeNotFound),
+                    )
+            }
             when (val result = client.searchPlaces(query, near, SEARCH_LIMIT)) {
                 is GeoResult.Ok ->
                     if (result.value.isEmpty()) {
@@ -149,23 +164,36 @@ class GeoPlaceTool(
     }
 
     /**
-     * Best-effort origin for a search; null means "no `near` hint". An explicit
-     * `near` that fails to geocode likewise degrades to null rather than
-     * sinking an otherwise answerable query.
+     * Origin for a search. `Ok(null)` means "no `near` hint". An explicit
+     * `near` that fails to geocode degrades to null rather than sinking an
+     * otherwise answerable query; the DEFAULT (configured-city) path is equally
+     * lenient. `near_user=true` is different: the user explicitly asked for
+     * their OWN position, so an unavailable fix is an honest error — silently
+     * searching unconstrained would answer «рядом» with places far away.
      */
-    private suspend fun searchOrigin(nearArg: String?): GeoPoint? {
-        if (nearArg != null) return firstPointOrNull(client.searchPlaces(nearArg, null, 1))
-        return when (val outcome = resolver.resolve()) {
-            is LocationOutcome.Resolved -> when (val location = outcome.location) {
-                is ResolvedLocation.Coords -> GeoPoint(location.latitude, location.longitude)
-                is ResolvedLocation.Place -> firstPointOrNull(client.searchPlaces(location.name, null, 1))
+    private suspend fun searchOrigin(nearArg: String?, nearUser: Boolean): GeoResult<GeoPoint?> {
+        if (nearArg != null) return GeoResult.Ok(firstPointOrNull(client.searchPlaces(nearArg, null, 1)))
+        if (nearUser) {
+            return when (val outcome = resolver.resolveDevice()) {
+                is LocationOutcome.Resolved -> GeoResult.Ok(resolvedPoint(outcome.location))
+                LocationOutcome.PermissionDenied -> GeoResult.Err(GeoError.PERMISSION_DENIED)
+                LocationOutcome.Unavailable -> GeoResult.Err(GeoError.UNAVAILABLE)
             }
+        }
+        return when (val outcome = resolver.resolve()) {
+            is LocationOutcome.Resolved -> GeoResult.Ok(resolvedPoint(outcome.location))
 
             // No usable default location: search unconstrained and let the query
             // text carry the place. Failing here would make «аптека в Москве»
             // unanswerable for no reason.
-            LocationOutcome.PermissionDenied, LocationOutcome.Unavailable -> null
+            LocationOutcome.PermissionDenied, LocationOutcome.Unavailable -> GeoResult.Ok(null)
         }
+    }
+
+    /** Coordinates pass through; a configured place name is geocoded (best effort). */
+    private suspend fun resolvedPoint(location: ResolvedLocation): GeoPoint? = when (location) {
+        is ResolvedLocation.Coords -> GeoPoint(location.latitude, location.longitude)
+        is ResolvedLocation.Place -> firstPointOrNull(client.searchPlaces(location.name, null, 1))
     }
 }
 
@@ -204,8 +232,10 @@ class GeoRouteTool(
             "and leg-by-leg details. `mode` is 'transit' (default) or 'walking'; " +
             "transit legs include the line name (bus/metro), the vehicle type, the transfer " +
             "point and the number of stops. `origin` defaults to the user's location when " +
-            "omitted. For follow-ups like «а пешком?» or «а на автобусе?», call getRoute AGAIN " +
-            "with the SAME destination and the new mode instead of asking the user to repeat it."
+            "omitted; `origin_user=true` forces the device's CURRENT position (ignoring the " +
+            "configured city). For follow-ups like «а пешком?» or «а на автобусе?», call " +
+            "getRoute AGAIN with the SAME destination and the new mode instead of asking the " +
+            "user to repeat it."
     override val parametersJson = schema(
         mapOf(
             "destination" to
@@ -214,6 +244,10 @@ class GeoRouteTool(
             "origin" to
                 """{"type":"string","description":"Where to start from. OMIT to use the """ +
                 """user's default location."}""",
+            "origin_user" to
+                """{"type":"boolean","description":"Set true to start from the device's """ +
+                """CURRENT position («отсюда», «от моего местоположения»), ignoring the """ +
+                """configured city. Ignored when `origin` is set."}""",
             "mode" to
                 """{"type":"string","enum":["transit","walking"],"description":"How to """ +
                 """travel: 'transit' (public transport, default) or 'walking'."}""",
@@ -229,6 +263,7 @@ class GeoRouteTool(
         val destination = args.string("destination")?.trim().orEmpty()
         if (destination.isEmpty()) return JsonOut.error("Missing required parameter: destination")
         val originArg = args.string("origin")?.trim()?.takeIf { it.isNotEmpty() }
+        val originUser = args.bool("origin_user") == true
         // Unknown or missing mode degrades to transit (the common request)
         // rather than erroring — the model should not have to be exact here.
         val mode = when (args.string("mode")?.trim()?.lowercase()) {
@@ -237,7 +272,7 @@ class GeoRouteTool(
         }
 
         return try {
-            val originPoint = when (val origin = resolveOrigin(originArg)) {
+            val originPoint = when (val origin = resolveOrigin(originArg, originUser)) {
                 is GeoResult.Ok -> origin.value
                 is GeoResult.Err ->
                     return JsonOut.error(geoErrorText(messages, origin.error, messages.routeNotFound))
@@ -271,9 +306,10 @@ class GeoRouteTool(
     }
 
     /** Explicit origin, else the shared default-location policy. Never null — a route needs one. */
-    private suspend fun resolveOrigin(explicit: String?): GeoResult<GeoPoint> {
+    private suspend fun resolveOrigin(explicit: String?, originUser: Boolean): GeoResult<GeoPoint> {
         if (explicit != null) return resolveDestination(explicit, near = null)
-        return when (val outcome = resolver.resolve()) {
+        val outcome = if (originUser) resolver.resolveDevice() else resolver.resolve()
+        return when (outcome) {
             is LocationOutcome.Resolved -> when (val location = outcome.location) {
                 is ResolvedLocation.Coords -> GeoResult.Ok(GeoPoint(location.latitude, location.longitude))
                 is ResolvedLocation.Place -> resolveDestination(location.name, near = null)

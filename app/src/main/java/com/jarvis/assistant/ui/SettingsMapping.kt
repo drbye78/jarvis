@@ -75,6 +75,9 @@ object SettingsMapping {
     fun selectedVoiceId(isMilaSelected: Boolean, customText: String): String =
         if (isMilaSelected) "Mila" else customText.trim().ifBlank { "Mila" }
 
+    /** The assistant's default name/wake word, used when no custom keyword is set. */
+    const val DEFAULT_WAKE_NAME = "Джарвис"
+
     /** Sherpa is the only engine that hides the Porcupine block. */
     fun isSherpaEngine(engine: String): Boolean = engine.trim().lowercase() == "sherpa"
 
@@ -86,6 +89,15 @@ object SettingsMapping {
      */
     fun customWakeHintKeyword(keyword: String?, engine: String): String? =
         keyword?.trim()?.takeIf { it.isNotEmpty() && isSherpaEngine(engine) }
+
+    /**
+     * The assistant's effective NAME: the custom Sherpa keyword when one is set,
+     * otherwise [DEFAULT_WAKE_NAME]. Shares the Sherpa-only guard with
+     * [customWakeHintKeyword] so the identity, the start-screen header, the idle
+     * label and the spoken sample can never name a phrase the engine ignores.
+     */
+    fun effectiveWakeName(keyword: String?, engine: String): String =
+        customWakeHintKeyword(keyword, engine) ?: DEFAULT_WAKE_NAME
 
     // ---- GigaChat-3 model flavor ----
 

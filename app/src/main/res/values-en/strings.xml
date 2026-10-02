@@ -20,6 +20,7 @@
     <string name="state_thinking">Thinking…</string>
     <string name="state_speaking">Speaking…</string>
     <string name="state_idle_full">Jarvis is listening. Say “Jarvis”</string>
+    <string name="state_idle_full_named">%1$s is listening. Say “%1$s”</string>
     <string name="state_listening_full">Listening…</string>
     <string name="state_thinking_full">Thinking…</string>
     <string name="state_speaking_full">Speaking…</string>
@@ -38,10 +39,19 @@
     <string name="settings">Settings</string>
     <string name="transcript_title">Conversation</string>
 
+    <!-- New chat -->
+    <string name="chat_clear">Clear conversation</string>
+    <string name="chat_clear_confirm_title">Clear conversation?</string>
+    <string name="chat_clear_confirm_text">The chat history will be deleted from the device. Memories and facts are not affected. This cannot be undone.</string>
+    <string name="chat_clear_confirm">Clear</string>
+    <string name="chat_clear_cancel">Cancel</string>
+    <string name="chat_clear_done">Conversation cleared</string>
+
     <!-- Home: redesign -->
     <string name="wake_hint">Say “Jarvis” and a command — for example, “Jarvis, play music”</string>
     <string name="wake_hint_custom">Say “%1$s” and a command — for example, “%1$s, play music”</string>
     <string name="transcript_empty_hint">All quiet. Say “Jarvis” and I’ll respond.</string>
+    <string name="transcript_empty_hint_named">All quiet. Say “%1$s” and I’ll respond.</string>
 
     <!-- Onboarding -->
     <string name="onboarding_title">Jarvis setup</string>
@@ -231,7 +241,7 @@
     <string name="weather_provider_open_meteo">Open-Meteo — default</string>
     <string name="weather_provider_project_eol">Project EOL (NOAA GFS)</string>
     <string name="weather_location_label">Default city</string>
-    <string name="weather_location_hint">Leave empty to detect your location automatically. A configured city always takes priority.</string>
+    <string name="weather_location_hint">Leave empty to detect your location automatically. The configured city is used by default, but explicit requests like “where am I” or “near me” use the device’s current position.</string>
     <string name="weather_permission_request">Allow location access</string>
     <string name="weather_permission_granted">Location access granted</string>
     <string name="weather_permission_denied">Location access not granted</string>
@@ -318,6 +328,7 @@
     <string name="activity_tool_search_library">Searching the library…</string>
     <string name="activity_tool_find_place">Finding a place…</string>
     <string name="activity_tool_get_route">Building a route…</string>
+    <string name="activity_tool_getCurrentLocation">Finding your location…</string>
     <string name="activity_tool_unknown">Working on it…</string>
 
     <!-- Voice selection (Y6): live-appliable TTS voice from the Settings card -->
@@ -335,6 +346,7 @@
     <string name="yandex_voice_hint">The Yandex SpeechKit v3 voice list is fixed. Role and speed are Yandex-only and apply to the next spoken sentence — no service restart. The role field offers only the roles the selected voice supports; clear it to send no role.</string>
     <string name="voice_service_not_running">Start the assistant to test the voice</string>
     <string name="phrase_voice_sample">Hi! I\'m Jarvis. This is how my voice sounds.</string>
+    <string name="phrase_voice_sample_named">Hi! I\'m %1$s. This is how my voice sounds.</string>
 
     <!-- Tool-layer user-visible errors (A4): routed through ToolStrings,
          spoken via the LLM — values-en parity is test-enforced -->

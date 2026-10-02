@@ -79,6 +79,23 @@ class SystemPromptProviderTests {
     }
 
     @Test
+    fun `a custom name replaces the identity name`() = runBlocking {
+        // The owner sets the Sherpa wake word to "max": the assistant must call
+        // itself by that name in dialogue, not the hardcoded «Джарвис».
+        val prompt = TimeAwareSystemPrompt(nowMs = at(12, 15), name = { "Max" })
+            .build(PromptContext.blank())
+        assertTrue(prompt.contains("Ты — Max, голосовой ассистент на планшете Android."))
+        assertFalse(prompt.contains("Ты — Джарвис,"))
+    }
+
+    @Test
+    fun `default-constructed name stays byte-identical to the hardcoded identity`() = runBlocking {
+        val explicitDefault = TimeAwareSystemPrompt(nowMs = at(12, 15), name = { "Джарвис" })
+            .build(PromptContext.blank())
+        assertTrue(explicitDefault.contains("Ты — Джарвис, голосовой ассистент на планшете Android."))
+    }
+
+    @Test
     fun `clarification policy present`() {
         assertTrue(promptAt(12).contains("уточняющий вопрос"))
     }

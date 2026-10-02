@@ -38,8 +38,16 @@ interface SystemPromptProvider {
  */
 internal object PromptSections {
 
-    val IDENTITY = """
-        Ты — Джарвис, голосовой ассистент на планшете Android.
+    /** The default assistant name; default-constructed providers stay byte-identical to this. */
+    const val DEFAULT_NAME = "Джарвис"
+
+    /**
+     * The identity paragraph, parameterized by the assistant's [name]. The
+     * default-constructed providers pass [DEFAULT_NAME], which reproduces the
+     * original hardcoded text byte-for-byte (tests pin that equality).
+     */
+    fun identity(name: String): String = """
+        Ты — $name, голосовой ассистент на планшете Android.
         Характер: спокойный, точный и надёжный, как хороший дворецкий; уместен лёгкий сухой юмор, но не сарказм и не болтливость.
         Отвечай кратко и разговорно, ВСЕГДА на русском языке.
     """.trimIndent()
@@ -70,24 +78,29 @@ internal object PromptSections {
         «промотай на минуту» — controlPlayback seek с deltaMs;
         «сначала» — restart; «лайкни» — like; «повтори трек» — repeat
         one; «перемешай» — shuffle; «быстрее»/«медленнее» — speed.
+
+        Для местоположения: «где я» — getCurrentLocation; «рядом/поблизости/в радиусе» —
+        findPlace с near_user=true (реальная позиция). Не обещай точный радиус.
     """.trimIndent()
 
     /**
      * The one and only assembly order:
      * IDENTITY \n TIME MEMORY SUMMARY POLICIES \n TOOL_ROUTING.
-     * [memoryBlock] is the rendered `<memory-context>` block + trailing
-     * blank line, or "" when disabled/empty. [summaryBlock] is the rendered
-     * `<summary-context>` block + trailing blank line,
-     * or "" when there are no summaries.
+     * [name] is the assistant's effective name (custom wake word on Sherpa,
+     * otherwise [DEFAULT_NAME]). [memoryBlock] is the rendered
+     * `<memory-context>` block + trailing blank line, or "" when
+     * disabled/empty. [summaryBlock] is the rendered `<summary-context>` block
+     * + trailing blank line, or "" when there are no summaries.
      */
-    fun assemble(time: String, memoryBlock: String, summaryBlock: String = ""): String = buildString {
-        appendLine(IDENTITY)
-        append(time)
-        append(memoryBlock)
-        append(summaryBlock)
-        appendLine(POLICIES)
-        append(TOOL_ROUTING)
-    }
+    fun assemble(name: String, time: String, memoryBlock: String, summaryBlock: String = ""): String =
+        buildString {
+            appendLine(identity(name))
+            append(time)
+            append(memoryBlock)
+            append(summaryBlock)
+            appendLine(POLICIES)
+            append(TOOL_ROUTING)
+        }
 
     /**
      * "Сейчас 03:15, четверг, 3 сентября. Сейчас глубокая ночь — …"
@@ -131,13 +144,16 @@ internal object PromptSections {
  *
  * @param nowMs injectable clock; defaults to the wall clock. Re-read on
  * every [build] call so each LLM pass gets the current time.
+ * @param name the assistant's effective name; defaults to [PromptSections.DEFAULT_NAME].
+ * Read on every [build] call, so a Settings change applies on the next pass.
  */
 class TimeAwareSystemPrompt(
     private val nowMs: () -> Long = System::currentTimeMillis,
+    private val name: () -> String = { PromptSections.DEFAULT_NAME },
 ) : SystemPromptProvider {
 
     override suspend fun build(context: PromptContext): String =
-        PromptSections.assemble(PromptSections.timeContext(nowMs()), "")
+        PromptSections.assemble(name(), PromptSections.timeContext(nowMs()), "")
 
     /**
      * Time context for the CURRENT clock — retained for the snapshot tests
@@ -162,6 +178,7 @@ class TimeAwareSystemPrompt(
  */
 class PromptComposer(
     private val nowMs: () -> Long = System::currentTimeMillis,
+    private val name: () -> String = { PromptSections.DEFAULT_NAME },
 ) : SystemPromptProvider {
 
     override suspend fun build(context: PromptContext): String {
@@ -169,7 +186,7 @@ class PromptComposer(
         val memory = renderSection("memory") { context.memory() }
         val summaryRoom = (COGNITIVE_BUDGET - memory.length).coerceAtLeast(0)
         val summary = truncateByLines(renderSection("summary") { context.summary() }, summaryRoom)
-        return PromptSections.assemble(time, block(memory), block(summary))
+        return PromptSections.assemble(name(), time, block(memory), block(summary))
     }
 
     /**

@@ -6,6 +6,8 @@ import android.os.SystemClock
 import android.view.View
 import android.widget.ImageButton
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -62,6 +64,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var transcript: RecyclerView
     private lateinit var transcriptEmpty: TextView
     private lateinit var wakeHintText: TextView
+    private lateinit var appTitle: TextView
+    private lateinit var clearChatButton: ImageButton
+
+    /**
+     * The custom Sherpa wake word, when one is active (null = the bundled
+     * «Джарвис»). Set by [applyWakeHint] on create/resume so every name-bearing
+     * surface (header, idle pill, empty hint, wake hint, spoken sample) derives
+     * from the same value.
+     */
+    private var customWakeName: String? = null
 
     /** Captured so reduced motion can drop insert animations and restore them. */
     private var defaultItemAnimator: RecyclerView.ItemAnimator? = null
@@ -91,6 +103,8 @@ class MainActivity : AppCompatActivity() {
         transcript = findViewById(R.id.transcript)
         transcriptEmpty = findViewById(R.id.transcriptEmpty)
         wakeHintText = findViewById(R.id.wakeHintText)
+        appTitle = findViewById(R.id.appTitle)
+        clearChatButton = findViewById(R.id.clearChatButton)
         applyWakeHint()
         adapter = TranscriptAdapter()
 
@@ -132,6 +146,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.settingsButton).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
+        clearChatButton.setOnClickListener { confirmClearChat() }
 
         toggleButton.setOnClickListener {
             when {
@@ -267,10 +282,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * The under-orb prompt must name the ACTUAL wake word. A custom Sherpa
-     * keyword replaces the bundled «Джарвис», so a static hint would instruct
-     * the user to say a phrase the engine no longer matches. Porcupine (a
-     * `.ppn` phrase we cannot read back) keeps the bundled default wording.
+     * The under-orb prompt must name the ACTUAL wake word, and that same custom
+     * keyword is the assistant's NAME. A custom Sherpa keyword replaces the
+     * bundled «Джарвис» in the header title, idle pill and empty-transcript
+     * hint too, so a static label would claim an identity the engine no longer
+     * answers to. Porcupine (a `.ppn` phrase we cannot read back) keeps the
+     * bundled default naming.
+     *
+     * Called on create and every [onResume], so a Settings change applies the
+     * moment the user returns.
      */
     private fun applyWakeHint() {
         val prefs = com.jarvis.assistant.util.AppPrefs(this)
@@ -278,10 +298,73 @@ class MainActivity : AppCompatActivity() {
             prefs.sherpaCustomKeyword,
             prefs.wakeWordEngine,
         )
+        customWakeName = keyword
+        val name = keyword ?: SettingsMapping.DEFAULT_WAKE_NAME
+        appTitle.text = name
         wakeHintText.text = if (keyword != null) {
             getString(R.string.wake_hint_custom, keyword)
         } else {
             getString(R.string.wake_hint)
+        }
+        transcriptEmpty.text = if (keyword != null) {
+            getString(R.string.transcript_empty_hint_named, keyword)
+        } else {
+            getString(R.string.transcript_empty_hint)
+        }
+        // Re-renders the idle pill through the single StateLabel path so the
+        // «<name> слушает…» line picks up the new identity.
+        renderStatus()
+    }
+
+    /**
+     * «Новый чат»: confirm, then delete ONLY the dialogue history. Stored
+     * memory / facts / summaries are a separate action and are never touched
+     * here. The confirmation keeps an irreversible wipe one deliberate tap away
+     * from the header.
+     */
+    private fun confirmClearChat() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.chat_clear_confirm_title)
+            .setMessage(R.string.chat_clear_confirm_text)
+            .setPositiveButton(R.string.chat_clear_confirm) { _, _ -> clearChatHistory() }
+            .setNegativeButton(R.string.chat_clear_cancel, null)
+            .show()
+    }
+
+    /**
+     * Delete the dialogue history through the graph-owned
+     * [com.jarvis.assistant.data.ConversationManager] when the service is
+     * running, so an active turn is cancelled BEFORE the wipe and cannot race it
+     * with a late insert. When the service is stopped there is no turn to race,
+     * so the Room singleton is a safe direct path to the SAME `messages` table
+     * (both the UI transcript Flow and the LLM history read it, so one delete
+     * keeps them consistent and the UI auto-empties).
+     *
+     * Honest failure: a thrown delete logs (content-free) and shows NO success
+     * toast — the user is never told a wipe happened when it did not.
+     */
+    private fun clearChatHistory() {
+        val graph = GraphHolder.graph
+        lifecycleScope.launch {
+            try {
+                if (graph != null) {
+                    graph.clearConversation()
+                } else {
+                    // Stopped service: no turn can race us. Same table, same
+                    // singleton the graph uses — the one existing DELETE path.
+                    AppDatabase.getInstance(this@MainActivity).messageDao().clear()
+                }
+                Toast.makeText(
+                    this@MainActivity,
+                    R.string.chat_clear_done,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Content-free: message rows may hold user speech.
+                Timber.w(e, "Chat clear failed")
+            }
         }
     }
 
@@ -578,9 +661,14 @@ class MainActivity : AppCompatActivity() {
      * state.
      */
     private fun renderStatus() {
-        val label = getString(
-            StateLabel.labelRes(currentState, micMuted, deaf, currentActivity),
-        )
+        val res = StateLabel.labelRes(currentState, micMuted, deaf, currentActivity)
+        // A custom wake word is the assistant's name, so the IDLE pill uses the
+        // `%1$s` variant; every other state keeps its existing label.
+        val label = if (res == R.string.state_idle_full && customWakeName != null) {
+            getString(R.string.state_idle_full_named, customWakeName)
+        } else {
+            getString(res)
+        }
         statusText.animate().cancel()
         if (!Motion.animationsEnabled() || statusText.text?.toString() == label) {
             statusText.alpha = 1f

@@ -286,6 +286,8 @@ class WeatherClientTest {
 
     private class FixedResolver(private val outcome: LocationOutcome) : LocationResolver {
         override suspend fun resolve(): LocationOutcome = outcome
+
+        override suspend fun resolveDevice(): LocationOutcome = outcome
     }
 
     private val messages = object : WeatherToolMessages {

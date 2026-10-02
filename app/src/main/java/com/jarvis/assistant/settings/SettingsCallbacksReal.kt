@@ -119,6 +119,13 @@ class SettingsCallbacksReal(
         // change; without this rebuild, 3 of the 4 engine×toggle
         // combinations stayed stale until a restart.
         //
+        // The callback ALSO owns persistence (ListeningSettingsController
+        // deliberately only sets the switch state and reads the pref) — so
+        // persist BEFORE the lane re-arm/rebuild below, whose tail re-reads
+        // the flag this write sets. Without this write the pref silently
+        // reverted to its stored default.
+        prefs.voiceStopEnabled = enabled
+        //
         // The state collector fires on STATE CHANGE only, so re-arm the
         // lane for the current state too — otherwise enabling voice stop
         // while the assistant is THINKING/SPEAKING did nothing until the

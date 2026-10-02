@@ -130,6 +130,15 @@ class MusicAppCatalogTest {
     }
 
     @Test
+    fun `cyrillic vk full label hint resolves to VK`() {
+        val catalog = MusicAppCatalog({ allPlayers })
+        // The label is Latin ("VK Музыка"), so the Cyrillic spoken form can
+        // only resolve through the brand table. Guard against a regression
+        // that makes «ВК Музыка» fall through to the generic «музык» token.
+        assertEquals("com.uma.musicvk", catalog.resolve("ВК Музыка")?.packageName)
+    }
+
+    @Test
     fun `hint with vk marker and word muzyka stays VK`() {
         val catalog = MusicAppCatalog({ allPlayers })
         assertEquals("com.uma.musicvk", catalog.resolve("музыка вк")?.packageName)

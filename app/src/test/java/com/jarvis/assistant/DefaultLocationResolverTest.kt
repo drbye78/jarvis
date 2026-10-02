@@ -16,6 +16,8 @@ import org.junit.Test
  * [DefaultLocationResolver] with a fake [LocationProvider]:
  *
  * - a configured location ALWAYS wins and the provider is never consulted;
+ * - `resolveDevice()` ignores a configured city and always uses a device fix
+ *   (the explicit «где я» path), with the same failure/cancellation semantics;
  * - a missing permission degrades to `PermissionDenied` without a fix request;
  * - a usable fix resolves to coordinates with the localized label;
  * - every provider failure (null or a thrown non-cancellation exception)
@@ -136,5 +138,64 @@ class DefaultLocationResolverTest {
 
         assertEquals(LocationOutcome.PermissionDenied, outcome)
         assertEquals(0, provider.fixCalls)
+    }
+
+    // ---- resolveDevice: the explicit «где я» path -------------------------
+
+    @Test
+    fun `resolveDevice ignores a configured city and returns the device fix`() = runTest {
+        // The owner decision: an explicit «где я» must NOT be answered with the
+        // configured city — otherwise the device fix is dead code whenever one
+        // is set (the old resolve() behaviour).
+        val provider = FakeProvider(granted = true, fix = LocationFix(55.75, 37.61, 10L, "network"))
+        val outcome = resolver("Сочи", provider, label = "текущее местоположение").resolveDevice()
+
+        assertEquals(
+            LocationOutcome.Resolved(ResolvedLocation.Coords(55.75, 37.61, "текущее местоположение")),
+            outcome,
+        )
+        assertEquals("the provider must be consulted despite the configured city", 1, provider.fixCalls)
+    }
+
+    @Test
+    fun `resolve still returns the configured place unchanged`() = runTest {
+        // Guard against a resolverDevice refactor leaking into resolve().
+        val provider = FakeProvider(granted = true, fix = LocationFix(55.75, 37.61, 10L, "network"))
+        val outcome = resolver("Сочи", provider).resolve()
+
+        assertEquals(LocationOutcome.Resolved(ResolvedLocation.Place("Сочи")), outcome)
+        assertEquals(0, provider.fixCalls)
+    }
+
+    @Test
+    fun `resolveDevice with no permission is PermissionDenied without a fix request`() = runTest {
+        val provider = FakeProvider(granted = false)
+        val outcome = resolver("Сочи", provider).resolveDevice()
+
+        assertEquals(LocationOutcome.PermissionDenied, outcome)
+        assertEquals(0, provider.fixCalls)
+    }
+
+    @Test
+    fun `resolveDevice with no usable fix is Unavailable`() = runTest {
+        val provider = FakeProvider(fix = null)
+        val outcome = resolver("Сочи", provider).resolveDevice()
+
+        assertEquals(LocationOutcome.Unavailable, outcome)
+        assertEquals(1, provider.fixCalls)
+    }
+
+    @Test
+    fun `resolveDevice propagates cancellation`() = runTest {
+        val provider = FakeProvider(failure = CancellationException("barge-in"))
+        var propagated = false
+
+        try {
+            resolver("Сочи", provider).resolveDevice()
+        } catch (e: CancellationException) {
+            propagated = true
+        }
+
+        assertTrue("barge-in must not degrade into Unavailable", propagated)
     }
 }

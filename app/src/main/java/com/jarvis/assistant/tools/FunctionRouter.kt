@@ -190,6 +190,17 @@ class FunctionRouter(
                 messages = toolStrings,
                 budgetMs = config.geoRouteTimeoutMs,
             ),
+            GetCurrentLocationTool(
+                resolver = locationResolver,
+                geoClient = geoClient,
+                messages = toolStrings,
+                // «текущее местоположение» when MapKit cannot name the fix.
+                unnamedLabel = {
+                    appContext.getString(com.jarvis.assistant.R.string.weather_location_current)
+                },
+                // GPS fix + reverse geocode; same budget as the weather lookup.
+                budgetMs = config.weatherToolTimeoutMs,
+            ),
         ) + DeviceTools(appContext, toolStrings).all() +
             MusicTools(
                 MusicPlaybackOrchestrator(

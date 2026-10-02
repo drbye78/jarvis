@@ -61,6 +61,7 @@ object TurnActivityLabels {
         // GEO lane: map search + routing get status pills like every tool.
         "findPlace" -> R.string.activity_tool_find_place
         "getRoute" -> R.string.activity_tool_get_route
+        "getCurrentLocation" -> R.string.activity_tool_getCurrentLocation
         // Memory tools get status pills like every tool.
         "remember_fact" -> R.string.activity_tool_remember_fact
         "recall_facts" -> R.string.activity_tool_recall_facts

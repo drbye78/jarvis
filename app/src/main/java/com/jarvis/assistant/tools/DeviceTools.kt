@@ -372,18 +372,17 @@ class DeviceTools(
             val app = obj.string("app")
                 ?: return JsonOut.error("Missing required parameter: app")
             val pm = context.packageManager
-            val query = app.lowercase()
             val launchables = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
                 .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
-            val match = launchables.firstOrNull {
-                pm.getApplicationLabel(it).toString().lowercase().contains(query)
-            } ?: return JsonOut.error(strings.appNotFound(app))
+                .map { InstalledApp(it.packageName, pm.getApplicationLabel(it).toString()) }
+            val match = AppAliases.resolve(app, launchables)
+                ?: return JsonOut.error(strings.appNotFound(app))
 
             val intent = pm.getLaunchIntentForPackage(match.packageName)
                 ?: return JsonOut.error(strings.appNotLaunchable(app))
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
-            val label = pm.getApplicationLabel(match).toString()
+            val label = match.label
             // Honesty — from a foreground service with no visible window,
             // Android 10+ may silently drop the launch. Report what we know.
             return when (OpenAppOutcome.of(com.jarvis.assistant.media.AppForegroundTracker.isVisible)) {

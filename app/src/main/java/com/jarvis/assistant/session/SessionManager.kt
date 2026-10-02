@@ -494,6 +494,10 @@ class SessionManager(
      */
     fun startSession(fromFollowUp: Boolean = false) {
         currentTurnFromFollowUp = fromFollowUp
+        // Read the machine state BEFORE the supersede block below: it must
+        // reflect what the assistant was doing when the wake word arrived,
+        // not the post-cancel/relaunch machine.
+        val wasActive = stateMachine.state.value != AssistantState.IDLE
         // SUPERSEDE FIRST. The old order (cancel → flush →
         // increment) left a micro-window where the interrupted session's
         // guarded writes (persistCompletedToolPass / finish / reportFailure)
@@ -517,6 +521,19 @@ class SessionManager(
             sessionJob?.cancel()
             player.flush() // generation bump: current + queued sentences die
             focus?.onTtsFlushed() // Barge-in ends the duck immediately
+            // Pre-roll replay (TurnRunner) exists to un-clip the FIRST word
+            // of a fresh IDLE wake. On a BARGE-IN the assistant was already
+            // ACTIVE (SPEAKING/THINKING/…), so the ring buffer holds the
+            // assistant's OWN TTS tail (and any audio already streamed),
+            // and replaying it prefixes the user's transcript with the
+            // assistant's words. Drain it for an active-state wake. A fresh
+            // IDLE wake KEEPS the buffer — that is the whole point of the
+            // replay. Follow-up turns drained the ring at window-open (see
+            // the follow-up collector), so they are excluded here to avoid
+            // discarding the user's own onset frames that refilled since.
+            if (!fromFollowUp && wasActive) {
+                audioPipeline.ringBuffer.drain()
+            }
             sessionJob = scope.launch { runSession(id) }
         }
     }

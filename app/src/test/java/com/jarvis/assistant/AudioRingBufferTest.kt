@@ -149,12 +149,23 @@ class AudioRingBufferTest {
                 overflowLines.isNotEmpty(),
             )
             assertTrue(overflowLines.first().second.contains("evicted"))
+            // Priority is load-bearing: eviction is the ring buffer's NORMAL
+            // idle behaviour, so at INFO+ it fires ~1/s forever and rotates
+            // away the diagnostics that matter. A regression to WARN/INFO
+            // must fail here (android.util.Log.DEBUG == 3).
+            assertEquals(
+                "pre-roll eviction must be logged at DEBUG",
+                PRI_DEBUG,
+                overflowLines.first().first,
+            )
         } finally {
             p.release()
         }
     }
 
     private companion object {
+        /** android.util.Log.DEBUG, localized so this JVM test never touches the Android stub jar. */
+        const val PRI_DEBUG = 3
         const val FRAME_MS_SINGLE = 20L
         fun frame(id: Int): ShortArray = ShortArray(320).also { it[0] = id.toShort() }
     }

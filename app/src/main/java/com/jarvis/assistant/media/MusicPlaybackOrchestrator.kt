@@ -34,9 +34,11 @@ import timber.log.Timber
  * needs no permission at all.
  *
  * Playback commands (pause/next/…) first target the resolved app's live
- * session, then any active session, then fall back to global media keys —
- * which work without notification-listener access but hit whichever app
- * owns media focus.
+ * session, then a PLAYING session, then the recently targeted app's live
+ * session or its MediaBrowserService session token (a launched-but-idle
+ * player publishes no ACTIVE session), then any active session, and finally
+ * fall back to global media keys — which work without notification-listener
+ * access but hit whichever app owns media focus.
  *
  * Honesty rule: on Android 10+ a background app cannot reliably start
  * activities (no BAL exemption for a foreground service), and startActivity
@@ -56,7 +58,20 @@ class MusicPlaybackOrchestrator(
     private val feedback: com.jarvis.assistant.audio.SpeechFeedback? = null,
 ) {
 
-    private val transportControl = TransportControl(gateway, resolver, deviceApiLevel)
+    /**
+     * Service-lifetime memory of the app this assistant last targeted. Read
+     * by transport control (hintless commands) and written on every resolved
+     * playback target; see [RecentMusicTarget].
+     */
+    private val recentTarget = RecentMusicTarget()
+    private val transportControl = TransportControl(
+        gateway = gateway,
+        resolver = resolver,
+        deviceApiLevel = deviceApiLevel,
+        browser = browser,
+        browserConnectTimeoutMs = budgets.browserConnectTimeoutMs,
+        recentTarget = recentTarget,
+    )
     private val libraryBrowser = LibraryBrowser(browser, resolver, budgets)
 
     /** Latency budgets — kept in one place so tests can shrink them. */
@@ -136,6 +151,9 @@ class MusicPlaybackOrchestrator(
                 detail = "Не нашёл музыкальное приложение на планшете. Установи Яндекс Музыку или другой плеер.",
                 isError = true,
             )
+        // The playback target is the strongest "most recently targeted"
+        // signal for a later hintless «пауза»/«дальше».
+        recentTarget.remember(app.packageName)
 
         // Tier 0: one-shot capability dump per attempt — the RUNBOOK's
         // ground-truth probe (`adb logcat -s MusicDiag`).
@@ -365,6 +383,7 @@ class MusicPlaybackOrchestrator(
                 detail = "Не нашёл музыкальное приложение на планшете.",
                 isError = true,
             )
+        recentTarget.remember(app.packageName)
         if (mediaId.isBlank()) {
             return Outcome(
                 Status.ERROR,

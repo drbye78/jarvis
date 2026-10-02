@@ -65,6 +65,9 @@ class FunctionRouterTest {
      */
     private val probeResolver = object : com.jarvis.assistant.location.LocationResolver {
         override suspend fun resolve() = com.jarvis.assistant.location.LocationOutcome.Unavailable
+
+        override suspend fun resolveDevice() =
+            com.jarvis.assistant.location.LocationOutcome.Unavailable
     }
 
     /**
@@ -76,7 +79,7 @@ class FunctionRouterTest {
     private val expectedSurface = listOf(
         // Alarm/weather/geo lane (FunctionRouter's explicit list)
         "setAlarm", "cancelAlarm", "listAlarms", "setTimer", "cancelTimer", "getWeather",
-        "findPlace", "getRoute",
+        "findPlace", "getRoute", "getCurrentLocation",
         // DeviceTools(appContext).all()
         "setVolume", "setBrightness", "setWifi", "setBluetooth", "setDnd", "lockScreen",
         "openApp", "getDeviceInfo",
@@ -86,7 +89,7 @@ class FunctionRouterTest {
 
     @Test
     fun `advertised tool surface is complete and has no duplicates`() {
-        assertEquals(21, expectedSurface.size)
+        assertEquals(22, expectedSurface.size)
         assertEquals(
             "duplicate tool names would silently shadow each other in the registry",
             expectedSurface.size,

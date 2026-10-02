@@ -6,6 +6,55 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Fixed — device location for «где я»; barge-in; self-speech replay; music control; app aliases; assistant name; clear chat
+Owner-reported batch, each verified against the on-device log and DB.
+- **A device fix is now available for explicit position requests.** There was NO
+  tool able to answer «где я нахожусь?» — the LLM hallucinated a refusal (live DB
+  confirmed). `LocationResolver.resolveDevice()` bypasses the configured-city
+  short-circuit (`resolve()` is unchanged), and the new `getCurrentLocation` tool
+  (READ_ONLY) names the fix via MapKit reverse geocoding (`GeoToolClient.resolveLabel`),
+  degrading to the honest `weather_location_current` label + raw coords. `findPlace`
+  gains `near_user` and `getRoute` gains `origin_user`; a `near_user` request with no
+  fix fails closed (never a silent world search), and spoken answers must not promise
+  a radius (`NEAR_AREA_DEGREES` is a ~55 km ranking bias). Advertised surface 21 → 22.
+  The Settings hint now says the configured city is the DEFAULT, not absolute.
+- **The assistant no longer re-transcribes its own speech after a barge-in.**
+  `TurnRunner` replays the 3 s pre-roll ring buffer on every turn; only the follow-up
+  path drained it, so a wake-word barge-in during SPEAKING/THINKING replayed the
+  assistant's own TTS into ASR. `SessionManager.startSession` now reads `wasActive`
+  before the supersede block and drains when `!fromFollowUp && wasActive`; a fresh
+  IDLE wake still keeps the buffer (that is what un-clips the first word).
+- **One «Джарвис» now interrupts playback.** `JarvisConfig.bargeInSingleShot` defaults
+  to `true` (`BargeInPolicy.Mode.SINGLE`) — the documented behaviour; the repeat gesture
+  is opt-in. The Settings «стоп по голосу» toggle now persists its pref in
+  `SettingsCallbacksReal.onVoiceStopToggled` (previously inert).
+- **Transport commands reach a launched-but-idle player.** Control selected only from a
+  snapshot of ACTIVE MediaSessions, so an app with no published PlaybackState (e.g. the
+  launched «Звук») could not be paused/skipped. `TransportControl` gains a
+  MediaBrowser-token fallback and a recent-target tie-breaker (named session → playing →
+  recent target → most recent); a named target never falls through to a stranger,
+  and a null-root browser still yields the honest `named_app_miss`.
+- **`openApp` resolves Russian/transliterated names.** It matched only the literal
+  label, so «ВК Музыка»/«викей музыка» failed against the Latin-labelled
+  `com.uma.musicvk` (live: `Приложение 'ВК Музыка' не найдено`). New pure
+  `tools/AppAliases` maps spoken forms through an alias table + token transliteration;
+  launch path and honesty contract unchanged.
+- **The assistant's name follows the custom wake word.** `PromptSections.IDENTITY` was
+  a hardcoded «Джарвис» literal, and the start screen showed «Джарвис» even with a custom
+  Sherpa keyword («Max»). The prompt, header title, idle pill, empty-chat hint and spoken
+  voice sample now derive from `SettingsMapping.effectiveWakeName` (custom keyword on
+  Sherpa, else «Джарвис»; Porcupine keeps the default). Default output is byte-identical.
+- **Chat can be cleared / a new chat started.** A header action clears ONLY the dialogue
+  (`messages`), via the graph-owned `ConversationManager.clear()` after
+  `stopActiveTurn()`; stored memory/facts are untouched. The stopped-service path falls
+  back to the same DAO query. Previously `clear()` existed with no caller.
+- Tests: `GetCurrentLocationToolTest`, `AppAliasesTest`, `SettingsCallbacksRealTest`,
+  plus new cases in `DefaultLocationResolverTest`, `GeoToolsTest`, `FunctionRouterTest`,
+  `TurnActivityLabelsTest`, `ToolSchemaValidityTest`, `ToolAuthorizationTest`,
+  `SessionFollowUpWindowTest`, `BargeInPolicyTest`, `AudioRingBufferTest` (now asserts
+  the eviction log PRIORITY, not just its text), `MediaBrowserGatewayTest`,
+  `ConversationManagerTest`, `SettingsMappingTest`, `SystemPromptProviderTests`.
+
 ### Fixed — the Yandex role field is a dropdown again; the wake hint names the real keyword
 - **The role control had regressed to a plain input.** `screen_settings_speech.xml`
   overrode the `ExposedDropdownMenu` style's `dropdown_menu` end icon with

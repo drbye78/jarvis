@@ -60,6 +60,16 @@ class PromptComposerSnapshotTest {
     }
 
     @Test
+    fun `composer uses the custom effective name in its identity`() = runBlocking {
+        val composer = PromptComposer(nowMs = fixedClock, name = { "Max" })
+        val prompt = composer.build(
+            PromptContext(utterance = "привет", isFollowUp = false, memory = { "" }),
+        )
+        assertTrue(prompt.contains("Ты — Max, голосовой ассистент на планшете Android."))
+        assertFalse(prompt.contains("Ты — Джарвис,"))
+    }
+
+    @Test
     fun `memory block renders between time context and policies`() = runBlocking {
         val composer = PromptComposer(nowMs = fixedClock)
         val context = PromptContext(

@@ -36,6 +36,7 @@ import com.jarvis.assistant.speech.tts.VoiceCatalog
 import com.jarvis.assistant.speech.tts.YandexSpeechTts
 import com.jarvis.assistant.speech.tts.YandexVoiceSpec
 import com.jarvis.assistant.tools.FunctionRouter
+import com.jarvis.assistant.ui.SettingsMapping
 import com.jarvis.assistant.util.NetworkMonitor
 import io.grpc.ManagedChannel
 import io.grpc.okhttp.OkHttpChannelBuilder
@@ -574,7 +575,16 @@ class AppGraph(
         scope = scope,
         focus = audioFocus,
         phrases = speechPhrases,
-        systemPrompt = com.jarvis.assistant.session.PromptComposer(),
+        systemPrompt = com.jarvis.assistant.session.PromptComposer(
+            // Identity read PER LLM PASS (TurnRunner rebuilds the prompt each
+            // pass), so a custom wake word applies without a restart.
+            name = {
+                SettingsMapping.effectiveWakeName(
+                    appPrefs.sherpaCustomKeyword,
+                    appPrefs.wakeWordEngine,
+                )
+            },
+        ),
         voiceSource = voiceSource,
         // Follow-up window: user-controllable, default OFF; the Settings
         // card updates it live through the service binder.
@@ -759,6 +769,24 @@ class AppGraph(
     }
 
     /**
+     * «Очистить переписку» / new chat — deletes ONLY the dialogue history (the
+     * `messages` table). Stored memory, facts and summaries are deliberately
+     * untouched; wiping those is the separate «Забыть всё» action. This goes
+     * through the graph-owned [conversationManager] so it is the single delete
+     * path, and it does NOT run [ConversationManager]'s summarize-before-prune
+     * hook (there is nothing to preserve for a chat the user is discarding).
+     *
+     * An in-flight turn is cancelled FIRST ([SessionManager.stopActiveTurn]):
+     * the session job is the writer of the very rows we are about to delete, so
+     * letting it run would race the wipe. The wake-word collector stays alive —
+     * clearing the chat is not "stop the assistant".
+     */
+    suspend fun clearConversation() {
+        sessionManager.stopActiveTurn()
+        conversationManager.clear()
+    }
+
+    /**
      * «Проверить голос» from the Settings card — speaks one sample
      * sentence through the REAL synthesis + player lane, focus-bracketed
      * like a turn sentence, best-effort (a failed probe is logged, not
@@ -780,7 +808,18 @@ class AppGraph(
         }
         scope.launch {
             try {
-                val text = appContext.getString(com.jarvis.assistant.R.string.phrase_voice_sample)
+                // The sample names the assistant out loud, so it must use the
+                // SAME effective name as the prompt (custom Sherpa keyword or
+                // the bundled default).
+                val name = SettingsMapping.effectiveWakeName(
+                    appPrefs.sherpaCustomKeyword,
+                    appPrefs.wakeWordEngine,
+                )
+                val text = if (name == SettingsMapping.DEFAULT_WAKE_NAME) {
+                    appContext.getString(com.jarvis.assistant.R.string.phrase_voice_sample)
+                } else {
+                    appContext.getString(com.jarvis.assistant.R.string.phrase_voice_sample_named, name)
+                }
                 val flow = ttsClient.synthesizeStream(text, voice)
                 audioFocus.onTtsSentenceStarted()
                 val done = player.play(flow)

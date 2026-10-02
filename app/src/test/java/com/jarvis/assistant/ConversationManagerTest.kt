@@ -6,6 +6,7 @@ import com.jarvis.assistant.data.MessageEntity
 import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.model.Message
 import com.jarvis.assistant.model.ToolCall
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -348,5 +349,49 @@ class ConversationManagerTest {
 
         val history = cm.getHistoryForLLM()
         assertEquals(block, history.single().content)
+    }
+
+    // ------------------------------------------------------------------
+    // Clear / new chat
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `clear empties both the live transcript and the llm history`() = runBlocking {
+        val dao = FakeMessageDao()
+        val cm = ConversationManager(dao, maxMessages = 20)
+        cm.addMessage(Message(role = "user", content = "привет"))
+        cm.addMessage(Message(role = "assistant", content = "здравствуй"))
+        assertEquals(2, cm.getHistoryForLLM().size)
+        assertEquals(2, cm.transcriptLive().first().size)
+
+        cm.clear()
+
+        // One delete feeds BOTH consumers: the UI Flow auto-empties and the
+        // next LLM pass starts with no context.
+        assertTrue(cm.getHistoryForLLM().isEmpty())
+        assertTrue(cm.transcriptLive().first().isEmpty())
+        assertTrue(dao.rows.isEmpty())
+    }
+
+    @Test
+    fun `clear bypasses summarize-before-prune`() = runBlocking {
+        val dao = FakeMessageDao()
+        var pruneCalls = 0
+        val cm = ConversationManager(
+            dao,
+            maxMessages = 20,
+            retentionMaxMessages = 1,
+            beforePrune = { pruneCalls++ },
+        )
+        cm.addMessage(Message(role = "user", content = "u1"))
+        cm.addMessage(Message(role = "assistant", content = "a1"))
+        // A normal insert trims and fires the hook; clear must not.
+        assertTrue("beforePrune never fired for a normal insert", pruneCalls > 0)
+        val callsBeforeClear = pruneCalls
+
+        cm.clear()
+
+        assertEquals("clear must not summarize a discarded chat", callsBeforeClear, pruneCalls)
+        assertTrue(dao.rows.isEmpty())
     }
 }

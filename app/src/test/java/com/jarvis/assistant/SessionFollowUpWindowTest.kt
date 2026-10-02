@@ -316,6 +316,74 @@ class SessionFollowUpWindowTest {
     }
 
     @Test
+    fun `active-state wake barge-in drains the assistant's own pre-roll tail`() = runBlocking {
+        // ISSUE 4: a barge-in wake arrives while the assistant SPEAKS, so the
+        // ring buffer holds the reply's tail. TurnRunner replays the ring into
+        // ASR at turn start; if that tail is not drained the user's transcript
+        // is prefixed with the assistant's own words.
+        val h = MiniHarness(parkPlayback = true)
+        try {
+            h.startMic()
+            h.runTurn("расскажи анекдот")
+            h.awaitState(AssistantState.SPEAKING)
+
+            // The reply rings in the room at 10200 — well above the user's
+            // speech (3000) — and fills the 3 s pre-roll ring.
+            h.source.startTail(frames = 24, amp = 10_200, decay = false)
+            delay(700) // clear the 600 ms post-accept cooldown from the wake
+            // ONE wake word during SPEAKING barges in (single-shot default).
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) {
+                while (h.asr.streams.size < 2) delay(20)
+            }
+            delay(400) // let the feeder push the barge-in stream's frames
+
+            val sent = h.asr.streams[1].sent
+            assertTrue("the barge-in stream received no audio", sent.isNotEmpty())
+            val loudest = sent.maxOf { frame -> frame.littleEndianShorts().maxOf { kotlin.math.abs(it) } }
+            assertTrue(
+                "the assistant's pre-roll tail must not be replayed into a barge-in turn (loudest=$loudest)",
+                loudest <= 4_500,
+            )
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
+    fun `fresh idle wake keeps the pre-roll so the first word stays un-clipped`() = runBlocking {
+        // The pre-roll replay is the WHOLE POINT of the ring buffer for an IDLE
+        // wake: frames captured before the ASR stream opened must be replayed.
+        // Only an ACTIVE-state barge-in may drain it.
+        val h = MiniHarness()
+        try {
+            h.startMic()
+            h.manager.startListening()
+            h.wake.awaitSubscribed()
+
+            // A loud burst (distinguishable from the user's 3000) lands in the
+            // ring before the wake word is recognized, then silence.
+            h.source.startTail(frames = 20, amp = 10_200, decay = false)
+            delay(500)
+            h.wake.detections.emit(Detection.WakeWord)
+            withTimeout(5_000) {
+                while (h.asr.streams.isEmpty()) delay(20)
+            }
+            delay(400) // let the feeder replay the pre-roll
+
+            val sent = h.asr.streams[0].sent
+            assertTrue("the idle-wake stream received no audio", sent.isNotEmpty())
+            val loudest = sent.maxOf { frame -> frame.littleEndianShorts().maxOf { kotlin.math.abs(it) } }
+            assertTrue(
+                "an IDLE wake must replay the pre-roll (loudest=$loudest); draining it would clip the first word",
+                loudest > 5_000,
+            )
+        } finally {
+            h.shutdown()
+        }
+    }
+
+    @Test
     fun `window expires to idle on silence`() = runBlocking {
         val h = MiniHarness()
         try {

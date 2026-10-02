@@ -192,6 +192,20 @@ class SettingsMappingTest {
         assertNull(SettingsMapping.customWakeHintKeyword(null, "sherpa"))
     }
 
+    @Test
+    fun `the effective name is the custom keyword only on sherpa`() {
+        // Custom Sherpa keyword defines the assistant's name.
+        assertEquals("Max", SettingsMapping.effectiveWakeName("Max", "sherpa"))
+        assertEquals("Max", SettingsMapping.effectiveWakeName("  Max  ", "sherpa"))
+        // Porcupine cannot read its `.ppn` back, so the name stays default.
+        assertEquals(SettingsMapping.DEFAULT_WAKE_NAME, SettingsMapping.effectiveWakeName("Max", "porcupine"))
+        // Blank / null custom keyword → the bundled default.
+        assertEquals(SettingsMapping.DEFAULT_WAKE_NAME, SettingsMapping.effectiveWakeName("", "sherpa"))
+        assertEquals(SettingsMapping.DEFAULT_WAKE_NAME, SettingsMapping.effectiveWakeName("   ", "sherpa"))
+        assertEquals(SettingsMapping.DEFAULT_WAKE_NAME, SettingsMapping.effectiveWakeName(null, "sherpa"))
+        assertEquals("Джарвис", SettingsMapping.DEFAULT_WAKE_NAME)
+    }
+
     // ---- GigaChat-3 model flavor ----
 
     @Test

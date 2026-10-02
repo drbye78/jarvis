@@ -1,13 +1,18 @@
 package com.jarvis.assistant.media
 
+import kotlinx.coroutines.CancellationException
+import timber.log.Timber
+
 /**
  * Transport commands for an external player app (play, pause, next, seek,
  * etc.) with capability-gated dispatch and media-key fallback.
  *
- * Selection order: the NAMED app's session → any PLAYING session → the
- * most recent session → media key. A named app that is installed but has no
- * live session is a miss: we answer instructively instead of silently
- * commanding a random player.
+ * Selection order: the NAMED app's session → any PLAYING session → the app
+ * the assistant most recently targeted → the most recent session → media key.
+ * A named app that is installed but has no live session is bound through its
+ * MediaBrowserService and driven via the session token before the honest
+ * «named_app_miss» answer — a launched-but-idle player publishes no ACTIVE
+ * PlaybackState and is otherwise invisible to the active-session snapshot.
  *
  * Rich actions (seek/like/repeat/shuffle/speed) require a live session — a
  * media key cannot express them.
@@ -20,6 +25,18 @@ class TransportControl(
     /** For the API-29 setPlaybackSpeed guard; production
      *  passes Build.VERSION.SDK_INT, JVM tests pin it explicitly. */
     private val deviceApiLevel: Int = 30,
+    /**
+     * Tier 3 browser-token fallback. A launched-but-idle player has no
+     * ACTIVE session, so the fresh active-session snapshot cannot see it;
+     * binding its MediaBrowserService still yields the session token even
+     * when the root is empty (only a null root refuses). Null disables the
+     * fallback (JVM tests that predate it, devices without a browser lane).
+     */
+    private val browser: MediaBrowserGateway? = null,
+    /** How long the browser-token fallback may take to bind. */
+    private val browserConnectTimeoutMs: Long = 3_000,
+    /** Service-lifetime memory of the app the assistant last targeted. */
+    private val recentTarget: RecentMusicTarget = RecentMusicTarget(),
 ) {
 
     /** Back-compat overload: basic transport, no parameters. */
@@ -56,125 +73,246 @@ class TransportControl(
                 isError = true,
             )
         }
-        val controllers = gateway.activeControllers()
-        val controller = selectController(controllers, target)
+        // The explicitly named app is the strongest "recently targeted"
+        // signal: it outranks a stale session on the NEXT hintless command.
+        target?.let { recentTarget.remember(it.packageName) }
 
-        // The named app is installed but nothing is playing in it — do
-        // NOT fall through to some other player's session.
-        if (controller == null && target != null) {
+        val controllers = gateway.activeControllers()
+        val resolved = resolveController(controllers, target, appHint)
+        val controller = resolved.handle
+        val namedApp = target ?: controller?.let { MediaAppInfo(it.packageName, it.packageName) }
+        return try {
+            if (controller != null) {
+                dispatchToController(controller, spec, namedApp)
+            } else if (target != null) {
+                // The named app is installed but nothing is playing in it and
+                // its browser service could not be bound — do NOT fall
+                // through to some other player's stale session.
+                MusicPlaybackOrchestrator.Outcome(
+                    MusicPlaybackOrchestrator.Status.ERROR,
+                    target,
+                    strategy = "named_app_miss",
+                    detail = "В ${target.label} сейчас ничего не играет. Скажи, какой трек включить, " +
+                        "или запусти плеер вручную.",
+                    isError = true,
+                )
+            } else {
+                mediaKeyFallback(action, target, controllers)
+            }
+        } finally {
+            // One bind per attempt: release the browser edge even on an
+            // early refusal or a cancelled turn.
+            resolved.session?.disconnect()
+        }
+    }
+
+    /**
+     * Resolve a controller for the command. Order: the named app's live
+     * session → a PLAYING session → the recently targeted app's live
+     * session → its browser token → the most recent session (no hint only).
+     * A named target never falls through to a stranger.
+     */
+    private suspend fun resolveController(
+        controllers: List<MediaControllerHandle>,
+        target: MediaAppInfo?,
+        appHint: String?,
+    ): ResolvedController {
+        if (target != null) {
+            controllers.firstOrNull { it.packageName == target.packageName }
+                ?.let { return ResolvedController(it, null) }
+        } else {
+            controllers.firstOrNull { it.snapshot().isPlaying }
+                ?.let { return ResolvedController(it, null) }
+            val recent = recentTarget.packageName
+            if (recent != null) {
+                controllers.firstOrNull { it.packageName == recent }
+                    ?.let { return ResolvedController(it, null) }
+            }
+        }
+        return bindOrFallback(controllers, target, appHint)
+    }
+
+    /**
+     * The browser-token fallback: bind the target's (or the recently
+     * targeted app's) MediaBrowserService and drive the returned token
+     * controller — the only way to reach a launched-but-idle player. If the
+     * bind is refused, a named target answers «named_app_miss»; a hintless
+     * command falls back to the most recent session (the pre-existing
+     * behaviour), never a random bind.
+     */
+    private suspend fun bindOrFallback(
+        controllers: List<MediaControllerHandle>,
+        target: MediaAppInfo?,
+        appHint: String?,
+    ): ResolvedController {
+        val fallbackPackage = target?.packageName
+            ?: if (appHint == null) recentTarget.packageName else null
+        if (fallbackPackage != null) {
+            val session = bindBrowser(fallbackPackage)
+            val handle = session?.controller()
+            if (handle != null) return ResolvedController(handle, session)
+            session?.disconnect()
+        }
+        return ResolvedController(if (target == null) controllers.firstOrNull() else null, null)
+    }
+
+    /** Best-effort bind; a cancelled turn must never be swallowed. */
+    private suspend fun bindBrowser(packageName: String): BrowserSession? {
+        val gateway = browser ?: return null
+        return try {
+            gateway.connect(packageName, browserConnectTimeoutMs)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "Transport: browser fallback failed for %s", packageName)
+            null
+        }
+    }
+
+    /**
+     * Capability-gated dispatch for a resolved controller. The API gate and
+     * the rating gate live BEFORE any dispatch; an absent capability bit is
+     * low confidence (dispatch anyway, phrase honestly), never a refusal.
+     */
+    private fun dispatchToController(
+        controller: MediaControllerHandle,
+        spec: MusicPlaybackOrchestrator.ControlSpec,
+        namedApp: MediaAppInfo?,
+    ): MusicPlaybackOrchestrator.Outcome {
+        val action = spec.action
+        val caps = controller.capabilities()
+
+        // The API gate lives BEFORE any dispatch — on API < 29 the
+        // framework transport has no setPlaybackSpeed at all.
+        if (action == MusicPlaybackOrchestrator.Action.SPEED &&
+            !MusicPlaybackOrchestrator.TransportPolicy.speedAllowed(deviceApiLevel)
+        ) {
             return MusicPlaybackOrchestrator.Outcome(
                 MusicPlaybackOrchestrator.Status.ERROR,
-                target,
-                strategy = "named_app_miss",
-                detail = "В ${target.label} сейчас ничего не играет. Скажи, какой трек включить, " +
-                    "или запусти плеер вручную.",
+                namedApp,
+                strategy = "api_guard",
+                detail = "Смену скорости этот планшет не поддерживает (нужен Android 10+).",
+                isError = true,
+            )
+        }
+        val required = MusicPlaybackOrchestrator.TransportPolicy.requiredActions(action)
+        // M-3: an ABSENT bit is low confidence, not a refusal. Players
+        // under-report their action masks (compat-only sessions in
+        // particular), and refusing outright lost the whole feature for
+        // them. Dispatch anyway — the Boolean dispatch result IS the
+        // verification — and phrase the uncertainty honestly instead of
+        // claiming support the session never advertised.
+        val lowConfidence = required.isNotEmpty() && caps.known &&
+            required.none { caps.supports(it) }
+        if (action == MusicPlaybackOrchestrator.Action.LIKE &&
+            !MusicPlaybackOrchestrator.TransportPolicy.likeAllowed(caps)
+        ) {
+            return unsupported(namedApp, "лайки (у плеера другой тип оценки)")
+        }
+        // Honest refusal for a no-op seek: without positionMs or deltaMs the
+        // computed target equals the current position, and a no-op reported
+        // as "Команда отправлена" is a fake success (the honesty rule).
+        if (action == MusicPlaybackOrchestrator.Action.SEEK &&
+            spec.positionMs == null && spec.deltaMs == null
+        ) {
+            return MusicPlaybackOrchestrator.Outcome(
+                MusicPlaybackOrchestrator.Status.ERROR,
+                namedApp,
+                strategy = "missing_seek_target",
+                detail = "Не понял, куда перематывать — скажи «промотай на минуту» " +
+                    "или «на вторую минуту».",
                 isError = true,
             )
         }
 
-        val namedApp = target ?: controller?.let { MediaAppInfo(it.packageName, it.packageName) }
-        fun detail(what: String) = MusicPlaybackOrchestrator.Outcome(
-            MusicPlaybackOrchestrator.Status.DISPATCHED,
-            namedApp,
-            strategy = "session",
-            detail = what,
-        )
-        fun unsupported(what: String) = MusicPlaybackOrchestrator.Outcome(
-            MusicPlaybackOrchestrator.Status.ERROR,
-            namedApp,
-            strategy = "unsupported",
-            detail = "Этот плеер не поддерживает $what.",
-            isError = true,
-        )
-
-        if (controller != null) {
-            val caps = controller.capabilities()
-
-            // The API gate lives BEFORE any dispatch — on API < 29 the
-            // framework transport has no setPlaybackSpeed at all.
-            if (action == MusicPlaybackOrchestrator.Action.SPEED &&
-                !MusicPlaybackOrchestrator.TransportPolicy.speedAllowed(deviceApiLevel)
-            ) {
-                return MusicPlaybackOrchestrator.Outcome(
-                    MusicPlaybackOrchestrator.Status.ERROR,
-                    namedApp,
-                    strategy = "api_guard",
-                    detail = "Смену скорости этот планшет не поддерживает (нужен Android 10+).",
-                    isError = true,
-                )
-            }
-            val required = MusicPlaybackOrchestrator.TransportPolicy.requiredActions(action)
-            // M-3: an ABSENT bit is low confidence, not a refusal. Players
-            // under-report their action masks (compat-only sessions in
-            // particular), and refusing outright lost the whole feature for
-            // them. Dispatch anyway — the Boolean dispatch result IS the
-            // verification — and phrase the uncertainty honestly instead of
-            // claiming support the session never advertised.
-            val lowConfidence = required.isNotEmpty() && caps.known &&
-                required.none { caps.supports(it) }
-            if (action == MusicPlaybackOrchestrator.Action.LIKE &&
-                !MusicPlaybackOrchestrator.TransportPolicy.likeAllowed(caps)
-            ) {
-                return unsupported("лайки (у плеера другой тип оценки)")
-            }
-
-            val dispatched = when (action) {
-                MusicPlaybackOrchestrator.Action.PLAY -> playOrResume(controller)
-                MusicPlaybackOrchestrator.Action.PAUSE -> controller.pause()
-                MusicPlaybackOrchestrator.Action.TOGGLE -> {
-                    val playing = controller.snapshot().isPlaying
-                    if (playing) controller.pause() else controller.play()
-                }
-                MusicPlaybackOrchestrator.Action.NEXT -> controller.skipToNext()
-                MusicPlaybackOrchestrator.Action.PREVIOUS -> controller.skipToPrevious()
-                MusicPlaybackOrchestrator.Action.STOP -> controller.stop()
-                MusicPlaybackOrchestrator.Action.SEEK -> {
-                    // Honest refusal for a no-op seek: without positionMs or
-                    // deltaMs the computed target equals the current position,
-                    // and a no-op reported as "Команда отправлена" is a fake
-                    // success (the honesty rule).
-                    if (spec.positionMs == null && spec.deltaMs == null) {
-                        return MusicPlaybackOrchestrator.Outcome(
-                            MusicPlaybackOrchestrator.Status.ERROR,
-                            namedApp,
-                            strategy = "missing_seek_target",
-                            detail = "Не понял, куда перематывать — скажи «промотай на минуту» " +
-                                "или «на вторую минуту».",
-                            isError = true,
-                        )
-                    }
-                    val current = controller.snapshot().positionMs
-                    val target2 = spec.positionMs ?: (current + (spec.deltaMs ?: 0L))
-                    controller.seekTo(target2.coerceAtLeast(0))
-                }
-                MusicPlaybackOrchestrator.Action.RESTART -> controller.seekTo(0)
-                MusicPlaybackOrchestrator.Action.LIKE -> controller.like()
-                MusicPlaybackOrchestrator.Action.REPEAT -> controller.setRepeatMode(
-                    spec.repeatMode?.wire ?: MediaCapabilities.REPEAT_MODE_ALL,
-                )
-                MusicPlaybackOrchestrator.Action.SHUFFLE -> controller.setShuffleMode(spec.shuffle ?: true)
-                MusicPlaybackOrchestrator.Action.SPEED -> controller.setPlaybackSpeed(
-                    (spec.speed ?: 1.0f).coerceIn(0.25f, 4.0f),
-                )
-            }
-            return when {
-                !dispatched -> MusicPlaybackOrchestrator.Outcome(
-                    MusicPlaybackOrchestrator.Status.ERROR,
-                    namedApp,
-                    strategy = "dispatch_failed",
-                    detail = "Плеер не принял команду (возможно, перезапустился) — попробуй ещё раз.",
-                    isError = true,
-                )
-                lowConfidence -> detail(
-                    "Команда отправлена плееру (${controller.packageName}), но подтверждения нет: " +
-                        "плеер не сообщал о поддержке этой команды.",
-                )
-                else -> detail("Команда отправлена плееру (${controller.packageName}).")
-            }
+        val dispatched = dispatchAction(controller, spec)
+        return when {
+            !dispatched -> MusicPlaybackOrchestrator.Outcome(
+                MusicPlaybackOrchestrator.Status.ERROR,
+                namedApp,
+                strategy = "dispatch_failed",
+                detail = "Плеер не принял команду (возможно, перезапустился) — попробуй ещё раз.",
+                isError = true,
+            )
+            lowConfidence -> MusicPlaybackOrchestrator.Outcome(
+                MusicPlaybackOrchestrator.Status.DISPATCHED,
+                namedApp,
+                strategy = "session",
+                detail = "Команда отправлена плееру (${controller.packageName}), но подтверждения нет: " +
+                    "плеер не сообщал о поддержке этой команды.",
+            )
+            else -> MusicPlaybackOrchestrator.Outcome(
+                MusicPlaybackOrchestrator.Status.DISPATCHED,
+                namedApp,
+                strategy = "session",
+                detail = "Команда отправлена плееру (${controller.packageName}).",
+            )
         }
+    }
 
-        // No live session: the media-key fallback only exists for the basic
-        // six actions — a media key cannot seek, like, repeat or set speed.
+    /** One transport action, mapped onto the controller API. */
+    private fun dispatchAction(
+        controller: MediaControllerHandle,
+        spec: MusicPlaybackOrchestrator.ControlSpec,
+    ): Boolean = when (spec.action) {
+        MusicPlaybackOrchestrator.Action.PLAY -> playOrResume(controller)
+        MusicPlaybackOrchestrator.Action.PAUSE -> controller.pause()
+        MusicPlaybackOrchestrator.Action.TOGGLE -> {
+            val playing = controller.snapshot().isPlaying
+            if (playing) controller.pause() else controller.play()
+        }
+        MusicPlaybackOrchestrator.Action.NEXT -> controller.skipToNext()
+        MusicPlaybackOrchestrator.Action.PREVIOUS -> controller.skipToPrevious()
+        MusicPlaybackOrchestrator.Action.STOP -> controller.stop()
+        MusicPlaybackOrchestrator.Action.SEEK -> seek(controller, spec)
+        MusicPlaybackOrchestrator.Action.RESTART -> controller.seekTo(0)
+        MusicPlaybackOrchestrator.Action.LIKE -> controller.like()
+        MusicPlaybackOrchestrator.Action.REPEAT -> controller.setRepeatMode(
+            spec.repeatMode?.wire ?: MediaCapabilities.REPEAT_MODE_ALL,
+        )
+        MusicPlaybackOrchestrator.Action.SHUFFLE -> controller.setShuffleMode(spec.shuffle ?: true)
+        MusicPlaybackOrchestrator.Action.SPEED -> controller.setPlaybackSpeed(
+            (spec.speed ?: 1.0f).coerceIn(0.25f, 4.0f),
+        )
+    }
+
+    /**
+     * Absolute target, or current + signed delta. The caller has already
+     * rejected the no-op (no position, no delta) case.
+     */
+    private fun seek(
+        controller: MediaControllerHandle,
+        spec: MusicPlaybackOrchestrator.ControlSpec,
+    ): Boolean {
+        val current = controller.snapshot().positionMs
+        val target = spec.positionMs ?: (current + (spec.deltaMs ?: 0L))
+        return controller.seekTo(target.coerceAtLeast(0))
+    }
+
+    private fun unsupported(
+        namedApp: MediaAppInfo?,
+        what: String,
+    ): MusicPlaybackOrchestrator.Outcome = MusicPlaybackOrchestrator.Outcome(
+        MusicPlaybackOrchestrator.Status.ERROR,
+        namedApp,
+        strategy = "unsupported",
+        detail = "Этот плеер не поддерживает $what.",
+        isError = true,
+    )
+
+    /**
+     * No live session and no browser token: the media-key fallback only
+     * exists for the basic six actions — a media key cannot seek, like,
+     * repeat or set speed.
+     */
+    private fun mediaKeyFallback(
+        action: MusicPlaybackOrchestrator.Action,
+        target: MediaAppInfo?,
+        controllers: List<MediaControllerHandle>,
+    ): MusicPlaybackOrchestrator.Outcome {
+        val namedApp = target ?: controllers.firstOrNull()?.let {
+            MediaAppInfo(it.packageName, it.packageName)
+        }
         if (!MusicPlaybackOrchestrator.TransportPolicy.mediaKeyEligible(action)) {
             return MusicPlaybackOrchestrator.Outcome(
                 MusicPlaybackOrchestrator.Status.ERROR,
@@ -194,39 +332,38 @@ class TransportControl(
             MusicPlaybackOrchestrator.Action.STOP -> MediaKey.STOP
             else -> throw IllegalStateException("unreachable")
         }
-        return if (action == MusicPlaybackOrchestrator.Action.STOP) {
+        if (action == MusicPlaybackOrchestrator.Action.STOP) {
             gateway.dispatchMediaKey(key)
-            MusicPlaybackOrchestrator.Outcome(
+            return MusicPlaybackOrchestrator.Outcome(
                 MusicPlaybackOrchestrator.Status.DISPATCHED,
                 namedApp,
                 strategy = "media_key",
                 detail = "Отправил стоп.",
             )
-        } else {
-            if (action == MusicPlaybackOrchestrator.Action.PLAY &&
-                gateway.hasNotificationListenerAccess() && controllers.isEmpty()
-            ) {
-                // Nothing has EVER played: opening the player is more useful
-                // than a dead media key.
-                val app = target ?: resolver.resolve(null)
-                if (app != null && gateway.launchApp(app)) {
-                    gateway.dispatchMediaKey(key)
-                    return MusicPlaybackOrchestrator.Outcome(
-                        MusicPlaybackOrchestrator.Status.APP_OPENED,
-                        app,
-                        strategy = "launch_and_key",
-                        detail = "Открыл ${app.label}.",
-                    )
-                }
-            }
-            gateway.dispatchMediaKey(key)
-            MusicPlaybackOrchestrator.Outcome(
-                MusicPlaybackOrchestrator.Status.DISPATCHED,
-                namedApp,
-                strategy = "media_key",
-                detail = "Живой сессии плеера нет — отправил команду медиаклавишей.",
-            )
         }
+        if (action == MusicPlaybackOrchestrator.Action.PLAY &&
+            gateway.hasNotificationListenerAccess() && controllers.isEmpty()
+        ) {
+            // Nothing has EVER played: opening the player is more useful
+            // than a dead media key.
+            val app = target ?: resolver.resolve(null)
+            if (app != null && gateway.launchApp(app)) {
+                gateway.dispatchMediaKey(key)
+                return MusicPlaybackOrchestrator.Outcome(
+                    MusicPlaybackOrchestrator.Status.APP_OPENED,
+                    app,
+                    strategy = "launch_and_key",
+                    detail = "Открыл ${app.label}.",
+                )
+            }
+        }
+        gateway.dispatchMediaKey(key)
+        return MusicPlaybackOrchestrator.Outcome(
+            MusicPlaybackOrchestrator.Status.DISPATCHED,
+            namedApp,
+            strategy = "media_key",
+            detail = "Живой сессии плеера нет — отправил команду медиаклавишей.",
+        )
     }
 
     // ------------------------------------------------------------------
@@ -303,10 +440,12 @@ class TransportControl(
     // ------------------------------------------------------------------
 
     /**
-     * Session selection for transport commands. Order: the NAMED app's
-     * session → any PLAYING session → the most recent session → media key.
-     * A named app that is installed but has no live session is a miss: we
-     * answer instructively instead of silently commanding a random player.
+     * Session selection for status reads. Order: the NAMED app's session →
+     * any PLAYING session → the most recent session. A named app that is
+     * installed but has no live session is a miss: we answer instructively
+     * instead of silently reporting a random player. Transport commands use
+     * [resolveController], which additionally consults the recently targeted
+     * app and its browser token — a status read has no command to route.
      */
     internal fun selectController(
         controllers: List<MediaControllerHandle>,
@@ -359,5 +498,30 @@ class TransportControl(
         MusicPlaybackOrchestrator.Action.REPEAT -> "повтор"
         MusicPlaybackOrchestrator.Action.SHUFFLE -> "перемешивание"
         MusicPlaybackOrchestrator.Action.SPEED -> "смену скорости"
+    }
+
+    /** A controller plus the browser session backing it, when the fallback bound one. */
+    private data class ResolvedController(
+        val handle: MediaControllerHandle?,
+        val session: BrowserSession?,
+    )
+}
+
+/**
+ * Service-lifetime memory of the app the assistant last targeted (named in a
+ * command, or resolved as the playback target). It exists purely as a
+ * tie-breaker when a transport command arrives without an app hint: a player
+ * launched but idle publishes no ACTIVE MediaSession, so a fresh
+ * active-session snapshot cannot see it, and a stale session from another app
+ * must not win. Deliberately NOT persisted — a pref would outlive the player
+ * it describes and survive a wipe.
+ */
+class RecentMusicTarget {
+    @Volatile
+    var packageName: String? = null
+        private set
+
+    fun remember(packageName: String?) {
+        if (!packageName.isNullOrBlank()) this.packageName = packageName
     }
 }

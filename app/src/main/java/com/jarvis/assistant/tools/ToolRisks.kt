@@ -1,7 +1,7 @@
 package com.jarvis.assistant.tools
 
 /**
- * Canonical name → [ToolRisk] table for the 24-tool production surface.
+ * Canonical name → [ToolRisk] table for the 25-tool production surface.
  *
  * This is the ONE testable place the classification is declared. It exists
  * because the abstract [ToolContract.risk] property alone is only a
@@ -31,6 +31,7 @@ object ToolRisks {
         "getWeather" to ToolRisk.READ_ONLY,
         "findPlace" to ToolRisk.READ_ONLY,
         "getRoute" to ToolRisk.READ_ONLY,
+        "getCurrentLocation" to ToolRisk.READ_ONLY,
         // device control
         "setVolume" to ToolRisk.STATEFUL,
         "setBrightness" to ToolRisk.STATEFUL,

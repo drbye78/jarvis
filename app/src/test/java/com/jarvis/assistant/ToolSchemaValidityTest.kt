@@ -14,6 +14,7 @@ import com.jarvis.assistant.tools.GeoPlaceTool
 import com.jarvis.assistant.tools.GeoRouteTool
 import com.jarvis.assistant.tools.schema
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -47,6 +48,8 @@ class ToolSchemaValidityTest {
 
     private val noLocation = object : LocationResolver {
         override suspend fun resolve(): LocationOutcome = LocationOutcome.Unavailable
+
+        override suspend fun resolveDevice(): LocationOutcome = LocationOutcome.Unavailable
     }
 
     private fun propertiesOf(json: String): Set<String> =
@@ -67,6 +70,19 @@ class ToolSchemaValidityTest {
             propertiesOf(tool.parametersJson)
                 .containsAll(listOf("destination", "origin", "mode")),
         )
+    }
+
+    @Test
+    fun `getCurrentLocation ships a parseable no-argument schema`() {
+        val tool = com.jarvis.assistant.tools.GetCurrentLocationTool(
+            noLocation,
+            NoopGeoClient(),
+            DefaultGeoToolMessages,
+            unnamedLabel = { "текущее местоположение" },
+        )
+        val parsed = Json.parseToJsonElement(tool.parametersJson).jsonObject
+        assertEquals("object", (parsed["type"] as? JsonPrimitive)?.content)
+        assertTrue(parsed["properties"]!!.jsonObject.isEmpty())
     }
 
     @Test

@@ -303,6 +303,9 @@ class ToolRegistryTest {
             object : com.jarvis.assistant.location.LocationResolver {
                 override suspend fun resolve() =
                     com.jarvis.assistant.location.LocationOutcome.Unavailable
+
+                override suspend fun resolveDevice() =
+                    com.jarvis.assistant.location.LocationOutcome.Unavailable
             },
         )
         val outcome = CompletableDeferred<Throwable?>()

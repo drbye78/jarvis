@@ -216,9 +216,9 @@ class BargeInPolicyTest {
     }
 
     @Test
-    fun `factory maps config defaults to repeat-during-playback`() {
+    fun `factory maps config defaults to single-shot`() {
         val p = BargeInPolicy.from(JarvisConfig())
-        assertEquals(BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK, p.mode)
+        assertEquals(BargeInPolicy.Mode.SINGLE, p.mode)
         assertEquals(1_200L, p.repeatWindowMs)
         assertEquals(600L, p.postAcceptCooldownMs)
     }
@@ -228,7 +228,13 @@ class BargeInPolicyTest {
         val single = BargeInPolicy.from(JarvisConfig(bargeInSingleShot = true))
         assertEquals(BargeInPolicy.Mode.SINGLE, single.mode)
 
-        val wide = BargeInPolicy.from(JarvisConfig(bargeInRepeatWindowMs = 999))
+        // Opting OUT of single-shot restores repeat-to-interrupt.
+        val repeat = BargeInPolicy.from(JarvisConfig(bargeInSingleShot = false))
+        assertEquals(BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK, repeat.mode)
+
+        val wide = BargeInPolicy.from(
+            JarvisConfig(bargeInSingleShot = false, bargeInRepeatWindowMs = 999)
+        )
         assertEquals(BargeInPolicy.Mode.REPEAT_DURING_PLAYBACK, wide.mode)
         assertEquals(999L, wide.repeatWindowMs)
     }

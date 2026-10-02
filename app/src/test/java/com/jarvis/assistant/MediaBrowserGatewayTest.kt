@@ -38,13 +38,25 @@ class MediaBrowserGatewayTest {
         override val packageName: String,
     ) : MediaControllerHandle {
         var np: NowPlaying = NowPlaying()
+        var playCalls = 0
+        var pauseCalls = 0
+        var nextCalls = 0
 
         override fun snapshot(): NowPlaying = np
         override fun capabilities(): MediaCapabilities = MediaCapabilities.UNKNOWN
         override fun playFromSearch(query: String): Boolean = true
-        override fun play(): Boolean = true
-        override fun pause(): Boolean = true
-        override fun skipToNext(): Boolean = true
+        override fun play(): Boolean {
+            playCalls++
+            return true
+        }
+        override fun pause(): Boolean {
+            pauseCalls++
+            return true
+        }
+        override fun skipToNext(): Boolean {
+            nextCalls++
+            return true
+        }
         override fun skipToPrevious(): Boolean = true
         override fun stop(): Boolean = true
     }
@@ -120,9 +132,10 @@ class MediaBrowserGatewayTest {
 
     private class FakeGateway(
         var listenerAccess: Boolean = true,
+        private val controllers: List<MediaControllerHandle> = emptyList(),
     ) : MediaGateway {
         override fun hasNotificationListenerAccess() = listenerAccess
-        override fun activeControllers(): List<MediaControllerHandle> = emptyList()
+        override fun activeControllers(): List<MediaControllerHandle> = controllers
         override fun dispatchMediaKey(keyCode: Int) = Unit
         override fun openAppSearch(app: MediaAppInfo, query: String) = false
         override fun launchApp(app: MediaAppInfo) = false
@@ -330,6 +343,85 @@ class MediaBrowserGatewayTest {
         orchestrator(FakeGateway(), browser).playSearchQuery("Bohemian Rhapsody", null)
 
         assertEquals(0, browser.connectCalls) // never even tried to bind
+    }
+
+    // ------------------------------------------------------------------
+    // Transport browser-token fallback (launched-but-idle player)
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `named app with no session dispatches transport through its browser token`() = runTest {
+        // The live bug: Zvuk is launched but publishes no ACTIVE session, so
+        // the active-session snapshot is empty. The browser bind still hands
+        // us a token controller and the pause must reach the named app.
+        val session = FakeBrowserSession("ru.yandex.music")
+        val browser = FakeBrowserGateway(sessionFactory = { session })
+        val gw = FakeGateway() // no active sessions at all
+
+        val out = orchestrator(gw, browser).control(
+            MusicPlaybackOrchestrator.Action.PAUSE,
+            "яндекс",
+        )
+
+        assertEquals(MusicPlaybackOrchestrator.Status.DISPATCHED, out.status)
+        assertEquals(1, session.fakeHandle.pauseCalls)
+        assertEquals(1, browser.connectCalls)
+        assertEquals(1, session.disconnectCalls) // one bind, always released
+    }
+
+    @Test
+    fun `named app whose browser refuses still answers named_app_miss`() = runTest {
+        // A null root (onGetRoot -> null) refuses connect(); the honest miss
+        // must survive the new fallback attempt.
+        val browser = FakeBrowserGateway(sessionFactory = { null })
+        val gw = FakeGateway()
+
+        val out = orchestrator(gw, browser).control(
+            MusicPlaybackOrchestrator.Action.PAUSE,
+            "яндекс",
+        )
+
+        assertEquals(MusicPlaybackOrchestrator.Status.ERROR, out.status)
+        assertEquals("named_app_miss", out.strategy)
+        assertTrue(out.isError)
+        assertEquals(1, browser.connectCalls)
+    }
+
+    @Test
+    fun `no hint prefers a playing session over a stale paused one`() = runTest {
+        val stale = FakeBrowserHandle("com.other.player").apply {
+            np = NowPlaying(title = "Старая", state = NowPlaying.STATE_PAUSED)
+        }
+        val live = FakeBrowserHandle("ru.yandex.music").apply {
+            np = NowPlaying(title = "Живая", state = NowPlaying.STATE_PLAYING)
+        }
+        // Snapshot order is deliberately stale-first.
+        val gw = FakeGateway(controllers = listOf(stale, live))
+
+        orchestrator(gw, FakeBrowserGateway(sessionFactory = { null }))
+            .control(MusicPlaybackOrchestrator.Action.PAUSE, null)
+
+        assertEquals(1, live.pauseCalls)
+        assertEquals(0, stale.pauseCalls)
+    }
+
+    @Test
+    fun `hintless command prefers the recently targeted app over a stale stranger`() = runTest {
+        val stale = FakeBrowserHandle("com.other.player").apply {
+            np = NowPlaying(title = "Старая", state = NowPlaying.STATE_PAUSED)
+        }
+        val targeted = FakeBrowserHandle("ru.yandex.music").apply {
+            np = NowPlaying(title = "Цель", state = NowPlaying.STATE_PAUSED)
+        }
+        val gw = FakeGateway(controllers = listOf(stale, targeted))
+        val orch = orchestrator(gw, FakeBrowserGateway(sessionFactory = { null }))
+
+        // First command names the target (records it), second has no hint.
+        orch.control(MusicPlaybackOrchestrator.Action.PAUSE, "яндекс")
+        orch.control(MusicPlaybackOrchestrator.Action.PAUSE, null)
+
+        assertEquals(2, targeted.pauseCalls)
+        assertEquals(0, stale.pauseCalls)
     }
 
     // ------------------------------------------------------------------

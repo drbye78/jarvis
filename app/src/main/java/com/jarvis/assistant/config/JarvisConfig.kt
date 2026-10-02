@@ -176,10 +176,12 @@ data class JarvisConfig(
     // the first words are not clipped between wake word and ASR stream open.
     val preRollMs: Long = DEFAULT_PRE_ROLL_MS,
 
-    // Barge-in policy: interrupting TTS playback requires a repeated wake
-    // word within [bargeInRepeatWindowMs] unless [bargeInSingleShot] is set.
+    // Barge-in policy: ONE wake word interrupts TTS playback immediately
+    // ([bargeInSingleShot] = true). [bargeInRepeatWindowMs] is only consulted
+    // when single-shot is turned off, which restores the repeat-to-interrupt
+    // gesture (a second wake word within the window).
     val bargeInRepeatWindowMs: Long = 1_200,
-    val bargeInSingleShot: Boolean = false,
+    val bargeInSingleShot: Boolean = true,
 
     // Speech gRPC endpoint (saluteChannel target for SaluteSpeech ASR + TTS).
     // Renamed from the misleading `llmEndpoint`: the LLM URL is

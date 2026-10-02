@@ -60,7 +60,17 @@ sealed interface LocationOutcome {
 
 /** Resolves the location used when the model omits an explicit one. */
 interface LocationResolver {
+    /** Default policy: the configured city wins, else a bounded device fix. */
     suspend fun resolve(): LocationOutcome
+
+    /**
+     * Resolve the DEVICE position, IGNORING any configured city. Used only when
+     * the user explicitly asks for their current position («где я») or for
+     * places «рядом»: [resolve] short-circuits on a configured city, which would
+     * make the device fix dead code for those requests. Same permission/fix
+     * semantics as [resolve] minus the configured short-circuit.
+     */
+    suspend fun resolveDevice(): LocationOutcome
 }
 
 /**
@@ -87,6 +97,30 @@ class DefaultLocationResolver(
         val configured = configuredLocation().trim()
         if (configured.isNotEmpty()) return LocationOutcome.Resolved(ResolvedLocation.Place(configured))
 
+        if (!provider.hasPermission()) return LocationOutcome.PermissionDenied
+
+        val fix = try {
+            provider.getFix(maxAgeMs, timeoutMs)
+        } catch (e: CancellationException) {
+            throw e // barge-in must propagate
+        } catch (e: Exception) {
+            // An unavailable/broken provider is "no fix", not a crash — but log
+            // it so a silently-degrading location lane is diagnosable.
+            Timber.w(e, "Location provider failed; treating as no fix")
+            null
+        } ?: return LocationOutcome.Unavailable
+
+        return LocationOutcome.Resolved(
+            ResolvedLocation.Coords(fix.latitude, fix.longitude, coordsLabel()),
+        )
+    }
+
+    /**
+     * Device-forcing variant: skips the configured-city short-circuit entirely
+     * (permission → `getFix` → `Coords`). Identical failure and cancellation
+     * semantics to [resolve], so an explicit «где я» still degrades honestly.
+     */
+    override suspend fun resolveDevice(): LocationOutcome {
         if (!provider.hasPermission()) return LocationOutcome.PermissionDenied
 
         val fix = try {
