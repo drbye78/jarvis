@@ -60,6 +60,16 @@ interface SecretVault {
          * interchangeable, so they must never share a slot.
          */
         const val KEY_MAPKIT_API_KEY = "mapkit_api_key"
+
+        /**
+         * Optional HTTP/SOCKS proxy for the Open-Meteo API ONLY (forecast +
+         * geocoding). May embed `user:pass@` credentials, so it lives in the
+         * vault rather than [com.jarvis.assistant.util.AppPrefs]. Blank =
+         * direct connection. Applied LIVE on the next weather request; the
+         * shared LLM/TTS/gRPC client is never proxied.
+         */
+        const val KEY_OPEN_METEO_PROXY = "open_meteo_proxy"
+
         const val KEY_GIGACHAT_TOKEN = "gigachat_token"
         const val KEY_GIGACHAT_EXPIRY = "gigachat_token_expiry"
         const val KEY_SALUTE_TOKEN = "salute_token"

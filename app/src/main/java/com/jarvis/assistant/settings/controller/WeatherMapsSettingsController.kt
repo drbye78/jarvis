@@ -20,6 +20,7 @@ import com.jarvis.assistant.ui.SettingsMapping
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.CredentialsStore
 import com.jarvis.assistant.weather.WeatherProvider
+import com.jarvis.assistant.weather.parse
 
 /**
  * WEATHER_MAPS («Погода и карты») detail screen controller (settings redesign).
@@ -60,6 +61,8 @@ class WeatherMapsSettingsController(
     private lateinit var weatherLocationInput: TextInputEditText
     private lateinit var weatherLocationPermissionStatus: TextView
 
+    private lateinit var openMeteoProxyInput: TextInputEditText
+
     private lateinit var mapKitApiKey: TextInputEditText
 
     private lateinit var advancedContainer: View
@@ -69,11 +72,13 @@ class WeatherMapsSettingsController(
         weatherProviderGroup = root.findViewById(R.id.weatherProviderGroup)
         weatherLocationInput = root.findViewById(R.id.weatherLocationInput)
         weatherLocationPermissionStatus = root.findViewById(R.id.weatherLocationPermissionStatus)
+        openMeteoProxyInput = root.findViewById(R.id.openMeteoProxyInput)
         mapKitApiKey = root.findViewById(R.id.mapKitApiKey)
         advancedContainer = root.findViewById(R.id.settingsWeatherMapsAdvanced)
 
         bindWeatherProvider()
         bindWeatherCard(root)
+        bindOpenMeteoProxy(root)
         bindMapsCard(root)
         bindDisclosure(root)
 
@@ -151,6 +156,40 @@ class WeatherMapsSettingsController(
             SettingsMapping.weatherLocationOrDefault(weatherLocationInput.text.toString()),
         )
         refreshWeatherPermissionStatus()
+    }
+
+    /**
+     * Optional HTTP/SOCKS proxy for Open-Meteo ONLY. Vault-backed (it may embed
+     * `user:pass@`) and LIVE: the weather-only client's selector reads it on the
+     * next request. The field is seeded from the vault; committing a blank value
+     * clears it (direct connection) while a non-blank value that does not parse
+     * is rejected with an honest hint and NOT saved.
+     */
+    private fun bindOpenMeteoProxy(root: View) {
+        openMeteoProxyInput.setText(CredentialsStore.get().openMeteoProxy)
+        openMeteoProxyInput.setOnEditorActionListener { _, action, _ ->
+            if (action == EditorInfo.IME_ACTION_DONE) {
+                commitOpenMeteoProxy()
+                true
+            } else {
+                false
+            }
+        }
+        openMeteoProxyInput.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) commitOpenMeteoProxy()
+        }
+        root.findViewById<Button>(R.id.openMeteoProxySaveButton).setOnClickListener {
+            commitOpenMeteoProxy()
+        }
+    }
+
+    private fun commitOpenMeteoProxy() {
+        val raw = openMeteoProxyInput.text.toString().trim()
+        if (raw.isNotEmpty() && parse(raw) == null) {
+            host.toast(R.string.weather_proxy_invalid)
+            return
+        }
+        CredentialsStore.get().openMeteoProxy = raw
     }
 
     /**

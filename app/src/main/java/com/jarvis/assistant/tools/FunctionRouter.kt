@@ -12,12 +12,15 @@ import com.jarvis.assistant.media.AndroidMediaGateway
 import com.jarvis.assistant.media.MusicPlaybackOrchestrator
 import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.model.ToolDefinition
+import com.jarvis.assistant.util.CredentialsStore
+import com.jarvis.assistant.weather.LiveProxySelector
 import com.jarvis.assistant.weather.OpenMeteoWeatherClient
 import com.jarvis.assistant.weather.ProjectEolWeatherClient
 import com.jarvis.assistant.weather.SelectingWeatherClient
 import com.jarvis.assistant.weather.StreamableHttpMcpClient
 import com.jarvis.assistant.weather.WeatherProvider
 import com.jarvis.assistant.weather.WeatherTool
+import com.jarvis.assistant.weather.proxyAuthenticator
 import okhttp3.OkHttpClient
 
 /**
@@ -117,6 +120,19 @@ class FunctionRouter(
         },
     )
 
+    /**
+     * WEATHER-ONLY OkHttp client: `newBuilder()` reuses the graph client's
+     * connection pool/dispatcher, but the proxy selector + authenticator are
+     * attached to THIS instance only, so an optional Open-Meteo proxy (vault
+     * key `open_meteo_proxy`) can never route LLM/TTS/gRPC traffic. Both
+     * lambdas read [CredentialsStore] on every call, so a Settings change
+     * applies to the next weather request with no service restart.
+     */
+    private val openMeteoHttpClient: OkHttpClient = httpClient.newBuilder()
+        .proxySelector(LiveProxySelector { CredentialsStore.peek()?.openMeteoProxy ?: "" })
+        .proxyAuthenticator(proxyAuthenticator { CredentialsStore.peek()?.openMeteoProxy ?: "" })
+        .build()
+
     private val baseToolRegistry = ToolRegistry(
         listOf(
             SetAlarmTool(
@@ -138,7 +154,7 @@ class FunctionRouter(
                     // next weather turn without a graph rebuild.
                     providerFor = { WeatherProvider.fromId(appPrefs.weatherProvider) },
                     openMeteo = OpenMeteoWeatherClient(
-                        httpClient,
+                        openMeteoHttpClient,
                         // Condition names follow the device locale.
                         conditionFor = { code ->
                             com.jarvis.assistant.weather.weatherConditionName(appContext, code)

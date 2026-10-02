@@ -65,6 +65,7 @@ object SettingsInventory {
         entry("weatherProvider", SettingsCategory.WEATHER_MAPS, essential = true),
         entry("weatherLocation", SettingsCategory.WEATHER_MAPS, essential = true),
         entry("mapKitApiKey", SettingsCategory.WEATHER_MAPS, essential = false),
+        entry("openMeteoProxy", SettingsCategory.WEATHER_MAPS, essential = false),
 
         // --- MEMORY ---
         entry("memoryEnabled", SettingsCategory.MEMORY, essential = true),

@@ -59,6 +59,16 @@ class CredentialsStore(private val vault: SecretVault) {
         set(v) { vault.putString(SecretVault.KEY_MAPKIT_API_KEY, v.trim()) }
 
     /**
+     * Optional proxy for the Open-Meteo API only, e.g. `host:port`,
+     * `http://user:pass@host:port` or `socks5://host:port`. Vault-backed
+     * because the URL may embed credentials. Blank = direct connection.
+     * Read LIVE per weather request and never applied to the shared client.
+     */
+    var openMeteoProxy: String
+        get() = vault.getString(SecretVault.KEY_OPEN_METEO_PROXY) ?: ""
+        set(v) { vault.putString(SecretVault.KEY_OPEN_METEO_PROXY, v.trim()) }
+
+    /**
      * The MANDATORY keys: SaluteSpeech (ASR+TTS) and GigaChat (LLM).
      *
      * The old `hasRequiredSber()` also demanded the Picovoice key,

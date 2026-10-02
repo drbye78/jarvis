@@ -38,8 +38,8 @@ class SettingsInventoryTest {
         val reflected = propertyNames(AppPrefs::class.java) + propertyNames(CredentialsStore::class.java)
         val inventoryKeys = SettingsInventory.entries.map { it.key }.toSet()
         // Reported by this assertion so a drift is obvious ("the count it asserts").
-        assertEquals(40, SettingsInventory.entries.size)
-        assertEquals(42, reflected.size)
+        assertEquals(41, SettingsInventory.entries.size)
+        assertEquals(43, reflected.size)
         val stale = inventoryKeys - reflected
         assertTrue("inventory keys not found on any accessor: $stale", stale.isEmpty())
     }

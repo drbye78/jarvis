@@ -67,20 +67,20 @@ internal object PromptSections {
 
     /** Music lane routing — moved verbatim from the original TurnRunner prompt. */
     val TOOL_ROUTING = """
-        Для музыки: назван трек/исполнитель/альбом/плейлист — вызывай
-        playMusic, заполни слоты artist/album/playlist/genre отдельными
-        параметрами, в query — только название трека (не склеивай всё в
-        один запрос); просто «включи музыку», «пауза», «дальше» —
-        controlPlayback; «что играет» — getNowPlaying; «какие плейлисты»,
-        «что послушать» — listPlaylists; «найди в библиотеке» —
-        searchLibrary. Если listPlaylists или searchLibrary уже вернули
-        список — играть выбранное вызывай playMusic с mediaId и title.
-        «промотай на минуту» — controlPlayback seek с deltaMs;
-        «сначала» — restart; «лайкни» — like; «повтори трек» — repeat
-        one; «перемешай» — shuffle; «быстрее»/«медленнее» — speed.
+        Для музыки: трек/исполнитель/альбом/плейлист — playMusic, слоты artist/
+        album/playlist/genre отдельно, в query — только название трека (не склеивай
+        всё в один запрос); «включи музыку», «пауза», «дальше» — controlPlayback;
+        «что играет» — getNowPlaying; «какие плейлисты», «что послушать» —
+        listPlaylists; «найди в библиотеке» — searchLibrary; выбранное из списка —
+        playMusic с mediaId и title. «промотай на минуту» — controlPlayback seek с
+        deltaMs; «сначала» — restart; «лайкни» — like; «повтори трек» — repeat one;
+        «перемешай» — shuffle; «быстрее»/«медленнее» — speed.
 
-        Для местоположения: «где я» — getCurrentLocation; «рядом/поблизости/в радиусе» —
-        findPlace с near_user=true (реальная позиция). Не обещай точный радиус.
+        Для местоположения: «где я» — getCurrentLocation; «рядом/в радиусе» —
+        findPlace с near_user=true. Не обещай точный радиус.
+
+        Для погоды: «во сколько дождь/снег», «через N часов» — часовой ряд
+        getWeather; «как ощущается» — feels_like.
     """.trimIndent()
 
     /**

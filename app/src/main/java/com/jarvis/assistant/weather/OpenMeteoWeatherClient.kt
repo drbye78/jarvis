@@ -20,8 +20,12 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.URLEncoder
+import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 /**
@@ -71,6 +75,10 @@ class OpenMeteoWeatherClient(
      */
     private val geoBaseUrl: String = "https://geocoding-api.open-meteo.com",
     private val forecastBaseUrl: String = "https://api.open-meteo.com",
+    /** Clock seam for the "next 12 hours" window (device wall clock by default). */
+    private val nowMs: () -> Long = System::currentTimeMillis,
+    /** Device zone the `hourly.time` local stamps are compared against. */
+    private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) : WeatherClient {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -149,8 +157,11 @@ class OpenMeteoWeatherClient(
                 "?latitude=$latitude&longitude=$longitude" +
                 "&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code," +
                 "wind_speed_10m,is_day" +
+                "&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation," +
+                "precipitation_probability,weather_code,wind_speed_10m" +
                 "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum," +
-                "precipitation_probability_max,wind_speed_10m_max" +
+                "precipitation_probability_max,wind_speed_10m_max,apparent_temperature_max," +
+                "apparent_temperature_min" +
                 "&forecast_days=$days" +
                 "&timezone=auto"
             ).toHttpUrl()
@@ -165,12 +176,14 @@ class OpenMeteoWeatherClient(
         val current = weatherJson["current"]?.jsonObject
             ?: return WeatherOutcome.Error("No current conditions", unreachable = false)
         val daily = weatherJson["daily"]?.let { runCatching { it.jsonObject }.getOrNull() }
+        val hourly = weatherJson["hourly"]?.let { runCatching { it.jsonObject }.getOrNull() }
 
         return WeatherOutcome.Ok(
             buildJsonObject {
                 put("location", JsonPrimitive(displayName))
                 if (!country.isNullOrBlank()) put("country", JsonPrimitive(country))
                 put("current", buildCurrent(current))
+                put("hourly", buildHourly(hourly))
                 put("daily", buildDaily(daily))
             }.toString(),
         )
@@ -213,9 +226,49 @@ class OpenMeteoWeatherClient(
         put("condition", JsonPrimitive(conditionFor(code)))
         putDoubleOrNA("temp_max", daily.column("temperature_2m_max", index))
         putDoubleOrNA("temp_min", daily.column("temperature_2m_min", index))
+        putDoubleOrNA("feels_like_max", daily.column("apparent_temperature_max", index))
+        putDoubleOrNA("feels_like_min", daily.column("apparent_temperature_min", index))
         putDoubleOrNA("precipitation_mm", daily.column("precipitation_sum", index))
         putIntOrNA("precipitation_probability", daily.column("precipitation_probability_max", index))
         putDoubleOrNA("wind_max_kmh", daily.column("wind_speed_10m_max", index))
+    }
+
+    /**
+     * The NEXT [HOURLY_SLOTS] hours starting at the current hour. Like `daily`,
+     * `hourly` is COLUMN-ORIENTED: each row draws every field from its own
+     * index, so a short/null-padded column degrades to [notAvailable] instead
+     * of misaligning the rest. `hourly.time` is a LOCAL ISO stamp (`timezone=auto`),
+     * compared against the device clock; past hours are skipped by index.
+     */
+    private fun buildHourly(hourly: JsonObject?): JsonArray {
+        if (hourly == null) return buildJsonArray {}
+        val times = hourly["time"]?.let { runCatching { it.jsonArray }.getOrNull() }
+            ?: return buildJsonArray {}
+        val nowHour = Instant.ofEpochMilli(nowMs()).atZone(zone()).truncatedTo(ChronoUnit.HOURS)
+        return buildJsonArray {
+            var emitted = 0
+            times.forEachIndexed { index, element ->
+                if (emitted >= HOURLY_SLOTS) return@forEachIndexed
+                val raw = runCatching { element.jsonPrimitive.contentOrNull }.getOrNull()
+                    ?: return@forEachIndexed
+                val local = runCatching { LocalDateTime.parse(raw) }.getOrNull()
+                    ?: return@forEachIndexed
+                if (local.atZone(zone()).toInstant().isBefore(nowHour.toInstant())) return@forEachIndexed
+                add(buildHourlyRow(hourly, index, local))
+                emitted++
+            }
+        }
+    }
+
+    private fun buildHourlyRow(hourly: JsonObject, index: Int, local: LocalDateTime): JsonObject = buildJsonObject {
+        put("time", JsonPrimitive(local.format(HOUR_MINUTE)))
+        putDoubleOrNA("temp", hourly.column("temperature_2m", index))
+        putDoubleOrNA("feels_like", hourly.column("apparent_temperature", index))
+        val code = hourly.column("weather_code", index)?.toIntOrNull()
+        put("condition", JsonPrimitive(conditionFor(code)))
+        putDoubleOrNA("precipitation_mm", hourly.column("precipitation", index))
+        putIntOrNA("precipitation_probability", hourly.column("precipitation_probability", index))
+        putDoubleOrNA("wind_kmh", hourly.column("wind_speed_10m", index))
     }
 
     /** One column value at [index]; null when the column is short or absent. */
@@ -269,5 +322,13 @@ class OpenMeteoWeatherClient(
         data class Body(val text: String) : HttpResult
         data object Unreachable : HttpResult
         data object BadResponse : HttpResult
+    }
+
+    private companion object {
+        /** How many forward hours the `hourly` series carries (a voice-sized window). */
+        const val HOURLY_SLOTS = 12
+
+        /** Locale-neutral local wall clock for hourly rows. */
+        val HOUR_MINUTE: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.US)
     }
 }

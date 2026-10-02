@@ -22,6 +22,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.time.Instant
+import java.time.ZoneId
 
 /**
  * FIXPLAN A6: locale-aware geocoding + exact-name disambiguation +
@@ -58,6 +60,8 @@ class WeatherClientTest {
         conditionFor: (Int?) -> String = { "condition" },
         notAvailable: String = "N/A",
         forecastDays: Int = 7,
+        now: () -> Long = System::currentTimeMillis,
+        zone: () -> ZoneId = ZoneId::systemDefault,
     ) = OpenMeteoWeatherClient(
         httpClient = OkHttpClient(),
         conditionFor = conditionFor,
@@ -68,6 +72,8 @@ class WeatherClientTest {
         // request — never the live open-meteo endpoints.
         geoBaseUrl = server.url("/").toString().trimEnd('/'),
         forecastBaseUrl = server.url("/").toString().trimEnd('/'),
+        nowMs = now,
+        zone = zone,
     )
 
     /** Default condition mapper (RU) — for the WMO-coverage assertions. */
@@ -214,6 +220,39 @@ class WeatherClientTest {
         assertEquals("н/д", row(1)["precipitation_mm"]!!.jsonPrimitive.content)
         assertEquals(2.5, row(2)["precipitation_mm"]!!.jsonPrimitive.content.toDouble(), 0.001)
         assertEquals(80, row(2)["precipitation_probability"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun `hourly is the next 12 hours, index-aligned, with daily feels-like`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody(FORECAST_WITH_HOURLY))
+        val fixedNow = Instant.parse("2026-09-24T12:30:00Z").toEpochMilli()
+        val out = client(now = { fixedNow }, zone = { ZoneId.of("UTC") })
+            .getWeather(query(ResolvedLocation.Coords(1.0, 2.0, "lbl"), 1))
+
+        val path = server.takeRequest().path!!
+        assertTrue("the hourly block must be requested", path.contains("hourly="))
+        assertTrue("hourly apparent temperature must be requested", path.contains("apparent_temperature"))
+        assertTrue("daily apparent extremes must be requested", path.contains("apparent_temperature_max"))
+
+        val root = Json.parseToJsonElement(out).jsonObject
+        val hourly = root["hourly"]!!.jsonArray
+        assertEquals("only the next 12 hours from the current hour", 12, hourly.size)
+        fun h(i: Int) = hourly[i].jsonObject
+
+        // now = 12:30 → the window starts at 12:00 and ends at 23:00.
+        assertEquals("12:00", h(0)["time"]!!.jsonPrimitive.content)
+        assertEquals("23:00", h(11)["time"]!!.jsonPrimitive.content)
+
+        // Index alignment: 12:00 draws column index 2 (temp 12.0), not index 0.
+        assertEquals(12.0, h(0)["temp"]!!.jsonPrimitive.content.toDouble(), 0.001)
+        assertEquals(102.0, h(0)["feels_like"]!!.jsonPrimitive.content.toDouble(), 0.001)
+        assertEquals(20, h(0)["precipitation_probability"]!!.jsonPrimitive.content.toInt())
+        // 14:00 (index 4) has a NULL precipitation → the injected placeholder.
+        assertEquals("N/A", h(2)["precipitation_mm"]!!.jsonPrimitive.content)
+
+        val daily = root["daily"]!!.jsonArray[0].jsonObject
+        assertEquals(25.5, daily["feels_like_max"]!!.jsonPrimitive.content.toDouble(), 0.001)
+        assertEquals(17.0, daily["feels_like_min"]!!.jsonPrimitive.content.toDouble(), 0.001)
     }
 
     @Test
@@ -369,6 +408,39 @@ class WeatherClientTest {
                  "precipitation_sum":[0.0,0.0,2.5],
                  "precipitation_probability_max":[5,10,80],
                  "wind_speed_10m_max":[14.4,12.0,20.0]}}"""
+
+        /**
+         * DOCUMENTED-schema payload carrying an `hourly` block plus daily
+         * apparent extremes. `hourly.time` runs 10:00–23:00 so a fixed 12:30
+         * clock selects indices 2..13 = exactly the next 12 hours; `hourly.precipitation`
+         * has a NULL at index 4 to pin per-index degradation.
+         */
+        const val FORECAST_WITH_HOURLY =
+            """{"current":{"temperature_2m":"21.4","apparent_temperature":"20.0",
+                 "relative_humidity_2m":"61","precipitation":"0.0","weather_code":"0",
+                 "wind_speed_10m":"3.2","is_day":"1"},
+                "hourly":{
+                 "time":["2026-09-24T10:00","2026-09-24T11:00","2026-09-24T12:00",
+                  "2026-09-24T13:00","2026-09-24T14:00","2026-09-24T15:00",
+                  "2026-09-24T16:00","2026-09-24T17:00","2026-09-24T18:00",
+                  "2026-09-24T19:00","2026-09-24T20:00","2026-09-24T21:00",
+                  "2026-09-24T22:00","2026-09-24T23:00"],
+                 "temperature_2m":[10,11,12,13,14,15,16,17,18,19,20,21,22,23],
+                 "apparent_temperature":[100,101,102,103,104,105,106,107,108,109,110,111,112,113],
+                 "relative_humidity_2m":[50,51,52,53,54,55,56,57,58,59,60,61,62,63],
+                 "precipitation":[0,0,0,0,null,0,0,0,0,0,0,0,0,0],
+                 "precipitation_probability":[0,10,20,30,40,50,60,70,80,90,100,100,100,100],
+                 "weather_code":[0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                 "wind_speed_10m":[1,2,3,4,5,6,7,8,9,10,11,12,13,14]},
+                "daily":{"time":["2026-09-24"],
+                 "weather_code":[0],
+                 "temperature_2m_max":[26.1],
+                 "temperature_2m_min":[18.2],
+                 "apparent_temperature_max":[25.5],
+                 "apparent_temperature_min":[17.0],
+                 "precipitation_sum":[0.0],
+                 "precipitation_probability_max":[5],
+                 "wind_speed_10m_max":[14.4]}}"""
 
         /**
          * DOCUMENTED-schema payload with deliberate gaps: `temperature_2m_min`

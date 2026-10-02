@@ -174,6 +174,52 @@ class ProjectEolWeatherClientTest {
         assertEquals("code:65", row["condition"]!!.jsonPrimitive.content)
     }
 
+    // ---- derived feels-like + hourly series ------------------------------
+
+    @Test
+    fun `current feels_like is DERIVED and colder than the air when windy`() = runBlocking {
+        // 283.15 K = 10 °C, 5 m/s = 18 km/h (> 4.8) → wind-chill regime.
+        val mcp = FakeMcp(
+            search = searchResults(Triple("Москва", 55.75, 37.61)),
+            forecast = forecast(hour("2026-09-29T20:00:00Z", 283.15, 0.0, 5.0, 0.0, 80.0)),
+        )
+
+        val out = client(mcp).getWeather(WeatherQuery(ResolvedLocation.Place("Москва"), 1))
+        val current = json.parseToJsonElement(out).jsonObject["current"]!!.jsonObject
+
+        val temp = current["temp"]!!.jsonPrimitive.content.toDouble()
+        val feels = current["feels_like"]!!.jsonPrimitive.content.toDouble()
+        assertEquals(10.0, temp, 0.001)
+        assertTrue("derived feels_like must be colder than the air, got $feels", feels < temp)
+        assertTrue("derived feels_like must be a real estimate, got $feels", feels < 9.0)
+    }
+
+    @Test
+    fun `hourly exposes 12 forward hours without precipitation probability and no extra call`() = runBlocking {
+        // now = 19:00Z; 14 forward hours so the 12-slot window is the binding cap.
+        val start = Instant.parse("2026-09-29T20:00:00Z")
+        val rows = (0 until 14).map { i ->
+            hour(start.plusSeconds(i * 3600L).toString(), 283.15, 0.0, 1.0, 0.0, 50.0)
+        }
+        val mcp = FakeMcp(forecast = forecast(*rows.toTypedArray()))
+
+        val out = client(mcp).getWeather(
+            WeatherQuery(ResolvedLocation.Coords(55.75, 37.61, "текущее местоположение"), 2),
+        )
+        val hourly = json.parseToJsonElement(out).jsonObject["hourly"]!!.jsonArray
+
+        assertEquals("the hourly window is capped at 12", 12, hourly.size)
+        // 20:00Z is 23:00 in Moscow (+3).
+        assertEquals("23:00", hourly[0].jsonObject["time"]!!.jsonPrimitive.content)
+        assertTrue(
+            "Project EOL has no precipitation probability — it must be omitted",
+            hourly.none { it.jsonObject.containsKey("precipitation_probability") },
+        )
+        // Reusing the already-fetched series means no second MCP round trip.
+        assertEquals("exactly one forecast call, no extra server call", 1, mcp.calls.size)
+        assertTrue("the single call is the forecast", mcp.calls.single().first.contains("forecast"))
+    }
+
     // ---- geocoding -------------------------------------------------------
 
     @Test

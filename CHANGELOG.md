@@ -6,6 +6,29 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — hourly weather, apparent temperature, and an Open-Meteo proxy
+- **Hourly forecast (next ~12 h).** The weather document now carries an `hourly[]`
+  section (`{time, temp, feels_like?, condition, precipitation_mm?,
+  precipitation_probability?, wind_kmh?}`), so «во сколько дождь?» / «погода через
+  3 часа» are answerable. Open-Meteo reads native hourly fields; Project EOL reuses
+  its already-fetched hourly series (no extra MCP call). Rows are index-aligned in
+  both providers.
+- **Apparent temperature («как ощущается»).** Open-Meteo exposes current and daily
+  `apparent_temperature`; Project EOL has none, so a DERIVED estimate is computed
+  (`WeatherContract.apparentTemperatureC`: Environment-Canada wind chill below
+  10 °C with wind, Rothfusz heat index at ≥27 °C with humidity, else the air
+  temperature). Documented as an estimate; never a server reading.
+- **Optional proxy for the Open-Meteo API** (Settings → «Погода и карты»). The
+  value is stored vault-backed (a proxy URL may embed `user:pass@`) and applied
+  ONLY to Open-Meteo, LIVE: a weather-only `OkHttpClient` derived via
+  `newBuilder()` carries a `LiveProxySelector` + proxy authenticator that read the
+  vault per request, so the shared client (LLM/TTS/gRPC) is never proxied and a
+  change needs no restart. Accepts `host:port`, `http(s)://`, `socks5://` with
+  optional userinfo; malformed input is rejected at save time.
+- Tests: `ApparentTemperatureTest`, `ProxyConfigTest`, plus new cases in
+  `WeatherClientTest`, `ProjectEolWeatherClientTest`, `SettingsInventoryTest`
+  (40→41 entries / 42→43 reflected).
+
 ### Changed — follow-ups: resume listening, softer geo degrade, quieter clear-chat
 - **A «Возобновить прослушивание» affordance.** Stopping the assistant via the
   primary control sets `userStopped=true`, which suppresses the watchdog revive —

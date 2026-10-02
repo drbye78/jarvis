@@ -43,8 +43,10 @@ import kotlin.math.round
  *     spoken condition is DERIVED from precipitation + temperature + cloud
  *     fraction by [deriveWmoCode]. A model upgrade cannot silently change a
  *     spoken phrase, because the code is ours.
- *  6. **No "feels like" and no precipitation probability.** Those keys are
- *     omitted rather than faked (see [WeatherContract]).
+ *  6. **No apparent temperature and no precipitation probability from the
+ *     server, so `feels_like` is DERIVED** by [apparentTemperatureC] (an
+ *     estimate, never presented as a reading). Precipitation probability is
+ *     genuinely unavailable and is OMITTED rather than faked.
  *
  * All output goes through [weatherDocument] so the JSON shape matches the other
  * provider exactly.
@@ -191,6 +193,7 @@ class ProjectEolWeatherClient(
                 country = country,
                 current = currentReadings(hours),
                 daily = dailyRows(hours),
+                hourly = hourlyRows(hours, zoneId),
             ),
         )
     }
@@ -231,12 +234,19 @@ class ProjectEolWeatherClient(
         }
     }
 
+    /** Forward hours from "now" (the first not in the past), capped at [limit]. */
+    private fun nextHours(hours: List<Hour>, limit: Int): List<Hour> {
+        val now = Instant.ofEpochMilli(nowMs())
+        return hours.asSequence().filter { !it.instant.isBefore(now) }.take(limit).toList()
+    }
+
     /** The hour nearest to "now" — the first not in the past, else the last. */
     private fun currentReadings(hours: List<Hour>): JsonObject {
-        val now = Instant.ofEpochMilli(nowMs())
-        val hour = hours.firstOrNull { !it.instant.isBefore(now) } ?: hours.last()
+        val hour = nextHours(hours, 1).firstOrNull() ?: hours.last()
         return buildJsonObject {
             hour.temperatureC?.let { put(WeatherContract.TEMP, JsonPrimitive(round1(it))) }
+            apparentTemperatureC(hour.temperatureC, hour.windKmh, hour.humidity)
+                ?.let { put(WeatherContract.FEELS_LIKE, JsonPrimitive(it)) }
             put(
                 WeatherContract.CONDITION,
                 JsonPrimitive(conditionFor(deriveWmoCode(hour.precipitationMm, hour.temperatureC, hour.cloudFraction))),
@@ -246,6 +256,31 @@ class ProjectEolWeatherClient(
             hour.precipitationMm?.let { put(WeatherContract.PRECIPITATION, JsonPrimitive(round1(it))) }
         }
     }
+
+    /**
+     * The next [HOURLY_SLOTS] hours, reusing the SAME not-in-the-past window as
+     * [currentReadings] — no extra server call, no re-fetch. `precipitation_probability`
+     * is unavailable from Project EOL and is deliberately omitted.
+     */
+    private fun hourlyRows(hours: List<Hour>, zoneId: ZoneId): List<JsonObject> =
+        nextHours(hours, HOURLY_SLOTS).map { hourlyRow(it, zoneId) }
+
+    private fun hourlyRow(hour: Hour, zoneId: ZoneId): JsonObject = buildJsonObject {
+        put(WeatherContract.TIME, JsonPrimitive(localTime(hour.instant, zoneId)))
+        hour.temperatureC?.let { put(WeatherContract.TEMP, JsonPrimitive(round1(it))) }
+        apparentTemperatureC(hour.temperatureC, hour.windKmh, hour.humidity)
+            ?.let { put(WeatherContract.FEELS_LIKE, JsonPrimitive(it)) }
+        put(
+            WeatherContract.CONDITION,
+            JsonPrimitive(conditionFor(deriveWmoCode(hour.precipitationMm, hour.temperatureC, hour.cloudFraction))),
+        )
+        hour.precipitationMm?.let { put(WeatherContract.PRECIPITATION_MM, JsonPrimitive(round1(it))) }
+        hour.windKmh?.let { put(WeatherContract.WIND_KMH, JsonPrimitive(round1(it))) }
+    }
+
+    private fun localTime(instant: Instant, zoneId: ZoneId): String =
+        runCatching { DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()).format(instant.atZone(zoneId)) }
+            .getOrDefault(notAvailable)
 
     /**
      * Collapses the hourly series into the dated rows the LLM relies on.
@@ -285,6 +320,9 @@ class ProjectEolWeatherClient(
 
     private companion object {
         const val HOURS_PER_DAY = 24
+
+        /** Forward hours the `hourly` series carries (a voice-sized window). */
+        const val HOURLY_SLOTS = 12
         const val SEARCH_CANDIDATES = 5
 
         const val SEARCH_LOCATIONS = "search_locations"

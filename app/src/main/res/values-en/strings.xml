@@ -248,6 +248,10 @@
     <string name="weather_permission_granted">Location access granted</string>
     <string name="weather_permission_denied">Location access not granted</string>
     <string name="weather_location_current">your current location</string>
+    <string name="weather_proxy_label">Open-Meteo proxy (host:port)</string>
+    <string name="weather_proxy_hint">Optional. Applies only to Open-Meteo requests (forecast and geocoding); all other traffic stays direct. Supports host:port, http://, https:// and socks5://, with optional user:pass@. Leave empty for a direct connection.</string>
+    <string name="weather_proxy_save">Save</string>
+    <string name="weather_proxy_invalid">Invalid proxy address</string>
     <string name="tool_weather_location_denied">Could not determine your location: access is not granted. Set a city in Settings or allow location access.</string>
     <string name="tool_weather_location_unavailable">Could not determine your location. Set a city in Settings.</string>
 

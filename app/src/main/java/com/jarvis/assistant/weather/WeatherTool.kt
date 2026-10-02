@@ -51,9 +51,10 @@ class WeatherTool(
     override val name = "getWeather"
     override val risk = ToolRisk.READ_ONLY
     override val description: String =
-        "Get the current weather and a daily forecast (1-7 days) for a city or place. " +
-            "The result contains dated daily entries; use them to answer follow-ups like " +
-            "«а завтра?» or «а в Сочи?»."
+        "Get the current weather, an hourly series for the next ~12 hours, and a daily " +
+            "forecast (1-7 days) for a city or place. Current readings include a feels_like " +
+            "temperature; use the hourly rows to answer «во сколько дождь?» / «погода через " +
+            "3 часа», and the dated daily entries for follow-ups like «а завтра?» / «а в Сочи?»."
     override val parametersJson = schema(
         mapOf(
             "location" to
