@@ -8,15 +8,36 @@ import org.junit.Test
 
 /**
  * JVM-only pins for [ToolCallSlip], the shape-based leaked-tool-call scrub.
- * The decisive assertion is the multi-line negative: a legitimate fenced code
- * block must come back byte-identical (rule 2, "no interior newline").
+ *
+ * The primary positive cases use the OBSERVED device shape, where the tool name
+ * and the JSON payload sit on SEPARATE lines — a regression shipped when the
+ * tests encoded the one-line assumption instead. The decisive negative is the
+ * legitimate multi-line code block, which must come back byte-identical.
  */
 class ToolCallSlipTest {
 
     private val names = setOf("getWeather", "setAlarm", "playMusic")
 
     @Test
-    fun `fenced three-line leaked call is recognized and strips to blank`() {
+    fun `fenced block with the name on its own line is recognized and strips to blank`() {
+        // Exactly what the device recorded (row 76).
+        val block = "```\ngetWeather\n{\"days\":1,\"location\":\"\"}\n```"
+        assertTrue(ToolCallSlip.hasSlip(block, names))
+        assertTrue(ToolCallSlip.strip(block, names).isBlank())
+    }
+
+    @Test
+    fun `fenced block with the name on its own line and surrounding prose is scrubbed`() {
+        val text = "Сейчас проверю.\n```\ngetWeather\n{\"location\":\"\"}\n```\nГотово."
+        val out = ToolCallSlip.strip(text, names)
+        assertFalse(out.contains("getWeather"))
+        assertFalse(out.contains("location"))
+        assertTrue(out.contains("Сейчас проверю."))
+        assertTrue(out.contains("Готово."))
+    }
+
+    @Test
+    fun `single-line payload inside the fence is still recognized`() {
         val block = "```\ngetWeather {\"location\":\"\"}\n```"
         assertTrue(ToolCallSlip.hasSlip(block, names))
         assertTrue(ToolCallSlip.strip(block, names).isBlank())
@@ -31,7 +52,7 @@ class ToolCallSlipTest {
 
     @Test
     fun `opening info string is accepted`() {
-        val info = "```json\ngetWeather {\"location\":\"\"}\n```"
+        val info = "```json\ngetWeather\n{\"location\":\"\"}\n```"
         assertTrue(ToolCallSlip.hasSlip(info, names))
         assertTrue(ToolCallSlip.strip(info, names).isBlank())
     }
@@ -41,11 +62,13 @@ class ToolCallSlipTest {
         val text = listOf(
             "Before",
             "```",
-            "getWeather {\"location\":\"\"}",
+            "getWeather",
+            "{\"location\":\"\"}",
             "```",
             "Middle",
             "```json",
-            "setAlarm {\"time\":\"07:30\"}",
+            "setAlarm",
+            "{\"time\":\"07:30\"}",
             "```",
             "After",
         ).joinToString("\n")
@@ -77,14 +100,14 @@ class ToolCallSlipTest {
 
     @Test
     fun `unknown identifier is not a slip`() {
-        val unknown = "```\nfoo {\"x\":1}\n```"
+        val unknown = "```\nfoo\n{\"x\":1}\n```"
         assertFalse(ToolCallSlip.hasSlip(unknown, setOf("getWeather")))
         assertEquals(unknown, ToolCallSlip.strip(unknown, setOf("getWeather")))
     }
 
     @Test
     fun `unterminated fence is not a slip`() {
-        val unterminated = "```\ngetWeather {\"location\":\"\"}"
+        val unterminated = "```\ngetWeather\n{\"location\":\"\"}"
         assertFalse(ToolCallSlip.hasSlip(unterminated, names))
         assertEquals(unterminated, ToolCallSlip.strip(unterminated, names))
     }
@@ -95,7 +118,7 @@ class ToolCallSlipTest {
 
     @Test
     fun `malformed payload does not throw and the block is removed`() {
-        val malformed = "```\ngetWeather {not json}\n```"
+        val malformed = "```\ngetWeather\n{not json}\n```"
         val out = ToolCallSlip.strip(malformed, names)
         assertFalse(out.contains("getWeather"))
         assertFalse(out.contains("not json"))
@@ -104,7 +127,7 @@ class ToolCallSlipTest {
 
     @Test
     fun `empty names disables the scrub entirely`() {
-        val block = "```\ngetWeather {\"location\":\"\"}\n```"
+        val block = "```\ngetWeather\n{\"location\":\"\"}\n```"
         assertFalse(ToolCallSlip.hasSlip(block, emptySet()))
         assertEquals(block, ToolCallSlip.strip(block, emptySet()))
     }

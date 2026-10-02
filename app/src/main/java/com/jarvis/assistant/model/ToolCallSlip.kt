@@ -5,10 +5,12 @@ package com.jarvis.assistant.model
  *
  * Yandex AI Studio (provider `yandex`) occasionally renders a tool call as a
  * FENCED TEXT BLOCK in the assistant content instead of a structured
- * `function_call` item:
+ * `function_call` item. The OBSERVED shape puts the tool name and the JSON
+ * payload on SEPARATE lines:
  *
  * ```
- * getWeather {"location":""}
+ * getWeather
+ * {"location":""}
  * ```
  *
  * Once such a turn is persisted as an ordinary assistant message
@@ -16,22 +18,24 @@ package com.jarvis.assistant.model
  * executing while the fenced block is spoken aloud. [strip] removes only the
  * leaked blocks so the poisoned exemplar is never fed back to the model.
  *
- * Recognition is deliberately SHAPE-based and does NOT require the payload to
- * be valid JSON — the poison is the shape, not the parseability. A recognized
- * leaked-call block must satisfy ALL of:
+ * The one-line form (`getWeather {"location":""}` inside the fence) is accepted
+ * too, because the model is free to reflow. Recognition is deliberately
+ * SHAPE-based and does NOT require the payload to be valid JSON — the poison is
+ * the shape, not the parseability. A recognized leaked-call block must satisfy
+ * ALL of:
  *
  * 1. It is a COMPLETE fenced block: an opening fence of 3+ backticks (optionally
  *    followed by an info string such as `json`) and a matching closing fence of
  *    3+ backticks. An unterminated fence is never recognized.
- * 2. The ENTIRE inner payload is a SINGLE logical line (no interior newline).
- *    This is the decisive anti-false-positive guard: a legitimate multi-line
- *    code-block answer must never be touched.
- * 3. That line splits on the FIRST whitespace into `<name>` + `<payload>`, and
+ * 2. Its inner content trims to `<name>` + whitespace + a payload, where
  *    `<name>` is an exact, case-sensitive member of the advertised tool names.
- * 4. `<payload>` starts with `{` and ends with `}`.
+ *    Everything after the first whitespace is joined across lines and trimmed,
+ *    so a name on its own line followed by the JSON on the next one is matched.
+ * 3. The payload starts with `{` and ends with `}`.
  *
- * The inline form ` ```getWeather {"location":""}``` ` (single line, no
- * newlines) is accepted under the same rules 2-4.
+ * Rule 2 is the anti-false-positive guard: a legitimate code block whose first
+ * token is not an advertised tool name (`kotlin`, `val`, `{`, …) is never
+ * touched, even when it is multi-line.
  *
  * Pure Kotlin — no Android and no serialization dependency — so it is safe on
  * the turn path.
@@ -59,14 +63,12 @@ object ToolCallSlip {
         var i = 0
         while (i < lines.size) {
             val openLen = openingFenceLength(lines[i])
-            if (openLen != null && i + 2 < lines.size) {
-                val closeLen = openingFenceLength(lines[i + 2])
-                if (closeLen != null && closeLen >= openLen &&
-                    isLeakedCall(lines[i + 1], names)
-                ) {
-                    // Rules 1-4 hold: drop the three-line block entirely.
+            if (openLen != null) {
+                val close = closingFenceIndex(lines, i, openLen)
+                if (close > i && isLeakedCall(lines.subList(i + 1, close).joinToString("\n"), names)) {
+                    // A complete recognized block: drop every line it spans.
                     removedAny = true
-                    i += 3
+                    i = close + 1
                     continue
                 }
             }
@@ -79,18 +81,32 @@ object ToolCallSlip {
     }
 
     /**
-     * Rules 3-4 applied to a single trimmed line: `<name> <jsonish payload>`.
-     * Rule 2 (no interior newline) is implicit — [line] is one line by
-     * construction — but is re-checked defensively.
+     * Rules 2-3 on a block's joined inner text. The payload is the remainder
+     * after the first whitespace, so the name and the JSON may sit on one line
+     * or on consecutive lines.
      */
-    private fun isLeakedCall(line: String, names: Set<String>): Boolean {
-        val trimmed = line.trim()
-        if (trimmed.isEmpty() || trimmed.contains('\n')) return false
-        val split = trimmed.indexOfFirst { it.isWhitespace() }
-        if (split <= 0 || split == trimmed.length - 1) return false
-        if (trimmed.substring(0, split) !in names) return false
-        val payload = trimmed.substring(split + 1).trim()
+    private fun isLeakedCall(inner: String, names: Set<String>): Boolean {
+        val text = inner.trim()
+        if (text.isEmpty()) return false
+        val split = text.indexOfFirst { it.isWhitespace() }
+        if (split <= 0) return false
+        if (text.substring(0, split) !in names) return false
+        val payload = text.substring(split).trim()
         return payload.length >= 2 && payload.first() == '{' && payload.last() == '}'
+    }
+
+    /**
+     * Index of the first standalone fence line after [openIndex] whose backtick
+     * run is at least [openLen], or -1 when the block is never closed.
+     */
+    private fun closingFenceIndex(lines: List<String>, openIndex: Int, openLen: Int): Int {
+        var j = openIndex + 1
+        while (j < lines.size) {
+            val len = openingFenceLength(lines[j])
+            if (len != null && len >= openLen) return j
+            j++
+        }
+        return -1
     }
 
     /**
@@ -106,7 +122,7 @@ object ToolCallSlip {
         return if (trimmed.substring(count).contains('`')) null else count
     }
 
-    /** Rule 2 + 3 + 4 for the inline ` ```name {…}``` ` form within one line. */
+    /** Rules 2-3 for the inline ` ```name {…}``` ` form within one line. */
     private fun stripInline(line: String, names: Set<String>): String {
         if (!line.contains(FENCE)) return line
 

@@ -295,7 +295,9 @@ class ConversationManagerTest {
             slipToolNames = { setOf("getWeather", "setAlarm", "playMusic") },
         )
         cm.addMessage(Message(role = "user", content = "какая погода"))
-        cm.addMessage(Message(role = "assistant", content = "```\ngetWeather {\"location\":\"\"}\n```"))
+        // The OBSERVED device shape: the tool name and the payload sit on
+        // SEPARATE lines. The one-line variant shipped a no-op scrub once.
+        cm.addMessage(Message(role = "assistant", content = "```\ngetWeather\n{\"location\":\"\"}\n```"))
         cm.addMessage(Message(role = "user", content = "спасибо"))
 
         val history = cm.getHistoryForLLM()
@@ -324,7 +326,7 @@ class ConversationManagerTest {
         cm.addAssistantWithToolResults(
             assistant = Message(
                 role = "assistant",
-                content = "```\ngetWeather {\"location\":\"\"}\n```",
+                content = "```\ngetWeather\n{\"location\":\"\"}\n```",
                 toolCalls = listOf(call),
             ),
             results = listOf(Message(role = "tool", content = "sunny", toolCallId = "g1")),
@@ -341,7 +343,7 @@ class ConversationManagerTest {
     fun `default construction leaves leaked fenced block untouched`() = runBlocking {
         val dao = FakeMessageDao()
         val cm = ConversationManager(dao, maxMessages = 20)
-        val block = "```\ngetWeather {\"location\":\"\"}\n```"
+        val block = "```\ngetWeather\n{\"location\":\"\"}\n```"
         cm.addMessage(Message(role = "assistant", content = block))
 
         val history = cm.getHistoryForLLM()
