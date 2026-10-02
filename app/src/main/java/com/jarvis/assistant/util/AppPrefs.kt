@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.jarvis.assistant.config.ProviderSettings
 import com.jarvis.assistant.speech.SpeechBackend
+import com.jarvis.assistant.speech.tts.YandexVoiceSpec
 
 /**
  * Plain (non-secret) app preferences: onboarding state, user-stop flag,
@@ -324,6 +325,20 @@ class AppPrefs(
         get() = prefs.getString(KEY_YANDEX_TTS_ROLE, "") ?: ""
         set(value) = prefs.edit().putString(KEY_YANDEX_TTS_ROLE, value.trim()).apply()
 
+    /**
+     * Yandex TTS speaking rate, `0.1`–`3.0` (`1.0` = normal). Read per sentence
+     * alongside [yandexTtsVoice]/[yandexTtsRole], so it is LIVE. Clamped on BOTH
+     * read and write; a non-finite or out-of-range stored value degrades to the
+     * service default rather than reaching the request.
+     */
+    var yandexTtsSpeed: Float
+        get() = clampYandexTtsSpeed(
+            prefs.getFloat(KEY_YANDEX_TTS_SPEED, YandexVoiceSpec.DEFAULT_SPEED),
+        )
+        set(value) = prefs.edit()
+            .putFloat(KEY_YANDEX_TTS_SPEED, clampYandexTtsSpeed(value))
+            .apply()
+
     // ------------------------------------------------------------------
     // The behaviour switches. The
     // proactive layer ships DEFAULT OFF (trust first); quiet
@@ -431,6 +446,7 @@ class AppPrefs(
         internal const val KEY_SPEECH_BACKEND = "speech_backend"
         internal const val KEY_YANDEX_TTS_VOICE = "yandex_tts_voice"
         internal const val KEY_YANDEX_TTS_ROLE = "yandex_tts_role"
+        internal const val KEY_YANDEX_TTS_SPEED = "yandex_tts_speed"
         internal const val KEY_MEMORY_ENABLED = "memory_enabled"
         internal const val KEY_MEMORY_AUTO_EXTRACT = "memory_auto_extract"
         internal const val KEY_MEMORY_CLOUD_ENABLED = "memory_cloud_enabled"
@@ -442,3 +458,15 @@ class AppPrefs(
         internal const val KEY_MEMORY_EMBEDDER = "memory_embedder"
     }
 }
+
+/**
+ * Clamp shared by the [AppPrefs.yandexTtsSpeed] read and write paths. A
+ * non-finite value (NaN/±Infinity) degrades to the service default; a finite
+ * out-of-range value is clamped to the supported `[MIN_SPEED, MAX_SPEED]`.
+ */
+private fun clampYandexTtsSpeed(value: Float): Float =
+    if (value.isFinite()) {
+        value.coerceIn(YandexVoiceSpec.MIN_SPEED, YandexVoiceSpec.MAX_SPEED)
+    } else {
+        YandexVoiceSpec.DEFAULT_SPEED
+    }

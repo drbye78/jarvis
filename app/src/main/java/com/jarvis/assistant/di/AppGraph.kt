@@ -32,6 +32,7 @@ import com.jarvis.assistant.speech.asr.YandexStreamingAsr
 import com.jarvis.assistant.speech.tts.SaluteSpeechTts
 import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
+import com.jarvis.assistant.speech.tts.VoiceCatalog
 import com.jarvis.assistant.speech.tts.YandexSpeechTts
 import com.jarvis.assistant.speech.tts.YandexVoiceSpec
 import com.jarvis.assistant.tools.FunctionRouter
@@ -325,6 +326,25 @@ class AppGraph(
     val wakeKeywordPath = wakeKeywordPathFor(appPrefs.wakeWordModel)
 
     /**
+     * Extracts the bundled model once for generated keyword files.
+     *
+     * DECLARED BEFORE [wakeWordDetector] DELIBERATELY. The detector starts
+     * building its engine on its own dispatcher from its constructor, and for a
+     * CUSTOM keyword that build calls back into [buildSherpaEngine] →
+     * `sherpaModelStore`. When this property sat BELOW the detector as a
+     * `by lazy`, that race hit an unassigned delegate and threw
+     * `NullPointerException: Lazy.getValue() on a null object reference`,
+     * surfacing as "wake-word engine build failed — wake word disabled" —
+     * i.e. a custom wake word silently never worked. Declaration order is
+     * Kotlin's initialization order, so this must stay ABOVE the detector.
+     *
+     * Eager (not `by lazy`): the constructor only holds the context; the real
+     * extraction happens in [com.jarvis.assistant.audio.SherpaModelStore.ensureExtracted],
+     * so constructing it here costs nothing.
+     */
+    private val sherpaModelStore = com.jarvis.assistant.audio.SherpaModelStore(appContext)
+
+    /**
      * HYBRID wake-word detector. The initial engine is selected from persisted
      * prefs (engine + model). Sherpa uses the bundled model (extracted from
      * assets on first run) unless the user supplied a custom directory.
@@ -356,20 +376,36 @@ class AppGraph(
      *
      * BACKEND-AWARE: the two providers have disjoint voice namespaces, so the
      * value handed to [ttsClient] always comes from the ACTIVE backend's pref
-     * ([speechBackend], sealed at construction). For Yandex the voice and the
-     * optional role are packed in-band by [YandexVoiceSpec] — the convention
-     * [YandexSpeechTts] unpacks — with a blank role collapsing to the bare
-     * voice so the service applies its own default.
+     * ([speechBackend], sealed at construction). For Yandex the voice, the
+     * validated role and the speed are packed in-band by [YandexVoiceSpec] —
+     * the convention [YandexSpeechTts] unpacks — with a blank/invalid role
+     * collapsing to the bare voice so the service applies its own default.
      */
     val voiceSource: () -> String = {
         when (speechBackend) {
             SpeechBackend.SBER -> appPrefs.ttsVoice.ifBlank { config.ttsVoice }
 
-            SpeechBackend.YANDEX -> YandexVoiceSpec.join(
-                voice = appPrefs.yandexTtsVoice.ifBlank { config.yandexTtsVoice },
+            SpeechBackend.YANDEX -> packYandexVoice(
+                voice = appPrefs.yandexTtsVoice,
                 role = appPrefs.yandexTtsRole,
             )
         }
+    }
+
+    /**
+     * Packs a Yandex speaker with the validated role and the configured speed
+     * into the single in-band spec ([YandexVoiceSpec], the one encode
+     * definition). [role] is validated against the voice's documented roles, so
+     * a stale invalid pref can never reach the synthesis request. A blank voice
+     * falls back to the config default.
+     */
+    private fun packYandexVoice(voice: String, role: String?): String {
+        val speaker = voice.ifBlank { config.yandexTtsVoice }
+        return YandexVoiceSpec.join(
+            voice = speaker,
+            role = VoiceCatalog.validRoleFor(speaker, role),
+            speed = appPrefs.yandexTtsSpeed,
+        )
     }
 
     val speechFeedback = com.jarvis.assistant.audio.TtsSpeechFeedback(
@@ -626,9 +662,6 @@ class AppGraph(
         else -> "jarvis_ru.ppn" // custom_bundled (default)
     }
 
-    /** Extracts the bundled model once for generated keyword files. */
-    private val sherpaModelStore by lazy { com.jarvis.assistant.audio.SherpaModelStore(appContext) }
-
     /**
      * Build the Sherpa engine for a request, resolving a custom
      * keyword against the bundled model. Runs OFF the main thread inside the
@@ -734,7 +767,17 @@ class AppGraph(
      * @param voiceOverride the voice to probe; null = the currently saved pref.
      */
     fun speakVoiceSample(voiceOverride: String? = null) {
-        val voice = voiceOverride ?: voiceSource()
+        val voice = if (voiceOverride == null) {
+            voiceSource()
+        } else if (speechBackend == SpeechBackend.YANDEX) {
+            // The probe may hand us a bare or role-packed Yandex spec; re-pack
+            // through the single helper so the preview also carries the saved
+            // SPEED and the role is validated.
+            val (name, role) = YandexVoiceSpec.split(voiceOverride)
+            packYandexVoice(voice = name, role = role)
+        } else {
+            voiceOverride
+        }
         scope.launch {
             try {
                 val text = appContext.getString(com.jarvis.assistant.R.string.phrase_voice_sample)

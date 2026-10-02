@@ -48,6 +48,7 @@ object SettingsInventory {
         entry("ttsVoice", SettingsCategory.SPEECH, essential = true),
         entry("yandexTtsVoice", SettingsCategory.SPEECH, essential = true),
         entry("yandexTtsRole", SettingsCategory.SPEECH, essential = false),
+        entry("yandexTtsSpeed", SettingsCategory.SPEECH, essential = false),
 
         // --- LISTENING (wake word + echo cancellation) ---
         entry("voiceStopEnabled", SettingsCategory.LISTENING, essential = true),

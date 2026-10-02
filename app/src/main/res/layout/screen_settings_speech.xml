@@ -10,9 +10,11 @@
     2. «Голос» section (essential): the active backend's voice block
        - Sber: preset / custom voice + free-text ID
        - Yandex: the closed voice dropdown
-    3. «Дополнительно» disclosure            (only on the Yandex backend: the one
-                                              advanced entry is `yandexTtsRole`)
-    4. advanced container: the Yandex ROLE (advanced, Yandex only)
+    3. «Дополнительно» disclosure            (shown only when the active backend's
+                                               capabilities expose an advanced
+                                               entry: Yandex role and/or speed)
+    4. advanced container: the Yandex ROLE and SPEED (advanced, capability-gated;
+       the role additionally requires the selected voice to document roles)
     5. voiceTestButton                       (always visible)
 
   FROZEN IDS (must not be renamed): speechBackendGroup, speechBackendSber,
@@ -20,7 +22,8 @@
   voiceCustomInput, voiceCustomId, yandexVoiceBlock, yandexVoiceLayout,
   yandexVoice, yandexRoleLayout, yandexRole, voiceTestButton.
 
-  NEW ID introduced by this screen (controller contract): settingsSpeechAdvanced.
+  NEW IDS introduced by this screen (controller contract): settingsSpeechAdvanced,
+  yandexSpeedBlock, yandexSpeedLabel, yandexSpeedValue, yandexSpeedBar.
   Disclosure ids come from settings_disclosure.xml.
 
   The per-card restart paragraph is intentionally dropped: the host banner now
@@ -149,8 +152,8 @@
 
         <!-- Yandex voice (essential), gated on the Yandex backend. The voice
              list is a documented, closed set, so it is a real dropdown. The
-             ROLE lives behind the disclosure as the screen's one advanced
-             entry. -->
+             ROLE and SPEED live behind the disclosure as the screen's
+             capability-gated advanced entries. -->
         <LinearLayout
             android:id="@+id/yandexVoiceBlock"
             android:layout_width="match_parent"
@@ -182,8 +185,9 @@
                 style="@style/TextAppearance.Jarvis.Hint" />
         </LinearLayout>
 
-        <!-- The only advanced entry is `yandexTtsRole`, so the controller shows
-             this row on the Yandex backend (count 1) and hides it on Sber. -->
+        <!-- The advanced entries are the Yandex ROLE and SPEED, so the controller
+             shows this row only when the active backend's capabilities expose at
+             least one of them (the count is derived) and hides it otherwise. -->
         <include
             layout="@layout/settings_disclosure"
             android:layout_width="match_parent"
@@ -198,9 +202,10 @@
             android:visibility="gone"
             tools:visibility="visible">
 
-            <!-- Yandex role (advanced, Yandex only). Editable combo: the
-                 presets follow the selected voice, but free text stays allowed
-                 for undocumented voices. -->
+            <!-- Yandex role (advanced, capability-gated). CLOSED dropdown: the
+                 presets are only the roles the selected voice DOCUMENTS. The
+                 field is non-editable — free text would persist a pair the
+                 service rejects. An empty selection means "no role". -->
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
                 android:id="@+id/yandexRoleLayout"
@@ -214,10 +219,46 @@
                     android:id="@+id/yandexRole"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:imeOptions="actionDone"
-                    android:inputType="text"
+                    android:inputType="none"
                     android:maxLines="1" />
             </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- Yandex speaking rate (advanced, capability-gated). Persisted LIVE;
+                 the UI range is narrower than the 0.1..3.0 the storage validates
+                 (the 20 s per-sentence timeout truncates a long sentence at the
+                 extremes). -->
+            <LinearLayout
+                android:id="@+id/yandexSpeedBlock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/yandexSpeedLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/yandex_speed_label"
+                    style="@style/TextAppearance.Material3.TitleSmall"
+                    android:textColor="?attr/colorOnSurface"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/yandexSpeedValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    style="@style/TextAppearance.Jarvis.Hint"
+                    tools:text="1.0x" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/yandexSpeedBar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:valueFrom="0.5"
+                    android:valueTo="2.0"
+                    android:stepSize="0.1" />
+            </LinearLayout>
         </LinearLayout>
 
         <com.google.android.material.button.MaterialButton

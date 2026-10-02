@@ -99,6 +99,40 @@ class SpeechBackendPrefsTest {
     }
 
     @Test
+    fun `the yandex speed defaults to normal and clamps on write`() {
+        val prefs = FakeSharedPreferences()
+        val appPrefs = newPrefs(prefs)
+
+        assertEquals(1.0f, appPrefs.yandexTtsSpeed, 0.0f)
+
+        appPrefs.yandexTtsSpeed = 0.5f
+        assertEquals(0.5f, appPrefs.yandexTtsSpeed, 0.0f)
+        // Survives a graph rebuild over the same store.
+        assertEquals(0.5f, newPrefs(prefs).yandexTtsSpeed, 0.0f)
+
+        appPrefs.yandexTtsSpeed = 9.0f
+        assertEquals(3.0f, appPrefs.yandexTtsSpeed, 0.0f)
+
+        appPrefs.yandexTtsSpeed = 0.01f
+        assertEquals(0.1f, appPrefs.yandexTtsSpeed, 0.0f)
+
+        appPrefs.yandexTtsSpeed = Float.NaN
+        assertEquals(1.0f, appPrefs.yandexTtsSpeed, 0.0f)
+    }
+
+    @Test
+    fun `a raw out-of-range stored speed is clamped on read`() {
+        val prefs = FakeSharedPreferences()
+        // Bypass the setter (a value written by an older build / hand-edited
+        // store must still be safe).
+        prefs.map[AppPrefs.KEY_YANDEX_TTS_SPEED] = 42.0f
+        assertEquals(3.0f, newPrefs(prefs).yandexTtsSpeed, 0.0f)
+
+        prefs.map[AppPrefs.KEY_YANDEX_TTS_SPEED] = Float.NaN
+        assertEquals(1.0f, newPrefs(prefs).yandexTtsSpeed, 0.0f)
+    }
+
+    @Test
     fun `the Sber and Yandex voice prefs never alias each other`() {
         val appPrefs = newPrefs()
 

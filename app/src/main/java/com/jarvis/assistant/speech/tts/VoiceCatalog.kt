@@ -1,6 +1,19 @@
 package com.jarvis.assistant.speech.tts
 
 import com.jarvis.assistant.R
+import com.jarvis.assistant.speech.SpeechBackend
+
+/**
+ * What a speech backend can express. Drives UI visibility/enablement so a
+ * backend's supported knobs are declared in ONE place instead of being
+ * hardcoded as `== YANDEX` at each consumer.
+ */
+data class TtsCapabilities(
+    /** Whether the backend accepts a per-voice pronunciation role. */
+    val roles: Boolean,
+    /** Whether the backend accepts a speaking-rate hint. */
+    val speed: Boolean,
+)
 
 /**
  * One selectable TTS voice, in a shape both backends share.
@@ -64,10 +77,9 @@ object VoiceCatalog {
     /**
      * Canonical Yandex v3 role vocabulary.
      *
-     * This is the union of every role the v3 docs list for any ru-RU voice; it
-     * is the suggestion set for a voice whose own roles are undocumented. A
-     * test pins that the union of the per-voice [TtsVoiceChoice.roles] below
-     * covers this list exactly, so no role here is unreachable.
+     * This is the union of every role the v3 docs list for any ru-RU voice. It
+     * is used for validation and by tests; it is NOT a suggestion fallback for
+     * voices with no documented roles (see [yandexRolesFor]).
      */
     val YANDEX_ROLES: List<String> = listOf(
         "neutral",
@@ -85,9 +97,10 @@ object VoiceCatalog {
      * string resources — hence `labelRes` is left null.
      *
      * A voice with no roles here is one the docs list WITHOUT role support
-     * (e.g. `filipp`, the `*_ru` voices); that is "undocumented", not a claim
-     * that the service rejects every role, which is why
-     * [yandexRolesFor] still offers the full vocabulary for it.
+     * (`filipp`, `madi_ru`). Role lookup is FAIL-CLOSED: a voice with no
+     * documented roles offers none, and the runtime drops any role that is not
+     * documented for the selected voice (an undocumented pair is a hard service
+     * error, not a fallback).
      */
     val YANDEX_VOICES: List<TtsVoiceChoice> = listOf(
         yandex("marina", "neutral", "whisper", "friendly"),
@@ -105,26 +118,43 @@ object VoiceCatalog {
         yandex("kirill", "neutral", "strict", "good"),
         yandex("anton", "neutral", "good"),
         yandex("madi_ru"),
-        yandex("saule_ru"),
-        yandex("zamira_ru"),
-        yandex("zhanar_ru"),
-        yandex("yulduz_ru"),
+        yandex("saule_ru", "neutral", "strict", "whisper"),
+        yandex("zamira_ru", "neutral", "strict", "friendly"),
+        yandex("zhanar_ru", "neutral", "strict", "friendly"),
+        yandex("yulduz_ru", "neutral", "strict", "friendly", "whisper"),
     )
 
     /**
-     * The roles to SUGGEST for [voiceId].
+     * The roles DOCUMENTED for [voiceId], or an empty list when the voice is
+     * unknown or documents none.
      *
-     * Narrowing matters: the service rejects a voice/role pair it does not
-     * support, so the dropdown for `alena` should not offer `whisper`. But the
-     * suggestion list is not a whitelist — the role field stays free text,
-     * because the docs are incomplete for some voices and a user who knows a
-     * working pair must still be able to enter it. A voice with no documented
-     * roles, or an id the catalog has never seen, therefore falls back to the
-     * full [YANDEX_ROLES] vocabulary instead of an empty menu.
+     * FAIL-CLOSED: this is a whitelist, not a suggestion set. An undocumented
+     * voice/role pair is a HARD service error, so callers must never widen it to
+     * [YANDEX_ROLES]; use [validRoleFor] to validate a requested role.
      */
-    fun yandexRolesFor(voiceId: String): List<String> {
-        val documented = YANDEX_VOICES.firstOrNull { it.id == voiceId }?.roles.orEmpty()
-        return documented.ifEmpty { YANDEX_ROLES }
+    fun yandexRolesFor(voiceId: String): List<String> =
+        YANDEX_VOICES.firstOrNull { it.id == voiceId }?.roles.orEmpty()
+
+    /**
+     * The trimmed [requested] role iff [voiceId] documents it, else null.
+     *
+     * BOTH packed-spec producers (`AppGraph.voiceSource` and the Settings probe)
+     * go through this, so the "what gets sent" policy cannot drift from the
+     * catalog.
+     */
+    fun validRoleFor(voiceId: String, requested: String?): String? {
+        val role = requested?.trim().orEmpty()
+        if (role.isEmpty()) return null
+        return role.takeIf { yandexRolesFor(voiceId).contains(it) }
+    }
+
+    /**
+     * What [backend] can express. Exhaustive `when`, NO `else`: a new backend
+     * is a compile error until it declares its capabilities.
+     */
+    fun capabilitiesFor(backend: SpeechBackend): TtsCapabilities = when (backend) {
+        SpeechBackend.YANDEX -> TtsCapabilities(roles = true, speed = true)
+        SpeechBackend.SBER -> TtsCapabilities(roles = false, speed = false)
     }
 
     private fun yandex(id: String, vararg roles: String) =

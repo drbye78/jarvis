@@ -102,4 +102,85 @@ class YandexVoiceSpecTest {
         // report it as "the test button lies".
         assertEquals(YandexVoiceSpec.DEFAULT_VOICE, JarvisConfig().yandexTtsVoice)
     }
+
+    @Test
+    fun `every grammar shape round-trips`() {
+        // voice (no role, no speed)
+        val bare = YandexVoiceSpec.split(YandexVoiceSpec.join("marina", "", null))
+        assertEquals("marina", bare.voice)
+        assertNull(bare.role)
+        assertNull(bare.speed)
+
+        // voice:role
+        assertEquals("marina:whisper", YandexVoiceSpec.join("marina", "whisper", null))
+        val withRole = YandexVoiceSpec.split("marina:whisper")
+        assertEquals("marina", withRole.voice)
+        assertEquals("whisper", withRole.role)
+        assertNull(withRole.speed)
+
+        // voice@speed
+        assertEquals("marina@1.25", YandexVoiceSpec.join("marina", "", 1.25f))
+        val withSpeed = YandexVoiceSpec.split("marina@1.25")
+        assertEquals("marina", withSpeed.voice)
+        assertNull(withSpeed.role)
+        assertEquals(1.25f, withSpeed.speed!!, 0.0f)
+
+        // voice:role@speed
+        assertEquals("marina:whisper@0.75", YandexVoiceSpec.join("marina", "whisper", 0.75f))
+        val all = YandexVoiceSpec.split("marina:whisper@0.75")
+        assertEquals("marina", all.voice)
+        assertEquals("whisper", all.role)
+        assertEquals(0.75f, all.speed!!, 0.0f)
+    }
+
+    @Test
+    fun `a default or absent speed emits no separator`() {
+        // Byte-identical to the pre-speed wire: 1.0 is the service default and
+        // must not be sent as an explicit hint.
+        assertEquals("marina", YandexVoiceSpec.join("marina", "", 1.0f))
+        assertEquals("marina", YandexVoiceSpec.join("marina", "", null))
+        assertEquals("marina:good", YandexVoiceSpec.join("marina", "good", 1.0f))
+    }
+
+    @Test
+    fun `speed formatting is locale-independent`() {
+        // Float.toString is locale-independent; a String.format path would
+        // render "1,25" under a comma-decimal default locale and silently break
+        // the packing (the '@' suffix would decode to null and the speed would
+        // vanish).
+        assertEquals("marina@1.25", YandexVoiceSpec.join("marina", "", 1.25f))
+        assertEquals("marina@0.75", YandexVoiceSpec.join("marina", "", 0.75f))
+    }
+
+    @Test
+    fun `a malformed or out-of-range speed decodes to null with the voice preserved`() {
+        val malformed = listOf(
+            "marina@abc",
+            "marina@",
+            "marina@0.05",
+            "marina@3.5",
+            "marina@NaN",
+            "marina@Infinity",
+            "marina@-1",
+        )
+        for (spec in malformed) {
+            val split = YandexVoiceSpec.split(spec)
+            assertEquals("voice must survive a bad suffix: $spec", "marina", split.voice)
+            assertNull("$spec must fail closed", split.speed)
+        }
+    }
+
+    @Test
+    fun `a real speed at the interval boundaries is accepted`() {
+        assertEquals(0.1f, YandexVoiceSpec.split("marina@0.1").speed!!, 0.0f)
+        assertEquals(3.0f, YandexVoiceSpec.split("marina@3.0").speed!!, 0.0f)
+    }
+
+    @Test
+    fun `only the first colon splits even with a speed suffix`() {
+        val split = YandexVoiceSpec.split("marina:good:evil@1.5")
+        assertEquals("marina", split.voice)
+        assertEquals("good:evil", split.role)
+        assertEquals(1.5f, split.speed!!, 0.0f)
+    }
 }

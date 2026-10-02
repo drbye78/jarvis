@@ -28,16 +28,23 @@ import timber.log.Timber
  * [apiKeyProvider] — the vault is never touched at graph-construction time.
  *
  * VOICE SELECTION: the request carries its settings as a repeated `Hints`
- * list, each entry a scalar. Two hints are emitted at most:
- * - the speaker name ([Hints.setVoice]), and
- * - optionally a pronunciation ROLE ([Hints.setRole]).
+ * list, each entry a scalar. Up to three hints are emitted:
+ * - the speaker name ([Hints.setVoice]) — always,
+ * - optionally a pronunciation ROLE ([Hints.setRole]), and
+ * - optionally a speaking RATE ([Hints.setSpeed]).
  *
- * Because the [TtsClient] contract passes a single `voice` string, the role is
- * expressed in-band as `"<voice>:<role>"` (e.g. `marina:good`) — packed and
- * unpacked by [YandexVoiceSpec], the single definition of that convention. A
- * value with no `:` — or an empty role after it — yields the voice hint alone
- * and lets the service apply its default role. This keeps the provider-neutral
- * contract unchanged while still exposing Yandex's role feature.
+ * Because the [TtsClient] contract passes a single `voice` string, all three
+ * travel in-band as `"<voice>[:<role>][@<speed>]"` (e.g. `marina:whisper@1.5`)
+ * — packed and unpacked by [YandexVoiceSpec], the single definition of that
+ * convention. A value with no `:` (or an empty role after it) yields the voice
+ * hint alone and lets the service apply its default role; a `1.0`/absent speed
+ * yields no speed hint. This keeps the provider-neutral contract unchanged
+ * while still exposing Yandex's role and speed features.
+ *
+ * FAIL-CLOSED ROLE: an undocumented voice/role pair is a HARD service error,
+ * not a fallback, so the role is re-validated against
+ * [VoiceCatalog.validRoleFor] here — the runtime chokepoint that stops a stale
+ * pref (or a hand-crafted spec) from failing the whole synthesis.
  *
  * SAMPLE-RATE CONSTRAINT (this is the correctness-critical part): Yandex
  * defaults to **22050 Hz LINEAR16 PCM wrapped in a WAV header**. The entire
@@ -163,22 +170,31 @@ class YandexSpeechTts(
     }
 
     /**
-     * Splits the contract's single voice string into Yandex's two hints. See
-     * the class KDoc for the `"<voice>:<role>"` convention.
-     */
-    /**
-     * Unpacks the `"<voice>:<role>"` convention ([YandexVoiceSpec], the single
-     * definition of the packing) into the `Hints` list the request needs. A
-     * role-less spec produces one hint; a spec with a role produces two, since
-     * `Hints` is a scalar `oneof` and cannot carry both fields.
+     * Unpacks the `"<voice>[:<role>][@<speed>]"` convention ([YandexVoiceSpec],
+     * the single definition of the packing) into the `Hints` list the request
+     * needs. `Hints` is a scalar `oneof`, so each field is its own entry:
+     * the voice hint is always present; the role hint only when the voice
+     * DOCUMENTS that role (fail-closed); the speed hint only when it is set and
+     * differs from the service default.
      */
     private fun hintsFor(voice: String): List<Hints> {
-        val (name, role) = YandexVoiceSpec.split(voice)
-        val voiceHint = Hints.newBuilder().setVoice(name).build()
-        return if (role == null) {
-            listOf(voiceHint)
-        } else {
-            listOf(voiceHint, Hints.newBuilder().setRole(role).build())
+        val split = YandexVoiceSpec.split(voice)
+        val hints = ArrayList<Hints>(3)
+        hints += Hints.newBuilder().setVoice(split.voice).build()
+
+        val role = VoiceCatalog.validRoleFor(split.voice, split.role)
+        if (role != null) {
+            hints += Hints.newBuilder().setRole(role).build()
+        } else if (split.role != null) {
+            // Content-free: never log the voice or the role text. A stale pref
+            // is dropped rather than sent as a hard service error.
+            Timber.w("Yandex TTS: dropped an undocumented role for the selected voice")
         }
+
+        val speed = split.speed
+        if (speed != null && speed != YandexVoiceSpec.DEFAULT_SPEED) {
+            hints += Hints.newBuilder().setSpeed(speed.toDouble()).build()
+        }
+        return hints
     }
 }

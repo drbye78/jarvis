@@ -5,6 +5,8 @@ import com.jarvis.assistant.config.JarvisConfig
 import com.jarvis.assistant.speech.tts.VoiceCatalog
 import com.jarvis.assistant.speech.tts.YandexVoiceSpec
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -129,16 +131,71 @@ class VoiceCatalogTest {
     }
 
     @Test
-    fun `a voice with no documented roles falls back to the whole vocabulary`() {
-        // "undocumented" is not "unsupported": the role field stays free text,
-        // so the menu must not be empty.
-        assertEquals(VoiceCatalog.YANDEX_ROLES, VoiceCatalog.yandexRolesFor("filipp"))
-        assertEquals(VoiceCatalog.YANDEX_ROLES, VoiceCatalog.yandexRolesFor("madi_ru"))
+    fun `a voice with no documented roles offers none (fail-closed)`() {
+        // An undocumented role is a HARD service error, so the catalog must not
+        // widen a roleless voice to the union.
+        assertTrue(VoiceCatalog.yandexRolesFor("filipp").isEmpty())
+        assertTrue(VoiceCatalog.yandexRolesFor("madi_ru").isEmpty())
     }
 
     @Test
-    fun `an unknown voice id falls back to the whole vocabulary`() {
-        assertEquals(VoiceCatalog.YANDEX_ROLES, VoiceCatalog.yandexRolesFor("not-a-voice"))
-        assertEquals(VoiceCatalog.YANDEX_ROLES, VoiceCatalog.yandexRolesFor(""))
+    fun `an unknown voice id offers no roles (fail-closed)`() {
+        assertTrue(VoiceCatalog.yandexRolesFor("not-a-voice").isEmpty())
+        assertTrue(VoiceCatalog.yandexRolesFor("").isEmpty())
+    }
+
+    @Test
+    fun `the russian voices carry their documented roles`() {
+        assertEquals(
+            listOf("neutral", "strict", "whisper"),
+            VoiceCatalog.yandexRolesFor("saule_ru"),
+        )
+        assertEquals(
+            listOf("neutral", "strict", "friendly"),
+            VoiceCatalog.yandexRolesFor("zamira_ru"),
+        )
+        assertEquals(
+            listOf("neutral", "strict", "friendly"),
+            VoiceCatalog.yandexRolesFor("zhanar_ru"),
+        )
+        assertEquals(
+            listOf("neutral", "strict", "friendly", "whisper"),
+            VoiceCatalog.yandexRolesFor("yulduz_ru"),
+        )
+    }
+
+    @Test
+    fun `validRoleFor accepts only a role the voice documents`() {
+        assertEquals("whisper", VoiceCatalog.validRoleFor("marina", "whisper"))
+        assertEquals("whisper", VoiceCatalog.validRoleFor("marina", "  whisper  "))
+        // `good` is documented for alena but NOT for marina — the exact
+        // voice-dependent case the policy exists for.
+        assertEquals("good", VoiceCatalog.validRoleFor("alena", "good"))
+        assertNull(VoiceCatalog.validRoleFor("marina", "good"))
+        assertNull(VoiceCatalog.validRoleFor("filipp", "good"))
+        assertNull(VoiceCatalog.validRoleFor("madi_ru", "good"))
+        assertNull(VoiceCatalog.validRoleFor("not-a-voice", "good"))
+        assertNull(VoiceCatalog.validRoleFor("marina", null))
+        assertNull(VoiceCatalog.validRoleFor("marina", ""))
+        assertNull(VoiceCatalog.validRoleFor("marina", "   "))
+    }
+
+    @Test
+    fun `capabilities describe what each backend can express`() {
+        // An exhaustive `when` with no `else`: a new backend fails compilation
+        // here until this test declares its capabilities.
+        for (backend in SpeechBackend.entries) {
+            val caps = VoiceCatalog.capabilitiesFor(backend)
+            when (backend) {
+                SpeechBackend.YANDEX -> {
+                    assertTrue("Yandex supports roles", caps.roles)
+                    assertTrue("Yandex supports speed", caps.speed)
+                }
+                SpeechBackend.SBER -> {
+                    assertFalse("Sber has no role concept", caps.roles)
+                    assertFalse("Sber speed is SSML-only", caps.speed)
+                }
+            }
+        }
     }
 }

@@ -1,11 +1,14 @@
 package com.jarvis.assistant.settings.controller
 
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.ArrayAdapter
 import android.widget.ImageView
 import android.widget.RadioGroup
 import android.widget.TextView
+import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -15,6 +18,7 @@ import com.jarvis.assistant.settings.BaseSettingsController
 import com.jarvis.assistant.settings.PendingChanges
 import com.jarvis.assistant.settings.SettingsCallbacks
 import com.jarvis.assistant.settings.SettingsHost
+import com.jarvis.assistant.settings.SpeechControls
 import com.jarvis.assistant.speech.SpeechBackend
 import com.jarvis.assistant.speech.tts.VoiceCatalog
 import com.jarvis.assistant.speech.tts.YandexVoiceSpec
@@ -36,12 +40,20 @@ import kotlinx.coroutines.launch
  * The backend is SEALED at graph construction, so a change is persisted through
  * [SettingsCallbacks.onSpeechBackendSelected] and marked pending
  * (ApplyPolicy.SERVICE_RESTART) — the host banner reports the restart need.
- * The voice is read PER SENTENCE by the running graph, so a voice/role change
- * is LIVE.
+ * The voice/role/speed are read PER SENTENCE by the running graph, so they are
+ * LIVE.
  *
- * [YandexVoiceSpec] is the single definition of the in-band `"<voice>:<role>"`
- * packing; this controller never hand-rolls it (encode/decode drift fails
- * silently).
+ * CAPABILITY-DRIVEN: the ROLE and SPEED controls are gated by
+ * [VoiceCatalog.capabilitiesFor] for the active backend, never by an identity
+ * check, so a backend that cannot express a knob never shows it (Sber exposes
+ * neither). The ROLE is additionally FAIL-CLOSED and voice-dependent: it is a
+ * CLOSED dropdown of the roles the selected voice DOCUMENTS, hidden when the
+ * voice documents none, and a role stored under a different voice is CLEARED
+ * rather than sent as a pair the service rejects.
+ *
+ * [YandexVoiceSpec] is the single definition of the in-band
+ * `"<voice>[:<role>][@<speed>]"` packing; this controller never hand-rolls it
+ * (encode/decode drift fails silently).
  */
 class SpeechSettingsController(
     callbacks: SettingsCallbacks,
@@ -56,12 +68,19 @@ class SpeechSettingsController(
     private lateinit var voiceCustomId: TextInputEditText
     private lateinit var yandexVoiceBlock: View
     private lateinit var yandexVoice: MaterialAutoCompleteTextView
+    private lateinit var yandexRoleLayout: View
     private lateinit var yandexRole: MaterialAutoCompleteTextView
+    private lateinit var yandexSpeedBlock: View
+    private lateinit var yandexSpeedBar: Slider
+    private lateinit var yandexSpeedValue: TextView
     private lateinit var advancedToggle: View
     private lateinit var advancedLabel: TextView
     private lateinit var advancedChevron: ImageView
     private lateinit var advanced: View
     private lateinit var roleAdapter: ArrayAdapter<String>
+
+    /** True while the role field is seeded programmatically, to skip the watcher. */
+    private var suppressRoleCommit = false
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -73,18 +92,24 @@ class SpeechSettingsController(
         voiceCustomId = root.findViewById(R.id.voiceCustomId)
         yandexVoiceBlock = root.findViewById(R.id.yandexVoiceBlock)
         yandexVoice = root.findViewById(R.id.yandexVoice)
+        yandexRoleLayout = root.findViewById(R.id.yandexRoleLayout)
         yandexRole = root.findViewById(R.id.yandexRole)
+        yandexSpeedBlock = root.findViewById(R.id.yandexSpeedBlock)
+        yandexSpeedBar = root.findViewById(R.id.yandexSpeedBar)
+        yandexSpeedValue = root.findViewById(R.id.yandexSpeedValue)
         advancedToggle = root.findViewById(R.id.settingsAdvancedToggle)
         advancedLabel = root.findViewById(R.id.settingsAdvancedLabel)
         advancedChevron = root.findViewById(R.id.settingsAdvancedChevron)
         advanced = root.findViewById(R.id.settingsSpeechAdvanced)
 
+        // Adapters + listeners first: the sync pass below seeds the role dropdown
+        // and the speed slider, so both widgets must already exist.
+        setupYandexVoiceControls(root)
         // Both blocks are populated unconditionally, including the hidden one:
         // visibility only toggles, so switching backend shows that backend's
         // stored values instead of an empty field.
         syncBackendFromPref()
         syncVoicesFromPref()
-        setupYandexVoiceControls(root)
 
         speechBackendGroup.setOnCheckedChangeListener { _, checkedId ->
             val backend = if (checkedId == R.id.speechBackendYandex) {
@@ -161,20 +186,36 @@ class SpeechSettingsController(
         val isYandex = backend == SpeechBackend.YANDEX
         sberVoiceBlock.visibility = if (isYandex) View.GONE else View.VISIBLE
         yandexVoiceBlock.visibility = if (isYandex) View.VISIBLE else View.GONE
-        applyAdvancedVisibility(isYandex)
+        applyControlVisibility(backend)
     }
 
     /**
-     * The screen's one advanced entry is `yandexTtsRole`, so the disclosure
-     * exists only on the Yandex backend. On Sber it hides and the container
-     * collapses, mirroring the host's "disclosure only for essential+advanced"
-     * rule.
+     * Gates the ROLE and SPEED controls on the active backend's DECLARED
+     * capabilities — not on its identity — and, for the role, on the selected
+     * voice's documented roles (fail-closed). The disclosure then reports the
+     * number of entries actually visible.
      */
-    private fun applyAdvancedVisibility(isYandex: Boolean) {
-        if (isYandex) {
+    private fun applyControlVisibility(backend: SpeechBackend) {
+        val capabilities = VoiceCatalog.capabilitiesFor(backend)
+        val documentedRoles = VoiceCatalog.yandexRolesFor(activeYandexVoice())
+        val showRole = SpeechControls.showRole(capabilities, documentedRoles)
+        yandexRoleLayout.visibility = if (showRole) View.VISIBLE else View.GONE
+        val showSpeed = SpeechControls.showSpeed(capabilities)
+        yandexSpeedBlock.visibility = if (showSpeed) View.VISIBLE else View.GONE
+        applyAdvancedVisibility(SpeechControls.advancedEntryCount(capabilities, documentedRoles))
+        syncSpeedControl()
+    }
+
+    /**
+     * Reveals the «Дополнительно» disclosure only when [entryCount] is non-zero;
+     * on a backend that supports none of the advanced entries it hides the row AND
+     * collapses the container, mirroring the host's disclosure rule.
+     */
+    private fun applyAdvancedVisibility(entryCount: Int) {
+        if (entryCount > 0) {
             advancedToggle.visibility = View.VISIBLE
             advancedLabel.text =
-                advancedLabel.context.getString(R.string.settings_advanced_show, ADVANCED_COUNT_YANDEX)
+                advancedLabel.context.getString(R.string.settings_advanced_show, entryCount)
         } else {
             advancedToggle.visibility = View.GONE
             advanced.visibility = View.GONE
@@ -194,15 +235,20 @@ class SpeechSettingsController(
             voiceCustomId.setText(savedVoice)
             voiceCustomInput.visibility = View.VISIBLE
         }
-        yandexVoice.setText(prefs.yandexTtsVoice.ifBlank { YandexVoiceSpec.DEFAULT_VOICE }, false)
-        yandexRole.setText(prefs.yandexTtsRole, false)
+        val yandexVoiceId = prefs.yandexTtsVoice.ifBlank { YandexVoiceSpec.DEFAULT_VOICE }
+        yandexVoice.setText(yandexVoiceId, false)
+        refreshRoleSuggestions(yandexVoiceId)
+        // Fail-closed on resume too: a role persisted under an older voice must
+        // not survive into a pairing the service would reject.
+        clearInvalidRoleFor(yandexVoiceId)
+        setRoleText(prefs.yandexTtsRole)
+        applyControlVisibility(prefs.speechBackend)
     }
 
     /**
-     * Yandex voice + role controls. The voice list is a closed, documented set,
-     * so it is a real dropdown; the ROLE is an editable combo whose suggestions
-     * follow the selected voice. Both commit on IME-done / focus loss for the
-     * same per-sentence reason as the Sber custom ID.
+     * Yandex voice + role + speed controls. The voice list is a closed, documented
+     * set, so it is a real dropdown; the ROLE is a CLOSED dropdown of only the
+     * roles the selected voice documents; the SPEED is a slider persisted LIVE.
      */
     private fun setupYandexVoiceControls(root: View) {
         val voiceAdapter = ArrayAdapter(
@@ -217,7 +263,7 @@ class SpeechSettingsController(
 
         roleAdapter = ArrayAdapter(root.context, android.R.layout.simple_list_item_1)
         yandexRole.setAdapter(roleAdapter)
-        refreshRoleSuggestions(yandexVoice.text.toString())
+        refreshRoleSuggestions(activeYandexVoice())
 
         yandexVoice.setOnEditorActionListener { _, action, _ ->
             if (action == EditorInfo.IME_ACTION_DONE) {
@@ -229,35 +275,77 @@ class SpeechSettingsController(
         }
         yandexVoice.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) commitYandexVoice() }
         yandexVoice.setOnItemClickListener { _, _, _, _ -> commitYandexVoice() }
-        yandexRole.setOnEditorActionListener { _, action, _ ->
-            if (action == EditorInfo.IME_ACTION_DONE) {
-                commitYandexRole()
-                true
-            } else {
-                false
+
+        // The role field is non-editable (`inputType=none`), so a text change is
+        // either a dropdown pick or a clear — commit both. An empty text means
+        // "no role" (the service default); no sentinel label is ever injected.
+        yandexRole.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+
+            override fun afterTextChanged(s: Editable?) {
+                if (!suppressRoleCommit) commitYandexRole()
             }
+        })
+
+        // The speed is LIVE (read per sentence by the graph); persist on every
+        // user-driven change and keep the value label in sync.
+        yandexSpeedBar.addOnChangeListener { _, value, fromUser ->
+            updateSpeedLabel(value)
+            if (fromUser) prefs.yandexTtsSpeed = value
         }
-        yandexRole.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) commitYandexRole() }
-        yandexRole.setOnItemClickListener { _, _, _, _ -> commitYandexRole() }
     }
 
-    /** Persists the Yandex speaker (voice only) and refreshes role suggestions. */
+    /** Persists the Yandex speaker and refreshes/revalidates the role controls. */
     private fun commitYandexVoice() {
         val id = yandexVoice.text.toString().trim()
-        if (id.isNotEmpty()) {
-            prefs.yandexTtsVoice = id
-            refreshRoleSuggestions(id)
-        }
+        if (id.isEmpty()) return
+        prefs.yandexTtsVoice = id
+        refreshRoleSuggestions(id)
+        clearInvalidRoleFor(id)
+        setRoleText(prefs.yandexTtsRole)
+        applyControlVisibility(prefs.speechBackend)
     }
 
     private fun commitYandexRole() {
         prefs.yandexTtsRole = yandexRole.text.toString().trim()
     }
 
-    /** Role suggestions follow the selected voice (undocumented → full set). */
+    /**
+     * Clears the stored role when the (new) [voiceId] does not document it, so a
+     * stale role can never travel packed with a voice that rejects it. A valid
+     * role is left untouched.
+     */
+    private fun clearInvalidRoleFor(voiceId: String) {
+        val stored = prefs.yandexTtsRole
+        val valid = VoiceCatalog.validRoleFor(voiceId, stored).orEmpty()
+        if (stored.trim() == valid) return
+        prefs.yandexTtsRole = valid
+    }
+
+    /** Seeds the role field without letting the watcher re-persist the same value. */
+    private fun setRoleText(role: String) {
+        suppressRoleCommit = true
+        yandexRole.setText(role, false)
+        suppressRoleCommit = false
+    }
+
+    /** Role suggestions follow the selected voice (documented roles only, fail-closed). */
     private fun refreshRoleSuggestions(voiceId: String) {
         roleAdapter.clear()
         roleAdapter.addAll(VoiceCatalog.yandexRolesFor(voiceId))
+    }
+
+    /** Seeds the speed slider from the stored rate, snapped to the UI grid. */
+    private fun syncSpeedControl() {
+        val speed = SpeechControls.snapSpeed(prefs.yandexTtsSpeed)
+        yandexSpeedBar.value = speed
+        updateSpeedLabel(speed)
+    }
+
+    private fun updateSpeedLabel(speed: Float) {
+        yandexSpeedValue.text = yandexSpeedValue.context.getString(R.string.yandex_speed_value, speed)
     }
 
     /** Current Sber voice: the preset radio wins, else the custom field. */
@@ -272,25 +360,29 @@ class SpeechSettingsController(
         if (id.isNotEmpty()) prefs.ttsVoice = id
     }
 
+    /** The Yandex speaker currently shown/resolved, falling back to the stored/default. */
+    private fun activeYandexVoice(): String {
+        val fromUi = yandexVoice.text.toString().trim()
+        return fromUi.ifBlank { prefs.yandexTtsVoice.ifBlank { YandexVoiceSpec.DEFAULT_VOICE } }
+    }
+
     /**
      * The voice handed to «Проверить голос» for the ACTIVE backend. The probe
      * synthesizes through the running graph, whose TTS client is the one sealed
      * at construction, so previewing the other backend's voice would fail
-     * confusingly. For Yandex the pair travels packed by [YandexVoiceSpec] —
-     * the SINGLE encode definition — mirroring `AppGraph.voiceSource`.
+     * confusingly. For Yandex the trio travels packed by [YandexVoiceSpec] — the
+     * SINGLE encode definition — with the role validated against the catalog
+     * (fail-closed), mirroring `AppGraph.voiceSource`.
      */
     private fun selectedVoiceForActiveBackend(): String = when (prefs.speechBackend) {
         SpeechBackend.SBER -> selectedSberVoice()
-        SpeechBackend.YANDEX -> YandexVoiceSpec.join(
-            voice = yandexVoice.text.toString().ifBlank {
-                prefs.yandexTtsVoice.ifBlank { YandexVoiceSpec.DEFAULT_VOICE }
-            },
-            role = yandexRole.text.toString(),
-        )
-    }
-
-    private companion object {
-        /** The screen's advanced-entry count (`yandexTtsRole`) for the disclosure. */
-        const val ADVANCED_COUNT_YANDEX = 1
+        SpeechBackend.YANDEX -> {
+            val voice = activeYandexVoice()
+            YandexVoiceSpec.join(
+                voice = voice,
+                role = VoiceCatalog.validRoleFor(voice, prefs.yandexTtsRole),
+                speed = prefs.yandexTtsSpeed,
+            )
+        }
     }
 }

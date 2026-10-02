@@ -328,7 +328,9 @@
     <string name="voice_hint">Mila is the verified default voice. Other Salute voice pool IDs can be entered manually and previewed with the button. Changes apply to the next spoken sentence — no service restart.</string>
     <string name="yandex_voice_label">Yandex voice</string>
     <string name="yandex_role_label">Role (optional)</string>
-    <string name="yandex_voice_hint">The Yandex SpeechKit v3 voice list is fixed. The role changes the speaking manner; not every voice supports every role, and the service rejects an unsupported pair when you test it. Changes apply to the next spoken sentence — no service restart.</string>
+    <string name="yandex_speed_label">Speaking rate</string>
+    <string name="yandex_speed_value">%1$.1fx</string>
+    <string name="yandex_voice_hint">The Yandex SpeechKit v3 voice list is fixed. Role and speed are Yandex-only and apply to the next spoken sentence — no service restart. The role field offers only the roles the selected voice supports; clear it to send no role.</string>
     <string name="voice_service_not_running">Start the assistant to test the voice</string>
     <string name="phrase_voice_sample">Hi! I\'m Jarvis. This is how my voice sounds.</string>
 

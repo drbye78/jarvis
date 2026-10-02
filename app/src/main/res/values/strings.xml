@@ -327,7 +327,9 @@
     <string name="voice_hint">Мила — проверенный голос по умолчанию. Дополнительные идентификаторы голосов из пула Salute можно ввести вручную и проверить кнопкой. Смена применяется к следующей фразе — без перезапуска сервиса.</string>
     <string name="yandex_voice_label">Голос Yandex</string>
     <string name="yandex_role_label">Роль (необязательно)</string>
-    <string name="yandex_voice_hint">Список голосов Yandex SpeechKit v3 фиксирован. Роль меняет манеру речи; не все голоса поддерживают все роли — неподходящую комбинацию сервис отклонит при проверке. Смена применяется к следующей фразе — без перезапуска сервиса.</string>
+    <string name="yandex_speed_label">Скорость речи</string>
+    <string name="yandex_speed_value">%1$.1fx</string>
+    <string name="yandex_voice_hint">Список голосов Yandex SpeechKit v3 фиксирован. Роль и скорость доступны только для Yandex и применяются к следующей фразе — без перезапуска сервиса. Поле роли показывает только роли, которые поддерживает выбранный голос; очистите его, чтобы не задавать роль.</string>
     <string name="voice_service_not_running">Запустите ассистента, чтобы проверить голос</string>
     <string name="phrase_voice_sample">Привет! Я Джарвис. Так будет звучать мой голос.</string>
 

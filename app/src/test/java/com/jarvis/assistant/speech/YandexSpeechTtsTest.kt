@@ -160,14 +160,86 @@ class YandexSpeechTtsTest {
     @Test
     fun `voice colon role yields both hints`(): Unit = runBlocking {
         val tts = newTts()
-        val flow = tts.synthesizeStream("речь", voice = "marina:good")
+        // `whisper` is documented for marina, so it survives the fail-closed
+        // validation and produces the role hint.
+        val flow = tts.synthesizeStream("речь", voice = "marina:whisper")
 
         val chunksJob = async { withTimeout(15_000) { flow.toList() } }
         val request = fakeTts.awaitRequest()
 
         assertEquals(2, request.hintsCount)
         assertEquals("marina", request.getHints(0).voice)
-        assertEquals("good", request.getHints(1).role)
+        assertEquals("whisper", request.getHints(1).role)
+
+        fakeTts.completeStream()
+        chunksJob.await()
+    }
+
+    @Test
+    fun `voice role and speed yield three hints`(): Unit = runBlocking {
+        val tts = newTts()
+        val flow = tts.synthesizeStream("речь", voice = "marina:whisper@1.5")
+
+        val chunksJob = async { withTimeout(15_000) { flow.toList() } }
+        val request = fakeTts.awaitRequest()
+
+        assertEquals(3, request.hintsCount)
+        assertEquals("marina", request.getHints(0).voice)
+        assertEquals("whisper", request.getHints(1).role)
+        assertEquals(1.5, request.getHints(2).speed, 0.0)
+
+        fakeTts.completeStream()
+        chunksJob.await()
+    }
+
+    @Test
+    fun `speed without a role still yields its own hint`(): Unit = runBlocking {
+        val tts = newTts()
+        val flow = tts.synthesizeStream("речь", voice = "marina@0.75")
+
+        val chunksJob = async { withTimeout(15_000) { flow.toList() } }
+        val request = fakeTts.awaitRequest()
+
+        assertEquals(2, request.hintsCount)
+        assertEquals("marina", request.getHints(0).voice)
+        assertEquals(0.75, request.getHints(1).speed, 0.0)
+
+        fakeTts.completeStream()
+        chunksJob.await()
+    }
+
+    @Test
+    fun `an explicit default speed emits no speed hint`(): Unit = runBlocking {
+        val tts = newTts()
+        val flow = tts.synthesizeStream("речь", voice = "marina@1.0")
+
+        val chunksJob = async { withTimeout(15_000) { flow.toList() } }
+        val request = fakeTts.awaitRequest()
+
+        assertEquals(1, request.hintsCount)
+        assertEquals("marina", request.getHints(0).voice)
+
+        fakeTts.completeStream()
+        chunksJob.await()
+    }
+
+    @Test
+    fun `an undocumented role for the voice is dropped`(): Unit = runBlocking {
+        val tts = newTts()
+        // FALSIFICATION: `good` is not documented for `marina`; the real service
+        // rejects the pair as a hard error. The client must strip it, so NO hint
+        // may carry a role.
+        val flow = tts.synthesizeStream("речь", voice = "marina:good")
+
+        val chunksJob = async { withTimeout(15_000) { flow.toList() } }
+        val request = fakeTts.awaitRequest()
+
+        assertEquals(1, request.hintsCount)
+        assertEquals("marina", request.getHints(0).voice)
+        assertTrue(
+            "no role hint may survive an undocumented voice/role pair",
+            request.hintsList.none { it.hasRole() },
+        )
 
         fakeTts.completeStream()
         chunksJob.await()
