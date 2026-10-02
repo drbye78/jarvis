@@ -45,7 +45,9 @@
     <string name="chat_clear_confirm_text">The chat history will be deleted from the device. Memories and facts are not affected. This cannot be undone.</string>
     <string name="chat_clear_confirm">Clear</string>
     <string name="chat_clear_cancel">Cancel</string>
-    <string name="chat_clear_done">Conversation cleared</string>
+
+    <!-- Home: primary control -->
+    <string name="resume_listening">Resume listening</string>
 
     <!-- Home: redesign -->
     <string name="wake_hint">Say “Jarvis” and a command — for example, “Jarvis, play music”</string>

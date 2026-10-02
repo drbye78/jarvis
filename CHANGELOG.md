@@ -6,6 +6,22 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Changed — follow-ups: resume listening, softer geo degrade, quieter clear-chat
+- **A «Возобновить прослушивание» affordance.** Stopping the assistant via the
+  primary control sets `userStopped=true`, which suppresses the watchdog revive —
+  and only an explicit start clears it, so a stopped/run-deaf assistant could not
+  be brought back. `ui/PrimaryControl` now resolves the control state with
+  `userStopped` FIRST; when set, the button reads «Возобновить прослушивание» and
+  calls `explicitStart` (which clears the flag). No second stop path was added and
+  the watchdog policy is untouched.
+- **`near_user`/`origin_user` now soft-degrade instead of failing closed.**
+  `findPlace(near_user=true)` / `getRoute(origin_user=true)` prefer the device fix;
+  when it is denied/unavailable they fall back to the configured location (the same
+  path as the default). `getCurrentLocation` stays fail-closed — an explicit «где я»
+  is never answered with a made-up place.
+- **Clear-chat no longer shows a success Toast** (the confirmation dialog and the
+  delete remain); the `chat_clear_done` key was dropped from both locales.
+
 ### Fixed — device location for «где я»; barge-in; self-speech replay; music control; app aliases; assistant name; clear chat
 Owner-reported batch, each verified against the on-device log and DB.
 - **A device fix is now available for explicit position requests.** There was NO

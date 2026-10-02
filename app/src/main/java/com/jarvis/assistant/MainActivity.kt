@@ -6,7 +6,6 @@ import android.os.SystemClock
 import android.view.View
 import android.widget.ImageButton
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -30,6 +29,7 @@ import com.jarvis.assistant.ui.AudioLevel
 import com.jarvis.assistant.ui.AudioLevelMeter
 import com.jarvis.assistant.ui.EdgeToEdge
 import com.jarvis.assistant.ui.Motion
+import com.jarvis.assistant.ui.PrimaryControl
 import com.jarvis.assistant.ui.SettingsMapping
 import com.jarvis.assistant.ui.StateLabel
 import com.jarvis.assistant.ui.TranscriptAdapter
@@ -67,6 +67,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var appTitle: TextView
     private lateinit var clearChatButton: ImageButton
 
+    /** Plain prefs built once in [onCreate]; [AppPrefs.userStopped] is read
+     *  live by the primary control so an explicit stop can be resumed. */
+    private lateinit var appPrefs: com.jarvis.assistant.util.AppPrefs
+
     /**
      * The custom Sherpa wake word, when one is active (null = the bundled
      * «Джарвис»). Set by [applyWakeHint] on create/resume so every name-bearing
@@ -84,8 +88,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val prefs = com.jarvis.assistant.util.AppPrefs(this)
-        if (!prefs.onboarded) {
+        appPrefs = com.jarvis.assistant.util.AppPrefs(this)
+        if (!appPrefs.onboarded) {
             startActivity(Intent(this, OnboardingActivity::class.java))
             finish()
             return
@@ -149,8 +153,15 @@ class MainActivity : AppCompatActivity() {
         clearChatButton.setOnClickListener { confirmClearChat() }
 
         toggleButton.setOnClickListener {
-            when {
-                GraphHolder.isRunning -> {
+            when (primaryControlState()) {
+                // A user stop writes `userStopped=true`, which suppresses the
+                // watchdog revive — so the ONLY way back to listening is an
+                // explicit start (it clears the flag and re-promotes the FGS).
+                // RESUME is resolved FIRST (see PrimaryControl), because a
+                // running-but-deaf assistant would otherwise route to
+                // explicitStop and the user could never resume.
+                PrimaryControl.State.RESUMED -> JarvisForegroundService.explicitStart(this)
+                PrimaryControl.State.STOPPABLE -> {
                     JarvisForegroundService.explicitStop(this)
                     // The explicit stop clears the bound state; render through
                     // the single StateLabel path (null -> "Assistant stopped")
@@ -163,9 +174,10 @@ class MainActivity : AppCompatActivity() {
                 // explicitStop — it writes prefs.userStopped=true, which would
                 // silently suppress the watchdog revive for a service that is
                 // not even running the pipeline (stop-on-dead fix).
-                GraphHolder.service == null -> JarvisForegroundService.explicitStart(this)
+                PrimaryControl.State.STARTABLE -> JarvisForegroundService.explicitStart(this)
                 // Bootstrapping: no-op — the disabled toggle label already
                 // says the assistant is starting up.
+                PrimaryControl.State.BOOTSTRAPPING -> Unit
             }
             refreshServiceState()
         }
@@ -340,8 +352,9 @@ class MainActivity : AppCompatActivity() {
      * (both the UI transcript Flow and the LLM history read it, so one delete
      * keeps them consistent and the UI auto-empties).
      *
-     * Honest failure: a thrown delete logs (content-free) and shows NO success
-     * toast — the user is never told a wipe happened when it did not.
+     * Failure is silent: a thrown delete logs (content-free) and the UI simply
+     * keeps the rows — the wipe is obvious from the empty transcript, so no
+     * toast is needed either way.
      */
     private fun clearChatHistory() {
         val graph = GraphHolder.graph
@@ -354,11 +367,6 @@ class MainActivity : AppCompatActivity() {
                     // singleton the graph uses — the one existing DELETE path.
                     AppDatabase.getInstance(this@MainActivity).messageDao().clear()
                 }
-                Toast.makeText(
-                    this@MainActivity,
-                    R.string.chat_clear_done,
-                    Toast.LENGTH_SHORT,
-                ).show()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -368,9 +376,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** The single source of truth for the primary control's presentation/action. */
+    private fun primaryControlState(): PrimaryControl.State = PrimaryControl.state(
+        userStopped = appPrefs.userStopped,
+        running = GraphHolder.isRunning,
+        serviceAttached = GraphHolder.service != null,
+    )
+
     private fun refreshServiceState() {
-        when {
-            GraphHolder.isRunning -> {
+        when (primaryControlState()) {
+            // Explicitly stopped: the assistant is suppressed from auto-revive,
+            // so the only honest label is "resume listening" (an explicit start
+            // clears the flag). This MUST precede the running branch: a
+            // stopped-but-still-bound graph would otherwise read «Остановить»
+            // and leave no way back to listening.
+            PrimaryControl.State.RESUMED -> {
+                toggleButton.isEnabled = true
+                toggleButton.setText(R.string.resume_listening)
+                toggleButton.setIconResource(R.drawable.ic_power)
+            }
+            PrimaryControl.State.STOPPABLE -> {
                 toggleButton.isEnabled = true
                 toggleButton.setText(R.string.stop)
                 toggleButton.setIconResource(R.drawable.ic_power)
@@ -379,12 +404,12 @@ class MainActivity : AppCompatActivity() {
             // progress (or the last attempt failed and the watchdog is
             // retrying) — neither «Запустить» nor «Остановить» is truthful
             // there; show the bootstrapping label, disabled (graph-ready fix).
-            GraphHolder.service != null -> {
+            PrimaryControl.State.BOOTSTRAPPING -> {
                 toggleButton.isEnabled = false
                 toggleButton.setText(R.string.state_bootstrapping)
                 toggleButton.setIconResource(R.drawable.ic_power)
             }
-            else -> {
+            PrimaryControl.State.STARTABLE -> {
                 toggleButton.isEnabled = true
                 toggleButton.setText(R.string.start)
                 toggleButton.setIconResource(R.drawable.ic_power)

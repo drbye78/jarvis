@@ -46,7 +46,9 @@
     <string name="chat_clear_confirm_text">История переписки будет удалена с устройства. Воспоминания и факты не затрагиваются. Отменить это нельзя.</string>
     <string name="chat_clear_confirm">Очистить</string>
     <string name="chat_clear_cancel">Отмена</string>
-    <string name="chat_clear_done">Переписка очищена</string>
+
+    <!-- Home: primary control -->
+    <string name="resume_listening">Возобновить прослушивание</string>
 
     <!-- Home: redesign -->
     <string name="wake_hint">Скажите «Джарвис» и команду — например, «Джарвис, включи музыку»</string>

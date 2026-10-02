@@ -153,20 +153,49 @@ class GeoToolsTest {
     }
 
     @Test
-    fun `findPlace near_user with no device fix fails honestly`(): Unit = runBlocking {
-        // The user explicitly asked for their OWN position; searching
-        // unconstrained would answer «рядом» with places far away.
-        val client = FakeGeoClient(onSearch = { _, _, _ -> GeoResult.Ok(listOf(place("Аптека"))) })
+    fun `findPlace near_user falls back to the configured city when the device fix is denied`(): Unit = runBlocking {
+        // The user asked for their OWN position, but there is no permission: the
+        // configured city is an honest fallback and keeps «рядом» answerable.
+        val client = FakeGeoClient(onSearch = { query, _, _ ->
+            if (query == "Сочи") {
+                GeoResult.Ok(listOf(place("Сочи", 55.75, 37.61)))
+            } else {
+                GeoResult.Ok(listOf(place("Аптека")))
+            }
+        })
         val tool = GeoPlaceTool(
             client,
-            resolver(LocationOutcome.PermissionDenied, deviceOutcome = LocationOutcome.PermissionDenied),
+            resolver(
+                LocationOutcome.Resolved(ResolvedLocation.Place("Сочи")),
+                deviceOutcome = LocationOutcome.PermissionDenied,
+            ),
             messages,
         )
 
         val out = tool.execute("""{"query":"аптека","near_user":true}""")
 
-        assertEquals(JsonOut.error(messages.locationDenied), out)
-        assertTrue("no search may run without the requested position", client.searchCalls.isEmpty())
+        assertFalse(out.contains("error"))
+        // The device fix failed, so the configured city's point biases the search.
+        assertEquals("Сочи", client.searchCalls.first().first)
+        assertEquals(GeoPoint(55.75, 37.61), client.searchCalls.last().second)
+    }
+
+    @Test
+    fun `findPlace near_user falls back to the configured city when the device reports no fix`(): Unit = runBlocking {
+        val client = FakeGeoClient(onSearch = { _, _, _ -> GeoResult.Ok(listOf(place("Аптека"))) })
+        val tool = GeoPlaceTool(
+            client,
+            resolver(
+                LocationOutcome.Resolved(ResolvedLocation.Coords(59.94, 30.31, "Санкт-Петербург")),
+                deviceOutcome = LocationOutcome.Unavailable,
+            ),
+            messages,
+        )
+
+        val out = tool.execute("""{"query":"аптека","near_user":true}""")
+
+        assertFalse(out.contains("error"))
+        assertEquals(GeoPoint(59.94, 30.31), client.searchCalls.last().second)
     }
 
     // ---- getRoute -------------------------------------------------------
@@ -227,6 +256,53 @@ class GeoToolsTest {
         tool.execute("""{"destination":"Шереметьево","origin_user":true}""")
 
         assertEquals(GeoPoint(55.0, 37.0), client.routeCalls.single().origin)
+    }
+
+    @Test
+    fun `getRoute origin_user falls back to the configured location when the device fix is unavailable`(): Unit = runBlocking {
+        val client = FakeGeoClient(
+            onSearch = { _, _, _ -> GeoResult.Ok(listOf(place("Шереметьево"))) },
+            onRoute = { _, _, _, _ -> GeoResult.Ok(sampleRoutes()) },
+        )
+        val tool = GeoRouteTool(
+            client,
+            resolver(
+                LocationOutcome.Resolved(ResolvedLocation.Coords(59.94, 30.31, "текущее местоположение")),
+                deviceOutcome = LocationOutcome.Unavailable,
+            ),
+            messages,
+        )
+
+        tool.execute("""{"destination":"Шереметьево","origin_user":true}""")
+
+        // The device fix failed, so the route starts from the configured location.
+        assertEquals(GeoPoint(59.94, 30.31), client.routeCalls.single().origin)
+    }
+
+    @Test
+    fun `getRoute explicit origin wins over origin_user`(): Unit = runBlocking {
+        val client = FakeGeoClient(
+            onSearch = { query, _, _ ->
+                if (query == "Тверь") {
+                    GeoResult.Ok(listOf(place("Тверь", 56.86, 35.91)))
+                } else {
+                    GeoResult.Ok(listOf(place("Шереметьево")))
+                }
+            },
+            onRoute = { _, _, _, _ -> GeoResult.Ok(sampleRoutes()) },
+        )
+        val tool = GeoRouteTool(
+            client,
+            resolver(
+                LocationOutcome.Resolved(ResolvedLocation.Coords(59.94, 30.31, "label")),
+                deviceOutcome = coordsFixed,
+            ),
+            messages,
+        )
+
+        tool.execute("""{"destination":"Шереметьево","origin":"Тверь","origin_user":true}""")
+
+        assertEquals(GeoPoint(56.86, 35.91), client.routeCalls.single().origin)
     }
 
     @Test

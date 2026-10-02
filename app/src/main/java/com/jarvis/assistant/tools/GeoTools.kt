@@ -167,17 +167,25 @@ class GeoPlaceTool(
      * Origin for a search. `Ok(null)` means "no `near` hint". An explicit
      * `near` that fails to geocode degrades to null rather than sinking an
      * otherwise answerable query; the DEFAULT (configured-city) path is equally
-     * lenient. `near_user=true` is different: the user explicitly asked for
-     * their OWN position, so an unavailable fix is an honest error — silently
-     * searching unconstrained would answer «рядом» with places far away.
+     * lenient.
+     *
+     * `near_user=true` PREFERS the device fix but SOFT-DEGRADES to the
+     * configured location when no fix can be obtained (denied/unavailable).
+     * The device position is the better answer, but the configured city is a
+     * far more useful fallback than refusing the search outright, and it keeps
+     * «рядом» working on the GMS-free, WiFi-only target where a fix is often
+     * unavailable. The explicit `near` string still wins over both; when even
+     * the configured location is blank the search degrades to unconstrained,
+     * exactly as on the non-`near_user` path.
      */
     private suspend fun searchOrigin(nearArg: String?, nearUser: Boolean): GeoResult<GeoPoint?> {
         if (nearArg != null) return GeoResult.Ok(firstPointOrNull(client.searchPlaces(nearArg, null, 1)))
         if (nearUser) {
-            return when (val outcome = resolver.resolveDevice()) {
-                is LocationOutcome.Resolved -> GeoResult.Ok(resolvedPoint(outcome.location))
-                LocationOutcome.PermissionDenied -> GeoResult.Err(GeoError.PERMISSION_DENIED)
-                LocationOutcome.Unavailable -> GeoResult.Err(GeoError.UNAVAILABLE)
+            when (val device = resolver.resolveDevice()) {
+                is LocationOutcome.Resolved -> return GeoResult.Ok(resolvedPoint(device.location))
+
+                // Soft degrade: fall through to the configured-location path.
+                LocationOutcome.PermissionDenied, LocationOutcome.Unavailable -> Unit
             }
         }
         return when (val outcome = resolver.resolve()) {
@@ -305,10 +313,27 @@ class GeoRouteTool(
         }
     }
 
-    /** Explicit origin, else the shared default-location policy. Never null — a route needs one. */
+    /**
+     * Explicit origin, else the shared default-location policy. Never null — a route needs one.
+     *
+     * `origin_user=true` PREFERS the device fix and SOFT-DEGRADES to the
+     * configured location when none is available (same rationale as `findPlace`'s
+     * origin resolution): the device position is the better answer, the
+     * configured city is an honest fallback, and only when BOTH are blank does
+     * the route refuse. The explicit `origin` string wins over both.
+     */
     private suspend fun resolveOrigin(explicit: String?, originUser: Boolean): GeoResult<GeoPoint> {
         if (explicit != null) return resolveDestination(explicit, near = null)
-        val outcome = if (originUser) resolver.resolveDevice() else resolver.resolve()
+        val outcome = if (originUser) {
+            when (val device = resolver.resolveDevice()) {
+                is LocationOutcome.Resolved -> device
+
+                // Soft degrade: fall back to the configured-location path.
+                LocationOutcome.PermissionDenied, LocationOutcome.Unavailable -> resolver.resolve()
+            }
+        } else {
+            resolver.resolve()
+        }
         return when (outcome) {
             is LocationOutcome.Resolved -> when (val location = outcome.location) {
                 is ResolvedLocation.Coords -> GeoResult.Ok(GeoPoint(location.latitude, location.longitude))
