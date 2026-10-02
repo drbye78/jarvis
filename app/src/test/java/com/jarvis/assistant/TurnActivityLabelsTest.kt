@@ -15,7 +15,7 @@ class TurnActivityLabelsTest {
         "setAlarm", "cancelAlarm", "listAlarms", "setTimer", "cancelTimer",
         "getWeather", "getDeviceInfo", "setBrightness", "setVolume", "setWifi",
         "setBluetooth", "setDnd", "lockScreen", "openApp", "playMusic",
-        "controlPlayback", "getNowPlaying", "listPlaylists", "searchLibrary",
+        "controlPlayback", "getNowPlaying", "setMusicPlayer", "listPlaylists", "searchLibrary",
         "findPlace", "getRoute", "getCurrentLocation",
     )
 

@@ -331,6 +331,7 @@
     <string name="activity_tool_get_now_playing">Смотрю, что играет…</string>
     <string name="activity_tool_list_playlists">Смотрю плейлисты…</string>
     <string name="activity_tool_search_library">Ищу в фонотеке…</string>
+    <string name="activity_tool_setMusicPlayer">Меняю плеер…</string>
     <string name="activity_tool_find_place">Ищу место…</string>
     <string name="activity_tool_get_route">Строю маршрут…</string>
     <string name="activity_tool_getCurrentLocation">Определяю местоположение…</string>
@@ -381,6 +382,7 @@
     <string name="tool_app_not_launchable">Приложение \'%1$s\' недоступно для запуска</string>
     <string name="tool_open_app_attempted_detail">Я не вижу открытый экран, поэтому система могла заблокировать запуск — открой приложение вручную, если оно не появилось.</string>
     <string name="tool_weather_not_available">нет данных</string>
+    <string name="tool_music_player_unknown">Не знаю такой музыкальный сервис: «%1$s». Скажи «Яндекс Музыка», «Звук», «ВК Музыка» или «авто».</string>
 
     <!-- FIXPLAN B/C: voice stop + custom Sherpa wake keyword -->
     <string name="voice_stop_toggle">Голосовая команда «стоп» во время ответа</string>

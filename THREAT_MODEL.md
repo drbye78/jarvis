@@ -135,7 +135,7 @@ What is enforced **outside the model**:
 - **A non-LLM authorization policy** at the single dispatch choke point:
   `toolRegistry.executeResult` → `ToolAuthorization.decide`
   (`tools/ToolContract.kt:158-175`, `tools/ToolAuthorization.kt:105-132`).
-- Risk classification for all 25 tools in one table (`tools/ToolRisks.kt:23-53`),
+- Risk classification for all 26 tools in one table (`tools/ToolRisks.kt:23-53`),
   cross-checked at registry init and pinned by test.
 - `IRREVERSIBLE` (cancel alarm/timer, forget) requires a **voice** turn whose **own
   ASR text** matched a removal command (`tools/IrreversibleCommand.kt:77-84`),

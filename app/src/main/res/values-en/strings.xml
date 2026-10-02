@@ -332,6 +332,7 @@
     <string name="activity_tool_get_now_playing">Checking what\'s playing…</string>
     <string name="activity_tool_list_playlists">Browsing playlists…</string>
     <string name="activity_tool_search_library">Searching the library…</string>
+    <string name="activity_tool_setMusicPlayer">Setting the player…</string>
     <string name="activity_tool_find_place">Finding a place…</string>
     <string name="activity_tool_get_route">Building a route…</string>
     <string name="activity_tool_getCurrentLocation">Finding your location…</string>
@@ -382,6 +383,7 @@
     <string name="tool_app_not_launchable">App \'%1$s\' cannot be launched</string>
     <string name="tool_open_app_attempted_detail">I don\'t see an open window, so the system may have blocked the launch — open the app manually if it did not appear.</string>
     <string name="tool_weather_not_available">no data</string>
+    <string name="tool_music_player_unknown">Unknown music service: "%1$s". Say "Yandex Music", "Zvuk", "VK Music" or "auto".</string>
 
     <!-- FIXPLAN B/C: voice stop + custom Sherpa wake keyword -->
     <string name="voice_stop_toggle">Say «stop» to interrupt an answer</string>

@@ -5,7 +5,7 @@ Compact ramp-up for agents. Every line is something easy to miss.
 ## Build & verify
 - Single Gradle module `:app` (root `settings.gradle.kts` includes only `:app`). Use the wrapper: `./gradlew ...`.
 - Build APK: `./gradlew :app:assembleDebug`
-- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (currently ~1471 tests; refresh this count when you add a batch). The live tier (Sber + Yandex + GigaChat) is EXCLUDED from this task (`app/build.gradle.kts`, `**/*LiveSmokeTest*`) — it runs only via `:app:integrationTest` and self-skips without credentials.
+- JVM unit tests (no device needed): `./gradlew :app:testDebugUnitTest` (currently ~1513 tests; refresh this count when you add a batch). The live tier (Sber + Yandex + GigaChat) is EXCLUDED from this task (`app/build.gradle.kts`, `**/*LiveSmokeTest*`) — it runs only via `:app:integrationTest` and self-skips without credentials.
 - Single test class: `./gradlew :app:testDebugUnitTest --tests "com.jarvis.assistant.PorcupineDetectorTest"`
 - **Gate before claiming done:** `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:detekt` — detekt is part of the gate because CI (`static-analysis`) fails on it; an assemble+test-only gate let detekt findings accumulate.
 - Instrumentation tests (`androidTest`) need a device/emulator; the gate above does not.
@@ -43,6 +43,9 @@ Compact ramp-up for agents. Every line is something easy to miss.
 - `ui/PrimaryControl` resolves the primary control state with `userStopped` FIRST, so a stopped (or running-but-deaf) assistant shows «Возобновить прослушивание» and an explicit start clears the flag — do not reorder the precedence.
 - `openApp` resolves spoken Russian/transliterated names via `tools/AppAliases` (alias table + token transliteration), so «ВК Музыка» reaches a Latin-labelled package.
 - Music transport (`media/TransportControl`) falls back to a MediaBrowser session token for a launched-but-idle player, with a service-lifetime `RecentMusicTarget` tie-breaker when no app is named (deliberately not persisted).
+- The home-screen orb (`VoiceOrbView` in `MainActivity`) is tappable and routes to `SessionManager.stopActiveTurn()` — the SAME barge-in primitive as a spoken «стоп» / wake word (no-op when idle); it does not invent a second cancel path.
+- Spoken output is normalized at the TTS boundary by pure `speech/tts/SpeakableText.prepare` (markdown/URLs/emoji stripped; units expanded to Russian words) applied at the two `synthesizeStream(` sites only — persisted text stays raw.
+- Voice player selection is the STATEFUL `setMusicPlayer` tool (`media/MusicPlayerChoice` maps RU/EN brand tokens to the pref values the Settings radio writes). Base tool surface is now 23 (26 with cognitive); unknown names fail without touching the pref.
 
 ## Critical gotchas (would be missed)
 - **Sherpa-ONNX loading modes (know the difference).** The bundled AAR (`app/libs/sherpa-onnx.aar`, v1.13.6) exposes TWO constructors: `KeywordSpotter(assetManager, config)` loads from APK **assets via RELATIVE paths (Mode A, `newFromAsset`)**, and `KeywordSpotter(null, config)` loads from the **filesystem (Mode B, `newFromFile`)** — this is how FIXPLAN C ships custom keywords and extracted/user models. Mixing the modes is the real trap: relative asset paths into `newFromFile`, or absolute `filesDir`/SAF paths into Mode A, crash natively (`AAssetManager_open` → `SHERPA_ONNX_EXIT`). Custom wake words go through `audio/SherpaModelStore` (model extraction) + `BpeTokenizer` (BPE keyword files) + `newFromFile` — that path is supported and tested; the old "do NOT add custom-Sherpa loading" claim applied to a pre-FIXPLAN-C AAR understanding and is obsolete.

@@ -131,6 +131,21 @@ class SystemPromptProviderTests {
     }
 
     @Test
+    fun `explicit memory, player and speakable routing present`() {
+        val prompt = promptAt(12)
+        // FEATURE 4: explicit memory commands reach the existing tools.
+        assertTrue("missing remember_fact routing: $prompt", prompt.contains("remember_fact"))
+        assertTrue(prompt.contains("recall_facts"))
+        assertTrue("missing forget_fact routing", prompt.contains("forget_fact"))
+        // FEATURE 3: player selection routes to the new setMusicPlayer tool.
+        assertTrue("missing setMusicPlayer routing", prompt.contains("setMusicPlayer"))
+        // FEATURE 2: answers are written to be spoken (deterministic cleaner
+        // backs this up, but the prompt reduces reliance on it).
+        assertTrue("missing speakable-output rule", prompt.contains("markdown"))
+        assertTrue(prompt.contains("Цельсия"))
+    }
+
+    @Test
     fun `general knowledge and web search policy present`() {
         val prompt = promptAt(12)
         // The assistant must answer arbitrary questions itself...

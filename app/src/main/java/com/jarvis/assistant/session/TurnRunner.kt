@@ -15,6 +15,7 @@ import com.jarvis.assistant.model.ToolCall
 import com.jarvis.assistant.speech.asr.AsrEvent
 import com.jarvis.assistant.speech.asr.AsrStream
 import com.jarvis.assistant.speech.asr.StreamingAsrClient
+import com.jarvis.assistant.speech.tts.SpeakableText
 import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
 import com.jarvis.assistant.tools.IrreversibleCommand
@@ -797,7 +798,9 @@ class TurnRunner(
         ttsSynthPermits.withPermit {
             // Resolve the voice per sentence — a Settings change applies
             // to the very next synthesis, no service restart.
-            val flow = ttsClient.synthesizeStream(text, voiceSource())
+            // Clean markup/symbols for SPEECH only — the persisted assistant
+            // message (written before this point) keeps the original text.
+            val flow = ttsClient.synthesizeStream(SpeakableText.prepare(text), voiceSource())
             // The first sentence of a generation requests
             // duck focus; the last drained sentence abandons it. Barge-in
             // flush abandons via SessionManager's onTtsFlushed hook.

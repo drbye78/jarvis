@@ -226,6 +226,12 @@ class FunctionRouter(
                     deviceApiLevel = Build.VERSION.SDK_INT,
                     feedback = speechFeedback,
                 ),
+                // Voice-set default player: the SAME pref the Settings radio
+                // writes, read live on the next music turn (no restart).
+                setPreferredPlayer = { appPrefs.preferredMusicPlayer = it },
+                unknownPlayerMessage = {
+                    appContext.getString(com.jarvis.assistant.R.string.tool_music_player_unknown, it)
+                },
             ).all(),
     )
 

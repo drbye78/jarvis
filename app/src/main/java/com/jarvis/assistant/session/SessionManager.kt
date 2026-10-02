@@ -13,6 +13,7 @@ import com.jarvis.assistant.llm.LlmClient
 import com.jarvis.assistant.model.AssistantState
 import com.jarvis.assistant.model.Message
 import com.jarvis.assistant.speech.asr.StreamingAsrClient
+import com.jarvis.assistant.speech.tts.SpeakableText
 import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
 import com.jarvis.assistant.tools.ToolExecutor
@@ -746,7 +747,9 @@ class SessionManager(
             }
         }
         try {
-            val flow = ttsClient.synthesizeStream(text, voiceSource())
+            // Speak the cleaned form; the persisted proactive message above
+            // keeps the original text.
+            val flow = ttsClient.synthesizeStream(SpeakableText.prepare(text), voiceSource())
             focus?.onTtsSentenceStarted()
             val done = player.play(flow)
             try {

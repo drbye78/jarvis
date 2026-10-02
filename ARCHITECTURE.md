@@ -16,7 +16,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
         ├─ StreamingAsrClient (bidi gRPC, provider-neutral: Sber Salute OR Yandex v3; live audio up, partials/EOU down)
        ├─ ConversationManager (Room; 20-msg window, tool-pair-safe)
        ├─ LlmClient (GigaChat native v2 | Yandex AI Studio Responses | [OI]-compatible; SSE; wire DTOs)
-       │    └─ ToolRegistry → 25 tools (22 base + 3 cognitive): alarms/timers · weather · geo (findPlace/getRoute/getCurrentLocation) · 8 device tools · 5 music · 3 memory
+       │    └─ ToolRegistry → 26 tools (23 base + 3 cognitive): alarms/timers · weather · geo (findPlace/getRoute/getCurrentLocation) · 8 device tools · 6 music · 3 memory
        └─ TtsClient (gRPC, cancellable Context, deadline: Sber Salute OR Yandex v3)
             └─ StreamingAudioTrackPlayer (single actor, generation-based flush)
 ```
@@ -669,7 +669,7 @@ architectural summary.
 
 ## Tests
 
-JVM unit suite (1471 tests, all green; runs in CI on every push/PR). The live
+JVM unit suite (1513 tests, all green; runs in CI on every push/PR). The live
 smoke tier (Sber + Yandex + GigaChat, `integration/**/*LiveSmokeTest`) shares
 `src/test` but is excluded from the gate task and runs only through
 `:app:integrationTest`, which self-skips when credentials are absent:

@@ -1047,4 +1047,62 @@ class MusicOrchestratorTest {
         assertFalse(result.isError)
         assertTrue(result.content.contains("late"))
     }
+
+    // ------------------------------------------------------------------
+    // setMusicPlayer: voice-set default player
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `setMusicPlayer persists the resolved package`() = runTest {
+        var written: String? = null
+        val tools = MusicTools(orchestrator(FakeGateway()), setPreferredPlayer = { written = it })
+
+        val json = tools.all().first { it.name == "setMusicPlayer" }
+            .execute("""{"app":"Звук"}""")
+
+        assertEquals("com.zvooq.openplay", written)
+        assertTrue(json.contains("\"status\":\"ok\""))
+        assertTrue(json.contains("com.zvooq.openplay"))
+        assertFalse(json.contains("error"))
+    }
+
+    @Test
+    fun `setMusicPlayer reset goes to auto`() = runTest {
+        var written: String? = null
+        val tools = MusicTools(orchestrator(FakeGateway()), setPreferredPlayer = { written = it })
+
+        val json = tools.all().first { it.name == "setMusicPlayer" }
+            .execute("""{"app":"авто"}""")
+
+        assertEquals("auto", written)
+        assertTrue(json.contains("\"player\":\"auto\""))
+    }
+
+    @Test
+    fun `setMusicPlayer rejects an unknown player without writing`() = runTest {
+        var written: String? = null
+        val tools = MusicTools(orchestrator(FakeGateway()), setPreferredPlayer = { written = it })
+
+        val json = tools.all().first { it.name == "setMusicPlayer" }
+            .execute("""{"app":"Spotify"}""")
+
+        assertNull(written)
+        assertTrue(json.contains("error"))
+    }
+
+    @Test
+    fun `setMusicPlayer persisting an uninstalled player adds an honest note`() = runTest {
+        var written: String? = null
+        val tools = MusicTools(
+            orchestrator(FakeGateway()),
+            setPreferredPlayer = { written = it },
+            isInstalled = { false },
+        )
+
+        val json = tools.all().first { it.name == "setMusicPlayer" }
+            .execute("""{"app":"Звук"}""")
+
+        assertEquals("com.zvooq.openplay", written)
+        assertTrue(json.contains("not installed"))
+    }
 }

@@ -152,6 +152,16 @@ class MainActivity : AppCompatActivity() {
         }
         clearChatButton.setOnClickListener { confirmClearChat() }
 
+        // Tap == barge-in: the orb tap routes to the SAME primitive as a spoken
+        // stop / wake-word barge-in — it bumps the seq, cancels the active turn
+        // (including a proactive mini-session), flushes the player and closes an
+        // open follow-up window; a no-op when nothing is active. It only flips
+        // graph state, so the state/level collectors below are untouched.
+        voiceOrb.contentDescription = getString(R.string.stop)
+        voiceOrb.setOnClickListener {
+            GraphHolder.graph?.sessionManager?.stopActiveTurn()
+        }
+
         toggleButton.setOnClickListener {
             when (primaryControlState()) {
                 // A user stop writes `userStopped=true`, which suppresses the

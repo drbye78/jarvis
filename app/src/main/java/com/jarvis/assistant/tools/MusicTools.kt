@@ -2,6 +2,7 @@ package com.jarvis.assistant.tools
 
 import com.jarvis.assistant.media.MediaCapabilities
 import com.jarvis.assistant.media.MusicPlaybackOrchestrator
+import com.jarvis.assistant.media.MusicPlayerChoice
 import com.jarvis.assistant.util.JsonOut
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -22,7 +23,32 @@ import kotlinx.serialization.json.put
  * legitimately take ~25 s (launch app → wait for its media session →
  * playFromSearch → verify → legacy intent → verify → deep link).
  */
-class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
+class MusicTools(
+    private val orchestrator: MusicPlaybackOrchestrator,
+    /**
+     * Persists the chosen default player (the same pref the Settings
+     * «Музыка» radio writes). Defaults to a no-op so JVM tests can construct
+     * the tools without a SharedPreferences instance; the composition root
+     * wires it to [com.jarvis.assistant.util.AppPrefs.preferredMusicPlayer].
+     */
+    private val setPreferredPlayer: (String) -> Unit = {},
+    /**
+     * Whether the chosen package is installed. The resolver's installed list
+     * is not reachable from the tools today, so production leaves the default
+     * (always true) and the pref is set without a note — injected here so a
+     * test can pin the not-installed honesty branch.
+     */
+    private val isInstalled: (String) -> Boolean = { true },
+    /**
+     * Locale-aware "unknown player" error. The default is the Russian
+     * fallback used by JVM tests; production passes
+     * `R.string.tool_music_player_unknown` via the composition root.
+     */
+    private val unknownPlayerMessage: (String) -> String = { spoken ->
+        "Не знаю такой музыкальный сервис: «$spoken». " +
+            "Скажи «Яндекс Музыка», «Звук», «ВК Музыка» или «авто»."
+    },
+) {
 
     // ------------------------------------------------------------------
     // playMusic
@@ -202,6 +228,49 @@ class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
     }
 
     // ------------------------------------------------------------------
+    // setMusicPlayer
+    // ------------------------------------------------------------------
+
+    inner class SetMusicPlayerTool : ToolContract {
+        override val name = "setMusicPlayer"
+        override val risk = ToolRisk.STATEFUL
+        override val description =
+            "Set the DEFAULT music player used by playMusic/controlPlayback when the user does not " +
+                "name a player — the same choice as Settings → «Музыка». Argument 'app' is the player " +
+                "name: 'Яндекс Музыка', 'Звук', 'ВК Музыка', or 'авто' to reset to the automatic choice. " +
+                "Use for \"поставь по умолчанию Звук\", \"смени плеер на ВК Музыку\", " +
+                "\"плеер по умолчанию — Яндекс Музыка\", \"верни авто\". " +
+                "Do NOT use this to play music — call playMusic for that."
+        override val parametersJson = schema(
+            mapOf(
+                "app" to """{"type":"string","description":"Default player: 'Яндекс Музыка', """ +
+                    """'Звук', 'ВК Музыка' or 'авто' to reset the automatic choice."}""",
+            ),
+            required = listOf("app"),
+        )
+
+        override suspend fun execute(arguments: String): String {
+            val obj = ToolArgs.parse(arguments)
+                ?: return JsonOut.error("Invalid JSON arguments")
+            val spoken = obj.string("app")
+                ?: return JsonOut.error("Missing required parameter: app")
+            val pref = MusicPlayerChoice.prefValue(spoken)
+                ?: return JsonOut.error(unknownPlayerMessage(spoken))
+            setPreferredPlayer(pref)
+            val pairs = mutableListOf<Pair<String, Any?>>(
+                "status" to "ok",
+                "player" to pref,
+            )
+            // Still persist an uninstalled choice (the user asked for it), but
+            // say so honestly so the model can mention it.
+            if (pref != MusicPlayerChoice.AUTO && !isInstalled(pref)) {
+                pairs += "note" to "app is not installed"
+            }
+            return JsonOut.obj(pairs)
+        }
+    }
+
+    // ------------------------------------------------------------------
     // listPlaylists / searchLibrary (Tier 3 library lane)
     // ------------------------------------------------------------------
 
@@ -255,6 +324,7 @@ class MusicTools(private val orchestrator: MusicPlaybackOrchestrator) {
         PlayMusicTool(),
         ControlPlaybackTool(),
         GetNowPlayingTool(),
+        SetMusicPlayerTool(),
         ListPlaylistsTool(),
         SearchLibraryTool(),
     )

@@ -22,7 +22,7 @@ import java.io.DataInputStream
  *  3. the DERIVATION — the flag comes from the utterance via
  *     [IrreversibleCommand] (see its own truth table in
  *     `IrreversibleCommandTest`);
- *  4. TOTAL and PINNED classification — the 24 canonical risk VALUES live in
+ *  4. TOTAL and PINNED classification — the 26 canonical risk VALUES live in
  *     [ToolRisks], the registry cross-checks them, and this test additionally
  *     verifies each production class's COMPILED risk against the table.
  */
@@ -237,14 +237,14 @@ class ToolAuthorizationTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `the canonical risk map pins exactly 25 values`() {
-        assertEquals(25, EXPECTED.size)
+    fun `the canonical risk map pins exactly 26 values`() {
+        assertEquals(26, EXPECTED.size)
         assertEquals("ToolRisks.byName must equal the pinned table", EXPECTED, ToolRisks.byName)
     }
 
     @Test
     fun `every production tool class declares its risk explicitly`() {
-        assertEquals(25, TOOL_CLASSES.size)
+        assertEquals(26, TOOL_CLASSES.size)
         TOOL_CLASSES.forEach { (name, clazz) ->
             assertTrue(
                 "$name must declare ToolContract.risk",
@@ -289,7 +289,7 @@ class ToolAuthorizationTest {
 
     private companion object {
         /**
-         * The 25-tool runtime surface (22 base + 3 cognitive) with its
+         * The 26-tool runtime surface (23 base + 3 cognitive) with its
          * canonical classification. This is the PINNED expectation; it must
          * stay byte-for-byte in step with [ToolRisks.byName] and with each
          * production tool class.
@@ -319,6 +319,7 @@ class ToolAuthorizationTest {
             "playMusic" to ToolRisk.STATEFUL,
             "controlPlayback" to ToolRisk.STATEFUL,
             "getNowPlaying" to ToolRisk.READ_ONLY,
+            "setMusicPlayer" to ToolRisk.STATEFUL,
             "listPlaylists" to ToolRisk.READ_ONLY,
             "searchLibrary" to ToolRisk.READ_ONLY,
             // cognitive memory
@@ -349,6 +350,7 @@ class ToolAuthorizationTest {
             "playMusic" to MusicTools.PlayMusicTool::class.java,
             "controlPlayback" to MusicTools.ControlPlaybackTool::class.java,
             "getNowPlaying" to MusicTools.GetNowPlayingTool::class.java,
+            "setMusicPlayer" to MusicTools.SetMusicPlayerTool::class.java,
             "listPlaylists" to MusicTools.ListPlaylistsTool::class.java,
             "searchLibrary" to MusicTools.SearchLibraryTool::class.java,
             "remember_fact" to com.jarvis.assistant.cognitive.tools.RememberFactTool::class.java,

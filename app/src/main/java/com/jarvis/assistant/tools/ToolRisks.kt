@@ -1,7 +1,7 @@
 package com.jarvis.assistant.tools
 
 /**
- * Canonical name → [ToolRisk] table for the 25-tool production surface.
+ * Canonical name → [ToolRisk] table for the 26-tool production surface.
  *
  * This is the ONE testable place the classification is declared. It exists
  * because the abstract [ToolContract.risk] property alone is only a
@@ -45,6 +45,7 @@ object ToolRisks {
         "playMusic" to ToolRisk.STATEFUL,
         "controlPlayback" to ToolRisk.STATEFUL,
         "getNowPlaying" to ToolRisk.READ_ONLY,
+        "setMusicPlayer" to ToolRisk.STATEFUL,
         "listPlaylists" to ToolRisk.READ_ONLY,
         "searchLibrary" to ToolRisk.READ_ONLY,
         // cognitive memory

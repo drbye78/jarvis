@@ -6,6 +6,34 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — tap-to-stop orb, speakable output, voice player selection, explicit memory
+- **Tap the orb to stop speech.** The home-screen `VoiceOrbView` now routes a tap to
+  the existing barge-in primitive `SessionManager.stopActiveTurn()` (seq bump, cancel
+  the active turn incl. a proactive mini-session, player flush, close an open
+  follow-up window; a no-op when idle) — the same path a spoken «стоп» or a wake word
+  uses, carrying the existing «стоп» accessibility label.
+- **Speakable text at the TTS boundary.** A pure `speech/tts/SpeakableText.prepare`
+  normalizer strips markdown (code fences/inline backticks, links/URLs, list markers,
+  headings, blockquotes, checkboxes, emphasis, emoji/zero-width) and expands units
+  into Russian words («19 °C» → «19 градусов Цельсия», «5 %» → «5 процентов»,
+  «60 км/ч» → «60 километров в час»; a leading minus → «минус N»). Applied ONLY to
+  the synthesized string at the two `synthesizeStream(` turn/proactive sites, so the
+  persisted and displayed transcript stays raw.
+- **Voice player selection (`setMusicPlayer`, base surface 22 → 23).** «поставь по
+  умолчанию Звук» / «смени плеер на ВК Музыку» / «верни авто» now persist
+  `AppPrefs.preferredMusicPlayer` through the new STATEFUL `setMusicPlayer` tool; a
+  pure `media/MusicPlayerChoice` resolver maps RU/EN brand tokens (Яндекс/Звук/ВК) to
+  the same pref values the Settings «Музыка» radio writes. An unknown name fails
+  honestly without touching the pref; an uninstalled pick still saves and notes it.
+- **Explicit memory routing.** The system-prompt routing now names `remember_fact`
+  («запомни/не забудь, что …»), `recall_facts` («что ты обо мне знаешь/вспомни …»)
+  and `forget_fact` («забудь/убери из памяти …», `confirmed=false` then «да»). The
+  tools already existed; only the spoken trigger guidance was missing. Prompt stays
+  one page (< 2500 chars).
+- Tests: `SpeakableTextTest` (30), `MusicPlayerChoiceTest` (7), new `setMusicPlayer`
+  cases in `MusicOrchestratorTest`, and `SystemPromptProviderTests` routing
+  assertions. JVM suite 1471 → 1513.
+
 ### Added — hourly weather, apparent temperature, and an Open-Meteo proxy
 - **Hourly forecast (next ~12 h).** The weather document now carries an `hourly[]`
   section (`{time, temp, feels_like?, condition, precipitation_mm?,

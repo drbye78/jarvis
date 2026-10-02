@@ -56,6 +56,7 @@ object TurnActivityLabels {
         "playMusic" -> R.string.activity_tool_play_music
         "controlPlayback" -> R.string.activity_tool_control_playback
         "getNowPlaying" -> R.string.activity_tool_get_now_playing
+        "setMusicPlayer" -> R.string.activity_tool_setMusicPlayer
         "listPlaylists" -> R.string.activity_tool_list_playlists
         "searchLibrary" -> R.string.activity_tool_search_library
         // GEO lane: map search + routing get status pills like every tool.
