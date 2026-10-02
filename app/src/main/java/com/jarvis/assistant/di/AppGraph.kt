@@ -143,6 +143,7 @@ class AppGraph(
         // the coordinator lazily, so the conversation lane stays
         // pre-cognitive at graph construction.
         beforePrune = { cutoff -> cognitiveCoordinator.onBeforePrune(cutoff) },
+        slipToolNames = { com.jarvis.assistant.tools.ToolRisks.byName.keys },
     )
 
     val networkMonitor = NetworkMonitor(appContext)

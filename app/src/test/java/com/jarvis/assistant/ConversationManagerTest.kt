@@ -281,4 +281,70 @@ class ConversationManagerTest {
         val history = cm.getHistoryForLLM()
         assertEquals(6, history.size)
     }
+
+    // ------------------------------------------------------------------
+    // Leaked tool-call text hygiene (ToolCallSlip)
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `leaked fenced tool call is scrubbed and its poisoned row dropped`() = runBlocking {
+        val dao = FakeMessageDao()
+        val cm = ConversationManager(
+            dao,
+            maxMessages = 20,
+            slipToolNames = { setOf("getWeather", "setAlarm", "playMusic") },
+        )
+        cm.addMessage(Message(role = "user", content = "какая погода"))
+        cm.addMessage(Message(role = "assistant", content = "```\ngetWeather {\"location\":\"\"}\n```"))
+        cm.addMessage(Message(role = "user", content = "спасибо"))
+
+        val history = cm.getHistoryForLLM()
+        assertEquals(listOf("какая погода", "спасибо"), history.map { it.content })
+        assertTrue(history.none { it.content.contains("```") })
+        assertTrue(history.none { it.content.contains("getWeather") })
+    }
+
+    @Test
+    fun `legitimate multi-line fenced answer survives verbatim`() = runBlocking {
+        val dao = FakeMessageDao()
+        val cm = ConversationManager(dao, maxMessages = 20, slipToolNames = { setOf("getWeather") })
+        val legit = "Вот пример:\n```kotlin\nval x = 1\nval y = 2\n```\nГотово"
+        cm.addMessage(Message(role = "user", content = "покажи код"))
+        cm.addMessage(Message(role = "assistant", content = legit))
+
+        val history = cm.getHistoryForLLM()
+        assertEquals(legit, history.single { it.role == "assistant" }.content)
+    }
+
+    @Test
+    fun `assistant row with tool calls is kept when content scrubs to blank`() = runBlocking {
+        val dao = FakeMessageDao()
+        val cm = ConversationManager(dao, maxMessages = 20, slipToolNames = { setOf("getWeather") })
+        val call = ToolCall("g1", function = FunctionCall("getWeather", "{}"))
+        cm.addAssistantWithToolResults(
+            assistant = Message(
+                role = "assistant",
+                content = "```\ngetWeather {\"location\":\"\"}\n```",
+                toolCalls = listOf(call),
+            ),
+            results = listOf(Message(role = "tool", content = "sunny", toolCallId = "g1")),
+        )
+
+        val history = cm.getHistoryForLLM()
+        val assistant = history.single { it.role == "assistant" }
+        assertEquals("", assistant.content)
+        assertEquals(listOf(call), assistant.toolCalls)
+        assertTrue(history.any { it.role == "tool" })
+    }
+
+    @Test
+    fun `default construction leaves leaked fenced block untouched`() = runBlocking {
+        val dao = FakeMessageDao()
+        val cm = ConversationManager(dao, maxMessages = 20)
+        val block = "```\ngetWeather {\"location\":\"\"}\n```"
+        cm.addMessage(Message(role = "assistant", content = block))
+
+        val history = cm.getHistoryForLLM()
+        assertEquals(block, history.single().content)
+    }
 }

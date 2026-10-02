@@ -1,6 +1,7 @@
 package com.jarvis.assistant.data
 
 import com.jarvis.assistant.model.Message
+import com.jarvis.assistant.model.ToolCallSlip
 import com.jarvis.assistant.wire.WireToolCall
 import com.jarvis.assistant.wire.toDomain
 import com.jarvis.assistant.wire.toWire
@@ -29,6 +30,11 @@ import kotlinx.serialization.json.Json
  *    loses its own context. A budget cut can split an assistant/tool pair —
  *    the sanitizer that runs right after drops the dangling half, exactly as
  *    it already does for the message-count window.
+ * 5. [getHistoryForLLM] also scrubs leaked-call text blocks from assistant
+ *    content ([ToolCallSlip]) before the window reaches the model. This is
+ *    read-time hygiene, not a data migration: the project uses
+ *    `fallbackToDestructiveMigration`, so a schema/version bump would WIPE the
+ *    database — scrubbing on read fixes the poison without data loss.
  */
 class ConversationManager(
     private val dao: MessageDao,
@@ -52,6 +58,12 @@ class ConversationManager(
      * non-throwing and cheap — it runs on the turn path.
      */
     private val beforePrune: (suspend (cutoffMessageId: Long) -> Unit)? = null,
+    /**
+     * Advertised tool names used for leaked-call hygiene ([ToolCallSlip]).
+     * Empty disables the scrub. Injected by the graph from the canonical
+     * tool-risk map so the data layer never depends on the tool registry.
+     */
+    private val slipToolNames: () -> Set<String> = { emptySet() },
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -107,9 +119,11 @@ class ConversationManager(
      * the [maxChars] budget applied (see class doc, point 4).
      */
     suspend fun getHistoryForLLM(): List<Message> {
+        val slipNames = slipToolNames()
         val window = dao.recentDesc(maxMessages)
             .reversed()
             .map { it.toMessage() }
+            .mapNotNull { scrubAssistantSlip(it, slipNames) }
             .let { applyCharBudget(it) }
 
         val assistantToolCallIds = window
@@ -138,6 +152,28 @@ class ConversationManager(
 
                 else -> msg
             }
+        }
+    }
+
+    /**
+     * Read-time hygiene for a leaked tool call persisted as assistant TEXT
+     * (see [ToolCallSlip]). Runs BEFORE [applyCharBudget] so a huge poisoned
+     * block cannot consume the token budget, and independently of the
+     * tool-pair sanitizer, which only reads `toolCalls`.
+     *
+     * A row is dropped ONLY when it has neither prose nor structured tool
+     * calls left. A row with `toolCalls` is KEPT even when its content scrubs
+     * to blank — it is a normal tool pass and dropping it would orphan its
+     * result.
+     */
+    private fun scrubAssistantSlip(msg: Message, names: Set<String>): Message? {
+        if (msg.role != "assistant" || names.isEmpty()) return msg
+        if (!ToolCallSlip.hasSlip(msg.content, names)) return msg
+        val cleaned = ToolCallSlip.strip(msg.content, names)
+        return when {
+            cleaned.isNotBlank() -> msg.copy(content = cleaned)
+            msg.toolCalls.isNullOrEmpty() -> null
+            else -> msg.copy(content = "")
         }
     }
 
