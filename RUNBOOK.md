@@ -143,24 +143,33 @@ Weather questions default to a location: the city set in **Настройки �
 карты** always wins; if that is empty, the device location is used.
 
 - **Configured city is the reliable path.** The target tablet is GMS-free
-  (no Play Services) and often WiFi-only, so `NETWORK_PROVIDER` frequently
-  returns nothing — and GPS hardware may be absent entirely. If weather keeps
-  answering for the wrong place, set the city explicitly in **Настройки → Погода и карты**.
+  (no Play Services and no GPS hardware/FUSED provider), but `NETWORK_PROVIDER`
+  does yield a fix — probe-verified, sub-second once warmed (the earlier
+  "yields nothing" assumption was wrong). Still, if weather keeps answering for
+  the wrong place, set the city explicitly in **Настройки → Погода и карты**.
 - **«Не удалось определить местоположение»** — no city is configured AND
   location access is denied or no fix was obtained within ~6 s. Either set a
   city, or grant location access with the screen's button (the permission dialog
   can only appear in Настройки → Погода и карты — the assistant runs in a service, which cannot
   prompt).
-- **No city is ever spoken for a GPS position.** Open-Meteo has no reverse
-  geocoding and the app adds no third-party service, so a detected position is
-  reported as «текущее местоположение». That is by design, not a bug.
-- **Forecast days**: the tool returns current conditions plus up to 7 daily
-  rows. A follow-up like «а завтра?» is answered from the previous result — no
+- **A detected position is NAMED when possible.** A device fix is reverse
+  geocoded through MapKit (`GeoToolClient.resolveLabel`, first used by
+  `getCurrentLocation`); when that lookup fails the answer degrades honestly to
+  the «текущее местоположение» label plus the raw coordinates — a city is never
+  invented. That is by design, not a bug.
+- **Forecast shape**: the tool returns current conditions (including a
+  `feels_like` reading), an ~12 h `hourly[]` section, and up to 7 daily rows.
+  A follow-up like «а завтра?» is answered from the previous result — no
   second call, so it is instant.
+- **Weather-only proxy (optional).** **Настройки → Погода и карты** accepts an
+  HTTP/SOCKS proxy for the Open-Meteo requests only — it is vault-stored (it may
+  embed `user:pass@`) and applies LIVE; LLM/TTS traffic never uses it. If
+  weather requests fail while a proxy is configured, clear the field to route
+  direct.
 
 ### «Найди аптеку» / «Построй маршрут» — не находит или отвечает ошибкой
-The geo tools are backed by **Yandex MapKit** (not the Yandex Cloud key) and
-none of this path is device-verified yet — see the MapKit smoke checklist below.
+The geo tools are backed by **Yandex MapKit** (not the Yandex Cloud key), and
+this path is device-verified (see the MapKit smoke checklist below).
 First checks:
 
 - **No key:** Jarvis says «Не настроен ключ Яндекс.Карт (MapKit)…». Add a
@@ -178,6 +187,11 @@ First checks:
   configured city needs no GPS and is the reliable path on the GMS-free,
   WiFi-only tablet. (`findPlace` is lenient — a query that names its own place,
   e.g. «аптека в Москве», is searched even without a default location.)
+- **Device position («где я», «рядом»):** an explicit «где я» uses
+  `getCurrentLocation`, a device fix that FAILS CLOSED with a typed error when
+  no fix is available. On `findPlace`/`getRoute`, `near_user`/`origin_user`
+  PREFER the device fix but SOFT-DEGRADE to the configured city when none can be
+  obtained, so «рядом» still works on the fix-less tablet.
 - **Transit answer has no line names:** check `adb logcat | grep -iE
   "MapKit|UnsatisfiedLink"` — a native/library failure surfaces there. Line
   names (bus/metro) come from the SDK's masstransit data; an answer without
@@ -512,8 +526,11 @@ supersedes the window).
 
 Honest limits: the VAD is energy-based — under loud music it can false-fire
 (suppress with AEC + capture lane, or pause-on-wake) or miss soft speech
-(lengthen the window). A 200 ms lead-in after each reply absorbs the TTS
-tail. Chained conversation: every spoken reply re-opens the window.
+(lengthen the window). The window opens when the TTS DRAINS (the player's
+buffer end), and `FollowUpTailGate` arms the VAD only after the input decays to
+the room floor for 3 consecutive frames, bounded by an 800 ms fallback so a
+constantly-loud room is not left deaf. Chained conversation: every spoken reply
+re-opens the window.
 
 ### Voice selection (Голос)
 
@@ -524,16 +541,18 @@ tail. Chained conversation: every spoken reply re-opens the window.
   synthesis pool by this project; the card also accepts a free-text Salute
   voice ID for advanced users.
 - **Yandex:** a dropdown of the documented v3 ru-RU voices (`marina` default)
-  plus an optional **role**. The role suggestions follow the selected voice
+  plus an optional **role** and an optional **speed** slider (the speaking
+  rate). The role suggestions follow the selected voice
   (`VoiceCatalog.yandexRolesFor`) — `marina` offers neutral / whisper /
   friendly, `alena` offers neutral / good — because the service rejects a
   voice/role pair it does not support. The field is an editable combo, not a
   closed list: a voice whose roles the docs do not list (e.g. `filipp`, the
   `*_ru` voices) keeps the full vocabulary (neutral / good / strict / friendly
-  / whisper / evil), and free text is always allowed. Voice and role are packed
-  in-band as `"<voice>:<role>"` by `YandexVoiceSpec`; an empty role collapses
-  to the bare voice. A role glued into the speaker name is a silent failure, so
-  both directions live on that one class.
+  / whisper / evil), and free text is always allowed. Voice, role and speed are
+  packed in-band as `"<voice>[:<role>][@<speed>]"` by `YandexVoiceSpec`; an
+  empty role and the default speed collapse to the bare voice. A role glued
+  into the speaker name is a silent failure, so both directions live on that one
+  class.
 
 «Проверить голос» speaks one sample sentence through the real synthesis+player
 lane using the **active** backend (previewing the other backend's voice would
@@ -564,7 +583,7 @@ Streaming ASR means these numbers no longer grow with utterance length.
 3. **Conversation history corrupted** — Settings → Apps → Jarvis → Storage →
    Clear Data (wipes history and alarms; destructive by design).
 
-## Memory subsystem (Phase 1): E2E scenarios and the extraction gate
+## Memory subsystem: E2E scenarios and the extraction gate
 
 The informal probe protocol from the cognitive review is replaced by these
 scripted, reproducible scenarios and the fixture-based extraction gate.
@@ -603,7 +622,7 @@ work), so nothing is silently destroyed — the manual «Забыть всё» w
 the only path that deletes stored memory. Re-enabling the switch resumes
 the pass against the untouched data.
 
-### E2E scenario: proactive suggestion, accept and reject paths (Phase 2)
+### E2E scenario: proactive suggestion, accept and reject paths
 
 Precondition: **Настройки → Инициатива** switch ON (default OFF — flipping
 it is the point of the scenario), quiet hours as shipped (23:00–08:00),
@@ -654,7 +673,7 @@ the set, add `app/src/test/resources/cognitive/eval/fixtures/fixture_NNN.json`
 (dialogue + recorded response + expected/forbidden facts) and re-run
 `./gradlew :app:testDebugUnitTest --tests "*ExtractionEvalTest"`.
 
-### E2E scenario: semantic recall + relation questions (Phase 3)
+### E2E scenario: semantic recall + relation questions
 
 Precondition: fresh `jarvis.db` or an existing store; Sherpa engine;
 Настройки → Память → memory enabled. The eval gate already decided the
@@ -677,15 +696,14 @@ verdict, plus the opt-in vector path.
    fact count; re-press resumes if interrupted.
 5. Toggle selector to «Выключено», repeat step 2 → the answer still names
    Иванов (relation recall is vector-independent) and prompts stay
-   byte-identical to the Phase 2 path (no vector channel).
+   byte-identical to the non-vector path (no vector channel).
 6. «Забыть всё» → inspector empty; vector rows and the entity index are
    gone with everything else (the wipe covers the vector/entity tables).
 
-Pass: all six observations, no crashes, quiet-hours/proactive behaviour of
-Phase 2 unchanged throughout. ON-DEVICE TODO (honest gap): cloud
-vector-build wall time per 100 facts and the gather-latency delta with a
-populated `fact_vectors` table — measure on the MatePad and record in the
-CHANGELOG Phase 3 performance block.
+Pass: all six observations, no crashes, quiet-hours/proactive behaviour
+unchanged throughout. Honest gap: the cloud vector-build wall time per 100
+facts (and the gather-latency delta with a populated `fact_vectors` table) is
+not measured on-device.
 
 ## Geography (MapKit) — on-device smoke checklist
 
@@ -816,7 +834,7 @@ adb logcat | grep -iE "MapKit|maps-mobile|UnsatisfiedLink|Geo|dalvikvm"
   longer blocks the UI thread on Kirin 710A-class devices (fixes H1). There is
   a brief window where the assistant is "listening" but the wake word is not yet
   active until the model finishes loading (typically well under a second).
-- ~~Custom Sherpa wake words are not supported~~ **LIFTED (FIXPLAN C).** The
+- **Custom Sherpa wake words ARE supported (FIXPLAN C).** The
   AAR's nullable-asset constructor routes to native `newFromFile`, so the
   extracted bundled model (or a user-supplied model dir) loads from the
   filesystem with a GENERATED keywords file. Settings accepts any English
@@ -883,7 +901,7 @@ adb logcat | grep -iE "MapKit|maps-mobile|UnsatisfiedLink|Geo|dalvikvm"
   `browserConnect_worksFromLooperlessProductionThread` (see above). Per-player
   capability still varies by app build/version.
 - **English locale: UI is fully localized, runtime speech is not.** Every
-  user-facing string resource now has an English twin (values-en, 358 keys
+  user-facing string resource now has an English twin (values-en, 445 keys
   incl. the credential-validation and behavior-setting rows), so the whole UI — Settings,
   onboarding, alarms, music card — renders in English under an English locale.
   Runtime spoken/system messages (turn failures, music outcome details,

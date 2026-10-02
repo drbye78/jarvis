@@ -80,8 +80,9 @@ interface LocationResolver {
  * tool can answer honestly instead of inventing a city.
  *
  * This matters more than usual on the target device: it is GMS-free and often
- * WiFi-only, so `NETWORK_PROVIDER` frequently yields nothing and GPS hardware
- * may be absent — the configured location is the realistic primary path.
+ * WiFi-only, with no GPS hardware and no fused provider. The fix comes from
+ * `NETWORK_PROVIDER` (probe-verified: sub-second once warmed), so the
+ * configured location is the convenient DEFAULT, not the only working path.
  */
 class DefaultLocationResolver(
     /** Live read of the Settings value; blank ⇒ auto-detect. */

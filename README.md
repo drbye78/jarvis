@@ -102,8 +102,11 @@ Answers arbitrary questions and holds a conversation on any topic.
    city always wins and needs no location access. To use auto-detect, tap
    **Allow location access** in that screen — the permission dialog lives there
    (weather runs in the background service, which cannot prompt), and access is
-   coarse or fine. On a GMS-free, WiFi-only tablet GPS may yield nothing, so the
-   configured city is the reliable path.
+   coarse or fine. The GMS-free, WiFi-only tablet has no GPS hardware, but the
+   device position comes from the network provider (`NETWORK_PROVIDER`) and works
+   sub-second once warmed; the configured city stays the DEFAULT for implicit
+   weather questions, while an explicit «где я» / «рядом» uses the real device
+   position.
 
 ## Running tests
 ```bash
@@ -193,9 +196,12 @@ Colleagues who want to build their own signed APK generate their own
 keystore with `keytool` and update `local.properties` accordingly.
 
 ## What Jarvis can do
-- **Voice**: wake word «Джарвис» (or a custom English keyword), voice stop
+- **Voice**: wake word «Джарвис» (or a custom English keyword — the assistant's
+  **name follows it**: set «Max» and it calls itself Max on the start screen and
+  in dialogue, Sherpa engine), voice stop
   (say «стоп» while the assistant thinks or speaks — it stops without the
-  wake word), barge-in mid-answer, streaming recognition,
+  wake word), **single-shot barge-in** (one «Джарвис» during a reply interrupts
+  it; the «стоп по голосу» toggle is persisted), streaming recognition,
   **follow-up window** (opt-in: after each reply the mic stays open for
   2–12 s — keep talking without the wake word; the orb shows a countdown).
   The status pill shows **what the assistant is doing** while thinking
@@ -222,6 +228,9 @@ keystore with `keytool` and update `local.properties` accordingly.
   internet search**, which runs server-side and returns cited sources. The
   search results and citations themselves are never spoken — only the grounded
   answer.
+- **Home screen**: **clear chat / new chat** (deletes the dialogue history only —
+  memory and facts are untouched) and a **«Возобновить прослушивание»** control
+  after a stop.
 - **GigaChat model** (**Настройки → Помощник**): pick the **GigaChat-3
   flavor** — Lightning (default, fastest), Pro (balanced) or Ultra (most
   capable). Sealed at service start like the speech backend, so it applies
@@ -248,15 +257,17 @@ keystore with `keytool` and update `local.properties` accordingly.
 - **Voice picker** (**Настройки → Речь**): the controls follow the selected
   speech backend. Sber: Mila by default, any other Salute voice ID by hand.
   Yandex: a dropdown of the documented v3 voices plus an optional role
-  (neutral / good / strict / friendly / whisper / evil, or free text). Both
-  have a «Проверить голос» preview that synthesizes through the *active*
-  backend. Applies to the next spoken sentence — no restart.
+  (neutral / good / strict / friendly / whisper / evil, or free text) and a
+  speaking-**speed** slider. Both have a «Проверить голос» preview that
+  synthesizes through the *active* backend. Applies to the next spoken
+  sentence — no restart.
 - **Music**: «Джарвис, включи Bohemian Rhapsody», «включи альбом Группа
   крови», «включи музыку» — a capability-gated cascade drives the installed
   player (Яндекс Музыка by default): structured voice search with slots,
   MediaBrowser library search with deterministic `playFromMediaId`,
   permission-free session-token cold start, legacy intent, honest search
-  screen fallback — playback is verified against what you asked for.
+  screen fallback — playback is verified against what you asked for, and
+  playback commands still reach a launched-but-idle player.
   Full transport: pause/resume/next/previous/stop, «промотай на минуту»,
   «сначала», «лайкни», «повтори трек», «перемешай», «быстрее/медленнее»
   (each gated on what the player actually supports — honest refusals,
@@ -269,24 +280,31 @@ keystore with `keytool` and update `local.properties` accordingly.
   capability dump.
 - **Alarms & timers**: set/cancel/list by voice or UI; ring over the lock
   screen; survive reboots.
-- **Weather**: current conditions plus a **daily forecast up to 7 days** for
-  any city. The forecast **source is selectable** in **Настройки → Погода и
+- **Weather**: current conditions — including a **feels-like** temperature —
+  plus an **hourly series for the next ~12 hours** and a **daily forecast up to
+  7 days** for any city. Hourly rows and the apparent temperature come
+  natively from Open-Meteo and are derived on-device for Project EOL. The
+  forecast **source is selectable** in **Настройки → Погода и
   карты**: Project EOL (NOAA GFS, default) or Open-Meteo; both are free and
   need no key, and switching applies to the next question. If the chosen
-  source is unreachable, the other is tried automatically. Weather questions
-  default to your location: a city set in **Настройки → Погода и карты**
-  (always wins), otherwise auto-detected GPS. Follow-up questions work
-  naturally («а завтра?», «а в Сочи?»).
+  source is unreachable, the other is tried automatically. For networks where
+  Open-Meteo is blocked, an optional **proxy** (Settings → «Погода и карты»)
+  applies **only** to Open-Meteo requests — Project EOL is never proxied.
+  Weather questions default to your location: a city set in **Настройки →
+  Погода и карты** (always wins), otherwise the device position. Follow-up
+  questions work naturally («а завтра?», «а в Сочи?»).
 - **Maps & routes**: «Джарвис, найди аптеку рядом», «построй маршрут до
   Шереметьева» — organization/address search and public-transport or walking
-  routes via **Yandex MapKit**. Transit answers include the line (bus/metro),
-  the vehicle type, transfer points and stop counts, and «а пешком?» /
-  «а на автобусе?» are follow-ups to the same route. No map is shown — Jarvis
-  speaks the answer. Needs a MapKit key in **Настройки → Погода и карты →
-  Дополнительно**. (Device
-  verification is pending — see RUNBOOK.)
+  routes via **Yandex MapKit**. «где я» / «рядом» use the real device position
+  (`getCurrentLocation`, `near_user`). Transit answers include the line
+  (bus/metro), the vehicle type, transfer points and stop counts, and
+  «а пешком?» / «а на автобусе?» are follow-ups to the same route. No map is
+  shown — Jarvis speaks the answer. Needs a MapKit key in **Настройки →
+  Погода и карты → Дополнительно**. Device verification PASSED on a real
+  GMS-free tablet (2026-09-25) — see RUNBOOK.
 - **Device control**: volume, brightness, Wi-Fi, Bluetooth, DND, screen off,
-  open app, battery/time info.
+  open app (`openApp` also understands spoken aliases and ASR transliterations
+  such as «ВК Музыка» → the VK app), battery/time info.
 
 ## License
 [MIT](LICENSE)

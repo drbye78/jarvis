@@ -1,7 +1,7 @@
-# Recorded fixtures (P2.3 — REMEDIATION_PLAN Phase 2)
+# Recorded fixtures
 
 Sanitized SaluteSpeech fixtures replayed in CI by
-`SaluteFixtureReplayTest` through the Phase 1 in-process gRPC fakes.
+`SaluteFixtureReplayTest` through in-process gRPC fakes.
 
 - **Regenerate**: `./gradlew :app:recordSaluteFixtures` (local only, requires
   credentials in the gitignored `local.secrets.properties`). The recorder

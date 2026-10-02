@@ -16,7 +16,7 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
         ├─ StreamingAsrClient (bidi gRPC, provider-neutral: Sber Salute OR Yandex v3; live audio up, partials/EOU down)
        ├─ ConversationManager (Room; 20-msg window, tool-pair-safe)
        ├─ LlmClient (GigaChat native v2 | Yandex AI Studio Responses | [OI]-compatible; SSE; wire DTOs)
-       │    └─ ToolRegistry → alarms/timers · weather · geo (findPlace/getRoute) · 8 device tools
+       │    └─ ToolRegistry → 25 tools (22 base + 3 cognitive): alarms/timers · weather · geo (findPlace/getRoute/getCurrentLocation) · 8 device tools · 5 music · 3 memory
        └─ TtsClient (gRPC, cancellable Context, deadline: Sber Salute OR Yandex v3)
             └─ StreamingAudioTrackPlayer (single actor, generation-based flush)
 ```
@@ -29,16 +29,16 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 | `wire/` | OpenAI-protocol DTOs with `@SerialName` snake_case + mappers. The only code that shapes request JSON. |
 | `llm/` | `SseParser` (pure, [OI] contract), `SseLlmClient` (shared SSE transport with correct cancellation), `GigaChatNativeClient` (unified `api.giga.chat/v2`: `tools`/`tool_config`, `messages[]` envelope, named `event:` stream, server-side `web_search`), `YandexAiStudioClient` (AI Studio Responses: `input[]`/`instructions`, flattened tools, lazy cached folder id, server-side `web_search`), `OpenAiCompatClient` (any [OI]-compatible base URL), `TokenManager` (mutex-serialized OAuth refresh). |
 | `speech/asr/` | `StreamingAsrClient` / `AsrStream` — bidi streaming ASR; server-side EOU. Implementations: `SberStreamingAsr` (Salute OAuth) and `YandexStreamingAsr` (Yandex v3, `Api-Key`). |
-| `speech/tts/` | `TtsClient` (cancellable + deadline) and `TtsPlayer` contract. Implementations: `SaluteSpeechTts` and `YandexSpeechTts` (Yandex v3, 24 kHz `RawAudio`); voice/role packing via `YandexVoiceSpec`. `VoiceCatalog` is the per-backend voice catalog and the single source of truth for the Settings «Голос» card (`SBER_VOICES`, `YANDEX_VOICES`, `yandexRolesFor()`), keyed by backend because the two providers have disjoint voice namespaces. |
+| `speech/tts/` | `TtsClient` (cancellable + deadline) and `TtsPlayer` contract. Implementations: `SaluteSpeechTts` and `YandexSpeechTts` (Yandex v3, 24 kHz `RawAudio`); voice/role/speed packing via `YandexVoiceSpec` (the in-band `voice[:role][@speed]` grammar, both directions pinned by a round-trip test). `VoiceCatalog` is the per-backend voice catalog and the single source of truth for the Settings «Голос» card (`SBER_VOICES`, `YANDEX_VOICES`, `yandexRolesFor()`), keyed by backend because the two providers have disjoint voice namespaces. |
 | `audio/` | Pipeline (single-copy invariant), ring buffer, `HybridWakeWordDetector` (engine-agnostic: Porcupine + Sherpa-ONNX; runtime-switchable engine via `reconfigure`/`reconfigureWakeWord`, thread-safe under a Mutex; `reconfigureMutex` serializes rebuilds; Sherpa loads BOTH ways per FIXPLAN C — bundled models asset-relative (`newFromAsset`), custom/extracted models from the filesystem (`newFromFile` via `SherpaModelStore`)), player (generations), and the Phase-5 etiquette pair: `AssistantAudioFocus` (duck-during-TTS state machine + `AndroidAudioFocusAdapter`) and `SpeechFeedback` (spoken cascade progress). |
 | `session/` | Validated state machine; SessionManager orchestrating streaming turns (job hand-offs under a monitor, seq-guarded supersede/cancel); TurnRunner (bounded tool loop; error turns end via reportFailure only); `SpeechPhrases` — locale-aware runtime spoken phrases (RU default + resource-backed values/values-en). |
-| `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. Weather: `weather/WeatherTool` over a `WeatherClient`, with the provider picked by `weather/SelectingWeatherClient` (Project EOL over MCP by default, or Open-Meteo REST; the other is tried on a network-class failure); the default location comes from the shared `location/` subsystem. Geo: `findPlace` / `getRoute` (`GeoTools.kt`) over `geo/GeoToolClient`. |
+| `tools/` | ToolContract + registry (timeouts incl. per-tool override, error capture) + real implementations. Weather: `weather/WeatherTool` over a `WeatherClient`, with the provider picked by `weather/SelectingWeatherClient` (Project EOL over MCP by default, or Open-Meteo REST; the other is tried on a network-class failure; see the Weather lane). The default location comes from the shared `location/` subsystem. Geo: `findPlace` / `getRoute` (`GeoTools.kt`) plus `getCurrentLocation` (`GetCurrentLocationTool.kt` — device fix + MapKit reverse-geocoded label) over `geo/GeoToolClient`. `AppAliases.kt` is the pure spoken-name→package resolver behind `openApp` (exact label → alias/transliteration table → token match), so «ВК Музыка» reaches a Latin-labelled package. |
 | `geo/` | Geography capability: `GeoModels` (`GeoPoint`/`GeoPlace`/`GeoLeg`/`GeoRoute`/`GeoError`/`GeoResult`), `GeoToolClient` (narrow interface, one impl), `GeoJson` (pure domain→JSON), and `geo/mapkit/**` (`MapKitFactoryBridge`, `MapKitInitializer` + `MapKitInitializerProvider`, `MapKitSearch`, `MapKitRouting`, `MapKitRouteMapper`, `YandexMapKitGeoClient`). `com.yandex.*` imports exist ONLY under `geo/mapkit/**`; no MapKit type escapes. |
 | `location/` | Shared, weather-agnostic location subsystem (extracted from the former `tools/weather/`): `LocationProvider`/`LocationFix`, `ResolvedLocation`, `LocationOutcome`, `LocationResolver`/`DefaultLocationResolver` (configured location wins, else a bounded device fix), and the GMS-free `AndroidLocationProvider` (framework `LocationManager` only). Weather and geo share ONE resolver. |
 | `media/` | External player control (MUSIC lane): gateway contracts over MediaSession/MediaKeys, `MusicAppCatalog` (which player to target), `MusicPlaybackOrchestrator` — pure capability-gated strategy cascade (structured playFromSearch, MediaBrowser search/token lane, query-aware verification) with rich transport; `MediaBrowserGateway` + `AndroidMediaBrowserGateway` (bind/search/children); `MediaCapabilities`/`VoiceQuery`/`MediaDiagnostics` (pure models). Android adapters: `AndroidMediaGateway` (compat-wrapped controllers), `AndroidMediaBrowserGateway`. Threading invariant: `AndroidMediaBrowserGateway.connect()` must construct `MediaBrowserCompat` on a Looper thread and therefore hops to `Dispatchers.Main` internally — the production tool lane is `Dispatchers.IO`, and without that hop every bind silently returns null (the throw is swallowed by `runCatching`), so the whole browser strategy is dead. Pinned only on-device. |
 | `data/` | Room v2: messages (id-ordered, orphan-safe windowing) + alarms + user_facts (cognitive memory) + extraction_queue + memory_meta (cognitive bookkeeping: schema revision, cursors, counters) + fact_fts (FTS4) + command_events + habit_rules + behavior_log + session_summaries + fact_vectors + entities + fact_entities + ring_sessions (durable ring state, `RingSessionEntity`). |
 | `service/` | Foreground service (permission gate, retryable init, watchdog semantics), boot receiver, ringing activity, notification listener. |
-| `ui/` | Adapters for transcript and alarm lists. |
+| `ui/` | Adapters for transcript and alarm lists; `PrimaryControl` (pure home-screen start/stop/resume precedence, `userStopped` first). |
 | `MemoryInspectorActivity` (app root) | Memory Inspector: fact list with provenance marks (sensitive/contested) + confidence/status lines, per-item delete, JSON export via SAF, «Забыть всё» wipe of the cognitive tables; honest read-only empty state when the service graph isn't running. |
 
 ## Concurrency model
@@ -80,13 +80,24 @@ Mic → AudioRecordSource → AudioPipeline (single producer, one copy per frame
 Wake word is accepted in **every** state (IDLE, LISTENING, THINKING, SPEAKING).
 Detection flows through `Flow<Detection>.gatedBy(BargeInPolicy.from(config), stateMachine.state)`:
 in SPEAKING it cancels the active turn; in the other states it is still accepted so
-the user can barge in at any time. `BargeInPolicy.postAcceptCooldownMs` (default 600 ms)
-debounces self-retrigger from the wake word's trailing audio. On barge-in:
+the user can barge in at any time. The default is **single-shot**
+(`JarvisConfig.bargeInSingleShot = true` → `BargeInPolicy.Mode.SINGLE`): ONE
+«Джарвис» during SPEAKING cancels the turn immediately. Turning the flag off
+restores the opt-in repeat-to-interrupt gesture
+(`Mode.REPEAT_DURING_PLAYBACK`): the first detection only opens a candidate
+window and a SECOND within `bargeInRepeatWindowMs` (default 1200 ms) passes.
+After any accepted detection further ones are suppressed for
+`postAcceptCooldownMs` (600 ms), which debounces the wake word's own trailing
+audio. A `Detection.StopPhrase` always passes UNGATED — its state-conditional
+routing lives in `SessionManager`. On barge-in:
 `player.flush()` (generation bump kills current + queued TTS) → `sessionJob.cancel()`
 (kills ASR feeder, LLM SSE call, TTS contexts via structured cancellation) → new
-session. `CancelTimerTool` cancels a snoozed alarm's pending one-shot timer so a
-snooze isn't interrupted. A superseded (barge-in'd) turn discards its partial
-tool-history writes to keep the conversation coherent.
+session. An ACTIVE-state wake DRAINS the pre-roll ring buffer (it holds the
+assistant's own TTS tail, and replaying it would prefix the user's transcript
+with the reply's words); a fresh IDLE wake KEEPS the buffer — that replay is what
+un-clips the first word. `CancelTimerTool` cancels a snoozed alarm's pending
+one-shot timer so a snooze isn't interrupted. A superseded (barge-in'd) turn
+discards its partial tool-history writes to keep the conversation coherent.
 
 ## Tool protocol
 
@@ -103,18 +114,47 @@ each tool execution has a 15 s default timeout — a tool may override it via
 `ToolContract.timeoutMs` (playMusic uses 50 s: cold-starting a player and
 verifying playback takes that long).
 
+## Weather lane (selectable capability)
+
+Two free, keyless providers behind `WeatherClient`; `SelectingWeatherClient`
+dispatches on the live `weatherProvider` pref (LIVE, no restart) with an
+exhaustive `when`, and fails over to the other provider ONLY on a NETWORK-class
+failure (`unreachable`). Both emit the SAME document shape
+(`weather/WeatherContract.kt`), which the LLM reads directly:
+
+- **`current`** — `temp`, `feels_like`, `condition`, `wind_kmh`, `humidity`,
+  `precipitation`.
+- **`hourly[]`** — the NEXT ~12 hours (starting at the current hour) with
+  `time`, `temp`, `feels_like`, `condition`, `precipitation_mm`,
+  `precipitation_probability`, `wind_kmh`, so «во сколько сегодня дождь?» /
+  «погода через 3 часа» are answerable from the same document.
+- **`daily[]`** — dated rows (`temp_max`/`temp_min`, `feels_like_max`/
+  `feels_like_min`, …) that the model is told to rely on for «а завтра?».
+
+`OpenMeteoWeatherClient` is native: `apparent_temperature` comes straight from
+the API. `ProjectEolWeatherClient` publishes no apparent temperature, so
+`feels_like` is DERIVED in `WeatherContract.apparentTemperatureC` (wind-chill
+below 10 °C with wind, heat index at ≥27 °C with humidity, else the air
+temperature), never labelled as a server reading. An optional Open-Meteo proxy
+(`weather/ProxyConfig.kt`) is vault-stored (`open_meteo_proxy`), parsed for
+HTTP/SOCKS with optional `user:pass@` userinfo, and attached ONLY to a derived
+weather-only `OkHttpClient` — so it can never route LLM/TTS/gRPC traffic.
+`LiveProxySelector` re-reads the pref on every request, so a Settings change is
+LIVE.
+
 ## Geography lane (Yandex MapKit)
 
-`findPlace` and `getRoute` answer place/organization search and public-transport
-+ walking routes by voice. **No map is ever rendered** — the assistant is
-screen-less, so the tools return structured JSON (via `GeoJson`) that the LLM
-turns into speech. The backend is the Yandex MapKit Android SDK
-(`com.yandex.android:maps.mobile:4.45.0-full`). Transit answers carry leg-by-leg
-detail — the line (bus/metro), the vehicle type, the transfer point and the
-number of stops — which the HTTP Maps APIs cannot name; that line-level detail
-is the entire reason MapKit was chosen over them.
+`findPlace`, `getRoute` and `getCurrentLocation` answer place/organization
+search, public-transport + walking routes and «где я» by voice. **No map is
+ever rendered** — the assistant is screen-less, so the tools return structured
+JSON (via `GeoJson`) that the LLM turns into speech. The backend is the Yandex
+MapKit Android SDK (`com.yandex.android:maps.mobile:4.45.0-full`). Transit
+answers carry leg-by-leg detail — the line (bus/metro), the vehicle type, the
+transfer point and the number of stops — which the HTTP Maps APIs cannot name;
+that line-level detail is the entire reason MapKit was chosen over them.
 
-Lane flow: `TurnRunner` → tool (`tools/GeoTools.kt`) → `geo/GeoToolClient`
+Lane flow: `TurnRunner` → tool (`tools/GeoTools.kt` /
+`tools/GetCurrentLocationTool.kt`) → `geo/GeoToolClient`
 (narrow interface) → `geo/mapkit/YandexMapKitGeoClient` → `MapKitSearch` /
 `MapKitRouting` → `MapKitRouteMapper` → domain `GeoRoute` → `GeoJson`.
 
@@ -132,14 +172,30 @@ Lane flow: `TurnRunner` → tool (`tools/GeoTools.kt`) → `geo/GeoToolClient`
   (`LocationManager` only — no Play Services, no `FusedLocationProviderClient`).
   Weather was migrated onto it, and weather and geo share ONE resolver instance,
   so the default-location policy is single-sourced.
-- **Configured location wins — no GPS, no permission needed.** Only a blank
-  configured value falls back to a bounded device fix, and every failure
-  degrades to a typed `LocationOutcome` (`Resolved`/`PermissionDenied`/
-  `Unavailable`) so a tool answers honestly instead of inventing a city.
-  `findPlace` is deliberately lenient: an unresolved default degenerates to an
-  unconstrained search, because a query that names its own place («аптека в
-  Москве») stays answerable. `getRoute` is strict: a route genuinely needs an
-  origin, so an unresolved location is an honest error.
+- **Configured location wins for IMPLICIT requests — no GPS, no permission
+  needed.** Only a blank configured value falls back to a bounded device fix,
+  and every failure degrades to a typed `LocationOutcome` (`Resolved`/
+  `PermissionDenied`/`Unavailable`) so a tool answers honestly instead of
+  inventing a city. An EXPLICIT position request switches to the device fix:
+  `DefaultLocationResolver.resolveDevice()` SKIPS the configured-city
+  short-circuit, and `findPlace(near_user=true)` / `getRoute(origin_user=true)`
+  call it first — but **SOFT-DEGRADE** back to the configured city when the fix
+  is denied/unavailable. The device position is the better answer, a configured
+  city is a far more useful fallback than refusing, and it keeps «рядом» working
+  on the WiFi-only, GPS-less target. Only `getCurrentLocation` fails closed (a
+  typed `PermissionDenied`/`Unavailable` error), because «где я» without a fix
+  has no honest configured answer. `findPlace` is deliberately lenient: an
+  unresolved default degenerates to an unconstrained search, because a query
+  that names its own place («аптека в Москве») stays answerable. `getRoute` is
+  strict: a route genuinely needs an origin, so an unresolved location (after
+  the `origin_user` soft-degrade) is an honest error.
+- **`getCurrentLocation` (READ_ONLY, no args) is the ONE consumer of
+  `resolveDevice`.** It reports latitude/longitude and NAMES the fix through
+  `GeoToolClient.resolveLabel` (MapKit reverse geocoding); when naming fails
+  (no key, changed key, not found, transport error) it returns the honest
+  «текущее местоположение» label alongside the raw coordinates — it never
+  invents a city. This is what lets the model answer «где я» instead of
+  hallucinating a refusal.
 - **Reverse-geocoding asymmetry — honest, and per-subsystem.** MapKit has a
   reverse-geocode seam (`GeoToolClient.resolveLabel` → `MapKitSearch.reverse`),
   so a coordinate CAN be named; Open-Meteo has none and the app adds no
@@ -174,7 +230,12 @@ routing, ONE clarifying question for ambiguous requests, confirmation before
 irreversible actions unless the command is explicit, no technical details,
 honest failure with an alternative, harm refusal — plus the open-topic policy:
 answer general knowledge from the model itself, keep any conversation going,
-and use the built-in internet search for fresh or changing facts. The music
+and use the built-in internet search for fresh or changing facts. The identity
+NAME is read PER PASS through a `name()` lambda on `PromptComposer` /
+`TimeAwareSystemPrompt`: `SettingsMapping.effectiveWakeName` makes a custom
+Sherpa wake word the assistant's name in the prompt (and on the start screen),
+while Porcupine keeps the bundled «Джарвис» — its `.ppn` phrase cannot be read
+back, so it must not advertise a keyword it ignores. The music
 routing rules live in the same prompt. Deliberately RU-only: the ASR is ru-RU and both
 speech backends default to Russian voices (the Salute pool; Yandex `marina`);
 the EN UI translates the *interface*, not the assistant's brain (RUNBOOK
@@ -258,9 +319,17 @@ so API-29 devices hit the guard); unsupported actions get
 an honest Russian refusal naming
 the limitation, never a silent no-op. The media-key fallback (works
 without listener access) only covers the basic six — a media key cannot
-seek/like/repeat. Session selection: named app → any playing session →
-most recent; a named app with no live session is an instructive miss
-rather than a command to a random player.
+seek/like/repeat. Session selection (`TransportControl`): the named app's live
+session → any PLAYING session → the recently targeted app's live session → its
+browser token → the most recent session (hintless only) → media key. The
+browser-token fallback binds the target's MediaBrowserService and drives the
+returned session controller — the only way to reach a launched-but-idle player,
+which publishes no ACTIVE `PlaybackState` and is otherwise invisible to the
+active-session snapshot. `RecentMusicTarget` is a service-lifetime, deliberately
+non-persisted tie-breaker so a just-launched player outranks a stale session on
+the next hintless command. A named app with no live session (and no bindable
+browser token) is an instructive `named_app_miss` rather than a command to a
+random player — a named target never falls through to a stranger.
 
 ### Library lane (Tier 3)
 
@@ -327,21 +396,28 @@ device validation ladders):
   (`Stats.droppedFarEndFrames`) and logged under `AecDiag`.
 - The canceller is intentionally an interface (`EchoCanceller`) — the
   documented drop-in slot for a native WebRTC AEC3 (none is Java-exposed on
-  Maven as of 2026-09; see PLAN-AEC-FOLLOWUP §0).
+  Maven as of 2026-09).
 
 ## Follow-up window
 
 `SessionStateMachine` gained `FOLLOW_UP_WINDOW`: SPEAKING → (reply drained,
-spoke=true, feature on) → IDLE → `FollowUpWindowOpened` → window. Inside the
-window, `SessionManager`'s collector feeds `EnergyVad` (adaptive-floor
-onset detector; 200 ms lead-in absorbs the TTS tail, `forceSilent` recovers
-a swallowed rising edge); speech onset fires a normal turn WITHOUT the wake
-word; silence expires to IDLE. The wake word stays armed and supersedes the
-window. `FollowUpWindowController` is a pure, virtual-clock state machine —
-the session layer only applies its effects. The UI observes
-`followUpProgress` (remaining fraction) for the orb's countdown arc. Every
-spoken reply re-opens the window (chained conversation); mute/cancelAll
-closes it.
+spoke=true, feature on) → IDLE → `FollowUpWindowOpened` → window. The window
+opens when TTS **drains** (the player's buffer end) — NOT when the speaker goes
+acoustically quiet — and with `aec_mode=off` the mic still hears the reply. A
+fixed 200 ms lead-in therefore armed the VAD while the last word was still
+ringing, and two frames above the onset ratio started a phantom follow-up turn
+from the assistant's own voice. Inside the window, `SessionManager`'s collector
+feeds `EnergyVad` (adaptive-floor onset detector) through `session/FollowUpTailGate`,
+which arms only after the input has decayed to the room floor for 3 consecutive
+frames, with a bounded **800 ms fallback** so a permanently loud room is not left
+deaf. Speech onset fires a normal turn WITHOUT the wake word; silence expires to
+IDLE. A follow-up onset DRAINS the pre-roll ring buffer first (it still holds the
+assistant's own reply, and replaying it would prefix the user's transcript with
+the reply's words). The wake word stays armed and supersedes the window.
+`FollowUpWindowController` is a pure, virtual-clock state machine — the session
+layer only applies its effects. The UI observes `followUpProgress` (remaining
+fraction) for the orb's countdown arc. Every spoken reply re-opens the window
+(chained conversation); mute/cancelAll closes it.
 
 ## Voice stop without the wake word (FIXPLAN B)
 
@@ -422,6 +498,14 @@ scroll; the column is capped to 840dp on wide screens. Onboarding is a
 declarative status-row list (`PermRow` data) with start gated on the
 mandatory rows. Settings gained the «Музыка» card
 (`preferredMusicPlayer`), alarms list/ringing follow the same tokens.
+
+The primary control's label/action is derived purely by `ui/PrimaryControl`
+with `userStopped` FIRST: an explicit stop (or a running-but-deaf assistant)
+offers «Возобновить прослушивание» rather than «Остановить», and only an
+explicit start clears the flag. The header also carries the «очистить чат»
+action: it confirms, then `stopActiveTurn()` BEFORE `ConversationManager.clear()`,
+deleting ONLY the `messages` dialogue history — stored memory/facts/summaries are
+untouched, and the stopped-service path uses the same DAO delete.
 
 There is no XML-inflated custom-styled programmatic widget: row
 controls in onboarding are framework TextViews with theme ripples
@@ -585,7 +669,7 @@ architectural summary.
 
 ## Tests
 
-JVM unit suite (1147 tests, all green; runs in CI on every push/PR). The live
+JVM unit suite (1471 tests, all green; runs in CI on every push/PR). The live
 smoke tier (Sber + Yandex + GigaChat, `integration/**/*LiveSmokeTest`) shares
 `src/test` but is excluded from the gate task and runs only through
 `:app:integrationTest`, which self-skips when credentials are absent:

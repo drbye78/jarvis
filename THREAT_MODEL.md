@@ -135,7 +135,7 @@ What is enforced **outside the model**:
 - **A non-LLM authorization policy** at the single dispatch choke point:
   `toolRegistry.executeResult` → `ToolAuthorization.decide`
   (`tools/ToolContract.kt:158-175`, `tools/ToolAuthorization.kt:105-132`).
-- Risk classification for all 24 tools in one table (`tools/ToolRisks.kt:23-53`),
+- Risk classification for all 25 tools in one table (`tools/ToolRisks.kt:23-53`),
   cross-checked at registry init and pinned by test.
 - `IRREVERSIBLE` (cancel alarm/timer, forget) requires a **voice** turn whose **own
   ASR text** matched a removal command (`tools/IrreversibleCommand.kt:77-84`),
@@ -184,7 +184,7 @@ turn provenance to Allow/Deny:
 
 | Risk | Rule | Examples |
 |---|---|---|
-| `READ_ONLY` | Always allowed | `getWeather`, `findPlace`, `getRoute`, `recall_facts`, `listAlarms`, `getNowPlaying` |
+| `READ_ONLY` | Always allowed | `getWeather`, `findPlace`, `getRoute`, `getCurrentLocation`, `recall_facts`, `listAlarms`, `getNowPlaying` |
 | `STATEFUL` | Denied with no bound turn context; allowed on a voice turn | `setAlarm`, `setVolume`, `setWifi`, `lockScreen`, `openApp`, `playMusic`, `remember_fact` |
 | `IRREVERSIBLE` | Requires a voice turn whose own ASR text commanded a removal | `cancelAlarm`, `cancelTimer`, `forget_fact`¹ |
 
@@ -194,6 +194,12 @@ removal-command provenance **and** its own two-step confirmation
 **immediately-next** finalized utterance, bounded by turn age and a 5-minute TTL,
 check-and-act atomic under a mutex, with the delete loop preceding the grant
 release.
+
+`getCurrentLocation` is the one tool that resolves a live **device** fix (an
+explicit «где я»); it is `READ_ONLY` because it only reads position. `findPlace`
+(`near_user`) / `getRoute` (`origin_user`) prefer a device fix but soft-degrade
+to the configured city when one is denied/unavailable — only
+`getCurrentLocation` is fail-closed.
 
 Grouped the way the audit asked:
 
@@ -229,7 +235,7 @@ The complete egress list (see §1 of the inventory this was built from):
 | Yandex AI Studio `/v1/models` | API key only (GET) | lazy folder discovery, once |
 | Sber ASR/TTS (`smartspeech.sber.ru`) | **microphone audio** / TTS text | a turn |
 | Yandex STT/TTS (`stt|tts.api.cloud.yandex.net`) | **microphone audio** / TTS text | a turn |
-| Open-Meteo forecast + geocoding | lat/lon (or place name), fields | weather tool (selected provider or failover target) |
+| Open-Meteo forecast + geocoding | lat/lon (or place name), fields | weather tool (selected provider or failover target); optionally via the user-configured proxy |
 | Project EOL weather MCP (`weatherapi.projecteol.ru`, NOAA GFS) | lat/lon (or place name to `search_locations`), parameter names | weather tool (default provider) |
 | Yandex MapKit (host in the native SDK) | search query / route endpoints + key | geo tools |
 | `music.yandex.ru` search URL | search query, handed to another app | music tool |
@@ -242,6 +248,13 @@ Notes:
 - **Location** leaves only as coordinates/place-name to the ONE weather host the
   selected provider uses, and as a route endpoint to MapKit; no city name is ever
   persisted from a GPS fix.
+- **Optional Open-Meteo proxy** (Settings → «Погода и карты»): a user-configured
+  routing setting stored vault-backed (`SecretVault.KEY_OPEN_METEO_PROXY`; the
+  URL may embed `user:pass@`). It is applied ONLY to the Open-Meteo client via a
+  weather-only `OkHttpClient`, so the shared LLM/TTS/gRPC client is never
+  proxied. When set, the proxy operator becomes an additional network
+  intermediary for weather (forecast + geocoding) requests — an owner-chosen
+  egress path, not a Jarvis-controlled one.
 - **Web-search citations are deliberately discarded** and never spoken
   (`llm/GigaChatSseParser.kt`, `llm/YandexSseParser.kt`).
 - The **memory export** is the one path by which the whole memory can leave in
