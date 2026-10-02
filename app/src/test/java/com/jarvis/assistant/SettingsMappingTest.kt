@@ -6,6 +6,7 @@ import com.jarvis.assistant.ui.SettingsMapping.Player
 import com.jarvis.assistant.ui.SettingsMapping.WeatherPermissionStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -176,6 +177,19 @@ class SettingsMappingTest {
         assertTrue(SettingsMapping.isSherpaEngine("sherpa"))
         assertFalse(SettingsMapping.isSherpaEngine("porcupine"))
         assertFalse(SettingsMapping.isSherpaEngine(""))
+    }
+
+    @Test
+    fun `the wake hint names the custom keyword only on sherpa`() {
+        // The regression: a static «Джарвис» hint while the engine matches «Max».
+        assertEquals("Max", SettingsMapping.customWakeHintKeyword("Max", "sherpa"))
+        assertEquals("Max", SettingsMapping.customWakeHintKeyword("  Max  ", "sherpa"))
+        // Porcupine ignores the Sherpa keyword, so it must NOT advertise it.
+        assertNull(SettingsMapping.customWakeHintKeyword("Max", "porcupine"))
+        // Blank / null custom keyword → the bundled «Джарвис» wording.
+        assertNull(SettingsMapping.customWakeHintKeyword("", "sherpa"))
+        assertNull(SettingsMapping.customWakeHintKeyword("   ", "sherpa"))
+        assertNull(SettingsMapping.customWakeHintKeyword(null, "sherpa"))
     }
 
     // ---- GigaChat-3 model flavor ----

@@ -78,6 +78,15 @@ object SettingsMapping {
     /** Sherpa is the only engine that hides the Porcupine block. */
     fun isSherpaEngine(engine: String): Boolean = engine.trim().lowercase() == "sherpa"
 
+    /**
+     * The keyword the under-orb wake prompt must name, or null for the bundled
+     * «Джарвис» wording. A custom keyword only replaces the phrase on the Sherpa
+     * engine; Porcupine loads a `.ppn` whose phrase cannot be read back, so it
+     * must keep the bundled wording rather than advertise a keyword it ignores.
+     */
+    fun customWakeHintKeyword(keyword: String?, engine: String): String? =
+        keyword?.trim()?.takeIf { it.isNotEmpty() && isSherpaEngine(engine) }
+
     // ---- GigaChat-3 model flavor ----
 
     /**

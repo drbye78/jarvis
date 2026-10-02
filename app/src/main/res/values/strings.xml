@@ -41,6 +41,7 @@
 
     <!-- Home: redesign -->
     <string name="wake_hint">Скажите «Джарвис» и команду — например, «Джарвис, включи музыку»</string>
+    <string name="wake_hint_custom">Скажите «%1$s» и команду — например, «%1$s, включи музыку»</string>
     <string name="transcript_empty_hint">Тишина. Скажите «Джарвис», и я отвечу.</string>
 
     <!-- Onboarding -->
@@ -327,6 +328,7 @@
     <string name="voice_hint">Мила — проверенный голос по умолчанию. Дополнительные идентификаторы голосов из пула Salute можно ввести вручную и проверить кнопкой. Смена применяется к следующей фразе — без перезапуска сервиса.</string>
     <string name="yandex_voice_label">Голос Yandex</string>
     <string name="yandex_role_label">Роль (необязательно)</string>
+    <string name="yandex_role_none">Без роли</string>
     <string name="yandex_speed_label">Скорость речи</string>
     <string name="yandex_speed_value">%1$.1fx</string>
     <string name="yandex_voice_hint">Список голосов Yandex SpeechKit v3 фиксирован. Роль и скорость доступны только для Yandex и применяются к следующей фразе — без перезапуска сервиса. Поле роли показывает только роли, которые поддерживает выбранный голос; очистите его, чтобы не задавать роль.</string>

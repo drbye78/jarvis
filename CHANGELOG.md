@@ -6,6 +6,22 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Fixed — the Yandex role field is a dropdown again; the wake hint names the real keyword
+- **The role control had regressed to a plain input.** `screen_settings_speech.xml`
+  overrode the `ExposedDropdownMenu` style's `dropdown_menu` end icon with
+  `clear_text`, which also silently removed the tap-to-open wiring — the field
+  rendered as an ordinary text box. The style is restored and the affordance is
+  now explicit (`showDropDown()` on click, exactly like the voice field).
+  "No role" is a leading list entry mapped back to the empty role, so clearing
+  stays a real choice; `VoiceCatalog.validRoleFor` still fail-closes any label
+  that leaks into the pref.
+- **The home wake hint was hardcoded «Джарвис».** A custom Sherpa keyword (e.g.
+  «Max») left the under-orb prompt instructing the user to say a phrase the
+  engine no longer matches. `SettingsMapping.customWakeHintKeyword` now returns
+  the custom keyword ONLY on the Sherpa engine (Porcupine loads a `.ppn` whose
+  phrase cannot be read back, so it keeps the bundled wording), and the hint is
+  re-derived on every `onResume` so a Settings change is reflected on return.
+
 ### Changed — Project EOL is the default weather provider; automatic failover
 - **The default forecast source is now Project EOL (NOAA GFS, Russian-hosted),
   not Open-Meteo.** `api.open-meteo.com` is DPI-blocked from Russian networks

@@ -79,6 +79,14 @@ class SpeechSettingsController(
     private lateinit var advanced: View
     private lateinit var roleAdapter: ArrayAdapter<String>
 
+    /**
+     * Display label for the "no role" entry — the FIRST item in the role
+     * dropdown. It is a sentinel: [commitYandexRole] maps it back to the EMPTY
+     * role so the service applies its own default. (This replaces the old
+     * `clear_text` end icon, which silently removed the dropdown affordance.)
+     */
+    private lateinit var roleNoneLabel: String
+
     /** True while the role field is seeded programmatically, to skip the watcher. */
     private var suppressRoleCommit = false
 
@@ -262,7 +270,12 @@ class SpeechSettingsController(
         yandexVoice.setOnClickListener { yandexVoice.showDropDown() }
 
         roleAdapter = ArrayAdapter(root.context, android.R.layout.simple_list_item_1)
+        roleNoneLabel = root.context.getString(R.string.yandex_role_none)
         yandexRole.setAdapter(roleAdapter)
+        // The field is non-editable (`inputType=none`), so a bare tap only
+        // focuses it. Opening the list explicitly is what makes this read as a
+        // dropdown — the same affordance the voice field installs.
+        yandexRole.setOnClickListener { yandexRole.showDropDown() }
         refreshRoleSuggestions(activeYandexVoice())
 
         yandexVoice.setOnEditorActionListener { _, action, _ ->
@@ -277,8 +290,8 @@ class SpeechSettingsController(
         yandexVoice.setOnItemClickListener { _, _, _, _ -> commitYandexVoice() }
 
         // The role field is non-editable (`inputType=none`), so a text change is
-        // either a dropdown pick or a clear — commit both. An empty text means
-        // "no role" (the service default); no sentinel label is ever injected.
+        // a dropdown pick — commit it. The "no role" choice is a real list entry
+        // (a display sentinel) that [commitYandexRole] maps back to "".
         yandexRole.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
 
@@ -309,7 +322,11 @@ class SpeechSettingsController(
     }
 
     private fun commitYandexRole() {
-        prefs.yandexTtsRole = yandexRole.text.toString().trim()
+        val text = yandexRole.text.toString().trim()
+        // The leading "no role" entry is a display sentinel and persists as the
+        // EMPTY role (the service default). `VoiceCatalog.validRoleFor` at the
+        // graph and again in the TTS client would drop any label that leaked.
+        prefs.yandexTtsRole = if (text == roleNoneLabel) "" else text
     }
 
     /**
@@ -327,13 +344,18 @@ class SpeechSettingsController(
     /** Seeds the role field without letting the watcher re-persist the same value. */
     private fun setRoleText(role: String) {
         suppressRoleCommit = true
-        yandexRole.setText(role, false)
+        yandexRole.setText(role.ifBlank { roleNoneLabel }, false)
         suppressRoleCommit = false
     }
 
-    /** Role suggestions follow the selected voice (documented roles only, fail-closed). */
+    /**
+     * Role suggestions follow the selected voice (documented roles only,
+     * fail-closed). The "no role" sentinel leads the list so clearing is an
+     * explicit choice rather than an empty field.
+     */
     private fun refreshRoleSuggestions(voiceId: String) {
         roleAdapter.clear()
+        roleAdapter.add(roleNoneLabel)
         roleAdapter.addAll(VoiceCatalog.yandexRolesFor(voiceId))
     }
 

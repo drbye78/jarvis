@@ -205,15 +205,21 @@
             <!-- Yandex role (advanced, capability-gated). CLOSED dropdown: the
                  presets are only the roles the selected voice DOCUMENTS. The
                  field is non-editable — free text would persist a pair the
-                 service rejects. An empty selection means "no role". -->
+                 service rejects. An empty selection means "no role".
+
+                 Do NOT override endIconMode here. The ExposedDropdownMenu style
+                 sets `dropdown_menu`, and THAT is what installs the tap-to-open
+                 listener on the AutoCompleteTextView; overriding it with
+                 `clear_text` silently removed the dropdown and left a field
+                 that looked like plain input. "No role" is a leading list entry
+                 handled in the controller, not a clear icon. -->
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
                 android:id="@+id/yandexRoleLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:hint="@string/yandex_role_label"
-                app:endIconMode="clear_text">
+                android:hint="@string/yandex_role_label">
 
                 <com.google.android.material.textfield.MaterialAutoCompleteTextView
                     android:id="@+id/yandexRole"

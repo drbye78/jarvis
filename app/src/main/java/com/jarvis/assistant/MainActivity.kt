@@ -28,6 +28,7 @@ import com.jarvis.assistant.ui.AudioLevel
 import com.jarvis.assistant.ui.AudioLevelMeter
 import com.jarvis.assistant.ui.EdgeToEdge
 import com.jarvis.assistant.ui.Motion
+import com.jarvis.assistant.ui.SettingsMapping
 import com.jarvis.assistant.ui.StateLabel
 import com.jarvis.assistant.ui.TranscriptAdapter
 import com.jarvis.assistant.ui.VoiceOrbView
@@ -90,6 +91,7 @@ class MainActivity : AppCompatActivity() {
         transcript = findViewById(R.id.transcript)
         transcriptEmpty = findViewById(R.id.transcriptEmpty)
         wakeHintText = findViewById(R.id.wakeHintText)
+        applyWakeHint()
         adapter = TranscriptAdapter()
 
         transcript.apply {
@@ -259,6 +261,28 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshServiceState()
+        // The wake word can change in Settings while this screen is stopped;
+        // re-derive the prompt so it never advertises the wrong phrase.
+        applyWakeHint()
+    }
+
+    /**
+     * The under-orb prompt must name the ACTUAL wake word. A custom Sherpa
+     * keyword replaces the bundled «Джарвис», so a static hint would instruct
+     * the user to say a phrase the engine no longer matches. Porcupine (a
+     * `.ppn` phrase we cannot read back) keeps the bundled default wording.
+     */
+    private fun applyWakeHint() {
+        val prefs = com.jarvis.assistant.util.AppPrefs(this)
+        val keyword = SettingsMapping.customWakeHintKeyword(
+            prefs.sherpaCustomKeyword,
+            prefs.wakeWordEngine,
+        )
+        wakeHintText.text = if (keyword != null) {
+            getString(R.string.wake_hint_custom, keyword)
+        } else {
+            getString(R.string.wake_hint)
+        }
     }
 
     private fun refreshServiceState() {

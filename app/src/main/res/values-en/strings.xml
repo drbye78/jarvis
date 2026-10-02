@@ -40,6 +40,7 @@
 
     <!-- Home: redesign -->
     <string name="wake_hint">Say “Jarvis” and a command — for example, “Jarvis, play music”</string>
+    <string name="wake_hint_custom">Say “%1$s” and a command — for example, “%1$s, play music”</string>
     <string name="transcript_empty_hint">All quiet. Say “Jarvis” and I’ll respond.</string>
 
     <!-- Onboarding -->
@@ -328,6 +329,7 @@
     <string name="voice_hint">Mila is the verified default voice. Other Salute voice pool IDs can be entered manually and previewed with the button. Changes apply to the next spoken sentence — no service restart.</string>
     <string name="yandex_voice_label">Yandex voice</string>
     <string name="yandex_role_label">Role (optional)</string>
+    <string name="yandex_role_none">No role</string>
     <string name="yandex_speed_label">Speaking rate</string>
     <string name="yandex_speed_value">%1$.1fx</string>
     <string name="yandex_voice_hint">The Yandex SpeechKit v3 voice list is fixed. Role and speed are Yandex-only and apply to the next spoken sentence — no service restart. The role field offers only the roles the selected voice supports; clear it to send no role.</string>
