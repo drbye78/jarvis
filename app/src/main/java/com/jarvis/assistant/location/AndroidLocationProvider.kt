@@ -159,7 +159,7 @@ class AndroidLocationProvider(
             val location = try {
                 lm.getLastKnownLocation(provider)
             } catch (e: Exception) {
-                // Absent provider — common on this GMS-free, often WiFi-only device.
+                // Absent provider — e.g. no GPS lock indoors on this GMS-free device.
                 Timber.d(e, "No last-known location for provider %s", provider)
                 null
             } ?: continue

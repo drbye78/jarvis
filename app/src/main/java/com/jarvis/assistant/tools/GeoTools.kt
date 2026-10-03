@@ -173,8 +173,8 @@ class GeoPlaceTool(
      * configured location when no fix can be obtained (denied/unavailable).
      * The device position is the better answer, but the configured city is a
      * far more useful fallback than refusing the search outright, and it keeps
-     * «рядом» working on the GMS-free, WiFi-only target where a fix is often
-     * unavailable. The explicit `near` string still wins over both; when even
+     * «рядом» working on the GMS-free target where a fix can still be
+     * denied/unavailable. The explicit `near` string still wins over both; when even
      * the configured location is blank the search degrades to unconstrained,
      * exactly as on the non-`near_user` path.
      */

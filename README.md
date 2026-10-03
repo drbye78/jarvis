@@ -102,9 +102,9 @@ Answers arbitrary questions and holds a conversation on any topic.
    city always wins and needs no location access. To use auto-detect, tap
    **Allow location access** in that screen — the permission dialog lives there
    (weather runs in the background service, which cannot prompt), and access is
-   coarse or fine. The GMS-free, WiFi-only tablet has no GPS hardware, but the
-   device position comes from the network provider (`NETWORK_PROVIDER`) and works
-   sub-second once warmed; the configured city stays the DEFAULT for implicit
+   coarse or fine. The GMS-free tablet HAS GPS hardware, and the
+   device position can also come from the network provider (`NETWORK_PROVIDER`,
+   sub-second once warmed); the configured city stays the DEFAULT for implicit
    weather questions, while an explicit «где я» / «рядом» uses the real device
    position.
 

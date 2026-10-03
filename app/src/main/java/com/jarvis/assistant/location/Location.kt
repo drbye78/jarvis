@@ -79,10 +79,13 @@ interface LocationResolver {
  * device fix, and every failure degrades to a typed [LocationOutcome] so the
  * tool can answer honestly instead of inventing a city.
  *
- * This matters more than usual on the target device: it is GMS-free and often
- * WiFi-only, with no GPS hardware and no fused provider. The fix comes from
- * `NETWORK_PROVIDER` (probe-verified: sub-second once warmed), so the
- * configured location is the convenient DEFAULT, not the only working path.
+ * This matters more than usual on the target device: it is GMS-free, so there
+ * is no fused provider and the framework `NETWORK_PROVIDER` has been the
+ * probe-verified source of a fast fix (sub-second once warmed). The device DOES
+ * have GPS hardware (`AndroidLocationProvider` requests `GPS_PROVIDER` first),
+ * so the configured location is the convenient DEFAULT, not the only working
+ * path. (Earlier docs claiming a GPS-less tablet were wrong: a probe that saw a
+ * NETWORK fix does not prove the absence of GPS hardware.)
  */
 class DefaultLocationResolver(
     /** Live read of the Settings value; blank ⇒ auto-detect. */

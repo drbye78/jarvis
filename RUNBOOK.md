@@ -143,9 +143,10 @@ Weather questions default to a location: the city set in **Настройки �
 карты** always wins; if that is empty, the device location is used.
 
 - **Configured city is the reliable path.** The target tablet is GMS-free
-  (no Play Services and no GPS hardware/FUSED provider), but `NETWORK_PROVIDER`
-  does yield a fix — probe-verified, sub-second once warmed (the earlier
-  "yields nothing" assumption was wrong). Still, if weather keeps answering for
+  (no Play Services, so no FUSED provider), but it HAS GPS hardware and
+  `NETWORK_PROVIDER` also yields a fix — the latter probe-verified, sub-second
+  once warmed (the earlier "network yields nothing" assumption was wrong, as was
+  the "GPS-less" label). Still, if weather keeps answering for
   the wrong place, set the city explicitly in **Настройки → Погода и карты**.
 - **«Не удалось определить местоположение»** — no city is configured AND
   location access is denied or no fix was obtained within ~6 s. Either set a
@@ -184,8 +185,8 @@ First checks:
 - **No location for a route:** «Построй маршрут» needs an origin. With no
   configured city and no location permission/fix the tool answers honestly
   («Укажи город в настройках»). Set a city or grant location access; the
-  configured city needs no GPS and is the reliable path on the GMS-free,
-  WiFi-only tablet. (`findPlace` is lenient — a query that names its own place,
+  configured city needs no GPS and is the reliable path on the GMS-free
+  tablet. (`findPlace` is lenient — a query that names its own place,
   e.g. «аптека в Москве», is searched even without a default location.)
 - **Device position («где я», «рядом»):** an explicit «где я» uses
   `getCurrentLocation`, a device fix that FAILS CLOSED with a typed error when

@@ -34,7 +34,7 @@ import com.jarvis.assistant.weather.parse
  *  - `weatherProvider` is ESSENTIAL and LIVE: the forecast source
  *    (`open_meteo` | `project_eol`), read per weather turn.
  *  - `weatherLocation` is ESSENTIAL and LIVE: the configured city is the
- *    primary path on GMS-free, WiFi-only devices and the pref is read per
+ *    reliable primary path on the GMS-free device and the pref is read per
  *    weather turn.
  *  - `mapKitApiKey` is ADVANCED and [ApplyPolicy.APP_RESTART]: MapKit may
  *    `setApiKey` only ONCE per process, so even a service restart is not

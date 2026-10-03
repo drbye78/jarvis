@@ -206,7 +206,10 @@ Lane flow: `TurnRunner` → tool (`tools/GeoTools.kt` /
   call it first — but **SOFT-DEGRADE** back to the configured city when the fix
   is denied/unavailable. The device position is the better answer, a configured
   city is a far more useful fallback than refusing, and it keeps «рядом» working
-  on the WiFi-only, GPS-less target. Only `getCurrentLocation` fails closed (a
+  on the GMS-free target. (`AndroidLocationProvider` requests `GPS_PROVIDER`
+  first, then `NETWORK_PROVIDER`; the device has GPS hardware, so a real fix is
+  available as well as the probe-verified network fix — earlier "GPS-less"
+  wording was a mistaken inference.) Only `getCurrentLocation` fails closed (a
   typed `PermissionDenied`/`Unavailable` error), because «где я» without a fix
   has no honest configured answer. `findPlace` is deliberately lenient: an
   unresolved default degenerates to an unconstrained search, because a query
