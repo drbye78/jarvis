@@ -25,12 +25,11 @@ import com.jarvis.assistant.llm.TokenManager
 import com.jarvis.assistant.llm.YandexAiStudioClient
 import com.jarvis.assistant.mcp.McpDnsGuard
 import com.jarvis.assistant.mcp.McpServerConfig
-import com.jarvis.assistant.mcp.McpServerConfigCodec
-import com.jarvis.assistant.mcp.McpServerDecodeResult
+import com.jarvis.assistant.mcp.McpServerValidation
+import com.jarvis.assistant.mcp.McpServerValidationResult
 import com.jarvis.assistant.mcp.McpToolCatalog
-import com.jarvis.assistant.mcp.McpUrlPolicy
+import com.jarvis.assistant.mcp.McpWarningThrottle
 import com.jarvis.assistant.mcp.StreamableHttpMcpClient
-import com.jarvis.assistant.mcp.UrlPolicyResult
 import com.jarvis.assistant.session.SessionManager
 import com.jarvis.assistant.session.SessionStateMachine
 import com.jarvis.assistant.speech.SpeechBackend
@@ -191,34 +190,45 @@ class AppGraph(
     }
 
     /**
-     * Decode the persisted MCP list and drop any server whose URL fails the
-     * pure [McpUrlPolicy] under its kind. A decode failure yields no servers
-     * (never a throw); a rejected server logs its NAME and the coarse reason —
-     * never the URL. [McpToolCatalog] itself filters enabled/READ on top.
+     * Process-lifetime first-time gate for MCP warnings. The config supplier
+     * below runs on EVERY [McpToolCatalog.snapshot] (every LLM pass), so a
+     * permanently-misconfigured server would otherwise WARN on each pass. Keys
+     * are stable per misconfiguration, so a fixed config stops warning.
      */
-    private fun validMcpServers(): List<McpServerConfig> {
-        val servers = when (val decoded = McpServerConfigCodec.decode(appPrefs.mcpServers)) {
-            is McpServerDecodeResult.Ok -> decoded.servers
-            McpServerDecodeResult.Empty -> return emptyList()
-            is McpServerDecodeResult.Invalid -> {
-                Timber.w("MCP config is invalid: %s", decoded.reason)
-                return emptyList()
-            }
-        }
-        return servers.filter { server ->
-            when (val policy = McpUrlPolicy.validate(server.kind, server.url)) {
-                UrlPolicyResult.Allowed -> true
-                is UrlPolicyResult.Rejected -> {
-                    Timber.w(
-                        "MCP server %s rejected by URL policy: %s",
-                        server.displayName.takeIf { it.isNotBlank() } ?: server.id,
-                        policy.reason,
-                    )
-                    false
+    private val mcpWarnThrottle = McpWarningThrottle()
+
+    /**
+     * Decode the persisted MCP list and drop any server whose URL fails
+     * [McpUrlPolicy] under its kind. The decision is delegated to the pure
+     * [McpServerValidation]; this caller owns the logging, throttled by
+     * [mcpWarnThrottle] so a rejected server logs its NAME and coarse reason
+     * (never the URL) ONCE, not once per snapshot. A decode failure yields no
+     * servers (never a throw). [McpToolCatalog] filters enabled/READ on top.
+     */
+    private fun validMcpServers(): List<McpServerConfig> =
+        when (val result = McpServerValidation.validate(appPrefs.mcpServers)) {
+            McpServerValidationResult.Empty -> emptyList()
+
+            is McpServerValidationResult.Invalid -> {
+                if (mcpWarnThrottle.firstTime("invalid:${result.reason}")) {
+                    Timber.w("MCP config is invalid: %s", result.reason)
                 }
+                emptyList()
+            }
+
+            is McpServerValidationResult.Decoded -> {
+                result.rejected.forEach { rejected ->
+                    if (mcpWarnThrottle.firstTime("url:${rejected.serverId}:${rejected.reason}")) {
+                        Timber.w(
+                            "MCP server %s rejected by URL policy: %s",
+                            rejected.name,
+                            rejected.reason,
+                        )
+                    }
+                }
+                result.valid
             }
         }
-    }
 
     val tokenManager = TokenManager(appContext, httpClient, config)
 
