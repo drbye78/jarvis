@@ -53,6 +53,14 @@ class FunctionRouter(
      */
     private val cognitiveTools: () -> List<ToolContract> = { emptyList() },
     /**
+     * Dynamically-discovered tools (the MCP bridge), projected per call into
+     * the inner [ToolRegistry]. Lazy so a discovery that landed between LLM
+     * passes is visible on the next pass without rebuilding the registry. The
+     * base surface stays static and classified; default empty preserves every
+     * existing caller.
+     */
+    private val dynamicTools: () -> List<ToolContract> = { emptyList() },
+    /**
      * Telemetry observer passed through to the
      * ToolRegistry (command_events). Null = no telemetry (tests).
      */
@@ -236,14 +244,16 @@ class FunctionRouter(
     )
 
     /**
-     * The full registry = base tools + memory tools. Lazy: the cognitive
-     * coordinator (and its Room v4 migration) resolves on first LLM pass
-     * or first tool call, not at graph construction (startup budget).
+     * The full registry = base tools + memory tools + dynamically-discovered
+     * tools. Lazy: the cognitive coordinator (and its Room v4 migration)
+     * resolves on first LLM pass or first tool call, not at graph construction
+     * (startup budget).
      */
     private val toolRegistry by lazy {
         ToolRegistry(
             tools = baseToolRegistry.available() + cognitiveTools(),
             onExecuted = executionObserver,
+            dynamicTools = dynamicTools,
         )
     }
 

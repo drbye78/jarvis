@@ -6,6 +6,34 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — multi-server MCP external tools (Phase 1)
+- **User-configured MCP servers, remote and local (loopback).** Settings → «MCP-серверы»
+  manages a list of Streamable-HTTP MCP servers (`mcp/McpServerConfig` + codec, stored
+  as one JSON-blob pref; per-server auth values in the Keystore via
+  `SecretVault.mcpSecretKey`). A new `mcp/` protocol layer (initialize / `tools/list`
+  with cursor pagination / `tools/call`, SSE-or-JSON, session-id echo, protocol-vs-tool
+  error separation) is hand-rolled on OkHttp; the weather lane's client is now a thin
+  adapter over it. Validated against live servers: legacy `2025-06-18` handshake works
+  and `2026-07-28` is not yet accepted by deployed servers.
+- **Discovered tools join the LLM surface per pass.** `ToolRegistry` gained a dynamic
+  supplier (`dynamicTools`) consulted by `getToolDefinitions()`/`executeResult`, so
+  `McpToolCatalog.snapshot()` (non-blocking, TTL + stale-while-revalidate, per-server
+  and global caps via `McpBudget`) can change the advertised set without rebuilding the
+  registry. Tool names are namespaced `mcp_<hash>_<tool>` so they can never shadow a
+  built-in; results and schemas are byte-capped.
+- **Untrusted by construction.** Every MCP tool is `ToolRisk.EXTERNAL`, which
+  `ToolAuthorization` allows ONLY on a bound turn whose origin is `TurnOrigin.VOICE`
+  (PROACTIVE/SCHEDULED/null all deny, content-free reason). SSRF is guarded twice:
+  pure `McpUrlPolicy` (literal classification; REMOTE https-only, private/link-local/
+  metadata rejected; LOCAL loopback-only) plus connect-time `McpDnsGuard` (an
+  `okhttp3.Dns` that fails closed when a hostname resolves private). **WRITE-access
+  servers contribute zero tools in Phase 1** — a mutation that cannot yet be confirmed
+  with the user is not advertised.
+- Tests: `McpServerConfigCodecTest`, `McpUrlPolicyTest`, `McpBudgetTest`,
+  `McpDnsGuardTest`, `McpToolContractTest`, `McpToolCatalogTest`, `ToolRegistryDynamicTest`,
+  plus real live-payload fixtures in `StreamableHttpMcpClientTest` and an `EXTERNAL`
+  truth table in `ToolAuthorizationTest`. JVM suite 1513 → 1595.
+
 ### Added — tap-to-stop orb, speakable output, voice player selection, explicit memory
 - **Tap the orb to stop speech.** The home-screen `VoiceOrbView` now routes a tap to
   the existing barge-in primitive `SessionManager.stopActiveTurn()` (seq bump, cancel

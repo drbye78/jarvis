@@ -49,6 +49,9 @@ interface SettingsHost {
     /** Open the memory inspector screen (MEMORY's in-app navigation). */
     fun openMemoryInspector()
 
+    /** Open the MCP server list/edit screen (MCP's in-app navigation). */
+    fun openMcpServers()
+
     /** Close the current detail screen. */
     fun finishScreen()
 }

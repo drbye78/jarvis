@@ -306,6 +306,17 @@ keystore with `keytool` and update `local.properties` accordingly.
   open app (`openApp` also understands spoken aliases and ASR transliterations
   such as «ВК Музыка» → the VK app), battery/time info.
 
+- **External tools via MCP** (**Настройки → MCP-серверы**): point Jarvis at
+  your own **MCP servers** (remote over `https`, or a local companion app on
+  `localhost`) and their tools join the assistant's toolkit. Server tools are
+  treated as **untrusted**: they run **only** on a turn you started by voice
+  (never a proactive/scheduled one), names are namespaced so they can never
+  shadow a built-in, and results/schemas are size-capped. **Write** servers are
+  listed but expose no tools until confirmed writes ship. URLs are checked both
+  before saving and at connect time (a server is refused if it points at, or
+  resolves to, a private/loopback address — SSRF guard). Changing the list
+  applies to the next turn — no restart.
+
 ## License
 [MIT](LICENSE)
 
@@ -326,6 +337,11 @@ Speech and LLM providers (Sber
 SaluteSpeech, Yandex SpeechKit v3, GigaChat, Yandex AI Studio) are used under
 your own accounts and their respective terms. Wake-word and on-device ASR/TTS
 models run locally: Sherpa-ONNX (Apache-2.0) and Porcupine (Picovoice licence).
+
+**MCP servers** (Настройки → MCP-серверы) are entirely user-supplied: Jarvis
+connects only to the endpoints **you** add, sends only the tool calls the model
+requests on a voice turn, and stores each server's auth value in the Android
+Keystore. Nothing is contacted until you configure a server.
 
 Map and route data comes from **Yandex MapKit**, used under your own MapKit key
 and the [Yandex Maps terms](https://yandex.ru/legal/maps_termsofuse). Those

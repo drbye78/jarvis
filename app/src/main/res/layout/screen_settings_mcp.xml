@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  «MCP-серверы» / MCP detail screen (multi-server MCP lane, P1-D).
+
+  A short info block plus ONE row that opens the server list. The screen
+  deliberately holds no per-server editing UI: that belongs to
+  McpServersActivity, so the Settings screen stays a stable entry point while
+  the list grows.
+
+  The info line states the trust boundary in plain words: MCP servers are
+  third-party, are not verified by the app, and their tools run only on their
+  spoken command.
+
+  NEW ID introduced by this screen (controller contract): mcpServersRow. The
+  row's text ids are bound by the screen itself; the controller only wires the
+  tap.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/settingsMcpScreen"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipToPadding="false">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="28dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_mcp_section"
+            style="@style/TextAppearance.Jarvis.SectionHeader"
+            android:accessibilityHeading="true" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/settings_mcp_info"
+            style="@style/TextAppearance.Jarvis.Hint" />
+
+        <!-- Opens the server list. Modelled on the category row: a tappable
+             surface with a title, a one-line summary and a trailing chevron. -->
+        <LinearLayout
+            android:id="@+id/mcpServersRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_section"
+            android:minHeight="72dp"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_mcp_servers_row"
+                    style="@style/TextAppearance.Material3.TitleMedium" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/settings_mcp_servers_row_sub"
+                    style="@style/TextAppearance.Jarvis.Hint" />
+            </LinearLayout>
+
+            <ImageView
+                android:id="@+id/mcpServersRowChevron"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginStart="12dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/material_ic_keyboard_arrow_right_black_24dp"
+                app:tint="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

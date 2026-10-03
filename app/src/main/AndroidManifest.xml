@@ -123,6 +123,11 @@
             android:name=".MemoryInspectorActivity"
             android:exported="false" />
 
+        <!-- Multi-server MCP lane (P1-D): MCP server list + add/edit dialog. -->
+        <activity
+            android:name=".McpServersActivity"
+            android:exported="false" />
+
         <activity
             android:name=".AlarmsActivity"
             android:exported="false" />

@@ -380,6 +380,21 @@ class AppPrefs(
         get() = prefs.getString(KEY_MEMORY_EMBEDDER, "AUTO") ?: "AUTO"
         set(value) = prefs.edit().putString(KEY_MEMORY_EMBEDDER, value).apply()
 
+    /**
+     * Configured MCP ("внешние инструменты") servers, held as ONE opaque JSON
+     * blob from [com.jarvis.assistant.mcp.McpServerConfigCodec.encode]. Stored
+     * as a plain string so [AppPrefs] stays free of the MCP lane's types; the
+     * catalog decodes it on every use, so a change applies LIVE — no service
+     * restart.
+     *
+     * Only the auth header NAME is part of the blob. The secret value lives in
+     * the vault keyed by server id
+     * ([com.jarvis.assistant.util.CredentialsStore.mcpSecret]).
+     */
+    var mcpServers: String
+        get() = prefs.getString(KEY_MCP_SERVERS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_MCP_SERVERS, value).apply()
+
     fun loadProviderSettings(): ProviderSettings = ProviderSettings(
         type = providerType,
         openAiBaseUrl = openAiBaseUrl,
@@ -456,6 +471,9 @@ class AppPrefs(
         internal const val KEY_BEHAVIOR_QUIET_END = "behavior_quiet_end"
         internal const val KEY_BEHAVIOR_DAILY_QUOTA = "behavior_daily_quota"
         internal const val KEY_MEMORY_EMBEDDER = "memory_embedder"
+
+        /** MCP server list blob; see [mcpServers]. LIVE (no restart). */
+        internal const val KEY_MCP_SERVERS = "mcp_servers"
     }
 }
 

@@ -1,8 +1,11 @@
 package com.jarvis.assistant
 
-import com.jarvis.assistant.weather.McpCall
-import com.jarvis.assistant.weather.McpToolResult
-import com.jarvis.assistant.weather.StreamableHttpMcpClient
+import com.jarvis.assistant.mcp.McpCall2
+import com.jarvis.assistant.mcp.McpEnvelope
+import com.jarvis.assistant.mcp.McpResultParser
+import com.jarvis.assistant.mcp.McpToolResult2
+import com.jarvis.assistant.mcp.McpToolsCall
+import com.jarvis.assistant.mcp.StreamableHttpMcpClient
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -27,13 +30,16 @@ import org.junit.Test
  * turn. Every request goes to MockWebServer — no unit test reaches the
  * internet.
  *
- * Real DeepWiki / Microsoft Learn payloads (appended below) also record three
- * verified gaps for P1. These are factual characterizations of CURRENT
- * behavior, test-only — production is unchanged:
- *  (a) a server `Mcp-Session-Id` is never captured and never echoed back;
- *  (b) no `MCP-Protocol-Version` header and no `notifications/initialized` are sent;
- *  (c) a JSON-RPC `error` object and a tool-level `isError` are both flattened
- *      to `isError=true`, so a protocol failure and a tool failure look alike.
+ * The real DeepWiki / Microsoft Learn payloads below also record the P1 fixes:
+ *  (a) a server `Mcp-Session-Id` IS now captured and echoed back, while a
+ *      server that never issues one is not treated as fatal;
+ *  (b) every request carries `MCP-Protocol-Version: 2025-06-18`, and a
+ *      successful `initialize` is followed by a `notifications/initialized`;
+ *  (c) a JSON-RPC `error` object and a tool-level `isError` are DISTINCT: the
+ *      former surfaces as [McpCall2.ProtocolError] with its code (and HTTP
+ *      status), the latter as an [McpCall2.Ok] result flagged `isError`;
+ *  (d) `tools/list` is paged (cursor + hard page cap) and a discovery reply is
+ *      never mistaken for a successful empty tool result.
  */
 class StreamableHttpMcpClientTest {
 
@@ -56,9 +62,15 @@ class StreamableHttpMcpClientTest {
     )
 
     /** Unwraps a successful call, failing loudly on a non-Ok classification. */
-    private fun ok(call: McpCall): McpToolResult {
-        assertTrue("expected Ok but was $call", call is McpCall.Ok)
-        return (call as McpCall.Ok).result
+    private fun ok(call: McpCall2): McpToolResult2 {
+        assertTrue("expected Ok but was $call", call is McpCall2.Ok)
+        return (call as McpCall2.Ok).result
+    }
+
+    /** Unwraps a protocol error, failing loudly on any other classification. */
+    private fun protocolError(call: McpCall2): McpCall2.ProtocolError {
+        assertTrue("expected ProtocolError but was $call", call is McpCall2.ProtocolError)
+        return call as McpCall2.ProtocolError
     }
 
     private fun toolResultEnvelope(structured: String, isError: Boolean = false): String =
@@ -130,17 +142,20 @@ class StreamableHttpMcpClientTest {
     }
 
     @Test
-    fun `propagates a JSON-RPC level error`() = runBlocking {
+    fun `a JSON-RPC level error stays distinct from a tool-level error`() = runBlocking {
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(
                 """{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}""",
             ),
         )
 
-        val result = ok(client().callTool("nope", "{}"))
+        val error = protocolError(client().callTool("nope", "{}"))
 
-        assertTrue(result.isError)
-        assertTrue(result.text.contains("Method not found"))
+        // The code is preserved (NOT flattened into a boolean), and a 2xx body
+        // means the server answered with HTTP 200.
+        assertEquals(-32601, error.code)
+        assertEquals("Method not found", error.message)
+        assertEquals(200, error.httpStatus)
     }
 
     @Test
@@ -152,9 +167,10 @@ class StreamableHttpMcpClientTest {
         )
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(
-                """{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2024-11-05"}}""",
+                """{"jsonrpc":"2.0","id":2,"result":{"protocolVersion":"2025-06-18"}}""",
             ),
         )
+        server.enqueue(MockResponse().setResponseCode(202))
         server.enqueue(MockResponse().setResponseCode(200).setBody(toolResultEnvelope("""{"ok":true}""")))
 
         val result = ok(client().callTool("search_locations", """{"query":"Paris"}"""))
@@ -163,8 +179,11 @@ class StreamableHttpMcpClientTest {
         assertEquals("""{"ok":true}""", result.text)
         val first = server.takeRequest()
         val second = server.takeRequest()
+        val third = server.takeRequest()
         assertTrue(first.body.readUtf8().contains("tools/call"))
         assertTrue(second.body.readUtf8().contains("initialize"))
+        // Fix (b): a successful initialize is acknowledged.
+        assertTrue(third.body.readUtf8().contains("notifications/initialized"))
     }
 
     @Test
@@ -173,8 +192,8 @@ class StreamableHttpMcpClientTest {
 
         val result = client().callTool("search_locations", "{}")
 
-        // Reachable server, non-2xx: BadResponse (NOT a failover trigger).
-        assertEquals(McpCall.BadResponse, result)
+        // Reachable server, non-2xx with no JSON-RPC error: BadResponse.
+        assertEquals(McpCall2.BadResponse, result)
     }
 
     @Test
@@ -184,19 +203,52 @@ class StreamableHttpMcpClientTest {
 
         val result = StreamableHttpMcpClient(OkHttpClient(), url).callTool("search_locations", "{}")
 
-        assertEquals(McpCall.Unreachable, result)
+        assertEquals(McpCall2.Unreachable, result)
     }
 
     @Test
-    fun `the request carries the tool name and a JSON argument object`() = runBlocking {
+    fun `the request carries the tool name, a JSON argument object and the protocol version`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(200).setBody(toolResultEnvelope("""{}""")))
 
         client().callTool("get_weather_forecast", """{"latitude":1.5,"hours":24}""")
 
-        val body = server.takeRequest().body.readUtf8()
+        val request = server.takeRequest()
+        val body = request.body.readUtf8()
         assertTrue(body.contains(""""name":"get_weather_forecast""""))
         // Arguments must be a JSON OBJECT, not a string-encoded blob.
         assertTrue(body.contains(""""arguments":{"latitude":1.5,"hours":24}"""))
+        // Fix (b): the negotiated protocol version travels on the header.
+        assertEquals("2025-06-18", request.getHeader("MCP-Protocol-Version"))
+    }
+
+    @Test
+    fun `a configured auth pair is attached to every request`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody(toolResultEnvelope("""{}""")))
+        val mcp = StreamableHttpMcpClient(
+            httpClient = OkHttpClient(),
+            endpointUrl = server.url("/mcp/").toString(),
+            authHeaderName = "Authorization",
+            authHeaderValue = "Bearer secret-token",
+        )
+
+        mcp.callTool("search_locations", "{}")
+
+        assertEquals("Bearer secret-token", server.takeRequest().getHeader("Authorization"))
+    }
+
+    @Test
+    fun `no auth header is sent when either half is blank`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody(toolResultEnvelope("""{}""")))
+        val mcp = StreamableHttpMcpClient(
+            httpClient = OkHttpClient(),
+            endpointUrl = server.url("/mcp/").toString(),
+            authHeaderName = "Authorization",
+            authHeaderValue = "   ",
+        )
+
+        mcp.callTool("search_locations", "{}")
+
+        assertNull(server.takeRequest().getHeader("Authorization"))
     }
 
     // --- Real-server payloads (captured byte-faithfully from live servers) ---
@@ -233,22 +285,24 @@ class StreamableHttpMcpClientTest {
     }
 
     @Test
-    fun `a real unsupported-version reply is a protocol error`() = runBlocking {
+    fun `a real unsupported-version reply is a protocol error with its code and status`() = runBlocking {
         val body =
             "{\"jsonrpc\":\"2.0\",\"id\":\"server-error\",\"error\":{\"code\":-32600," +
                 "\"message\":\"Bad Request: Unsupported protocol version: 2026-07-28. " +
                 "Supported versions: 2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25\"}}"
         server.enqueue(MockResponse().setResponseCode(400).setBody(body))
 
-        val result = client().callTool("ask_wiki_question", """{"repoName":"mcp"}""")
+        val error = protocolError(client().callTool("ask_wiki_question", """{"repoName":"mcp"}"""))
 
-        // CURRENT behavior: any non-2xx reply is BadResponse; the body is never
-        // parsed, so a JSON-RPC protocol error is indistinguishable from HTTP 500.
-        assertEquals(McpCall.BadResponse, result)
+        // Fix (d): the 400 body is parsed, so -32600 is NOT indistinguishable
+        // from an opaque HTTP 500, and the status is carried alongside the code.
+        assertEquals(-32600, error.code)
+        assertEquals(400, error.httpStatus)
+        assertTrue(error.message.contains("Unsupported protocol version"))
     }
 
     @Test
-    fun `parses a real SSE reply whose envelope omits jsonrpc and id`() = runBlocking {
+    fun `parses a real SSE reply whose envelope omits jsonrpc and id, and echoes the session id`() = runBlocking {
         val body = "event: message\n" +
             "data: {\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]," +
             "\"isError\":false}}\n\n"
@@ -272,9 +326,10 @@ class StreamableHttpMcpClientTest {
         val request = server.takeRequest()
         val followUp = server.takeRequest()
         assertTrue(request.getHeader("Accept").orEmpty().contains("text/event-stream"))
-        // GAP (a): the client holds no session state, so even after the server
-        // advertised `Mcp-Session-Id`, the follow-up request does not echo it.
-        assertNull(followUp.getHeader("Mcp-Session-Id"))
+        // Fix (a): the first request had no session yet …
+        assertNull(request.getHeader("Mcp-Session-Id"))
+        // … and the follow-up echoes the id the server advertised.
+        assertEquals(sessionId, followUp.getHeader("Mcp-Session-Id"))
         assertEquals("ok", first.text)
         assertFalse(first.isError)
     }
@@ -293,13 +348,41 @@ class StreamableHttpMcpClientTest {
 
         val result = ok(client().callTool("ask_wiki_question", """{"repoName":"mcp"}"""))
 
-        // KNOWN GAP: `toResult` has no `tools/list` path. With no `content` and
-        // no `structuredContent` it hits the empty fallback and reports
-        // isError=false — a discovery reply masquerades as a SUCCESSFUL empty
-        // tool result. (The "Malformed MCP reply" branch needs `result` ABSENT,
-        // which this envelope is not; discovery needs a separate path.)
-        assertFalse(result.isError)
-        assertEquals("Empty MCP reply", result.text)
+        // Fix (d): a discovery reply is flagged as a malformed tool result, NOT
+        // reported as a successful empty tool result.
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("tools/list"))
+    }
+
+    @Test
+    fun `tools list follows the cursor, accumulates descriptors and hard-caps pages`() = runBlocking {
+        server.enqueue(toolsResponse("alpha", cursor = "c1"))
+        server.enqueue(toolsResponse("beta", cursor = null))
+
+        val call = client().listTools()
+
+        assertTrue("expected Ok but was $call", call is McpToolsCall.Ok)
+        val page = (call as McpToolsCall.Ok).page
+        assertEquals(listOf("alpha", "beta"), page.tools.map { it.name })
+        assertNull(page.nextCursor)
+        assertEquals("""{"type":"object"}""", page.tools.first().inputSchema)
+        // The second page request carries the cursor from the first.
+        server.takeRequest()
+        val second = server.takeRequest().body.readUtf8()
+        assertTrue(second.contains(""""cursor":"c1""""))
+    }
+
+    @Test
+    fun `the pure parser extracts a protocol error from an SSE frame`() {
+        val envelope = McpResultParser.parseEnvelope(
+            "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32600," +
+                "\"message\":\"Unsupported\"}}\n\n",
+            "text/event-stream",
+        )
+
+        assertTrue("expected ProtocolError but was $envelope", envelope is McpEnvelope.ProtocolError)
+        assertEquals(-32600, (envelope as McpEnvelope.ProtocolError).code)
+        assertEquals("Unsupported", envelope.message)
     }
 
     @Test
@@ -314,6 +397,35 @@ class StreamableHttpMcpClientTest {
 
         assertTrue(result.text.contains("Available pages"))
         assertTrue(result.text.contains("- 1 Overview"))
+    }
+
+    /** One `tools/list` page, delivered as an SSE frame. */
+    private fun toolsResponse(name: String, cursor: String?): MockResponse {
+        val envelope = buildJsonObject {
+            put("jsonrpc", JsonPrimitive("2.0"))
+            put("id", JsonPrimitive(2))
+            put(
+                "result",
+                buildJsonObject {
+                    put(
+                        "tools",
+                        buildJsonArray {
+                            add(
+                                buildJsonObject {
+                                    put("name", JsonPrimitive(name))
+                                    put("description", JsonPrimitive("d"))
+                                    put("inputSchema", buildJsonObject { put("type", JsonPrimitive("object")) })
+                                },
+                            )
+                        },
+                    )
+                    cursor?.let { put("nextCursor", JsonPrimitive(it)) }
+                },
+            )
+        }
+        return MockResponse().setResponseCode(200)
+            .setHeader("Content-Type", "text/event-stream")
+            .setBody("event: message\ndata: $envelope\n\n")
     }
 
     /** DeepWiki `tools/call` success frame: `event:` line, trailing blank line, JSON `\n` literal. */

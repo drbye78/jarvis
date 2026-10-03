@@ -2,6 +2,7 @@ package com.jarvis.assistant
 
 import com.jarvis.assistant.data.AlertDao
 import com.jarvis.assistant.data.ScheduledAlertEntity
+import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.model.ToolDefinition
 import com.jarvis.assistant.tools.AlertArmer
 import com.jarvis.assistant.tools.AndroidAlarmScheduler
@@ -9,6 +10,8 @@ import com.jarvis.assistant.tools.SetAlarmTool
 import com.jarvis.assistant.tools.SetTimerTool
 import com.jarvis.assistant.tools.ToolContract
 import com.jarvis.assistant.tools.ToolRegistry
+import com.jarvis.assistant.tools.ToolRisk
+import com.jarvis.assistant.tools.TurnAuthorization
 import com.jarvis.assistant.weather.WeatherClient
 import com.jarvis.assistant.weather.WeatherTool
 import kotlinx.coroutines.flow.Flow
@@ -56,6 +59,20 @@ class FunctionRouterTest {
         override suspend fun getWeather(
             query: com.jarvis.assistant.weather.WeatherQuery,
         ): String = "{}"
+    }
+
+    /** In-memory [ToolContract] for the dynamic-supplier pass-through test. */
+    private class ProbeTool(
+        override val name: String,
+        override val risk: ToolRisk,
+    ) : ToolContract {
+        var invocations = 0
+        override val description = "probe"
+        override val parametersJson = """{"type":"object","properties":{}}"""
+        override suspend fun execute(arguments: String): String {
+            invocations++
+            return """{"ok":true}"""
+        }
     }
 
     /**
@@ -136,5 +153,24 @@ class FunctionRouterTest {
             tool.execute("""{"days":2}""").contains("Missing required parameter"),
         )
         assertEquals("{}", tool.execute("""{"location":"Москва"}"""))
+    }
+
+    @Test
+    fun `the registry composition the router builds advertises and executes dynamic tools`() = runBlocking {
+        val dynamic = ProbeTool("mcp_abc123_alpha", ToolRisk.EXTERNAL)
+        // FunctionRouter is Android-bound and not JVM-constructible; this pins
+        // the exact composition its lazy `toolRegistry` forwards to —
+        // static base + cognitive + the dynamic supplier — so the added
+        // pass-through is exercised end to end with an in-memory tool.
+        val registry = ToolRegistry(
+            tools = listOf(ProbeTool("staticProbe", ToolRisk.READ_ONLY)),
+            dynamicTools = { listOf(dynamic) },
+        )
+
+        assertTrue(registry.getToolDefinitions().any { it.name == "mcp_abc123_alpha" })
+        registry.setAuthorizationContext(1, TurnAuthorization.voice())
+        val result = registry.executeResult(FunctionCall("mcp_abc123_alpha", "{}"))
+        assertFalse(result.isError)
+        assertEquals(1, dynamic.invocations)
     }
 }

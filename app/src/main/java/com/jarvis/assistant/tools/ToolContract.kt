@@ -39,6 +39,17 @@ interface ToolContract {
     val timeoutMs: Long? get() = null
 
     suspend fun execute(arguments: String): String
+
+    /**
+     * Structured execution seam. The default preserves the historical
+     * contract — a tool returns a [String] body and is classified
+     * non-error — so no existing tool changes behavior. Tools that carry
+     * their own error classification (the external MCP adapter) override it
+     * with the honest [ToolResult]. [ToolRegistry] invokes THIS method, so a
+     * tool-specific error flag reaches telemetry instead of being flattened
+     * to a success.
+     */
+    suspend fun executeResult(arguments: String): ToolResult = ToolResult(execute(arguments))
 }
 
 /**
@@ -82,6 +93,19 @@ class ToolRegistry(
      * registry (telemetry must never break a turn).
      */
     private val onExecuted: (suspend (FunctionCall, ToolResult, Long) -> Unit)? = null,
+    /**
+     * Optional per-call projection of dynamically-discovered tools (the MCP
+     * bridge). [tools] stays the STATIC, classified, cross-checked surface;
+     * this supplies the untrusted additions. The supplier is re-invoked on
+     * EVERY [available]/[getToolDefinitions]/[executeResult] call, so a tool
+     * that appeared between LLM passes is visible on the next pass without
+     * rebuilding the registry. A discovered tool may also disappear between
+     * passes — accepted for P1 (the model gets an honest "unknown function"
+     * on a stale call). Default null → current behavior for every existing
+     * caller. Deliberately NOT cross-checked against [ToolRisks] and never
+     * allowed to affect the static authorization binding.
+     */
+    private val dynamicTools: (() -> List<ToolContract>)? = null,
 ) {
 
     /**
@@ -119,9 +143,17 @@ class ToolRegistry(
         }
     }
 
-    fun available(): List<ToolContract> = tools
+    /**
+     * The tools visible on THIS call: the static surface plus a fresh
+     * projection of the dynamic supplier. Called once per lookup so a
+     * discovery that landed between passes is picked up without a rebuild.
+     */
+    private fun snapshot(): List<ToolContract> =
+        tools + (dynamicTools?.invoke() ?: emptyList())
 
-    fun getToolDefinitions(): List<ToolDefinition> = tools.map { tool ->
+    fun available(): List<ToolContract> = snapshot()
+
+    fun getToolDefinitions(): List<ToolDefinition> = snapshot().map { tool ->
         ToolDefinition(
             name = tool.name,
             description = tool.description,
@@ -156,7 +188,7 @@ class ToolRegistry(
      * content-free; the real reason is logged (tool name + rule, no payload).
      */
     suspend fun executeResult(call: FunctionCall): ToolResult {
-        val tool = tools.find { it.name == call.name }
+        val tool = snapshot().find { it.name == call.name }
             ?: return ToolResult(
                 buildJsonObject {
                     put("error", "Unknown function: ${call.name}")
@@ -176,7 +208,10 @@ class ToolRegistry(
         val timeout = tool.timeoutMs ?: perToolTimeoutMs
         val startedAt = System.nanoTime()
         val result = try {
-            ToolResult(withTimeout(timeout) { tool.execute(call.arguments) })
+            // executeResult (not execute) so a tool carrying its own error
+            // classification — the external MCP adapter — reaches telemetry
+            // honestly. The default wraps the historical String contract.
+            withTimeout(timeout) { tool.executeResult(call.arguments) }
         } catch (e: TimeoutCancellationException) {
             Timber.w("Tool %s timed out after %d ms", call.name, timeout)
             ToolResult("""{"error":"Tool timed out"}""", isError = true)

@@ -69,6 +69,21 @@ class CredentialsStore(private val vault: SecretVault) {
         set(v) { vault.putString(SecretVault.KEY_OPEN_METEO_PROXY, v.trim()) }
 
     /**
+     * Auth secret for one configured MCP server, keyed by its stable
+     * [com.jarvis.assistant.mcp.McpServerConfig.id]. Blank when no secret is
+     * stored. Deliberately an ARGUMENT-taking accessor, not a zero-arg
+     * property: the settings anti-drop reflection enumerates zero-arg getters,
+     * and a per-server map has no single property it could name.
+     */
+    fun mcpSecret(serverId: String): String =
+        vault.getString(SecretVault.mcpSecretKey(serverId)) ?: ""
+
+    /** Store (or, with a blank [value], clear) the secret for [serverId]. */
+    fun setMcpSecret(serverId: String, value: String) {
+        vault.putString(SecretVault.mcpSecretKey(serverId), value.trim())
+    }
+
+    /**
      * The MANDATORY keys: SaluteSpeech (ASR+TTS) and GigaChat (LLM).
      *
      * The old `hasRequiredSber()` also demanded the Picovoice key,

@@ -14,8 +14,8 @@ import org.junit.Test
 class SettingsCategoryTest {
 
     @Test
-    fun `all eight categories are registered`() {
-        assertEquals(8, SettingsCategory.entries.size)
+    fun `all nine categories are registered`() {
+        assertEquals(9, SettingsCategory.entries.size)
     }
 
     @Test

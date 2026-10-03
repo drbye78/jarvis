@@ -23,6 +23,14 @@ import com.jarvis.assistant.llm.LlmClient
 import com.jarvis.assistant.llm.OpenAiCompatClient
 import com.jarvis.assistant.llm.TokenManager
 import com.jarvis.assistant.llm.YandexAiStudioClient
+import com.jarvis.assistant.mcp.McpDnsGuard
+import com.jarvis.assistant.mcp.McpServerConfig
+import com.jarvis.assistant.mcp.McpServerConfigCodec
+import com.jarvis.assistant.mcp.McpServerDecodeResult
+import com.jarvis.assistant.mcp.McpToolCatalog
+import com.jarvis.assistant.mcp.McpUrlPolicy
+import com.jarvis.assistant.mcp.StreamableHttpMcpClient
+import com.jarvis.assistant.mcp.UrlPolicyResult
 import com.jarvis.assistant.session.SessionManager
 import com.jarvis.assistant.session.SessionStateMachine
 import com.jarvis.assistant.speech.SpeechBackend
@@ -37,6 +45,7 @@ import com.jarvis.assistant.speech.tts.YandexSpeechTts
 import com.jarvis.assistant.speech.tts.YandexVoiceSpec
 import com.jarvis.assistant.tools.FunctionRouter
 import com.jarvis.assistant.ui.SettingsMapping
+import com.jarvis.assistant.util.CredentialsStore
 import com.jarvis.assistant.util.NetworkMonitor
 import io.grpc.ManagedChannel
 import io.grpc.okhttp.OkHttpChannelBuilder
@@ -145,12 +154,71 @@ class AppGraph(
         // the coordinator lazily, so the conversation lane stays
         // pre-cognitive at graph construction.
         beforePrune = { cutoff -> cognitiveCoordinator.onBeforePrune(cutoff) },
-        slipToolNames = { com.jarvis.assistant.tools.ToolRisks.byName.keys },
+        slipToolNames = {
+            com.jarvis.assistant.tools.ToolRisks.byName.keys + mcpToolCatalog.advertisedNames()
+        },
     )
 
     val networkMonitor = NetworkMonitor(appContext)
 
     val appPrefs = com.jarvis.assistant.util.AppPrefs(appContext)
+
+    /**
+     * Multi-server MCP bridge (external tools). Declared as a lazy property so
+     * construction touches only [appPrefs], [httpClient] and [scope] — never
+     * the router or the cognitive coordinator — and discovery is never forced
+     * at graph build. Both the conversation manager's slip-tool lambda (above)
+     * and the function router's dynamic supplier (below) read it.
+     */
+    val mcpToolCatalog: McpToolCatalog by lazy {
+        McpToolCatalog(
+            // LIVE: a Settings change applies to the next pass, no restart.
+            configSupplier = ::validMcpServers,
+            clientFactory = { server ->
+                StreamableHttpMcpClient(
+                    httpClient = httpClient,
+                    endpointUrl = server.url,
+                    authHeaderName = server.authHeaderName.takeIf { it.isNotBlank() },
+                    authHeaderValue = CredentialsStore.get().mcpSecret(server.id)
+                        .takeIf { it.isNotBlank() },
+                    // Connect-time policy for a hostname whose record resolves
+                    // private; McpUrlPolicy only sees the literal.
+                    dns = McpDnsGuard.forServer(server.kind),
+                )
+            },
+            scope = scope,
+        )
+    }
+
+    /**
+     * Decode the persisted MCP list and drop any server whose URL fails the
+     * pure [McpUrlPolicy] under its kind. A decode failure yields no servers
+     * (never a throw); a rejected server logs its NAME and the coarse reason —
+     * never the URL. [McpToolCatalog] itself filters enabled/READ on top.
+     */
+    private fun validMcpServers(): List<McpServerConfig> {
+        val servers = when (val decoded = McpServerConfigCodec.decode(appPrefs.mcpServers)) {
+            is McpServerDecodeResult.Ok -> decoded.servers
+            McpServerDecodeResult.Empty -> return emptyList()
+            is McpServerDecodeResult.Invalid -> {
+                Timber.w("MCP config is invalid: %s", decoded.reason)
+                return emptyList()
+            }
+        }
+        return servers.filter { server ->
+            when (val policy = McpUrlPolicy.validate(server.kind, server.url)) {
+                UrlPolicyResult.Allowed -> true
+                is UrlPolicyResult.Rejected -> {
+                    Timber.w(
+                        "MCP server %s rejected by URL policy: %s",
+                        server.displayName.takeIf { it.isNotBlank() } ?: server.id,
+                        policy.reason,
+                    )
+                    false
+                }
+            }
+        }
+    }
 
     val tokenManager = TokenManager(appContext, httpClient, config)
 
@@ -474,6 +542,9 @@ class AppGraph(
         config = config,
         // remember_fact / recall_facts / forget_fact.
         cognitiveTools = { cognitiveCoordinator.tools() },
+        // Dynamically-discovered external tools; snapshot is non-blocking and
+        // re-projects on every pass, so a discovery lands without a rebuild.
+        dynamicTools = { mcpToolCatalog.snapshot() },
         // Command telemetry — every tool execution writes
         // one command_events row (slot fingerprint only, no utterances).
         executionObserver = { call, result, latencyMs ->
@@ -858,6 +929,20 @@ class AppGraph(
         } catch (e: Exception) {
             shutdown() // Tear down anything we built before the throw
             throw e
+        }
+        // MCP bridge warm-up: discover external tools ONCE, off the construction
+        // path and off the start() critical path (never block startup on the
+        // network). Exceptions are contained so a failing server cannot crash
+        // the graph scope; snapshot() re-arms any server still stale on the
+        // first LLM pass.
+        scope.launch {
+            try {
+                mcpToolCatalog.refreshAll()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "MCP warm-up discovery failed")
+            }
         }
     }
 

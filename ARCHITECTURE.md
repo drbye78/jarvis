@@ -114,6 +114,30 @@ each tool execution has a 15 s default timeout — a tool may override it via
 `ToolContract.timeoutMs` (playMusic uses 50 s: cold-starting a player and
 verifying playback takes that long).
 
+The advertised surface is **built-ins + a dynamic supplier**: `ToolRegistry`
+takes an optional `dynamicTools: () -> List<ToolContract>`, and
+`getToolDefinitions()`/`executeResult` consult `snapshot() = tools + dynamicTools()`
+on every call. `TurnRunner` re-projects definitions each pass, so the
+`mcp/McpToolCatalog` (multi-server MCP, below) can add or drop external tools
+mid-conversation without rebuilding the registry. The static registry's
+`ToolRisks` cross-check and the bound-turn authorization context never see
+dynamic tools — external tools carry their own risk class.
+
+## MCP lane (external tools)
+
+User-configured MCP servers (Settings → «MCP-серверы», LIVE) are stored as one
+JSON-blob pref (`AppPrefs.mcpServers`) with per-server auth in the Keystore
+(`SecretVault.mcpSecretKey`). `mcp/McpToolCatalog` discovers tools per server
+(`initialize` → paged `tools/list`, TTL + stale-while-revalidate, one in-flight
+refresh per server) and exposes READ-access ones as namespaced
+`mcp_<hash>_<tool>` `ToolContract`s; WRITE-access servers contribute ZERO tools
+until write-confirmation ships. `snapshot()` is non-blocking and I/O-free — the
+turn path never waits on the network. The hand-rolled `mcp/StreamableHttpMcpClient`
+supports the legacy `2025-06-18` handshake (the `2026-07-28` revision is not yet
+accepted by deployed servers — verified live), SSE-or-JSON replies, session-id
+echo, cursor pagination, and separates JSON-RPC protocol errors from tool
+`isError`. Weather's `Project EOL` client is a thin adapter over it.
+
 ## Weather lane (selectable capability)
 
 Two free, keyless providers behind `WeatherClient`; `SelectingWeatherClient`
@@ -669,7 +693,7 @@ architectural summary.
 
 ## Tests
 
-JVM unit suite (1513 tests, all green; runs in CI on every push/PR). The live
+JVM unit suite (1595 tests, all green; runs in CI on every push/PR). The live
 smoke tier (Sber + Yandex + GigaChat, `integration/**/*LiveSmokeTest`) shares
 `src/test` but is excluded from the gate task and runs only through
 `:app:integrationTest`, which self-skips when credentials are absent:

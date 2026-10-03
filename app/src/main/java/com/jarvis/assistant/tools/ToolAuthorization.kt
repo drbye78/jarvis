@@ -23,6 +23,18 @@ enum class ToolRisk {
 
     /** Destroys or cannot be undone (cancel alarm/timer, forget a fact). */
     IRREVERSIBLE,
+
+    /**
+     * An UNTRUSTED, dynamically-discovered external (MCP) tool. Unlike the
+     * built-in classes, its behavior is NOT declared by our code — it is
+     * whatever a third-party server exposes over the network, and a READ
+     * server can still be a prompt-injection carrier. It is therefore the
+     * STRICTEST class: allowed only on a bound, user-originated VOICE turn
+     * (see [ToolAuthorization.decide]). A proactive/scheduled turn or an
+     * off-turn call is denied, because the user did not ask for the external
+     * side effect in that moment.
+     */
+    EXTERNAL,
 }
 
 /**
@@ -83,6 +95,10 @@ sealed interface AuthorizationDecision {
  *    an explicit system-authored [TurnAuthorization.system] first).
  *  - IRREVERSIBLE tools are allowed ONLY when the bound turn is a voice turn
  *    whose utterance commanded a removal ([TurnAuthorization.explicitUserCommand]).
+ *  - EXTERNAL (dynamically-discovered MCP) tools are allowed ONLY when a turn
+ *    context is bound AND its [TurnOrigin] is VOICE. PROACTIVE/SCHEDULED turns
+ *    and an absent context all DENY: an unvetted third-party tool may only run
+ *    when the user's own voice initiated the turn.
  *  - `forget_fact` is EXEMPT: it keeps its own independent confirmation gate
  *    (`CognitiveCoordinator.forgetFactLocked` + `ForgetConfirmation`), a
  *    two-step «list → confirm with an explicit yes» flow. Double-gating it here
@@ -119,7 +135,24 @@ object ToolAuthorization {
                 } else {
                     AuthorizationDecision.Deny("irreversible action without an explicit user command")
                 }
+
+            ToolRisk.EXTERNAL ->
+                if (permitsExternal(context)) {
+                    AuthorizationDecision.Allow
+                } else {
+                    // Content-free: never name the server/tool or echo a payload.
+                    AuthorizationDecision.Deny("external tool requires a bound voice turn")
+                }
         }
+
+    /**
+     * EXTERNAL tools are the least trusted class: a bound turn is not enough,
+     * its origin must be the user's VOICE. PROACTIVE/SCHEDULED turns are the
+     * assistant acting on its own, which must never reach a third-party
+     * server.
+     */
+    private fun permitsExternal(context: TurnAuthorization?): Boolean =
+        context != null && context.origin == TurnOrigin.VOICE
 
     /**
      * `forget_fact` is delegated to its own gate; every other IRREVERSIBLE

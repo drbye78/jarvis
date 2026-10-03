@@ -127,6 +127,7 @@ class SettingsLayoutTest {
         SettingsCategory.PROACTIVITY to "ProactivitySettingsController.kt",
         SettingsCategory.MUSIC to "MusicSettingsController.kt",
         SettingsCategory.ACCOUNTS to "AccountsSettingsController.kt",
+        SettingsCategory.MCP to "McpSettingsController.kt",
     )
 
     @Test

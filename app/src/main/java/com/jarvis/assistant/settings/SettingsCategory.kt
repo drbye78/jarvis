@@ -81,4 +81,11 @@ enum class SettingsCategory(
         iconRes = R.drawable.ic_cat_accounts,
         layoutRes = R.layout.screen_settings_accounts,
     ),
+    MCP(
+        id = "mcp",
+        titleRes = R.string.settings_cat_mcp,
+        subtitleRes = R.string.settings_cat_mcp_sub,
+        iconRes = R.drawable.ic_cat_mcp,
+        layoutRes = R.layout.screen_settings_mcp,
+    ),
 }

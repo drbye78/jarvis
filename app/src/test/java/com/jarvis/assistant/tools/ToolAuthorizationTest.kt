@@ -1,5 +1,6 @@
 package com.jarvis.assistant.tools
 
+import com.jarvis.assistant.mcp.McpToolContract
 import com.jarvis.assistant.model.FunctionCall
 import com.jarvis.assistant.session.TurnOrigin
 import kotlinx.coroutines.runBlocking
@@ -132,6 +133,51 @@ class ToolAuthorizationTest {
                 "forget_fact must reach its own gate for $ctx",
                 AuthorizationDecision.Allow,
                 ToolAuthorization.decide("forget_fact", ToolRisk.IRREVERSIBLE, ctx),
+            )
+        }
+    }
+
+    @Test
+    fun `external tools are allowed only on a bound voice turn`() {
+        assertEquals(
+            "a voice turn permits an external tool",
+            AuthorizationDecision.Allow,
+            ToolAuthorization.decide("mcp_abc123_search", ToolRisk.EXTERNAL, TurnAuthorization.voice()),
+        )
+        // An explicit command flag is irrelevant — EXTERNAL keys off origin.
+        assertEquals(
+            AuthorizationDecision.Allow,
+            ToolAuthorization.decide(
+                "mcp_abc123_search",
+                ToolRisk.EXTERNAL,
+                TurnAuthorization.voice(explicitUserCommand = true),
+            ),
+        )
+    }
+
+    @Test
+    fun `external tools fail closed off the voice lane`() {
+        val contexts = listOf<TurnAuthorization?>(
+            null,
+            TurnAuthorization.system(),
+            TurnAuthorization(TurnOrigin.SCHEDULED, explicitUserCommand = true),
+            TurnAuthorization(TurnOrigin.PROACTIVE, explicitUserCommand = true),
+        )
+        contexts.forEach { ctx ->
+            assertTrue(
+                "EXTERNAL must fail closed for $ctx",
+                ToolAuthorization.decide("mcp_abc123_search", ToolRisk.EXTERNAL, ctx)
+                is AuthorizationDecision.Deny,
+            )
+        }
+    }
+
+    @Test
+    fun `no canonical tool name carries the reserved mcp namespace prefix`() {
+        ToolRisks.byName.keys.forEach { name ->
+            assertFalse(
+                "built-in '$name' must not collide with the dynamic MCP namespace",
+                name.startsWith(McpToolContract.NAMESPACE_PREFIX),
             )
         }
     }

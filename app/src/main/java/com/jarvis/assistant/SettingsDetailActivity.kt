@@ -241,6 +241,10 @@ class SettingsDetailActivity : AppCompatActivity(), SettingsHost {
         startActivity(Intent(this, MemoryInspectorActivity::class.java))
     }
 
+    override fun openMcpServers() {
+        startActivity(Intent(this, McpServersActivity::class.java))
+    }
+
     override fun finishScreen() {
         finish()
     }

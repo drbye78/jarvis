@@ -523,6 +523,8 @@
     <string name="settings_cat_music_sub">Default player</string>
     <string name="settings_cat_accounts">Accounts &amp; keys</string>
     <string name="settings_cat_accounts_sub">Access keys</string>
+    <string name="settings_cat_mcp">MCP servers</string>
+    <string name="settings_cat_mcp_sub">External tools</string>
     <string name="settings_advanced_show">Advanced · %1$d settings</string>
     <string name="settings_apply_service_restart">Changes will take effect after the service restarts.</string>
     <string name="settings_apply_app_restart">Changes will take effect only after a full app restart.</string>
@@ -537,4 +539,43 @@
     <string name="settings_brain_key_set">Key set</string>
     <string name="settings_brain_key_missing">Key not set</string>
     <string name="settings_brain_key_manage">Manage keys</string>
+
+    <!-- MCP (multi-server external tools) -->
+    <string name="settings_mcp_section">MCP servers</string>
+    <string name="settings_mcp_info">MCP servers extend the assistant with external tools. These are third-party servers: they are not verified, and their tools run only on your spoken command.</string>
+    <string name="settings_mcp_servers_row">Configure servers</string>
+    <string name="settings_mcp_servers_row_sub">Connection list</string>
+    <string name="settings_mcp_empty">No MCP servers yet. Add the first one.</string>
+    <string name="settings_mcp_list_invalid">The saved server list is corrupted and was not loaded.</string>
+    <string name="settings_mcp_add">Add server</string>
+    <string name="settings_mcp_edit">Edit</string>
+    <string name="settings_mcp_delete">Delete</string>
+    <string name="settings_mcp_enabled_cd">Enable server</string>
+    <string name="settings_mcp_delete_confirm_title">Delete server?</string>
+    <string name="settings_mcp_delete_confirm_text">The server and its access secret will be removed from the device.</string>
+    <string name="settings_mcp_saved">Server saved</string>
+    <string name="settings_mcp_deleted">Server deleted</string>
+    <string name="settings_mcp_add_title">New MCP server</string>
+    <string name="settings_mcp_edit_title">Edit MCP server</string>
+    <string name="settings_mcp_name_label">Name</string>
+    <string name="settings_mcp_kind_label">Type</string>
+    <string name="settings_mcp_kind_remote">Remote (https)</string>
+    <string name="settings_mcp_kind_local">Local (localhost)</string>
+    <string name="settings_mcp_url_label">URL</string>
+    <string name="settings_mcp_auth_header_label">Authorization header</string>
+    <string name="settings_mcp_secret_label">Secret</string>
+    <string name="settings_mcp_access_label">Access</string>
+    <string name="settings_mcp_access_read">Read only (READ)</string>
+    <string name="settings_mcp_access_write">Read and write (WRITE)</string>
+    <string name="settings_mcp_name_required">Enter a name</string>
+    <string name="settings_mcp_url_reject_malformed">Invalid URL</string>
+    <string name="settings_mcp_url_reject_unsupported_scheme">Use an http or https scheme</string>
+    <string name="settings_mcp_url_reject_https_required">Remote servers require https</string>
+    <string name="settings_mcp_url_reject_missing_host">The URL has no host</string>
+    <string name="settings_mcp_url_reject_loopback_host">A remote server cannot be on localhost</string>
+    <string name="settings_mcp_url_reject_private_host">A remote server cannot be on a private network</string>
+    <string name="settings_mcp_url_reject_link_local_host">A remote server cannot be link-local</string>
+    <string name="settings_mcp_url_reject_metadata_host">This address is not allowed</string>
+    <string name="settings_mcp_url_reject_non_loopback_host">A local server must be on localhost</string>
+    <string name="settings_mcp_url_reject_cross_origin_private_host">A redirect to a private address is not allowed</string>
 </resources>

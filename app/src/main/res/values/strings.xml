@@ -522,6 +522,8 @@
     <string name="settings_cat_music_sub">Плеер по умолчанию</string>
     <string name="settings_cat_accounts">Аккаунты и ключи</string>
     <string name="settings_cat_accounts_sub">Ключи доступа</string>
+    <string name="settings_cat_mcp">MCP-серверы</string>
+    <string name="settings_cat_mcp_sub">Внешние инструменты</string>
     <string name="settings_advanced_show">Дополнительно · %1$d параметров</string>
     <string name="settings_apply_service_restart">Изменения вступят в силу после перезапуска службы.</string>
     <string name="settings_apply_app_restart">Изменения вступят в силу только после полного перезапуска приложения.</string>
@@ -536,4 +538,43 @@
     <string name="settings_brain_key_set">Ключ задан</string>
     <string name="settings_brain_key_missing">Ключ не задан</string>
     <string name="settings_brain_key_manage">Управление ключами</string>
+
+    <!-- MCP (multi-server external tools) -->
+    <string name="settings_mcp_section">MCP-серверы</string>
+    <string name="settings_mcp_info">MCP-серверы расширяют ассистента внешними инструментами. Это сторонние серверы: они не проверяются, а их инструменты запускаются только по вашей голосовой команде.</string>
+    <string name="settings_mcp_servers_row">Настроить серверы</string>
+    <string name="settings_mcp_servers_row_sub">Список подключений</string>
+    <string name="settings_mcp_empty">Пока нет ни одного MCP-сервера. Добавьте первый.</string>
+    <string name="settings_mcp_list_invalid">Сохранённый список серверов повреждён и не загружен.</string>
+    <string name="settings_mcp_add">Добавить сервер</string>
+    <string name="settings_mcp_edit">Изменить</string>
+    <string name="settings_mcp_delete">Удалить</string>
+    <string name="settings_mcp_enabled_cd">Включить сервер</string>
+    <string name="settings_mcp_delete_confirm_title">Удалить сервер?</string>
+    <string name="settings_mcp_delete_confirm_text">Сервер и его секрет доступа будут удалены с устройства.</string>
+    <string name="settings_mcp_saved">Сервер сохранён</string>
+    <string name="settings_mcp_deleted">Сервер удалён</string>
+    <string name="settings_mcp_add_title">Новый MCP-сервер</string>
+    <string name="settings_mcp_edit_title">Изменить MCP-сервер</string>
+    <string name="settings_mcp_name_label">Название</string>
+    <string name="settings_mcp_kind_label">Тип</string>
+    <string name="settings_mcp_kind_remote">Удалённый (https)</string>
+    <string name="settings_mcp_kind_local">Локальный (localhost)</string>
+    <string name="settings_mcp_url_label">Адрес (URL)</string>
+    <string name="settings_mcp_auth_header_label">Заголовок авторизации</string>
+    <string name="settings_mcp_secret_label">Секрет</string>
+    <string name="settings_mcp_access_label">Доступ</string>
+    <string name="settings_mcp_access_read">Только чтение (READ)</string>
+    <string name="settings_mcp_access_write">Чтение и запись (WRITE)</string>
+    <string name="settings_mcp_name_required">Введите название</string>
+    <string name="settings_mcp_url_reject_malformed">Некорректный адрес</string>
+    <string name="settings_mcp_url_reject_unsupported_scheme">Нужна схема http или https</string>
+    <string name="settings_mcp_url_reject_https_required">Для удалённого сервера нужен https</string>
+    <string name="settings_mcp_url_reject_missing_host">В адресе нет хоста</string>
+    <string name="settings_mcp_url_reject_loopback_host">Удалённый сервер не может быть на localhost</string>
+    <string name="settings_mcp_url_reject_private_host">Удалённый сервер не может быть в локальной сети</string>
+    <string name="settings_mcp_url_reject_link_local_host">Удалённый сервер не может быть link-local</string>
+    <string name="settings_mcp_url_reject_metadata_host">Этот адрес запрещён</string>
+    <string name="settings_mcp_url_reject_non_loopback_host">Локальный сервер должен быть на localhost</string>
+    <string name="settings_mcp_url_reject_cross_origin_private_host">Перенаправление на частный адрес запрещено</string>
 </resources>

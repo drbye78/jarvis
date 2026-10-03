@@ -135,8 +135,18 @@ What is enforced **outside the model**:
 - **A non-LLM authorization policy** at the single dispatch choke point:
   `toolRegistry.executeResult` → `ToolAuthorization.decide`
   (`tools/ToolContract.kt:158-175`, `tools/ToolAuthorization.kt:105-132`).
-- Risk classification for all 26 tools in one table (`tools/ToolRisks.kt:23-53`),
-  cross-checked at registry init and pinned by test.
+- Risk classification for all 26 built-in tools in one table (`tools/ToolRisks.kt:23-53`),
+  cross-checked at registry init and pinned by test. Dynamically-discovered MCP
+  tools never enter this table: they are all `ToolRisk.EXTERNAL` (see below).
+- **External (MCP) tools are the least-trusted class.** `ToolAuthorization`
+  allows `EXTERNAL` ONLY on a turn whose origin is `TurnOrigin.VOICE` — a
+  `PROACTIVE`/`SCHEDULED` turn (the assistant acting on its own) or an unbound
+  call is DENIED, closing the injected-content → third-party-server path. WRITE
+  servers advertise no tools until confirmation exists. SSRF is guarded at both
+  the literal (`mcp/McpUrlPolicy`: REMOTE https-only, private/link-local/cloud-
+  metadata rejected; LOCAL loopback-only) and connect-time (`mcp/McpDnsGuard`,
+  fail-closed on a hostname resolving private) layers. Tool descriptions and
+  results are untrusted data — they never enter the system prompt.
 - `IRREVERSIBLE` (cancel alarm/timer, forget) requires a **voice** turn whose **own
   ASR text** matched a removal command (`tools/IrreversibleCommand.kt:77-84`),
   bound after ASR finalization and before any dispatch, with a fail-closed

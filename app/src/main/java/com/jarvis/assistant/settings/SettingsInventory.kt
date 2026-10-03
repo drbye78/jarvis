@@ -91,6 +91,12 @@ object SettingsInventory {
         entry("yandexApiKey", SettingsCategory.ACCOUNTS, essential = false),
         entry("gigaChatClientId", SettingsCategory.ACCOUNTS, essential = false),
         entry("gigaChatClientSecret", SettingsCategory.ACCOUNTS, essential = false),
+
+        // --- MCP (external tool servers) ---
+        // The whole server list is ONE blob; per-server auth secrets are
+        // argument-keyed ([CredentialsStore.mcpSecret]) and therefore not
+        // enumerable as a zero-arg setting.
+        entry("mcpServers", SettingsCategory.MCP, essential = false),
     )
 
     /** Persisted members that are lifecycle state, not user-facing settings. */

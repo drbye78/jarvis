@@ -70,6 +70,17 @@ interface SecretVault {
          */
         const val KEY_OPEN_METEO_PROXY = "open_meteo_proxy"
 
+        /**
+         * Prefix for one MCP server's auth secret; the full key is
+         * `mcp_secret_<serverId>` (see [mcpSecretKey]). Keying by the server's
+         * stable id keeps the config blob secret-free and lets a deleted
+         * server's secret be cleared independently.
+         */
+        const val KEY_MCP_SECRET_PREFIX = "mcp_secret_"
+
+        /** The vault key holding [serverId]'s MCP auth secret. */
+        fun mcpSecretKey(serverId: String): String = KEY_MCP_SECRET_PREFIX + serverId
+
         const val KEY_GIGACHAT_TOKEN = "gigachat_token"
         const val KEY_GIGACHAT_EXPIRY = "gigachat_token_expiry"
         const val KEY_SALUTE_TOKEN = "salute_token"
