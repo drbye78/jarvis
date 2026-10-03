@@ -15,11 +15,14 @@ import java.util.concurrent.ConcurrentHashMap
  * the discovery scope are all injected, so this class never constructs an
  * OkHttp client or reads a pref directly.
  *
- * ## P1 write policy
+ * ## Write policy
  *
- * A server whose [McpServerConfig.access] is [McpAccess.WRITE] contributes
- * ZERO tools. Advertising a mutation that cannot yet be confirmed with the
- * user would be a silent side effect; write confirmation is a later phase.
+ * ENABLED servers contribute tools regardless of access. A WRITE server's
+ * discovered tools are advertised too, but tagged [com.jarvis.assistant.tools.ToolRisk.EXTERNAL_WRITE]
+ * and gated by the registry's confirmation clause: the model may request one,
+ * but it only executes after the user explicitly confirms the exact call on the
+ * immediately-next voice turn. Advertising is safe because an unconfirmed
+ * write never reaches the server.
  *
  * ## Stale-while-revalidate
  *
@@ -62,7 +65,7 @@ class McpToolCatalog(
     fun snapshot(): List<ToolContract> {
         val now = clock()
         val servers = configSupplier()
-            .filter { it.enabled && it.access == McpAccess.READ }
+            .filter { it.enabled }
             .sortedWith(compareBy({ it.order }, { it.id }))
         val advertised = ArrayList<ToolContract>()
         for (server in servers) {
@@ -166,7 +169,7 @@ class McpToolCatalog(
                 dropped,
             )
         }
-        return kept.map { McpToolContract(server.id, it, client) }
+        return kept.map { McpToolContract(server.id, it, client, server.access) }
     }
 
     private fun logFailure(server: McpServerConfig, reason: String) {

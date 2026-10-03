@@ -61,6 +61,13 @@ class FunctionRouter(
      */
     private val dynamicTools: () -> List<ToolContract> = { emptyList() },
     /**
+     * The single-use confirmation store for [ToolRisk.EXTERNAL_WRITE] tools,
+     * forwarded into the inner [ToolRegistry]. MUST be the same instance the
+     * session turn hooks feed, or a challenge can never be confirmed. Null =
+     * every external write fails closed.
+     */
+    private val writeConfirmation: WriteConfirmation? = null,
+    /**
      * Telemetry observer passed through to the
      * ToolRegistry (command_events). Null = no telemetry (tests).
      */
@@ -254,6 +261,7 @@ class FunctionRouter(
             tools = baseToolRegistry.available() + cognitiveTools(),
             onExecuted = executionObserver,
             dynamicTools = dynamicTools,
+            writeConfirmation = writeConfirmation,
         )
     }
 

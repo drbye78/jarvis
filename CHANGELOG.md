@@ -6,6 +6,25 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — MCP writes require a spoken confirmation (Phase 2)
+- **WRITE-access MCP tools are now advertised and gated by an explicit confirmation.**
+  A WRITE server's tools carry `ToolRisk.EXTERNAL_WRITE`; a call is allowed only on a
+  bound VOICE turn **and** only when the exact `(server, tool, canonical arguments)`
+  was proposed on the immediately-preceding turn and the user answered it with an
+  explicit affirmative (`tools/WriteConfirmation` + `tools/WriteBinding`, TTL 5 min,
+  single-use). The model receives `{outcome:"needs_confirmation"}` and must ask; it can
+  propose a write but never execute one on its own.
+- **No capability travels through the model.** Confirmation is derived only from the
+  user's ASR text plus local state — no token/nonce the LLM could echo. The binding is a
+  SHA-256 digest over the canonical arguments, so a reordered re-issue matches but any
+  value mutation (or a bait-and-switch to another tool) fails closed. The affirmative
+  matcher is now shared (`tools/AffirmativeUtterance`, `ForgetConfirmation` delegates).
+- **LOCAL loopback servers.** `usesCleartextTraffic` stays `false`; a scoped
+  `network-security-config` re-enables cleartext only for `127.0.0.1`/`localhost`/`::1`.
+- Tests: `WriteBindingTest`, `WriteConfirmationTest`, catalog tagging, the
+  `EXTERNAL_WRITE` truth table, and an end-to-end turn-1 → turn-2 → replay enforcement
+  test over the real `ToolRegistry`. JVM suite 1606 → 1630.
+
 ### Added — multi-server MCP external tools (Phase 1)
 - **User-configured MCP servers, remote and local (loopback).** Settings → «MCP-серверы»
   manages a list of Streamable-HTTP MCP servers (`mcp/McpServerConfig` + codec, stored
@@ -27,8 +46,8 @@ semver (pre-1.0: breaking changes bump the minor).
   pure `McpUrlPolicy` (literal classification; REMOTE https-only, private/link-local/
   metadata rejected; LOCAL loopback-only) plus connect-time `McpDnsGuard` (an
   `okhttp3.Dns` that fails closed when a hostname resolves private). **WRITE-access
-  servers contribute zero tools in Phase 1** — a mutation that cannot yet be confirmed
-  with the user is not advertised.
+  servers contribute zero tools in Phase 1** (superseded by Phase 2 below) — a
+  mutation that cannot yet be confirmed with the user is not advertised.
 - Tests: `McpServerConfigCodecTest`, `McpUrlPolicyTest`, `McpBudgetTest`,
   `McpDnsGuardTest`, `McpToolContractTest`, `McpToolCatalogTest`, `ToolRegistryDynamicTest`,
   plus real live-payload fixtures in `StreamableHttpMcpClientTest` and an `EXTERNAL`

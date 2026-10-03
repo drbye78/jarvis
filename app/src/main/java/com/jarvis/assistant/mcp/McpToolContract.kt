@@ -1,5 +1,6 @@
 package com.jarvis.assistant.mcp
 
+import com.jarvis.assistant.tools.ConfirmedWriteTool
 import com.jarvis.assistant.tools.EMPTY_PARAMETER_SCHEMA
 import com.jarvis.assistant.tools.ToolContract
 import com.jarvis.assistant.tools.ToolResult
@@ -42,8 +43,15 @@ class McpToolContract(
     val serverId: String,
     private val descriptor: McpToolDescriptor,
     private val client: McpClient,
+    /**
+     * The owning server's access class. READ servers are the untrusted
+     * [ToolRisk.EXTERNAL] class; WRITE servers are the strictest
+     * [ToolRisk.EXTERNAL_WRITE] class, whose exact call additionally needs a
+     * confirmed affirmative ([com.jarvis.assistant.tools.WriteConfirmation]).
+     */
+    private val access: McpAccess,
     override val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
-) : ToolContract {
+) : ToolContract, ConfirmedWriteTool {
 
     /** The namespaced, LLM-safe name (see the class KDoc for the scheme). */
     override val name: String = namespacedName(serverId, descriptor.name)
@@ -62,8 +70,19 @@ class McpToolContract(
      */
     override val parametersJson: String = acceptedSchema(descriptor.inputSchema, name)
 
-    /** External tools are the untrusted class — see [ToolRisk.EXTERNAL]. */
-    override val risk: ToolRisk = ToolRisk.EXTERNAL
+    /**
+     * External tools are the untrusted class. A READ server's tools are
+     * [ToolRisk.EXTERNAL]; a WRITE server's tools are [ToolRisk.EXTERNAL_WRITE]
+     * and must pass the registry's confirmation clause before executing.
+     */
+    override val risk: ToolRisk =
+        if (access == McpAccess.WRITE) ToolRisk.EXTERNAL_WRITE else ToolRisk.EXTERNAL
+
+    /** Binds the confirmation digest to the owning server's stable identity. */
+    override val confirmationServerId: String = serverId
+
+    /** The server's ORIGINAL tool name (not the namespaced one). */
+    override val confirmationToolName: String = originalToolName
 
     /** Returns the text body; the structured outcome is [executeResult]. */
     override suspend fun execute(arguments: String): String = executeResult(arguments).content

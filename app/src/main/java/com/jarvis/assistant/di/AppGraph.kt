@@ -43,6 +43,7 @@ import com.jarvis.assistant.speech.tts.VoiceCatalog
 import com.jarvis.assistant.speech.tts.YandexSpeechTts
 import com.jarvis.assistant.speech.tts.YandexVoiceSpec
 import com.jarvis.assistant.tools.FunctionRouter
+import com.jarvis.assistant.tools.WriteConfirmation
 import com.jarvis.assistant.ui.SettingsMapping
 import com.jarvis.assistant.util.CredentialsStore
 import com.jarvis.assistant.util.NetworkMonitor
@@ -523,6 +524,16 @@ class AppGraph(
         com.jarvis.assistant.tools.AndroidRingPresenter(appContext),
     ).also { com.jarvis.assistant.tools.RingCoordinatorProvider.install(it) }
 
+    /**
+     * ONE external-write confirmation store shared by the tool registry
+     * (which ARMS a challenge and consumes a match at execute time) and the
+     * session turn hooks (which record the turn start and the user's finalized
+     * ASR utterance). A confirmation is only meaningful across the SAME store,
+     * so this instance is threaded into both [functionRouter] and
+     * [sessionManager]. Eager: cheap, process-lifetime, no I/O.
+     */
+    private val writeConfirmation = WriteConfirmation()
+
     val functionRouter = FunctionRouter(
         appContext,
         httpClient,
@@ -555,6 +566,8 @@ class AppGraph(
         // Dynamically-discovered external tools; snapshot is non-blocking and
         // re-projects on every pass, so a discovery lands without a rebuild.
         dynamicTools = { mcpToolCatalog.snapshot() },
+        // ONE confirmation store, shared with the session turn hooks below.
+        writeConfirmation = writeConfirmation,
         // Command telemetry — every tool execution writes
         // one command_events row (slot fingerprint only, no utterances).
         executionObserver = { call, result, latencyMs ->
@@ -696,6 +709,10 @@ class AppGraph(
             override fun noteUserUtterance(turnId: Int, utterance: String) =
                 cognitiveCoordinator.noteUserUtterance(turnId, utterance)
         },
+        // The SAME external-write confirmation store the router's registry
+        // gates on: the turn hooks record the turn/utterance side of a
+        // challenge, the registry consumes the confirmed call.
+        writeConfirmation = writeConfirmation,
         // Pause-on-wake reuses the real tool lane — the same
         // capability-gated control path the LLM uses, incl. the media-key
         // fallback for the app that owns audio focus.

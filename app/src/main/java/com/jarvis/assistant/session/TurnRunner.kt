@@ -21,6 +21,7 @@ import com.jarvis.assistant.speech.tts.TtsPlayer
 import com.jarvis.assistant.tools.IrreversibleCommand
 import com.jarvis.assistant.tools.ToolExecutor
 import com.jarvis.assistant.tools.TurnAuthorization
+import com.jarvis.assistant.tools.WriteConfirmation
 import com.jarvis.assistant.util.SentenceBuffer
 import com.jarvis.assistant.util.toByteArray
 import kotlinx.coroutines.CancellationException
@@ -119,6 +120,13 @@ class TurnRunner(
      * pre-cognitive behaviour (byte-identical prompts, zero extra calls).
      */
     private val cognitive: CognitiveTurnHooks? = null,
+    /**
+     * The SAME single-use store the [com.jarvis.assistant.tools.ToolRegistry]
+     * enforces against. The turn hooks keep it in step with the user's own
+     * utterance so a bound affirmative can confirm the exact external write.
+     * Null = no external-write confirmation (tests / pre-MCP baseline).
+     */
+    private val writeConfirmation: WriteConfirmation? = null,
     /** True when this session came from the follow-up. */
     private val isFollowUpTurn: () -> Boolean = { false },
 ) {
@@ -168,6 +176,10 @@ class TurnRunner(
         // STRICTLY LATER turn to honor `confirmed=true`, so the model can
         // never confirm its own candidate listing inside the same turn.
         cognitive?.noteTurnStart(sessionId)
+        // Same turn identity for the external-write confirmation store: a
+        // challenge armed on this turn may only be confirmed on the
+        // immediately-next turn's own affirmative.
+        writeConfirmation?.noteTurnStart(sessionId)
         // AUTHORIZATION BOUNDARY: bind a FAIL-CLOSED baseline context BEFORE
         // any tool work (voice turn, no explicit command yet — the utterance
         // is not known). The utterance-derived rebind happens the moment ASR
@@ -245,6 +257,12 @@ class TurnRunner(
                         // run, so the forget gate can require an explicit
                         // affirmative from the immediately-next user turn.
                         cognitive?.noteUserUtterance(sessionId, outcome.text)
+                        // The external-write store reacts to the SAME finalized
+                        // ASR text: it advances its ordinal and, only when this
+                        // is the immediately-next utterance of a live challenge
+                        // that reads as an explicit affirmative, marks that
+                        // challenge confirmed for this turn.
+                        writeConfirmation?.noteUserUtterance(sessionId, outcome.text)
                         cognitive?.ingest(outcome.text, messageId, TurnOrigin.VOICE)
                         // The reject half of the accept/reject
                         // loop — a follow-up utterance right after a proactive

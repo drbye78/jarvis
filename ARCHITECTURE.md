@@ -129,9 +129,9 @@ User-configured MCP servers (Settings → «MCP-серверы», LIVE) are stor
 JSON-blob pref (`AppPrefs.mcpServers`) with per-server auth in the Keystore
 (`SecretVault.mcpSecretKey`). `mcp/McpToolCatalog` discovers tools per server
 (`initialize` → paged `tools/list`, TTL + stale-while-revalidate, one in-flight
-refresh per server) and exposes READ-access ones as namespaced
-`mcp_<hash>_<tool>` `ToolContract`s; WRITE-access servers contribute ZERO tools
-until write-confirmation ships. `snapshot()` is non-blocking and I/O-free — the
+refresh per server) and exposes them as namespaced `mcp_<hash>_<tool>`
+`ToolContract`s: a READ server's tools are `ToolRisk.EXTERNAL`, a WRITE server's
+are `ToolRisk.EXTERNAL_WRITE`. `snapshot()` is non-blocking and I/O-free — the
 turn path never waits on the network. The hand-rolled `mcp/StreamableHttpMcpClient`
 supports the legacy `2025-06-18` handshake (the `2026-07-28` revision is not yet
 accepted by deployed servers — verified live), SSE-or-JSON replies, session-id
@@ -693,7 +693,7 @@ architectural summary.
 
 ## Tests
 
-JVM unit suite (1595 tests, all green; runs in CI on every push/PR). The live
+JVM unit suite (1630 tests, all green; runs in CI on every push/PR). The live
 smoke tier (Sber + Yandex + GigaChat, `integration/**/*LiveSmokeTest`) shares
 `src/test` but is excluded from the gate task and runs only through
 `:app:integrationTest`, which self-skips when credentials are absent:

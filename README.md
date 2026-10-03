@@ -311,8 +311,10 @@ keystore with `keytool` and update `local.properties` accordingly.
   `localhost`) and their tools join the assistant's toolkit. Server tools are
   treated as **untrusted**: they run **only** on a turn you started by voice
   (never a proactive/scheduled one), names are namespaced so they can never
-  shadow a built-in, and results/schemas are size-capped. **Write** servers are
-  listed but expose no tools until confirmed writes ship. URLs are checked both
+  shadow a built-in, and results/schemas are size-capped. **Write** servers'
+  tools are advertised too, but a mutation runs only when you confirm the exact
+  action with a spoken «да» on the next turn — the model can propose a write,
+  never execute one on its own. URLs are checked both
   before saving and at connect time (a server is refused if it points at, or
   resolves to, a private/loopback address — SSRF guard). Changing the list
   applies to the next turn — no restart.

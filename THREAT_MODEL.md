@@ -141,9 +141,15 @@ What is enforced **outside the model**:
 - **External (MCP) tools are the least-trusted class.** `ToolAuthorization`
   allows `EXTERNAL` ONLY on a turn whose origin is `TurnOrigin.VOICE` — a
   `PROACTIVE`/`SCHEDULED` turn (the assistant acting on its own) or an unbound
-  call is DENIED, closing the injected-content → third-party-server path. WRITE
-  servers advertise no tools until confirmation exists. SSRF is guarded at both
-  the literal (`mcp/McpUrlPolicy`: REMOTE https-only, private/link-local/cloud-
+  call is DENIED, closing the injected-content → third-party-server path.
+- **External WRITES require an out-of-band, out-of-model confirmation.**
+  `ToolRisk.EXTERNAL_WRITE` adds a second clause at the same choke point
+  (`ToolRegistry.executeResult`): the exact `(server, tool, canonical arguments)`
+  must have been proposed on the immediately-preceding voice turn and confirmed by
+  an explicit affirmative in the user's ASR text
+  (`tools/WriteConfirmation`/`WriteBinding`). No token or capability is ever sent
+  to the model, so a compromised model cannot confirm itself, replay a grant, or
+  swap the target call. SSRF is guarded at both the literal (`mcp/McpUrlPolicy`: REMOTE https-only, private/link-local/cloud-
   metadata rejected; LOCAL loopback-only) and connect-time (`mcp/McpDnsGuard`,
   fail-closed on a hostname resolving private) layers. Tool descriptions and
   results are untrusted data — they never enter the system prompt.

@@ -106,6 +106,16 @@ class ToolRegistry(
      * allowed to affect the static authorization binding.
      */
     private val dynamicTools: (() -> List<ToolContract>)? = null,
+    /**
+     * Single-use confirmation store for [ToolRisk.EXTERNAL_WRITE] tools. ONE
+     * instance is shared between this registry and the session turn hooks
+     * ([com.jarvis.assistant.session.TurnRunner]), because a confirmation is
+     * only meaningful when the challenge arming and the affirmative utterance
+     * are recorded against the same ordinal/turn state. Default null → every
+     * EXTERNAL_WRITE call fails closed (the tests that exercise the class
+     * without a store must opt in explicitly).
+     */
+    private val writeConfirmation: WriteConfirmation? = null,
 ) {
 
     /**
@@ -205,6 +215,13 @@ class ToolRegistry(
                 isError = true,
             )
         }
+        // SECOND ENFORCEMENT CLAUSE for external WRITE tools: a bound voice
+        // turn is necessary but NOT sufficient. The exact call (server + tool +
+        // canonical arguments) must additionally be confirmed by an explicit
+        // affirmative on the immediately-next user turn. This is still BEFORE
+        // the timeout/execute block, so an unconfirmed write never reaches the
+        // third-party server and no telemetry fires for it.
+        confirmationGate(tool, call)?.let { return it }
         val timeout = tool.timeoutMs ?: perToolTimeoutMs
         val startedAt = System.nanoTime()
         val result = try {
@@ -240,6 +257,75 @@ class ToolRegistry(
             }
         }
         return result
+    }
+
+    /**
+     * The [ToolRisk.EXTERNAL_WRITE] confirmation clause. Returns null when the
+     * call may proceed (not a confirming risk, or a consumed confirmation) and
+     * the model-facing [ToolResult] otherwise.
+     *
+     * Fail closed at every ambiguity: a tool that declares the risk but does
+     * NOT implement [ConfirmedWriteTool] is an honest error (a mis-declared
+     * write must never run), a null key (malformed/non-object arguments) is an
+     * honest error, and an absent store is an honest error. The
+     * [WriteGate.NeedsConfirmation] result is NOT an error — it is the
+     * structured instruction the model needs to ask the user — and it never
+     * invokes the tool.
+     */
+    private fun confirmationGate(tool: ToolContract, call: FunctionCall): ToolResult? {
+        if (!tool.risk.requiresConfirmation) return null
+        val confirmed = tool as? ConfirmedWriteTool
+        if (confirmed == null) {
+            // A tool that claims a write side effect but cannot be bound to a
+            // server+tool identity cannot be confirmed — refuse to run it.
+            Timber.w("Tool %s declares EXTERNAL_WRITE without ConfirmedWriteTool (fail closed)", call.name)
+            return confirmationDeniedResult()
+        }
+        val key = WriteBinding.canonicalKey(
+            confirmed.confirmationServerId,
+            confirmed.confirmationToolName,
+            call.arguments,
+        )
+        if (key == null) {
+            // Arguments are not a well-formed JSON object: the exact call
+            // cannot be bound to a challenge, so it can never be confirmed.
+            Timber.w("Tool %s write arguments are not a JSON object (fail closed)", call.name)
+            return confirmationDeniedResult()
+        }
+        return when (writeConfirmation?.gate(key, authorizedTurn?.sessionId)) {
+            WriteGate.Confirmed -> null
+            WriteGate.NeedsConfirmation -> needsConfirmationResult(confirmed, call)
+            WriteGate.Denied, null -> confirmationDeniedResult()
+        }
+    }
+
+    /**
+     * The structured, content-free challenge handed BACK to the model. Echoes
+     * only the model's own parsed arguments and the server/tool identity — no
+     * secret, URL or server payload. `isError = false`: this is a normal
+     * tool result, not a failure.
+     */
+    private fun needsConfirmationResult(tool: ConfirmedWriteTool, call: FunctionCall): ToolResult {
+        val arguments = Json.parseToJsonElement(call.arguments)
+        val content = buildJsonObject {
+            put("outcome", "needs_confirmation")
+            put("server", tool.confirmationServerId)
+            put("tool", tool.confirmationToolName)
+            put("arguments", arguments)
+            put("instruction", NEEDS_CONFIRMATION_INSTRUCTION)
+        }.toString()
+        return ToolResult(content, isError = false)
+    }
+
+    /** Honest, content-free denial for every failed-close confirmation path. */
+    private fun confirmationDeniedResult(): ToolResult {
+        Timber.w("External write denied: no confirmed challenge for this turn")
+        return ToolResult(
+            buildJsonObject {
+                put("error", "Action not permitted in this context")
+            }.toString(),
+            isError = true,
+        )
     }
 }
 
@@ -278,6 +364,17 @@ fun kotlinx.serialization.json.JsonObject.bool(key: String): Boolean? =
 
 /** The safe fallback when a tool's schema fragments do not assemble to JSON. */
 const val EMPTY_PARAMETER_SCHEMA = """{"type":"object","properties":{}}"""
+
+/**
+ * Model-facing instruction carried on an [ToolRisk.EXTERNAL_WRITE]
+ * `needs_confirmation` result. Deliberately a plain literal (not a resource):
+ * [ToolRegistry] and its `tools` package are Android-free by contract, and the
+ * LLM system prompt is Russian by product decision while this stable machine
+ * directive is provider-agnostic. The exact-call binding does the enforcing —
+ * this string only tells the model what to do next.
+ */
+private const val NEEDS_CONFIRMATION_INSTRUCTION =
+    "Ask the user to confirm this exact action, then call the tool again with the same arguments after they agree."
 
 /**
  * Builds a JSON-schema string.

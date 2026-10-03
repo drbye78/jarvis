@@ -14,7 +14,7 @@ import com.jarvis.assistant.session.TurnOrigin
  * Deliberately conservative: [IRREVERSIBLE] is the fail-closed class — a tool
  * whose effect cannot be undone from the device.
  */
-enum class ToolRisk {
+enum class ToolRisk(val requiresConfirmation: Boolean = false) {
     /** Reads state or performs a network lookup; no local state is mutated. */
     READ_ONLY,
 
@@ -35,6 +35,17 @@ enum class ToolRisk {
      * side effect in that moment.
      */
     EXTERNAL,
+
+    /**
+     * A WRITE-access external (MCP) tool — the strongest class. It carries
+     * every risk of [EXTERNAL] PLUS a side effect on a third-party system, so
+     * the EXACT call (server + tool + canonical arguments) must additionally
+     * be confirmed by an explicit affirmative on the immediately-next voice
+     * turn (see [WriteConfirmation]). This authorization layer only enforces
+     * the VOICE-turn requirement; the confirmation clause is layered on top by
+     * the registry. [requiresConfirmation] is true for this class only.
+     */
+    EXTERNAL_WRITE(requiresConfirmation = true),
 }
 
 /**
@@ -99,6 +110,9 @@ sealed interface AuthorizationDecision {
  *    context is bound AND its [TurnOrigin] is VOICE. PROACTIVE/SCHEDULED turns
  *    and an absent context all DENY: an unvetted third-party tool may only run
  *    when the user's own voice initiated the turn.
+ *  - EXTERNAL_WRITE (MCP tools with a side effect) follows the SAME rule here
+ *    (bound VOICE turn only); the registry additionally requires an
+ *    affirmative confirmation of the exact call before executing it.
  *  - `forget_fact` is EXEMPT: it keeps its own independent confirmation gate
  *    (`CognitiveCoordinator.forgetFactLocked` + `ForgetConfirmation`), a
  *    two-step «list → confirm with an explicit yes» flow. Double-gating it here
@@ -142,6 +156,14 @@ object ToolAuthorization {
                 } else {
                     // Content-free: never name the server/tool or echo a payload.
                     AuthorizationDecision.Deny("external tool requires a bound voice turn")
+                }
+
+            ToolRisk.EXTERNAL_WRITE ->
+                if (permitsExternal(context)) {
+                    AuthorizationDecision.Allow
+                } else {
+                    // Content-free: never name the server/tool or echo a payload.
+                    AuthorizationDecision.Deny("external write requires a bound voice turn")
                 }
         }
 

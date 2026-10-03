@@ -17,6 +17,7 @@ import com.jarvis.assistant.speech.tts.SpeakableText
 import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
 import com.jarvis.assistant.tools.ToolExecutor
+import com.jarvis.assistant.tools.WriteConfirmation
 import com.jarvis.assistant.util.OnlineChecker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -109,6 +110,13 @@ class SessionManager(
      * wires the real coordinator.
      */
     private val cognitive: CognitiveTurnHooks? = null,
+    /**
+     * The SAME single-use external-write confirmation store the tool registry
+     * enforces against. Forwarded verbatim into [TurnRunner] so the turn hooks
+     * and the enabling registry share one state machine. Null = no confirmation
+     * lane (tests / baseline).
+     */
+    private val writeConfirmation: WriteConfirmation? = null,
 ) {
 
     private var sessionJob: Job? = null
@@ -339,6 +347,8 @@ class SessionManager(
         voiceSource = voiceSource,
         // Per-turn memory gather + ingest hook.
         cognitive = cognitive,
+        // The SAME external-write confirmation store the registry gates on.
+        writeConfirmation = writeConfirmation,
         isFollowUpTurn = { currentTurnFromFollowUp },
     )
 

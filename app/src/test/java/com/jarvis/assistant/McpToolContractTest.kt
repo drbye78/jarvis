@@ -1,5 +1,6 @@
 package com.jarvis.assistant
 
+import com.jarvis.assistant.mcp.McpAccess
 import com.jarvis.assistant.mcp.McpBudget
 import com.jarvis.assistant.mcp.McpCall2
 import com.jarvis.assistant.mcp.McpClient
@@ -61,7 +62,8 @@ class McpToolContractTest {
         client: McpClient = FakeClient(),
         serverId: String = "server-1",
         descriptor: McpToolDescriptor = descriptor(),
-    ) = McpToolContract(serverId, descriptor, client)
+        access: McpAccess = McpAccess.READ,
+    ) = McpToolContract(serverId, descriptor, client, access)
 
     // ------------------------------------------------------------------
     // Namespacing / collision rule
@@ -116,8 +118,9 @@ class McpToolContractTest {
     }
 
     @Test
-    fun `risk is external`() {
-        assertEquals(ToolRisk.EXTERNAL, contract().risk)
+    fun `risk follows the server access class`() {
+        assertEquals(ToolRisk.EXTERNAL, contract(access = McpAccess.READ).risk)
+        assertEquals(ToolRisk.EXTERNAL_WRITE, contract(access = McpAccess.WRITE).risk)
     }
 
     // ------------------------------------------------------------------

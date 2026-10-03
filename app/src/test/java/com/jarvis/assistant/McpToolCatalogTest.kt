@@ -11,6 +11,7 @@ import com.jarvis.assistant.mcp.McpToolDescriptor
 import com.jarvis.assistant.mcp.McpToolResult2
 import com.jarvis.assistant.mcp.McpToolsCall
 import com.jarvis.assistant.mcp.McpToolsPage
+import com.jarvis.assistant.tools.ToolRisk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -115,7 +116,7 @@ class McpToolCatalogTest {
     }
 
     @Test
-    fun `a write server contributes zero tools even after discovery`() = runTest {
+    fun `a write server advertises tools tagged external write`() = runTest {
         val client = FakeClient(list = ok(tools(3)))
         val catalog = McpToolCatalog(
             { listOf(server("a", 0, access = McpAccess.WRITE)) },
@@ -123,9 +124,32 @@ class McpToolCatalogTest {
             discoveryScope(),
         )
 
-        assertTrue("write tools are never advertised", catalog.snapshot().isEmpty())
         catalog.refreshAll()
-        assertEquals("write discovery is not required but must not advertise", 0, catalog.snapshot().size)
+
+        val contracts = catalog.snapshot().filterIsInstance<McpToolContract>()
+        assertEquals(3, contracts.size)
+        assertTrue(
+            "every write server tool must be tagged EXTERNAL_WRITE",
+            contracts.all { it.risk == ToolRisk.EXTERNAL_WRITE },
+        )
+    }
+
+    @Test
+    fun `a read server advertises tools tagged external`() = runTest {
+        val client = FakeClient(list = ok(tools(2)))
+        val catalog = McpToolCatalog(
+            { listOf(server("a", 0, access = McpAccess.READ)) },
+            { client },
+            discoveryScope(),
+        )
+        catalog.refreshAll()
+
+        val contracts = catalog.snapshot().filterIsInstance<McpToolContract>()
+        assertEquals(2, contracts.size)
+        assertTrue(
+            "every read server tool must be tagged EXTERNAL",
+            contracts.all { it.risk == ToolRisk.EXTERNAL },
+        )
     }
 
     @Test

@@ -173,6 +173,43 @@ class ToolAuthorizationTest {
     }
 
     @Test
+    fun `external write tools are allowed on a voice turn`() {
+        assertEquals(
+            "a voice turn permits an external write tool (confirmation is added by the registry)",
+            AuthorizationDecision.Allow,
+            ToolAuthorization.decide("mcp_abc123_send", ToolRisk.EXTERNAL_WRITE, TurnAuthorization.voice()),
+        )
+    }
+
+    @Test
+    fun `external write tools fail closed off the voice lane`() {
+        val contexts = listOf<TurnAuthorization?>(
+            null,
+            TurnAuthorization.system(),
+            TurnAuthorization(TurnOrigin.SCHEDULED, explicitUserCommand = true),
+            TurnAuthorization(TurnOrigin.PROACTIVE, explicitUserCommand = true),
+        )
+        contexts.forEach { ctx ->
+            assertTrue(
+                "EXTERNAL_WRITE must fail closed for $ctx",
+                ToolAuthorization.decide("mcp_abc123_send", ToolRisk.EXTERNAL_WRITE, ctx)
+                is AuthorizationDecision.Deny,
+            )
+        }
+    }
+
+    @Test
+    fun `only external write requires confirmation`() {
+        ToolRisk.entries.forEach { risk ->
+            assertEquals(
+                "requiresConfirmation for $risk",
+                risk == ToolRisk.EXTERNAL_WRITE,
+                risk.requiresConfirmation,
+            )
+        }
+    }
+
+    @Test
     fun `no canonical tool name carries the reserved mcp namespace prefix`() {
         ToolRisks.byName.keys.forEach { name ->
             assertFalse(
@@ -220,6 +257,21 @@ class ToolAuthorizationTest {
 
         assertTrue(result.isError)
         assertEquals(0, tool.invocations)
+    }
+
+    @Test
+    fun `a mis-declared external write fails closed and never executes`() = runBlocking {
+        // Declares the write risk but does NOT implement ConfirmedWriteTool, so
+        // its exact call cannot be bound to a server+tool identity. Even on a
+        // bound voice turn it must be refused rather than run unconfirmed.
+        val tool = RecordingTool("mcp_bad_write", ToolRisk.EXTERNAL_WRITE)
+        val registry = ToolRegistry(listOf(tool), writeConfirmation = WriteConfirmation())
+        registry.setAuthorizationContext(1, TurnAuthorization.voice())
+
+        val result = registry.executeResult(FunctionCall("mcp_bad_write", "{}"))
+
+        assertTrue("a write tool that cannot be confirmed must be an error", result.isError)
+        assertEquals("a mis-declared write must never run", 0, tool.invocations)
     }
 
     @Test
