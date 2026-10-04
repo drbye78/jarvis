@@ -562,6 +562,18 @@ this deployment it is the *only* sane one, and it argues for investing in a
 **first-party typed HA integration** (REST/WS with entity/area/device registries)
 rather than trying to force control through the intent-shaped MCP surface (§7.2).
 
+**Second consequence — native HA also unlocks autonomous awareness (§6/§8).**
+An MCP connection is `EXTERNAL` by policy and therefore **voice-turn-only**: it
+can never feed proactive speech. A **first-party** HA integration is not forced
+into that class — its state reads can be `READ_ONLY` first-party data, which is
+exactly what an autonomous digest needs. So the same native integration that
+gives typed control (**Agency**) also gives a home-state feed for proactive
+notices like «стиральная машина закончила» (**Awareness**), without weakening
+the MCP boundary. This is a material argument for native-over-MCP here, and it
+ties §7 directly to §6. The boundary still holds where it must: *control* stays a
+`STATE`/`IRREVERSIBLE`-class action, voice-initiated, never autonomously
+triggered; only reads become awareness-eligible.
+
 ### 7.1 Why it is feasible (and where the difficulty really is)
 
 Jarvis has **no Zigbee/Z-Wave/Thread radio and no GMS**. That rules out being a
