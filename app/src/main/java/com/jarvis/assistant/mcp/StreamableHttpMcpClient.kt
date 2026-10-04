@@ -51,20 +51,27 @@ class StreamableHttpMcpClient(
     private val authHeaderName: String? = null,
     private val authHeaderValue: String? = null,
     /**
-     * Optional connect-time DNS policy (see [McpDnsGuard]). When supplied, the
-     * client derives a per-server OkHttp client from [httpClient] — same
-     * connection pool and dispatcher, with the guard attached — and never
-     * mutates the SHARED client (which serves LLM/TTS/gRPC). Null keeps the
-     * exact previous behavior.
+     * Optional connect-time DNS policy (see [McpDnsGuard]). The client always
+     * derives a per-server OkHttp client from [httpClient] — same connection
+     * pool and dispatcher, redirects disabled, and the guard attached when one
+     * is supplied — and never mutates the SHARED client (which serves
+     * LLM/TTS/gRPC).
      */
     private val dns: Dns? = null,
 ) : McpClient {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** The client used for calls; a DNS-guarded derivative when one was requested. */
-    private val requestClient: OkHttpClient =
-        if (dns != null) httpClient.newBuilder().dns(dns).build() else httpClient
+    /**
+     * The client used for calls. Redirects are refused (`3xx` is surfaced as a
+     * bad response) so a reachable MCP server cannot 302 the client into an
+     * SSRF pivot; [dns] adds the connect-time address policy when present.
+     */
+    private val requestClient: OkHttpClient = httpClient.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .also { builder -> dns?.let { builder.dns(it) } }
+        .build()
 
     @Volatile
     private var sessionId: String? = null

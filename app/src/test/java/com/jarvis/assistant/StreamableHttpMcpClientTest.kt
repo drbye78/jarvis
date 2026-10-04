@@ -399,6 +399,21 @@ class StreamableHttpMcpClientTest {
         assertTrue(result.text.contains("- 1 Overview"))
     }
 
+    @Test
+    fun `a redirect response is not followed`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(302)
+                .setHeader("Location", server.url("/moved").toString()),
+        )
+
+        val result = client().callTool("send", "{}")
+
+        // The 302 is surfaced as a bad response; the client must NOT chase it
+        // to /moved (which could be an SSRF pivot).
+        assertTrue("expected BadResponse but was $result", result is McpCall2.BadResponse)
+        assertEquals(1, server.requestCount)
+    }
+
     /** One `tools/list` page, delivered as an SSE frame. */
     private fun toolsResponse(name: String, cursor: String?): MockResponse {
         val envelope = buildJsonObject {
