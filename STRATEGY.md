@@ -96,6 +96,34 @@ assumes local ASR/TTS (e.g. "build offline dictation") is misguided on this
 hardware — but **graceful degradation is a first-class pillar** (§3.3), not an
 afterthought.
 
+### 1.2 Who this is for (the market question, answered)
+
+The strategy is not "build an open-source assistant for everyone." It is
+**Russian-first, single-primary-user, and honest about that**:
+
+- **The first user is the owner.** Jarvis is tailored to one person's actual
+  daily needs; upcoming smart-home work is the sharpest expression of that, not a
+  generic feature. A product built for one demanding user with a real home and a
+  real information diet is validated *in situ* — there is no need to invent a
+  market to justify a capability.
+- **Russian-centric is a deliberate setting-lock, not a limitation to fix.** The
+  language, the LLM/speech/calendar/map providers (GigaChat, Yandex
+  SpeechKit/MapKit/Calendar), and the Russian smart-home mix (§7.3) are chosen
+  because the target user is Russian-speaking. Building and validating the
+  capability domains against that setting is enough for now; other locales and
+  geographies come *after* the domains and features are proven, not before.
+- **The concept is a digital being / servant / wingman** — an AI that augments a
+  person, helps with everyday tasks, stays aware across many media and sources,
+  and keeps track of what matters to family and friends. This is a coherent
+  product **if and only if it delivers on its promises and is genuinely helpful**
+  (§0.3: attention eliminated; §3.3: actually there).
+
+**Consequence for the roadmap:** "will other people adopt this?" is explicitly
+*not* the validation gate. The gate is "does it actually reduce this user's
+attention burden and work reliably enough to trust?" Broadening to new locales is
+a later productization step, and should not dilute the Russian-first capability
+work in the meantime.
+
 ---
 
 ## 2. Competitive landscape (2026)
