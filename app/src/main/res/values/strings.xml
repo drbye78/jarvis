@@ -577,4 +577,7 @@
     <string name="settings_mcp_url_reject_metadata_host">Этот адрес запрещён</string>
     <string name="settings_mcp_url_reject_non_loopback_host">Локальный сервер должен быть на localhost</string>
     <string name="settings_mcp_url_reject_cross_origin_private_host">Перенаправление на частный адрес запрещено</string>
+    <string name="settings_mcp_url_reject_public_host">LAN-сервер не может быть по публичному IP</string>
+    <string name="settings_mcp_url_reject_non_private_host">LAN-сервер должен быть в локальной сети</string>
+    <string name="settings_mcp_url_reject_cross_origin_lan_host">Перенаправление LAN-сервера на другой хост запрещено</string>
 </resources>

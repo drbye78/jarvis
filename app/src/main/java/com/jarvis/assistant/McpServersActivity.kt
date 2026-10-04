@@ -237,6 +237,9 @@ class McpServersActivity : AppCompatActivity() {
         UrlRejection.METADATA_HOST -> R.string.settings_mcp_url_reject_metadata_host
         UrlRejection.NON_LOOPBACK_HOST -> R.string.settings_mcp_url_reject_non_loopback_host
         UrlRejection.CROSS_ORIGIN_PRIVATE_HOST -> R.string.settings_mcp_url_reject_cross_origin_private_host
+        UrlRejection.PUBLIC_HOST -> R.string.settings_mcp_url_reject_public_host
+        UrlRejection.NON_PRIVATE_HOST -> R.string.settings_mcp_url_reject_non_private_host
+        UrlRejection.CROSS_ORIGIN_LAN_HOST -> R.string.settings_mcp_url_reject_cross_origin_lan_host
     }
 
     private class McpServerAdapter(

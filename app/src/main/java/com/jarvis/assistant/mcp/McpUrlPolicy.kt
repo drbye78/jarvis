@@ -20,6 +20,15 @@ enum class UrlRejection {
     METADATA_HOST,
     NON_LOOPBACK_HOST,
     CROSS_ORIGIN_PRIVATE_HOST,
+
+    /** A LAN server named by a PUBLIC IP literal (a hostname is allowed). */
+    PUBLIC_HOST,
+
+    /** A LAN server whose literal is not RFC-1918 / ULA (or `0.0.0.0`/`::`). */
+    NON_PRIVATE_HOST,
+
+    /** A LAN redirect whose host differs from the origin's. */
+    CROSS_ORIGIN_LAN_HOST,
 }
 
 /** Outcome of [McpUrlPolicy.validate]. */
@@ -75,25 +84,35 @@ object McpUrlPolicy {
         }
         if (rejection != null) return UrlPolicyResult.Rejected(rejection)
         if (host.isNullOrEmpty()) return UrlPolicyResult.Rejected(UrlRejection.MISSING_HOST)
-        return hostResult(kind, classifyHost(host))
+        return hostResult(kind, classifyHost(host), isIpLiteral(host))
     }
 
     /**
-     * Validate a redirect target. Beyond re-applying [validate] to the target,
-     * a `REMOTE` redirect that changes host to a private/loopback literal is
-     * rejected as [UrlRejection.CROSS_ORIGIN_PRIVATE_HOST] — the classic
-     * "public URL 302s to the metadata service" SSRF. Host comparison only; no
-     * DNS.
+     * Validate a redirect target. Beyond re-applying [validate] to the target:
+     *
+     * - a `REMOTE` redirect that changes host to a private/loopback literal is
+     *   rejected as [UrlRejection.CROSS_ORIGIN_PRIVATE_HOST] — the classic
+     *   "public URL 302s to the metadata service" SSRF;
+     * - a `LAN` redirect that changes host at all is rejected as
+     *   [UrlRejection.CROSS_ORIGIN_LAN_HOST], so a LAN server cannot 302 to
+     *   another origin (public, link-local, metadata or loopback) and become an
+     *   SSRF pivot.
+     *
+     * Host comparison only; no DNS. A same-host target is re-validated by
+     * [validate].
      */
     fun validateRedirect(kind: McpServerKind, originUrl: String, targetUrl: String): UrlPolicyResult {
-        if (kind == McpServerKind.REMOTE) {
-            val originHost = hostOf(originUrl)
-            val targetHost = hostOf(targetUrl)
-            val crossesToNonPublic = originHost != null && targetHost != null &&
-                !originHost.equals(targetHost, ignoreCase = true) &&
-                classifyHost(targetHost) != HostClass.PUBLIC
-            if (crossesToNonPublic) {
-                return UrlPolicyResult.Rejected(UrlRejection.CROSS_ORIGIN_PRIVATE_HOST)
+        val originHost = hostOf(originUrl)
+        val targetHost = hostOf(targetUrl)
+        if (originHost != null && targetHost != null && !originHost.equals(targetHost, ignoreCase = true)) {
+            when (kind) {
+                McpServerKind.REMOTE ->
+                    if (classifyHost(targetHost) != HostClass.PUBLIC) {
+                        return UrlPolicyResult.Rejected(UrlRejection.CROSS_ORIGIN_PRIVATE_HOST)
+                    }
+
+                McpServerKind.LAN -> return UrlPolicyResult.Rejected(UrlRejection.CROSS_ORIGIN_LAN_HOST)
+                McpServerKind.LOCAL -> Unit // a differing loopback host is caught by validate() below
             }
         }
         return validate(kind, targetUrl)
@@ -115,15 +134,16 @@ object McpUrlPolicy {
     /** Classify an already-resolved address from its raw bytes (no I/O). */
     fun classifyAddress(address: InetAddress): HostClass = classifyBytes(address.address)
 
-    /** `http`/`https` for LOCAL, `https` only for REMOTE. */
+    /** `https` only for REMOTE and LAN; `http`/`https` for LOCAL. */
     private fun checkScheme(kind: McpServerKind, scheme: String): UrlRejection? {
         val normalized = scheme.lowercase()
         return when (kind) {
-            McpServerKind.REMOTE -> when (normalized) {
-                "https" -> null
-                "http" -> UrlRejection.HTTPS_REQUIRED
-                else -> UrlRejection.UNSUPPORTED_SCHEME
-            }
+            McpServerKind.REMOTE, McpServerKind.LAN ->
+                when (normalized) {
+                    "https" -> null
+                    "http" -> UrlRejection.HTTPS_REQUIRED
+                    else -> UrlRejection.UNSUPPORTED_SCHEME
+                }
 
             McpServerKind.LOCAL ->
                 if (normalized == "http" || normalized == "https") null else UrlRejection.UNSUPPORTED_SCHEME
@@ -131,28 +151,42 @@ object McpUrlPolicy {
     }
 
     /**
-     * Host-kind policy. A hostname and a public IP literal both classify
-     * [HostClass.PUBLIC]; the kinds that must tell them apart use
-     * [isIpLiteral] at their call site.
+     * Host-kind policy. [isIpLiteral] disambiguates a public IP literal (which
+     * LAN rejects) from an unresolvable hostname (which LAN allows and defers
+     * to the connect-time [McpDnsGuard]).
      */
-    private fun hostResult(kind: McpServerKind, hostClass: HostClass): UrlPolicyResult =
+    private fun hostResult(kind: McpServerKind, hostClass: HostClass, isIpLiteral: Boolean): UrlPolicyResult =
         when (kind) {
-            McpServerKind.REMOTE -> when (hostClass) {
-                HostClass.LOOPBACK -> UrlPolicyResult.Rejected(UrlRejection.LOOPBACK_HOST)
-                HostClass.PRIVATE -> UrlPolicyResult.Rejected(UrlRejection.PRIVATE_HOST)
-                HostClass.LINK_LOCAL -> UrlPolicyResult.Rejected(UrlRejection.LINK_LOCAL_HOST)
-                HostClass.METADATA -> UrlPolicyResult.Rejected(UrlRejection.METADATA_HOST)
-                HostClass.UNSPECIFIED -> UrlPolicyResult.Rejected(UrlRejection.MALFORMED)
-                HostClass.MALFORMED -> UrlPolicyResult.Rejected(UrlRejection.MALFORMED)
-                HostClass.PUBLIC -> UrlPolicyResult.Allowed
-            }
-
-            McpServerKind.LOCAL -> when (hostClass) {
-                HostClass.LOOPBACK -> UrlPolicyResult.Allowed
-                HostClass.MALFORMED -> UrlPolicyResult.Rejected(UrlRejection.MALFORMED)
-                else -> UrlPolicyResult.Rejected(UrlRejection.NON_LOOPBACK_HOST)
-            }
+            McpServerKind.REMOTE -> remoteHostResult(hostClass)
+            McpServerKind.LOCAL -> localHostResult(hostClass)
+            McpServerKind.LAN -> lanHostResult(hostClass, isIpLiteral)
         }
+
+    private fun remoteHostResult(hostClass: HostClass): UrlPolicyResult = when (hostClass) {
+        HostClass.LOOPBACK -> UrlPolicyResult.Rejected(UrlRejection.LOOPBACK_HOST)
+        HostClass.PRIVATE -> UrlPolicyResult.Rejected(UrlRejection.PRIVATE_HOST)
+        HostClass.LINK_LOCAL -> UrlPolicyResult.Rejected(UrlRejection.LINK_LOCAL_HOST)
+        HostClass.METADATA -> UrlPolicyResult.Rejected(UrlRejection.METADATA_HOST)
+        HostClass.UNSPECIFIED -> UrlPolicyResult.Rejected(UrlRejection.MALFORMED)
+        HostClass.MALFORMED -> UrlPolicyResult.Rejected(UrlRejection.MALFORMED)
+        HostClass.PUBLIC -> UrlPolicyResult.Allowed
+    }
+
+    private fun localHostResult(hostClass: HostClass): UrlPolicyResult = when (hostClass) {
+        HostClass.LOOPBACK -> UrlPolicyResult.Allowed
+        HostClass.MALFORMED -> UrlPolicyResult.Rejected(UrlRejection.MALFORMED)
+        else -> UrlPolicyResult.Rejected(UrlRejection.NON_LOOPBACK_HOST)
+    }
+
+    private fun lanHostResult(hostClass: HostClass, isIpLiteral: Boolean): UrlPolicyResult = when {
+        hostClass == HostClass.MALFORMED -> UrlPolicyResult.Rejected(UrlRejection.MALFORMED)
+        hostClass == HostClass.PUBLIC && isIpLiteral -> UrlPolicyResult.Rejected(UrlRejection.PUBLIC_HOST)
+        // A hostname: allowed here, rejected at connect time if it resolves
+        // outside RFC-1918/ULA.
+        hostClass == HostClass.PUBLIC -> UrlPolicyResult.Allowed
+        hostClass == HostClass.PRIVATE -> UrlPolicyResult.Allowed
+        else -> UrlPolicyResult.Rejected(UrlRejection.NON_PRIVATE_HOST)
+    }
 
     private fun hostOf(url: String): String? =
         parse(url)?.host?.removeSurrounding("[", "]")?.takeIf { it.isNotEmpty() }

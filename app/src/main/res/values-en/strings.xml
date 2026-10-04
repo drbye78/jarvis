@@ -578,4 +578,7 @@
     <string name="settings_mcp_url_reject_metadata_host">This address is not allowed</string>
     <string name="settings_mcp_url_reject_non_loopback_host">A local server must be on localhost</string>
     <string name="settings_mcp_url_reject_cross_origin_private_host">A redirect to a private address is not allowed</string>
+    <string name="settings_mcp_url_reject_public_host">A LAN server cannot use a public IP address</string>
+    <string name="settings_mcp_url_reject_non_private_host">A LAN server must be on the local network</string>
+    <string name="settings_mcp_url_reject_cross_origin_lan_host">A LAN server redirect to a different host is not allowed</string>
 </resources>

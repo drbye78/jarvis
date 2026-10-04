@@ -8,9 +8,11 @@ import java.util.UUID
  *
  * `REMOTE` is an internet endpoint and is held to an https-only, public-host
  * policy (see [McpUrlPolicy]); `LOCAL` is a loopback-only server (the cleartext
- * exception) for on-device integrations.
+ * exception) for on-device integrations; `LAN` is an https-only server on the
+ * local network (RFC-1918 / IPv6-ULA). `LAN` is a REACHABILITY class — it only
+ * constrains which address Jarvis dials, never the tool's trust tier.
  */
-enum class McpServerKind { REMOTE, LOCAL }
+enum class McpServerKind { REMOTE, LOCAL, LAN }
 
 /**
  * What a server may do on the user's behalf.

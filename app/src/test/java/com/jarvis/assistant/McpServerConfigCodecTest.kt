@@ -51,6 +51,16 @@ class McpServerConfigCodecTest {
     }
 
     @Test
+    fun `lan kind round trips`() {
+        val lan = config(kind = McpServerKind.LAN, url = "https://192.168.1.50:8443/mcp")
+        val decoded = McpServerConfigCodec.decode(McpServerConfigCodec.encode(listOf(lan)))
+        assertTrue(decoded is McpServerDecodeResult.Ok)
+        val server = (decoded as McpServerDecodeResult.Ok).servers.single()
+        assertEquals(McpServerKind.LAN, server.kind)
+        assertEquals("https://192.168.1.50:8443/mcp", server.url)
+    }
+
+    @Test
     fun `blank input decodes to empty`() {
         assertEquals(McpServerDecodeResult.Empty, McpServerConfigCodec.decode(null))
         assertEquals(McpServerDecodeResult.Empty, McpServerConfigCodec.decode(""))

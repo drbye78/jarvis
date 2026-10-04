@@ -162,6 +162,75 @@ class McpUrlPolicyTest {
     }
 
     @Test
+    fun `lan accepts private literals and unresolvable hostnames over https`() {
+        allowed(McpServerKind.LAN, "https://192.168.1.50:8443/mcp")
+        allowed(McpServerKind.LAN, "https://10.0.0.5/mcp")
+        allowed(McpServerKind.LAN, "https://172.16.0.1/mcp")
+        allowed(McpServerKind.LAN, "https://172.31.255.255/mcp")
+        allowed(McpServerKind.LAN, "https://[fd00::1]/mcp")
+        allowed(McpServerKind.LAN, "https://homeassistant.local/mcp")
+        // A hostname is deferred to the connect-time guard, even a rebinding one.
+        allowed(McpServerKind.LAN, "https://10.0.0.5.nip.io/mcp")
+    }
+
+    @Test
+    fun `lan requires https`() {
+        rejected(McpServerKind.LAN, "http://192.168.1.50/mcp", UrlRejection.HTTPS_REQUIRED)
+        rejected(McpServerKind.LAN, "ftp://192.168.1.50", UrlRejection.UNSUPPORTED_SCHEME)
+    }
+
+    @Test
+    fun `lan rejects public literals`() {
+        rejected(McpServerKind.LAN, "https://8.8.8.8/mcp", UrlRejection.PUBLIC_HOST)
+        rejected(McpServerKind.LAN, "https://172.32.0.1/mcp", UrlRejection.PUBLIC_HOST)
+        rejected(McpServerKind.LAN, "https://[2001:4860:4860::8888]/mcp", UrlRejection.PUBLIC_HOST)
+    }
+
+    @Test
+    fun `lan rejects non-private literals`() {
+        rejected(McpServerKind.LAN, "https://127.0.0.1/mcp", UrlRejection.NON_PRIVATE_HOST)
+        rejected(McpServerKind.LAN, "https://localhost/mcp", UrlRejection.NON_PRIVATE_HOST)
+        rejected(McpServerKind.LAN, "https://[::1]/mcp", UrlRejection.NON_PRIVATE_HOST)
+        rejected(McpServerKind.LAN, "https://169.254.1.1/mcp", UrlRejection.NON_PRIVATE_HOST)
+        rejected(McpServerKind.LAN, "https://169.254.169.254/mcp", UrlRejection.NON_PRIVATE_HOST)
+        rejected(McpServerKind.LAN, "https://0.0.0.0/mcp", UrlRejection.NON_PRIVATE_HOST)
+        rejected(McpServerKind.LAN, "https://[::]/mcp", UrlRejection.NON_PRIVATE_HOST)
+        rejected(McpServerKind.LAN, "https://exa mple.com", UrlRejection.MALFORMED)
+        rejected(McpServerKind.LAN, "https:///mcp", UrlRejection.MISSING_HOST)
+    }
+
+    @Test
+    fun `lan redirects are pinned to the origin host`() {
+        val same = McpUrlPolicy.validateRedirect(
+            McpServerKind.LAN,
+            "https://192.168.1.50/a",
+            "https://192.168.1.50/b",
+        )
+        assertEquals(UrlPolicyResult.Allowed, same)
+
+        val otherPrivate = McpUrlPolicy.validateRedirect(
+            McpServerKind.LAN,
+            "https://192.168.1.50/a",
+            "https://192.168.1.51/b",
+        )
+        assertEquals(UrlPolicyResult.Rejected(UrlRejection.CROSS_ORIGIN_LAN_HOST), otherPrivate)
+
+        val toPublic = McpUrlPolicy.validateRedirect(
+            McpServerKind.LAN,
+            "https://192.168.1.50/a",
+            "https://8.8.8.8/b",
+        )
+        assertEquals(UrlPolicyResult.Rejected(UrlRejection.CROSS_ORIGIN_LAN_HOST), toPublic)
+
+        val downgrade = McpUrlPolicy.validateRedirect(
+            McpServerKind.LAN,
+            "https://192.168.1.50/a",
+            "http://192.168.1.50/b",
+        )
+        assertEquals(UrlPolicyResult.Rejected(UrlRejection.HTTPS_REQUIRED), downgrade)
+    }
+
+    @Test
     fun `unspecified addresses are their own class`() {
         assertEquals(HostClass.UNSPECIFIED, McpUrlPolicy.classifyHost("0.0.0.0"))
         assertEquals(HostClass.UNSPECIFIED, McpUrlPolicy.classifyHost("0.1.2.3"))

@@ -16,6 +16,9 @@ import java.net.UnknownHostException
  *
  *  - [McpServerKind.REMOTE] requires every resolved address to be public.
  *  - [McpServerKind.LOCAL] requires every resolved address to be loopback.
+ *  - [McpServerKind.LAN] requires every resolved address to be RFC-1918 / ULA
+ *    private (the inversion of the REMOTE rule, which is what defeats DNS
+ *    rebinding such as `10.0.0.5.nip.io`).
  *
  * A rejection fails closed with a content-free [UnknownHostException] — the
  * shape OkHttp already surfaces for a failed lookup — so neither the hostname
@@ -39,6 +42,7 @@ class McpDnsGuard private constructor(
             val allowed = when (kind) {
                 McpServerKind.REMOTE -> hostClass == HostClass.PUBLIC
                 McpServerKind.LOCAL -> hostClass == HostClass.LOOPBACK
+                McpServerKind.LAN -> hostClass == HostClass.PRIVATE
             }
             if (!allowed) throw UnknownHostException(REJECTED)
         }
