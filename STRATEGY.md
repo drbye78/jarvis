@@ -118,6 +118,14 @@ The strategy is not "build an open-source assistant for everyone." It is
   product **if and only if it delivers on its promises and is genuinely helpful**
   (§0.3: attention eliminated; §3.3: actually there).
 
+**Concrete deployment (validates the whole thesis):** the owner runs a **LAN Home
+Assistant aggregating 50+ devices across many ecosystems at once** — Yandex,
+Google Home, SmartThings, Smart Life/Tuya, Xiaomi, Philips Hue, Electrolux,
+Polaris, and more (§7.0). That is the exact home Jarvis is built to run: one
+typed HA connection reaches the entire heterogeneous house, which is why the
+hub-first smart-home path (R4) is the product's action flagship and why the
+awareness lanes (`BehaviorArbiter`, digests) have a real signal to act on.
+
 **Consequence for the roadmap:** "will other people adopt this?" is explicitly
 *not* the validation gate. The gate is "does it actually reduce this user's
 attention burden and work reliably enough to trust?" Broadening to new locales is
@@ -532,6 +540,28 @@ attacker-writable. OWASP **LLM01:2025 Prompt Injection** is the #1 LLM risk, and
 > natural counterpart to passive awareness: it *notices* the house, and it *acts
 > on* the house.
 
+### 7.0 The concrete target — one LAN Home Assistant over a heterogeneous home
+
+The design is anchored to the owner's actual deployment, not an abstraction:
+
+- **A single LAN-accessible Home Assistant** is the aggregation point for a
+  **large home (50+ devices)** drawn from **many ecosystems at once** — Yandex
+  Smart Home, Google Home, SmartThings, Smart Life/Tuya, Xiaomi Home, Philips
+  Hue, and appliance brands such as Electrolux and Polaris, among others.
+- **HA is the universal bridge; Jarvis talks to HA, not to each vendor cloud.**
+  Each ecosystem is brought into HA once (its own integration), and Jarvis needs
+  exactly **one** typed connection. This is why the per-vendor cloud APIs in
+  §7.3 are mostly *not* Jarvis's problem: **the user's HA already did that work.**
+- **Scale shapes the design.** 50+ entities means entity resolution, area/room
+  grouping, and disambiguation («свет на кухне» → which of several lights) are
+  first-class — not a nice-to-have. It also makes a **single typed, enumerable
+  control surface** far more valuable than per-device special-casing.
+
+**Strategic consequence:** the hub-first choice is not just "easiest path" — for
+this deployment it is the *only* sane one, and it argues for investing in a
+**first-party typed HA integration** (REST/WS with entity/area/device registries)
+rather than trying to force control through the intent-shaped MCP surface (§7.2).
+
 ### 7.1 Why it is feasible (and where the difficulty really is)
 
 Jarvis has **no Zigbee/Z-Wave/Thread radio and no GMS**. That rules out being a
@@ -896,8 +926,11 @@ then R2 (native CalDAV). Reuses alarms, tools, `speakProactively`, settings,
 memory; no new permission, no hardware.
 
 **Phase 2 — "It runs the house."** R3 MCP packs + the **`LAN` kind** (the
-prerequisite), then **R4 smart-home control** (Home Assistant via MCP + scoped
-direct LAN + the Yandex user API, with risk tiering); in parallel the awareness
+prerequisite), then **R4 smart-home control** — for this deployment, a
+**first-party typed HA integration** (native REST/WS with entity/area/device
+registries, risk tiering) rather than generic MCP, because the target is one LAN
+Home Assistant aggregating 50+ multi-ecosystem devices (§7.0); MCP remains the
+transport for read/discovery and for non-HA servers. In parallel the awareness
 pillar R5 (pull → digest → interrupt) and R6 email.
 
 **Phase 3 — "It ships and stays private."** R9 OTA before external distribution;
@@ -939,6 +972,11 @@ unblocks the entire smart-home group (§7).
 - **Probe Yandex API rate limits** — entirely undocumented (§7.3.1).
 - Sber Matter/Thread support and the VK smart-home developer API — both
   unverified (§7.3).
+- **HA integration surface for the real deployment (§7.0):** confirm the target
+  HA version is ≥ 2025.2 (for `mcp_server`); enumerate the entity/area/device
+  registries via native REST/WS; decide how entity resolution disambiguates across
+  50+ mixed-ecosystem devices; decide whether MCP read is worth keeping once the
+  native typed path exists.
 - Decide the local fast-path boundary (deterministic intent vs. LLM) for obvious
   commands.
 - Decide whether to ever allow a scoped external "read grant" for autonomous
