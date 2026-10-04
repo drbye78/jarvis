@@ -54,6 +54,28 @@ class AndroidMediaBrowserGateway(private val context: Context) : MediaBrowserGat
 
     private val appContext = context.applicationContext
 
+    /**
+     * Test-visible diagnostic (visible for testing): how many times the
+     * [MediaBrowserCompat] **constructor** threw and was swallowed into a null.
+     *
+     * [connect] has two legitimate reasons to resolve null, and a caller cannot
+     * tell them apart from the null alone:
+     *  - the constructor throws — the Looper-hop regression signature. The no-arg
+     *    `Handler()` inside `MediaBrowserCompat` requires a Looper, so building it
+     *    on a Looper-less thread (production's `Dispatchers.IO` tool lane) throws;
+     *  - the service REFUSES the bind — [MediaBrowserCompat.ConnectionCallback.onConnectionFailed]
+     *    fires (a normal device behaviour, not a defect).
+     *
+     * This counter isolates the first. It is content-free by construction (a bare
+     * count — no package names or URLs) and honest: a refused bind never
+     * increments it. The device regression guard
+     * `MediaTransportDeviceTest.browserConnect_worksFromLooperlessProductionThread`
+     * asserts it stays ZERO; removing the main-looper hop makes it non-zero.
+     */
+    @Volatile
+    internal var constructionFailureCount: Int = 0
+        private set
+
     override fun discover(): List<BrowserServiceInfo> = runCatching {
         val pm = appContext.packageManager
         pm.queryIntentServices(browserIntent(), 0)
@@ -109,6 +131,11 @@ class AndroidMediaBrowserGateway(private val context: Context) : MediaBrowserGat
                         MediaBrowserCompat(appContext, component, callback, null)
                     }.getOrNull()
                     if (b == null) {
+                        // The constructor returned only by throwing: this is the
+                        // swallowed Looper-hop failure, NOT a service refusal
+                        // (which arrives via onConnectionFailed, above). Record it
+                        // so the device regression guard can see it.
+                        constructionFailureCount++
                         if (cont.isActive) cont.resume(null)
                         return@suspendCancellableCoroutine
                     }

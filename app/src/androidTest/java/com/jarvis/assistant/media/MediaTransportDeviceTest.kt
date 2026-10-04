@@ -396,10 +396,27 @@ class MediaTransportDeviceTest {
     /**
      * Regression guard for the threading defect above, stated as its own case so
      * the failure mode is unambiguous: the FIRST bind attempt in the process must
-     * happen on a Looper-less thread and still connect. Kept separate from
+     * happen on a Looper-less thread and the [MediaBrowserCompat] CONSTRUCTION
+     * must not fail there. Kept separate from
      * [browserConnect_handshakeIsHonestAndCleansUp] because that test tolerates
-     * null (honest degradation); this one pins that null-everywhere is a BUG, not
-     * a player behaviour.
+     * null (honest degradation).
+     *
+     * NULL IS AMBIGUOUS — this test must not be. `connect()` returns null for two
+     * very different reasons:
+     *  - CONSTRUCTION BROKE (regression): the no-arg `Handler()` inside
+     *    `MediaBrowserCompat` needs a Looper, so building it off-main throws and
+     *    is swallowed into null. This is a defect; the old all-null assertion
+     *    caught it only by accident.
+     *  - THE SERVICE REFUSED (device behaviour): `onConnectionFailed` fires
+     *    (`BrowserDiag: <pkg> refused the connection (null root)`) and null is the
+     *    honest outcome. On the target device ALL THREE players refuse, so an
+     *    all-null FAIL was a false positive.
+     *
+     * The gateway surfaces the first case via `constructionFailureCount`, so this
+     * asserts ZERO construction failures (the real Looper-hop guard: delete the
+     * `withContext(Dispatchers.Main)` hop and it goes non-zero → FAIL) and then
+     * skips honestly when every service merely refused. When a session IS handed
+     * out, the per-session invariants still run.
      */
     @Test
     fun browserConnect_worksFromLooperlessProductionThread() {
@@ -407,17 +424,41 @@ class MediaTransportDeviceTest {
         val installed = installedPlayers()
         assumeTrue("none of the target players is installed", installed.isNotEmpty())
 
-        val results = installed.associateWith { pkg ->
-            runCatching {
+        var connectedCount = 0
+        for (pkg in installed) {
+            val session = runCatching {
                 runBlocking { withContext(Dispatchers.IO) { gateway.connect(pkg, BROWSER_CONNECT_TIMEOUT_MS) } }
-            }.getOrNull().also { it?.disconnect() }
+            }.getOrNull() ?: continue
+            connectedCount++
+            try {
+                assertEquals("bound session must belong to the requested package", pkg, session.packageName)
+                // controller() builds no Handler, so it needs no Looper hop —
+                // assert it off the main thread (production does the same).
+                val handle = runCatching {
+                    runBlocking { withContext(Dispatchers.IO) { session.controller() } }
+                }.getOrNull()
+                handle?.let {
+                    assertEquals("session token controller must be for $pkg", pkg, it.packageName)
+                }
+            } finally {
+                session.disconnect()
+                session.disconnect() // documented idempotent — must not throw
+            }
         }
 
-        assertTrue(
-            "at least one installed player MUST bind from the production (Looper-less) " +
-                "thread; all-null means the Looper hop regressed. results=$results",
-            results.values.any { it != null },
+        // The REAL guard, asserted BEFORE the honest skip so an all-null run caused
+        // by broken construction can never degrade into a SKIP: construction from a
+        // Looper-less thread must never fail. A refused bind does not increment this.
+        assertEquals(
+            "MediaBrowserCompat construction must never fail from a Looper-less thread " +
+                "(non-zero = the main-looper hop regressed)",
+            0,
+            gateway.constructionFailureCount,
         )
+
+        // Honest skip: every service actively refused the bind, so no per-session
+        // invariant could run — but the construction guard above already did its job.
+        assumeTrue("every installed player refused the browser bind (device behaviour)", connectedCount > 0)
     }
 
     private companion object {
