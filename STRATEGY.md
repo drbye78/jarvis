@@ -545,14 +545,28 @@ hub, but **not** control. The problem splits cleanly:
 
 ### 7.2 Recommended architecture — hub-first, direct-LAN second
 
-1. **Primary: Home Assistant via its official MCP server** (`/api/mcp`,
-   Streamable HTTP, introduced in HA 2025.2). One integration reaches
-   Zigbee/Z-Wave/BLE/cloud/local devices, runs **entirely on the LAN**, needs
-   **no GMS**, and matches Jarvis's existing `StreamableHttpMcpClient` exactly.
-   Fall back to HA **REST `/api/services/<domain>/<service>`** or the
-   **WebSocket `call_service`** for arbitrary service calls the Assist tool
-   surface does not expose. Auth: long-lived access token (or OAuth2/IndieAuth),
-   stored in the Keystore.
+1. **Primary: Home Assistant — MCP for read, native REST/WS for control.**
+   HA ships a **built-in MCP server** (`mcp_server`, HA 2025.2, UI-configured) at
+   **`/api/mcp`** over **Streamable HTTP (stateless)**, auth via a long-lived
+   access token (or OAuth/IndieAuth), which matches Jarvis's existing
+   `StreamableHttpMcpClient` exactly. But its surface is the **Assist/LLM intent
+   API** — `homeassistant__GetLiveContext` for reads and `intent__HassTurnOn` /
+   `HassTurnOff` / `HassSetPosition` / domain intents for control, with
+   **natural-language slots** (`name`, `domain`, `area`), **not** typed
+   `domain.service` + `entity_id` + `service_data`. That is **insufficient for
+   consequence-based risk tiering**: one `intent__HassTurnOn` turns on a lamp
+   *and* locks a lock, and Jarvis never sees the resolved entity (§7.4). So:
+   - **Reads/discovery** may go through MCP (`/api/mcp/assist`, the Assist API;
+     non-admin users may use it) — transport-compatible, zero new code.
+   - **State-changing control** goes through the **native REST
+     `POST /api/services/<domain>/<service>`** (or the WebSocket `call_service`),
+     which carries the **typed `domain` + `service` + `target.entity_id`/`area_id`
+     + `service_data`** the tier model requires. Use `/api/services` to enumerate
+     valid actions.
+   This hybrid is the defensible design; **pure-MCP write is not** — it would
+   make the risk tiers unenforceable. The same HA LLAT lives in the Keystore.
+   (MCP read + native write are different transports to the *same* trusted LAN
+   host; both are `EXTERNAL`-equivalent and voice-turn-gated.)
 2. **Secondary: a scoped direct-LAN allow-list** — **Shelly** (JSON-RPC HTTP),
    **Tasmota/ESPHome/WLED** (MQTT), **Philips Hue** (local v2 REST/SSE), and
    optionally **Yeelight** (LAN JSON). Implement these as **built-in tools with
@@ -706,6 +720,23 @@ enforced at the same choke point — never by trusting the model to pick a tier:
 **Fail closed on ambiguity:** if a device class cannot be determined, treat it as
 Tier 2. Default new servers to `READ` (already the case).
 
+**Tier 1 needs a *typed* signal — which generic MCP does not provide.** Tiering
+requires knowing the concrete device class/action (`light.turn_on` on
+`light.kitchen` vs `lock.unlock` on `lock.front_door`). A generic MCP tool is an
+opaque name with a JSON schema, and server `annotations` are explicitly
+untrusted — so **deriving a tier from a tool name would be model/discovery
+discretion, which the philosophy forbids**. Concretely: HA's MCP `intent__HassTurnOn`
+turns on a lamp *and* locks a lock in the same tool, so it cannot be tiered at
+all. Consequences:
+- **Over generic MCP (and MCP-hosted HA control), v1 is Tier 0 reads + Tier 2
+  confirmation for every write.** This is a strict, safe subset — but it means
+  «включи свет» is a two-turn «да», which is not the end state.
+- **Tier 1 is only achievable over a first-party surface with typed entity/action
+  metadata** — hence §7.2's native HA REST/WS write path (`domain` + `service` +
+  `target.entity_id` + `service_data`), or the direct-LAN built-in tools, where
+  the action class is known at the tool boundary. Tier 1 pre-authorisation is
+  therefore **coupled to a typed integration, not to the LAN transport**.
+
 ### 7.5 Security
 
 - **Prompt injection is the adversary.** With pre-authorisation, poisoned web /
@@ -782,25 +813,29 @@ the `LAN` kind first**; it is the prerequisite for the whole smart-home group.
 - **Hostname vs public-literal needs care.** The pure policy cannot tell a
   hostname (`homeassistant.local`) from a public IP literal — both classify as
   `PUBLIC`. LAN must allow the *hostname* (deferring to the connect-time guard)
-  while rejecting a *public IP literal*; either split `HostClass.PUBLIC` or add
-  an `isIpLiteral(host)` helper.
+  while rejecting a *public IP literal*; add an `isIpLiteral(host)` helper (an
+  address-class enum split would perturb REMOTE's truth table for no gain).
 - **Enforce twice:** at the literal-URL layer (`McpUrlPolicy`) **and** at connect
   time (resolve, then require **every** address to be private — the inversion of
   the REMOTE all-public rule, which is what defeats DNS rebinding /
-  `10.0.0.5.nip.io`). This changes *reachability*, never *trust*: LAN tools stay
+  `10.0.0.5.nip.io`). Classify from the `InetAddress` **bytes**, not the
+  `hostAddress` string (mapped IPv6 `::ffff:10.0.0.5` breaks string parsing).
+  This changes *reachability*, never *trust*: LAN tools stay
   `EXTERNAL`/`EXTERNAL_WRITE`, VOICE-turn-only, confirmation-gated.
-- **Pin the host:** extend `validateRedirect` to LAN (today it only guards
-  REMOTE), so a LAN server cannot 302 to public/link-local/metadata/loopback and
-  become an SSRF pivot.
-- **⚠️ Cleartext is an open decision, not a config line.** Android's network
-  security config matches hosts/domains and has **no CIDR support**, so it
-  *cannot* enumerate arbitrary private ranges — a LAN server on
-  `http://192.168.1.50` is blocked by the OS no matter what the policy allows.
-  Options: (a) HTTPS-only for LAN (breaks self-signed HA and non-TLS gear);
-  (b) relax `base-config` app-wide (removes OS-level defense-in-depth — no
-  cleartext is ever attempted for REMOTE, but the blast radius covers the direct
-  LAN tools too); (c) **HTTPS-first, cleartext opt-in later once the real device
-  mix is known (recommended)**. Decide before coding.
+- **Disable redirects outright.** `StreamableHttpMcpClient` currently follows
+  OkHttp redirects while `validateRedirect` is **dead code (never called)** — a
+  pre-existing REMOTE SSRF reliance, not just a LAN concern. Set
+  `followRedirects(false)` / `followSslRedirects(false)` on the per-server client
+  (never the shared one); make `validateRedirect` LAN-aware as
+  defense-in-depth. An MCP endpoint should never cross hosts.
+- **TLS: HTTPS-first, decided.** LAN requires `https` and the app-wide cleartext
+  flag stays off (the loopback-only exception is unchanged). A **self-signed HA
+  cert is the foreseeable friction** — v1 fails closed with an actionable message
+  (use the cert's hostname; don't rely on an IP SAN). Per-server **SPKI pinning**
+  (vault `mcpCertPin:<serverId>` → SHA-256 of the leaf SPKI, per-server client
+  only, system trust first, no global trust-all) is a **separate, security-reviewed
+  lane gated on device availability** — do not ship trust-all-adjacent code
+  unreviewed.
 
 **Host advantages a third party can exploit:** many servers (breadth), user keys
 (no rev-share/account), local execution (privacy), a live tool surface
