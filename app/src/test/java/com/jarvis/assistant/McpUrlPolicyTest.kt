@@ -6,7 +6,10 @@ import com.jarvis.assistant.mcp.McpUrlPolicy
 import com.jarvis.assistant.mcp.UrlPolicyResult
 import com.jarvis.assistant.mcp.UrlRejection
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.InetAddress
 
 /**
  * Truth table for the pure SSRF/localhost boundary.
@@ -23,6 +26,9 @@ class McpUrlPolicyTest {
 
     private fun rejected(kind: McpServerKind, url: String, reason: UrlRejection) =
         assertEquals("expected $reason for $url", UrlPolicyResult.Rejected(reason), McpUrlPolicy.validate(kind, url))
+
+    private fun addr(vararg octets: Int): InetAddress =
+        InetAddress.getByAddress(octets.map { it.toByte() }.toByteArray())
 
     @Test
     fun `remote https public hosts are allowed`() {
@@ -54,8 +60,10 @@ class McpUrlPolicyTest {
         rejected(McpServerKind.REMOTE, "https://172.16.0.1/mcp", UrlRejection.PRIVATE_HOST)
         rejected(McpServerKind.REMOTE, "https://172.31.255.255/mcp", UrlRejection.PRIVATE_HOST)
         rejected(McpServerKind.REMOTE, "https://192.168.1.1/mcp", UrlRejection.PRIVATE_HOST)
-        rejected(McpServerKind.REMOTE, "https://0.0.0.0/mcp", UrlRejection.PRIVATE_HOST)
         rejected(McpServerKind.REMOTE, "https://[fd00::1]/mcp", UrlRejection.PRIVATE_HOST)
+        // `0.0.0.0`/`::` are UNSPECIFIED, not PRIVATE, and are still rejected.
+        rejected(McpServerKind.REMOTE, "https://0.0.0.0/mcp", UrlRejection.MALFORMED)
+        rejected(McpServerKind.REMOTE, "https://[::]/mcp", UrlRejection.MALFORMED)
         rejected(McpServerKind.REMOTE, "https://169.254.1.1/mcp", UrlRejection.LINK_LOCAL_HOST)
         rejected(McpServerKind.REMOTE, "https://[fe80::1]/mcp", UrlRejection.LINK_LOCAL_HOST)
         rejected(McpServerKind.REMOTE, "https://169.254.169.254/latest/meta-data/", UrlRejection.METADATA_HOST)
@@ -151,5 +159,33 @@ class McpUrlPolicyTest {
         assertEquals(HostClass.PRIVATE, McpUrlPolicy.classifyHost("fd00::1"))
         assertEquals(HostClass.PUBLIC, McpUrlPolicy.classifyHost("mcp.example.com"))
         assertEquals(HostClass.MALFORMED, McpUrlPolicy.classifyHost("999.1.1.1"))
+    }
+
+    @Test
+    fun `unspecified addresses are their own class`() {
+        assertEquals(HostClass.UNSPECIFIED, McpUrlPolicy.classifyHost("0.0.0.0"))
+        assertEquals(HostClass.UNSPECIFIED, McpUrlPolicy.classifyHost("0.1.2.3"))
+        assertEquals(HostClass.UNSPECIFIED, McpUrlPolicy.classifyHost("::"))
+        assertEquals(HostClass.UNSPECIFIED, McpUrlPolicy.classifyHost("[::]"))
+    }
+
+    @Test
+    fun `isIpLiteral separates a public literal from a hostname`() {
+        assertTrue(McpUrlPolicy.isIpLiteral("8.8.8.8"))
+        assertTrue(McpUrlPolicy.isIpLiteral("192.168.1.1"))
+        assertTrue(McpUrlPolicy.isIpLiteral("fd00::1"))
+        assertTrue(McpUrlPolicy.isIpLiteral("[::1]"))
+        assertFalse(McpUrlPolicy.isIpLiteral("mcp.example.com"))
+        assertFalse(McpUrlPolicy.isIpLiteral("localhost"))
+        assertFalse(McpUrlPolicy.isIpLiteral("10.0.0.5.nip.io"))
+        assertFalse(McpUrlPolicy.isIpLiteral("999.1.1.1"))
+    }
+
+    @Test
+    fun `classifyAddress classifies from raw bytes`() {
+        assertEquals(HostClass.PUBLIC, McpUrlPolicy.classifyAddress(addr(8, 8, 8, 8)))
+        assertEquals(HostClass.PRIVATE, McpUrlPolicy.classifyAddress(addr(10, 0, 0, 5)))
+        assertEquals(HostClass.LOOPBACK, McpUrlPolicy.classifyAddress(addr(127, 0, 0, 1)))
+        assertEquals(HostClass.UNSPECIFIED, McpUrlPolicy.classifyAddress(addr(0, 0, 0, 0)))
     }
 }

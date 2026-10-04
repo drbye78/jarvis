@@ -1,5 +1,6 @@
 package com.jarvis.assistant.mcp
 
+import java.net.InetAddress
 import java.net.URI
 
 /**
@@ -30,9 +31,12 @@ sealed interface UrlPolicyResult {
 
 /**
  * How a hostname/IP literal is classified. [PUBLIC] also covers a non-literal
- * hostname we cannot resolve in a pure check.
+ * hostname we cannot resolve in a pure check; use [McpUrlPolicy.isIpLiteral] to
+ * tell a public IP literal from a hostname. [UNSPECIFIED] is `0.0.0.0`/`::` —
+ * never a valid destination, and deliberately NOT [PRIVATE] so the LAN kind
+ * cannot inherit it.
  */
-enum class HostClass { LOOPBACK, PRIVATE, LINK_LOCAL, METADATA, MALFORMED, PUBLIC }
+enum class HostClass { LOOPBACK, PRIVATE, LINK_LOCAL, METADATA, UNSPECIFIED, MALFORMED, PUBLIC }
 
 /**
  * Pure SSRF / localhost policy for MCP server endpoints.
@@ -50,6 +54,10 @@ enum class HostClass { LOOPBACK, PRIVATE, LINK_LOCAL, METADATA, MALFORMED, PUBLI
  * - `REMOTE` requires `https`; a private/loopback literal is rejected.
  * - `LOCAL` requires a loopback host and is the only place cleartext `http` is
  *   permitted.
+ * - `LAN` requires `https` and an RFC-1918 / IPv6-ULA **literal**, or an
+ *   unresolvable hostname (deferred to [McpDnsGuard] at connect time). A
+ *   PUBLIC IP literal, loopback, link-local, metadata or `0.0.0.0`/`::` is
+ *   rejected. LAN is a REACHABILITY class, never a trust tier.
  */
 object McpUrlPolicy {
 
@@ -101,18 +109,32 @@ object McpUrlPolicy {
         return if (looksLikeIpAttempt(bare)) HostClass.MALFORMED else HostClass.PUBLIC
     }
 
+    /** True iff [host] parses as an IPv4/IPv6 literal (not a hostname). */
+    fun isIpLiteral(host: String): Boolean = parseLiteral(host.trim().removeSurrounding("[", "]")) != null
+
+    /** Classify an already-resolved address from its raw bytes (no I/O). */
+    fun classifyAddress(address: InetAddress): HostClass = classifyBytes(address.address)
+
     /** `http`/`https` for LOCAL, `https` only for REMOTE. */
     private fun checkScheme(kind: McpServerKind, scheme: String): UrlRejection? {
         val normalized = scheme.lowercase()
-        return when {
-            kind == McpServerKind.REMOTE && normalized == "https" -> null
-            kind == McpServerKind.REMOTE && normalized == "http" -> UrlRejection.HTTPS_REQUIRED
-            kind == McpServerKind.REMOTE -> UrlRejection.UNSUPPORTED_SCHEME
-            normalized == "http" || normalized == "https" -> null
-            else -> UrlRejection.UNSUPPORTED_SCHEME
+        return when (kind) {
+            McpServerKind.REMOTE -> when (normalized) {
+                "https" -> null
+                "http" -> UrlRejection.HTTPS_REQUIRED
+                else -> UrlRejection.UNSUPPORTED_SCHEME
+            }
+
+            McpServerKind.LOCAL ->
+                if (normalized == "http" || normalized == "https") null else UrlRejection.UNSUPPORTED_SCHEME
         }
     }
 
+    /**
+     * Host-kind policy. A hostname and a public IP literal both classify
+     * [HostClass.PUBLIC]; the kinds that must tell them apart use
+     * [isIpLiteral] at their call site.
+     */
     private fun hostResult(kind: McpServerKind, hostClass: HostClass): UrlPolicyResult =
         when (kind) {
             McpServerKind.REMOTE -> when (hostClass) {
@@ -120,6 +142,7 @@ object McpUrlPolicy {
                 HostClass.PRIVATE -> UrlPolicyResult.Rejected(UrlRejection.PRIVATE_HOST)
                 HostClass.LINK_LOCAL -> UrlPolicyResult.Rejected(UrlRejection.LINK_LOCAL_HOST)
                 HostClass.METADATA -> UrlPolicyResult.Rejected(UrlRejection.METADATA_HOST)
+                HostClass.UNSPECIFIED -> UrlPolicyResult.Rejected(UrlRejection.MALFORMED)
                 HostClass.MALFORMED -> UrlPolicyResult.Rejected(UrlRejection.MALFORMED)
                 HostClass.PUBLIC -> UrlPolicyResult.Allowed
             }
@@ -215,7 +238,7 @@ object McpUrlPolicy {
         val d = b[2].toInt() and 0xFF
         val e = b[3].toInt() and 0xFF
         return when {
-            a == 0 -> HostClass.PRIVATE // 0.0.0.0/8 "this network" — never a valid remote
+            a == 0 -> HostClass.UNSPECIFIED // 0.0.0.0/8 "this network" — never a valid destination
             a == 127 -> HostClass.LOOPBACK
             a == 10 -> HostClass.PRIVATE
             a == 172 && c in 16..31 -> HostClass.PRIVATE
@@ -234,7 +257,7 @@ object McpUrlPolicy {
         val second = b[1].toInt() and 0xFF
         return when {
             zeroPrefix && b[15] == 1.toByte() -> HostClass.LOOPBACK
-            zeroPrefix && b[15] == 0.toByte() -> HostClass.PRIVATE // unspecified `::`
+            zeroPrefix && b[15] == 0.toByte() -> HostClass.UNSPECIFIED // `::`
             (first and 0xFE) == 0xFC -> HostClass.PRIVATE // fc00::/7 unique-local
             first == 0xFE && (second and 0xC0) == 0x80 -> HostClass.LINK_LOCAL // fe80::/10
             else -> HostClass.PUBLIC
