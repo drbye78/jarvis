@@ -56,9 +56,17 @@ class MapKitLiveSmokeTest {
 
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
-    /** The configured key, or null when Settings → «Карты» is still empty. */
+    /**
+     * The key under test: the instrumentation argument `mapkitKey` when supplied
+     * (`-e mapkitKey <key>`), otherwise the value configured in Settings →
+     * «Карты». The argument route lets a device run exercise a specific key
+     * (e.g. one handed in via the host environment) without first typing it into
+     * the app — useful for verifying whether a given key is accepted by this
+     * build. Null when neither source has a value.
+     */
     private fun configuredKey(): String? =
-        CredentialsStore.init(context).mapKitApiKey.trim().takeIf { it.isNotEmpty() }
+        InstrumentationRegistry.getArguments().getString(ARG_MAPKIT_KEY)?.trim()?.takeIf { it.isNotEmpty() }
+            ?: CredentialsStore.init(context).mapKitApiKey.trim().takeIf { it.isNotEmpty() }
 
     private fun client(key: String): YandexMapKitGeoClient =
         YandexMapKitGeoClient(
@@ -256,5 +264,10 @@ class MapKitLiveSmokeTest {
             "the transit request must complete without error or timeout, got: $raw",
             raw != "TIMEOUT" && !raw.startsWith("ERROR"),
         )
+    }
+
+    private companion object {
+        /** Instrumentation argument (`-e mapkitKey <key>`) overriding the Settings key. */
+        const val ARG_MAPKIT_KEY = "mapkitKey"
     }
 }
