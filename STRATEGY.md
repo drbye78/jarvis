@@ -314,7 +314,7 @@ Ranked by **(user value) × (leverage of existing code) × (feasibility without 
 | R10 | Presence/geofence routines | P2 | L | Fights the platform (no GMS geofencing, no `location` FGS type) |
 | R11 | Ambient idle dashboard | P3 | M | Screen-off device; worsens the accepted MapKit attribution risk |
 | R12 | Speaker ID / sound events | **Reject** | L | Need a mic array |
-| R13 | **Management surface — config export/import + loopback API** (§14) | P2 | M | Config pain grows with R4; export/import first, loopback+`adb forward` second, LAN UI opt-in only |
+| R13 | **Optional external management** — web UI + REST, disabled by default (§14) | P2 | L | Config pain grows with R4; 3 modes (off / localhost / LAN w/ idle-close), HTTPS + password, config-only |
 
 ### 5.1 Local device miscellany (cheap wins)
 
@@ -1027,72 +1027,186 @@ unblocks the entire smart-home group (§7).
 
 ---
 
-## 14. Managing a growing configuration (R13)
+## 14. Management surface (R13) — optional external control
 
-As the capability set grows, configuration does too — and the tablet keyboard is
-a poor editor. Current surface: **9 category screens, 42 inventory entries, 44
-reflected members, 35 plain pref keys, 9 secret accessors, 1 composite blob**
+Jarvis stays a **self-sufficient app**: it configures and runs itself entirely
+on-device and needs **no external configuration to function**. The external
+management surface is an **optional convenience**, **disabled by default**, that
+a user turns on deliberately — from the app UI **or by voice**. It is an
+*inbound* surface on a device that holds the vault and may one day drive locks,
+so the design is blast-radius-first.
+
+Current surface: **9 category screens, 42 inventory entries, 44 reflected
+members, 35 plain pref keys, 9 secret accessors, 1 composite blob**
 (`mcpServers`); R4 (§7.2.1) adds a 10th category plus `homeEntities` /
 `homeAliases` / `homeGrants` and the HA token, and a 50+-device home makes
-aliases/grants the hardest thing to edit by hand. The pain is real. But **every
-hardening decision so far made Jarvis an outbound client**; a management server
-makes it an *inbound* one, holding the vault on an always-on, physically-acting
-device. That is a new attack class (LAN peers, DNS rebinding, MITM), not a UI
-feature — so the surface must be chosen by blast radius, not convenience.
+aliases/grants the hardest thing to edit by hand. That is the pain this solves.
 
-**Constraints (verified against the code):**
-- **Secrets are AndroidKeyStore-bound** — a manager must run **in-process** (the
-  FGS is the only always-on owner); secret values cannot be read from files by a
-  separate process. **Bulk secret export is impossible by design** — and should
-  stay impossible.
-- **No inbound surface exists** (no AIDL/ContentProvider/HTTP). This would be the
-  first externally reachable write surface; the `EXTERNAL_WRITE` +
-  `WriteConfirmation` gate is the precedent for authorization.
-- **`ApplyPolicy` splits by effect** (8 keys → service restart, `mapKitApiKey` →
-  process restart); a remote writer must model "stored but not yet active."
-- **Reflection-pinned tests** (`SettingsInventoryTest` 42/44; `SettingsCategoryTest`
-  9) mean every managed key must be registered.
+### 14.1 The mode model (intent vs runtime)
 
-**Decision — build by blast radius, not by convenience:**
+Two concepts, deliberately separated:
 
-1. **First: config export/import (SAF JSON).** Solves the editing ergonomics with
-   **zero inbound attack surface** — moves config between devices, makes bulk
-   edits on a real keyboard, and composes with the vault (secrets are **excluded
-   by construction**; re-enter after import). This is the management core's first
-   client and the highest value per risk.
-2. **Second: a loopback-only management server + `adb forward`.** A real
-   REST/JSON and WS interface bound to `127.0.0.1` only, reached from a laptop
-   with `adb forward`. Full browser/editor ergonomics; **no externally reachable
-   socket**; trust is adb's USB-debug authorization (stronger than any LAN
-   credential). Loopback cleartext is already permitted by
-   `network_security_config.xml` (`McpLoopbackSecurityConfigTest`).
-3. **Later, opt-in only: a LAN web UI.** Off by default. If ever built, it needs
-   first-run **on-device pairing** (show a one-time code on the tablet; no
-   shipped default password), token auth, and **Host/Origin + `Sec-Fetch-Site`
-   CSRF/rebinding defenses** (reject repeated headers and `Sec-Fetch-Site: none`).
-4. **Never: configuration over MCP.** Prior art is unanimous — HA's MCP server and
-   every comparable appliance expose **capabilities**, not config; no appliance
-   was found that mutates its own settings over MCP. It would invert the trust
-   direction (an LLM editing secrets/grants) and collide with the consequence-tier
-   model (§7.4).
+- **`ManagementMode`** — persisted user *intent*: `DISABLED` (default) |
+  `LOCALHOST` | `LAN`. A prefs key (added to `SettingsInventory`).
+- **`managementActive`** — **in-memory only, never persisted**. The socket is
+  open iff active.
 
-**Architecture — extract the core; the API/UI are clients, not a second path.**
-The durable layer stays `AppPrefs` + the vault (the app cannot depend on a server
-for its own settings). Pull a **pure management core** — typed get/set over the
-`SettingsInventory` keys, the composite codecs, and write-only secret
-provisioning — out of the Activities (the `mcp/` layer is the model), and have
-export/import, the loopback API, and (if ever) the web UI all call it. Rejecting
-the "REST is the source of truth" inversion is deliberate: it would make the
-appliance's own config depend on an inbound server.
+This is what makes the LAN policy structural rather than a special case:
 
-**Secrets rule (all surfaces):** **write-only.** Accept a value; return only
-`{set:true}`; never echo, never include in export, never log. A generated local
-token, if one exists, is shown **once** at creation with rotation/revocation.
+| mode | on process start | reachable from | idle auto-close |
+|---|---|---|---|
+| **DISABLED** | inactive | — | n/a |
+| **LOCALHOST** | **auto-activates** (loopback only; the sole route in is an authorized `adb forward`) | `127.0.0.1` | none |
+| **LAN** | **inactive — requires deliberate re-enable** (UI or voice) | the specific LAN IPv4 | yes, `managementIdleTimeoutMs` (default 15 min) |
 
-**Sequencing:** build the management core during **R4** (HA defines what must be
-managed), ship **export/import** on top of it, add the **loopback API** for
-owner/dev use, and treat the LAN UI as a separate, hardened phase gated on real
-need.
+A reboot always drops LAN because `active` was never on disk. LOCALHOST
+auto-activating is safe (no external exposure). The idle timer is refreshed only
+by **authenticated** requests; `/health` and unauthenticated probes do not count.
+On expiry the listener closes, `active=false`, and the mode pref still reads
+"LAN" (showing "stopped"). `managementMode`/`managementPort` → **SERVICE_RESTART**
+(bind change; the server is graph/FGS-owned); `managementIdleTimeoutMs` and
+password change → **LIVE**.
+
+### 14.2 Stack (verified)
+
+- **HTTPS server: Ktor 3.6.0 + Netty.** ⚠️ **Not CIO — Ktor's CIO server engine
+  throws on any HTTPS connector** (server TLS exists only on Netty/Jetty; Jetty
+  is avoided because Ktor 3.x's Jetty targets Java-11 APIs, risky on ART/API 29).
+  Ktor is chosen over NanoHTTPD (abandoned since 2016 — a supply-chain risk in a
+  security feature) and raw `ServerSocket` (hand-rolled HTTP) because
+  `testApplication` lets most of the surface be **JVM-tested with no device**.
+  Ktor-on-Android is **not officially supported** — treat it as a spike.
+- **TLS cert: BouncyCastle `bcpkix` self-signed**, generated on first enable
+  (Android has **no public cert-builder API**; `sun.security.x509` is absent).
+  ⚠️ Do **not** use Ktor's `buildKeyStore` — it is documented testing-only
+  (1024-bit/SHA1/3-day). SAN must include `localhost`, `127.0.0.1`, and the LAN
+  IP. **Key storage: a PKCS#12 blob in `SecretVault`** (software key) is the safe
+  default — a non-exportable **AndroidKeyStore** key cannot sign the BC-built
+  cert and Ktor's `sslConnector` needs `KeyStore`+alias; AndroidKeyStore-backed
+  TLS is a later hardening experiment, not v1. Show the cert **SHA-256
+  fingerprint** in the app UI so the browser warning can be verified. **No
+  trust-all, no hostname-verifier bypass.**
+- **Password KDF: Argon2id via BouncyCastle `Argon2BytesGenerator`**
+  (`bcprov`; pure Java, no JNA/JNI), OWASP params (m=46 MiB, t=1, p=1; 19 MiB
+  variant on constrained CPUs), 16-byte salt, 32-byte tag, compared with
+  `MessageDigest.isEqual` (constant-time). PBKDF2 is the zero-dep fallback but
+  OWASP wants 600k iterations (slow on Kirin) and it is less ASIC-resistant.
+  Initial password = 20 chars from an unambiguous alphabet via `SecureRandom`
+  (avoid `getInstanceStrong()` on Android), shown on request, changeable, stored
+  only as a hash + salt; a random session id for the browser is separate.
+- **Static UI assets:** the SPA lives in `assets/web/` and is served by a small
+  `get("{path...}")` handler streaming `AssetManager` — **`staticResources()`
+  reads classpath, not Android assets**, so it is not used directly.
+
+### 14.3 Auth, sessions, and browser-attack hardening
+
+- **REST:** `Authorization: Bearer <password>` (verified via Argon2id per
+  request; low rate). **Web UI:** login form → `HttpOnly; Secure; SameSite=Strict`
+  session cookie; the server stores `SHA-256(sessionId)+expiry` in memory.
+  `POST /sessions` lets a script exchange the password once for a short-lived
+  token. Password change **revokes all sessions**.
+- **Rate-limit + lockout** on failed auth (per-IP and global backoff); always
+  constant-time compare.
+- **DNS-rebinding / CSRF** (needed even with HTTPS + password, because a LAN
+  browser can be attacked): **bind to the specific interface** (never `0.0.0.0`),
+  a **strict `Host` allow-list** (the actual rebinding defense), reject repeated
+  `Host`/`Origin`/`Sec-Fetch-Site` headers, and the **Go `CrossOriginProtection`
+  algorithm** — safe methods always allowed; `Sec-Fetch-Site: same-origin` **or
+  `none`** allowed (`none` is a user navigation — ⚠️ *not* a reject), otherwise
+  fall back to Origin-must-equal-Host. No CORS. Strict CSP
+  (`default-src 'self'`; no inline/CDN). Never trust `X-Forwarded-*`.
+
+### 14.4 REST API — config only, never actions
+
+**Architecture: extract a pure management core; the API and UI are clients.**
+The durable layer stays `AppPrefs` + the vault — the appliance must configure
+itself with the server dead. `manage/` mirrors `mcp/` (pure core + thin
+Android-touching transport). **No runtime reflection over `AppPrefs`** (release
+is R8-minified): an explicit `ManagementBindings` map (type + getter + setter per
+key), with a unit test asserting it covers **every** `SettingsInventory.entries`
+key so a new setting fails the build until bound.
+
+`/api/v1`: `GET /status` (state, mode+active, `pendingPolicies`, versions);
+`GET /settings` + `GET/PUT /settings/{key}` (secrets rejected here); `GET
+/secrets` (metadata `{key, set}` only) + `PUT/DELETE /secrets/{key}`
+(write-only); `/mcp/servers[/{id}]` CRUD via the codec; `GET /export` +
+`POST /import`; `POST /password/change`; `POST/DELETE /sessions`; `POST
+/management/mode`. Composite blobs are typed sub-resources (never raw-blob
+writes). "Stored but not yet active" is surfaced via `policy` per setting and
+`pendingPolicies` in `/status`.
+
+**The API is config-only and never crosses `ToolAuthorization`/`ToolRisk`'s
+action choke point** — it cannot call tools, home control, alarms, or music.
+Mapping an API caller to a `TurnOrigin` would either be denied (EXTERNAL needs
+VOICE) or would silently create a non-voice action path, weakening the
+consequence-tier model (§7.4). Action endpoints are refused by design.
+
+### 14.5 Web UI
+
+A **static SPA in `assets/web/`** — hand-written HTML + ES-module JS + CSS, **no
+frontend build step** (it ships in the APK, must run offline under a strict CSP,
+and must not add a Node toolchain to an Android CI). Screens mirror the settings
+categories (rendered dynamically from `/settings`), plus Status, Secrets
+(write-only), MCP servers, Management mode, Export/Import, and Password. The
+ApplyPolicy banner is driven by `/status.pendingPolicies`. **@designer owns the
+visual system**; the API contract and asset packaging are frozen by this design.
+
+### 14.6 Export / import
+
+Versioned JSON (`{format, formatVersion, appVersion, exportedAt, settings,
+mcpServers, home}`; reserved `home` section from day one), optionally wrapped in
+an **AES-256-GCM envelope** keyed by PBKDF2/Argon2 over a passphrase. Import
+validates every key against `ManagementBindings`, type-checks, and **applies
+settings atomically** (one editor commit); on validation failure, writes nothing.
+Entry points: Settings → MANAGEMENT via SAF (host-owned intents) and the REST
+`/export`/`/import`.
+
+**Secrets in export — decision:** **default excludes secrets by construction.**
+An explicit **opt-in "include secrets"** is offered (the friction of re-entering
+~10 secrets + unbounded `mcpSecret(id)` on a device migration is real), but when
+enabled it is deliberately constrained: **encryption is mandatory** (refuse to
+write a plaintext file containing secrets), a passphrase is required, a count +
+warning is shown, and it is never automatic/backgrounded. The trade is explicit:
+exported secrets lose the device-bound vault's protection and rely on the
+passphrase alone. This supersedes the earlier "bulk export stays impossible"
+line — portable secret backup is a deliberate, opt-in risk.
+
+### 14.7 Voice enable/disable (confirmation-gated)
+
+Opening a network-reachable surface by voice is security-sensitive, so **enabling
+LAN** routes through the existing next-turn **`WriteConfirmation` /
+`AffirmativeUtterance`** gate (no token through the model) — *not*
+`IrreversibleCommand` ("enable" is not a removal verb). **Disabling is always
+allowed on a voice turn** (fail-safe direction). **LOCALHOST enable** may skip
+the two-turn dance (loopback is adb-gated) but is logged. Spoken strings via
+`SpeechPhrases` (both locales). UI enable is direct (on-device possession
+authenticates the owner).
+
+### 14.8 Phasing
+
+- **P0** — `manage/` pure core (`ManagementMode`, `ManagementBindings`,
+  `ManagementCore`, `PasswordHasher`, `SessionStore`, `ExportCodec`), cert+TLS,
+  Ktor Netty server on `127.0.0.1`, minimal login + settings UI, SAF
+  export/import, `SettingsCategory.MANAGEMENT`. The **TLS/Ktor-on-EMUI spike is
+  the first risk to retire** (device-validate early; NanoHTTPD behind the same
+  `ManagementHttpServer` interface is the fallback).
+- **P1** — full SPA, LAN mode + idle auto-close, Host/Origin/`Sec-Fetch-Site`/CSP
+  hardening, voice tools + `SpeechPhrases`, pending-policy banner.
+- **P2** — `home*` screens (depends on R4), memory export, cert-rotation UX,
+  optional mTLS experiment.
+
+**Independence:** P0's core + export/import + TLS are **independent of R4** and
+can start now; only P2's home screens depend on R4 (reserve the export `home`
+section immediately).
+
+**Risks / walk-away:** an always-on LAN listener holding the vault (mitigated by
+default-off, deliberate enable, idle-close, specific-interface bind, write-only
+secrets, config-only, rate-limit, strict CSP, minimal deps); Ktor-Netty on
+EMUI/API 29 (unproven — the spike); self-signed browser UX; EMUI Doze/Wi-Fi
+behavior for an idle listener. **Walk away if** Ktor (and the NanoHTTPD
+fallback) prove unstable on-device, the LAN listener cannot reliably
+auto-close, or anyone asks to export secrets without a passphrase or to expose
+action endpoints (both refused).
 
 ---
 
@@ -1118,9 +1232,11 @@ need.
   commands.
 - Decide whether to ever allow a scoped external "read grant" for autonomous
   turns (§8).
-- **Management surface (§14):** decide the export format/scope (which keys, how
-  composite blobs version), whether the loopback API ships for owner use, and —
-  only if a real need appears — the LAN-UI hardening stack.
+- **Management surface (§14):** retire the risky spike first — **Ktor‑Netty on
+  EMUI/API 29** (unproven; NanoHTTPD fallback), self-signed cert + SAN +
+  fingerprint, `adb forward` + browser warning, LAN bind + reachability, idle
+  auto-close, and EMUI Doze/Wi‑Fi behavior for an idle listener. Confirm the
+  export format/scope and the include-secrets opt‑in.
 - On-device validation of EMUI notification access and GPS lock quality indoors.
 
 ## Appendix B — source provenance
@@ -1129,6 +1245,7 @@ Competitive landscape: `lib-2` (2026 assistant research). Strategy synthesis:
 `ora-3`. Content-source + email feasibility: `lib-3`. Russian smart-home
 ecosystem + Yandex user-API deep-dive: `lib-4`. Product-philosophy review:
 external critique (2026), folded in §0/§3. MCP protocol/design: `lib-1` / `ora-1`
-/ `ora-2`. Config-surface recon: `exp-1`; management-surface prior art: `lib-5`.
+/ `ora-2`. Config-surface recon: `exp-1`; management-surface prior art: `lib-5`;
+management architecture: `ora-2`; Android embedded-HTTPS/crypto stack: `lib-6`.
 All session findings are reproducible from the cited official sources;
 uncertainty is flagged inline above.
