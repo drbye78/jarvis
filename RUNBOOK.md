@@ -801,8 +801,26 @@ adb logcat | grep -iE "MapKit|maps-mobile|UnsatisfiedLink|Geo|dalvikvm"
   unique users/day).
 - **MapKit key validity is PROVEN for the debug build.** A real key was exercised
   on-device (init `Ready`, live search, walking and transit routing). Still
-  untested: a RELEASE-build key (MapKit binds keys per package/SHA, so a release
-  key may differ) and the `KeyChanged` path after a key swap.
+  untested: a RELEASE-build key and the `KeyChanged` path after a key swap.
+  **A MapKit Mobile SDK key binds package + signing-cert SHA-256** (the exact
+  cabinet fields are not public — treat the console dialog as source of truth).
+  Debug and release are signed with different certs, so **the debug key shows a
+  blank/empty map grid in a release build** (documented mismatch symptom; there
+  is no typed "fingerprint mismatch" SDK error — the cabinet side returns 403
+  "Invalid key"). To enable release geo:
+  1. **Release signing is already configured** (no setup needed): keystore
+     `app/release.keystore` (gitignored), alias `jarvis`,
+     `CN=Jarvis, OU=Dev, O=Personal, C=RU`; the four `RELEASE_*` fields live in
+     `local.properties` and `app/build.gradle.kts` wires the config
+     conditionally (absent → `app-release-unsigned.apk`). Release cert
+     **SHA-256**:
+     `97:36:0D:2F:9C:35:F1:D3:ED:DD:EB:CC:93:A4:A0:08:9A:5D:7B:09:4F:34:A6:7C:64:00:3F:DC:AC:0C:35:FF`.
+  2. Register a **release** MapKit key in the Yandex cabinet
+     (`yandex.ru/maps-api/console` → Подключить API → MapKit — мобильный SDK)
+     with `com.jarvis.assistant` + that SHA-256; keep the debug key separate.
+     Keys are not deletable (only blockable) and take **~15 min** to activate.
+  3. Enter the release key in Settings on the release build; swap the app key
+     via `MapKitFactory.setApiKey` **before** `initialize()` (once per process).
 - **Play Integrity attestation is untested by construction.** The device has no
   Play Services at all (`com.google.android.play` absent), and the dependency
   excludes the artifact, so `requestAttestKey()` can never fire here — the
