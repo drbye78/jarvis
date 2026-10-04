@@ -18,21 +18,28 @@ aligned with an always-on appliance — analysed in depth in §6.
    Siri/Gemini are becoming more capable and less controllable; Alexa+ is
    controllable but vendor-bound. Jarvis is what runs on the hardware those
    ecosystems abandon, with the user owning the keys and the integrations.
-2. **Two capabilities lead: proactivity (it acts at the right time) and passive
-   awareness (it notices what matters).** Both exploit the "always-on" property
-   that phone assistants structurally cannot, and both are local-first.
+2. **Three capabilities lead: proactivity (acts at the right time), passive
+   awareness (notices what matters), and smart-home control (controls the room
+   it lives in).** All three exploit the "always-on, in-the-home" property that
+   phone assistants structurally cannot.
 3. **MCP is the extensibility bet, but not the autonomous-data path.** MCP tools
    are `EXTERNAL` and only run on a voice turn; scheduled/autonomous features
    must use first-party `READ_ONLY` data instead.
-4. **Passive awareness is the flagship candidate** (§6): notifications + feeds +
+4. **Passive awareness is the awareness flagship** (§6): notifications + feeds +
    email, delivered as *pull → digest → interrupt*, triaged deterministically,
    gated by the existing arbiter, and summarised on a **tool-free** pass so
    untrusted content can never become an action.
-5. **Refuse**: accessibility screen-scraping, screen OCR, user-account scraping
+5. **Smart-home control is the action flagship** (§7): reach it through **Home
+   Assistant** (local, GMS-free, already MCP-speaking) plus a scoped direct-LAN
+   path; **tier writes by device class** — pre-authorise reversible low-harm
+   actions, always confirm locks/garage/alarm/oven. Do **not** attempt GMS-free
+   Matter commissioning.
+6. **Refuse**: accessibility screen-scraping, screen OCR, user-account scraping
    of private messengers, on-device ASR/TTS, speaker ID, sound-event detection,
    and anything platform-gated. These fight the platform or the hardware.
-6. **First concrete step: the Routine/Briefing spine**, immediately followed by
-   the passive-awareness read model.
+7. **First concrete step: the Routine/Briefing spine**, immediately followed by
+   the passive-awareness read model. The cheap standalone win is the `LAN`
+   server kind, which unblocks all smart-home work.
 
 ---
 
@@ -209,16 +216,17 @@ Ranked by **(user value) × (leverage of existing code) × (feasibility without 
 | # | Capability | Rank | Size | Why |
 |---|---|---|---|---|
 | R1 | **Routine & Briefing spine** | **P0** | L | Turns "responds" into "acts at the right time" — the Siri gap |
-| R2 | **Calendar reader (CalDAV-native)** | **P0** | M | Feeds briefings + commute; must be first-party `READ_ONLY` (§7) |
-| R3 | **MCP packs + `LAN` server kind** | **P0** | M | Unblocks Home Assistant; today `McpUrlPolicy` rejects `192.168.x.x` |
-| R4 | **Commute / "leave now"** | P1 | M | Alexa+'s headline; MapKit has no traffic-aware arrival (accuracy cap) |
-| R5 | **Passive awareness** (§6) | **P0/P1** | L | The flagship; see §6 |
+| R2 | **Calendar reader (CalDAV-native)** | **P0** | M | Feeds briefings + commute; must be first-party `READ_ONLY` (§8) |
+| R3 | **MCP packs + `LAN` server kind** | **P0** | M | Prerequisite for all smart home; today `McpUrlPolicy` rejects `192.168.x.x` |
+| R4 | **Smart-home control** (§7) | **P0** | L | The action flagship — HA via MCP + scoped direct LAN; see §7 |
+| R5 | **Passive awareness** (§6) | **P0/P1** | L | The awareness flagship; see §6 |
 | R6 | **Email awareness + confirmation-gated reply** | P1 | L | Clean IMAP/SMTP + app passwords; on-thesis |
-| R7 | **Local device miscellany** (§5.1) | P1 | S–M | Cheap, local, high daily value |
-| R8 | **OTA / self-update** | P2 | M | Required before external distribution |
-| R9 | Presence/geofence routines | P2 | L | Fights the platform (no GMS geofencing, no `location` FGS type) |
-| R10 | Ambient idle dashboard | P3 | M | Screen-off device; worsens the accepted MapKit attribution risk |
-| R11 | Speaker ID / sound events | **Reject** | L | Need a mic array |
+| R7 | **Commute / "leave now"** | P1 | M | Alexa+'s headline; MapKit has no traffic-aware arrival (accuracy cap) |
+| R8 | **Local device miscellany** (§5.1) | P1 | S–M | Cheap, local, high daily value |
+| R9 | **OTA / self-update** | P2 | M | Required before external distribution |
+| R10 | Presence/geofence routines | P2 | L | Fights the platform (no GMS geofencing, no `location` FGS type) |
+| R11 | Ambient idle dashboard | P3 | M | Screen-off device; worsens the accepted MapKit attribution risk |
+| R12 | Speaker ID / sound events | **Reject** | L | Need a mic array |
 
 ### 5.1 Local device miscellany (cheap wins)
 
@@ -438,7 +446,123 @@ attacker-writable. OWASP **LLM01:2025 Prompt Injection** is the #1 LLM risk, and
 
 ---
 
-## 7. The architectural boundary that shapes everything
+## 7. Smart-home control — comprehensive analysis (the action flagship)
+
+> A device that lives in the home, stays on, and already has a voice loop should
+> control that home. This is the capability people buy an Echo for, and it is the
+> natural counterpart to passive awareness: it *notices* the house, and it *acts
+> on* the house.
+
+### 7.1 Why it is feasible (and where the difficulty really is)
+
+Jarvis has **no Zigbee/Z-Wave/Thread radio and no GMS**. That rules out being a
+hub, but **not** control. The problem splits cleanly:
+
+| Sub-problem | Difficulty | Notes |
+|---|---|---|
+| **Connectivity** | **Easy** | Talk to a hub over LAN, or hit WiFi devices directly. No radio needed. |
+| **Semantics** | **Medium** | Entity resolution («свет на кухне» → which entity), scenes, state queries. |
+| **Risk tiering** | **Hard** | The real design problem — §7.4. |
+
+### 7.2 Recommended architecture — hub-first, direct-LAN second
+
+1. **Primary: Home Assistant via its official MCP server** (`/api/mcp`,
+   Streamable HTTP, introduced in HA 2025.2). One integration reaches
+   Zigbee/Z-Wave/BLE/cloud/local devices, runs **entirely on the LAN**, needs
+   **no GMS**, and matches Jarvis's existing `StreamableHttpMcpClient` exactly.
+   Fall back to HA **REST `/api/services/<domain>/<service>`** or the
+   **WebSocket `call_service`** for arbitrary service calls the Assist tool
+   surface does not expose. Auth: long-lived access token (or OAuth2/IndieAuth),
+   stored in the Keystore.
+2. **Secondary: a scoped direct-LAN allow-list** — **Shelly** (JSON-RPC HTTP),
+   **Tasmota/ESPHome/WLED** (MQTT), **Philips Hue** (local v2 REST/SSE), and
+   optionally **Yeelight** (LAN JSON). Implement these as **built-in tools with
+   precise risk classes**, not as a general "any LAN MCP server" free-for-all.
+3. **Do not own Matter/Thread.** Matter **commissioning on Android is GMS-gated**
+   (HA documents that the GMS-free app flavour cannot add Matter devices; its
+   source hard-disables the Play-Services commissioning client). Control-only
+   without GMS is possible only by embedding the `connectedhomeip` CHIP SDK — a
+   research project, not a feature. Let **HA be the Matter controller**: commission
+   once with any phone/Apple device, then drive it through HA (multi-fabric).
+   Thread devices need a border router, which Jarvis does not have.
+4. **Do not build cloud bridges for Google Home / Alexa / Apple Home.** All three
+   are cloud-to-cloud (HomeKit is Apple-platforms-only). They are out as
+   GMS-free local control.
+
+Also: **IR** (ACs/TVs) needs an actual emitter — probe
+`ConsumerIrManager.hasIrEmitter()` at runtime (many tablets lack one; otherwise
+use a LAN IR bridge). **BLE** works GMS-free via `BluetoothGatt` for devices with
+a known profile. **RF** requires an external bridge.
+
+### 7.3 The Russian ecosystem
+
+- **Yandex Smart Home** — third parties integrate as a **provider** (Yandex calls
+  *your* HTTPS endpoint), which is cloud-to-cloud and the *inverse* direction; it
+  is **not** a way for a local app to control devices. The community direction is
+  HA → Alice via `AlexxIT/YandexSmartHome`.
+- **Sber Smart Home** — **no public third-party controller API found**; treat as
+  closed.
+- **Tuya / Smart Life** — official cloud API plus an **unofficial** local
+  protocol (keys extracted via cloud; ToS risk).
+- **Xiaomi Mi Home** — no official LAN API; HA uses cloud creds + tokens
+  (unofficial extraction; ToS risk).
+
+### 7.4 The risk-tiering problem (the crux)
+
+The current write model is a **binary**: `EXTERNAL` reads run on a voice turn;
+`EXTERNAL_WRITE` requires an explicit spoken affirmative on the **next turn**.
+That is right for a Jira ticket and **absurd for «включи свет»** — nobody will
+say «да» across two turns to turn on a lamp. But relaxing it uniformly is
+dangerous, because the same tool surface includes **locks, garage doors, ovens,
+and alarms**, where an injected or hallucinated call is **physical**.
+
+**Tier by the action's reversibility/severity, derived from the device class and
+enforced at the same choke point — never by trusting the model to pick a tier:**
+
+- **Tier 0 — Read.** Always allowed (states, sensors).
+- **Tier 1 — Reversible, low-harm.** Lights, plugs, fans, media, scenes/scripts,
+  brightness, climate within a safe band. **Pre-authorisable** by an explicit
+  Settings grant scoped to `(server, entity/area, action-class)`, vault-stored
+  and revocable. Executes immediately. Worst case from injection: a light turns
+  on — annoying, not dangerous.
+- **Tier 2 — Safety-critical / hard-to-reverse.** `lock.`, `cover.` with
+  `device_class: garage/door/gate`, `alarm_control_panel.` (disarm), oven / water
+  heater / climate extremes. **Always confirm, never pre-authorise.** The
+  assistant must **speak the concrete action and target** before asking, and the
+  affirmative stays next-turn and ASR-derived.
+- **Tier 3 (optional) — LAN-only.** Mark local servers so their tools can never
+  be reached on a remote path.
+
+**Fail closed on ambiguity:** if a device class cannot be determined, treat it as
+Tier 2. Default new servers to `READ` (already the case).
+
+### 7.5 Security
+
+- **Prompt injection is the adversary.** With pre-authorisation, poisoned web /
+  feed / MCP content could otherwise turn on lights, open blinds, or set a
+  thermostat. Mitigate: pre-authorise **only Tier 1**, scope grants to **concrete
+  entities** (not "all lights"), **never** pre-authorise lock/garage/alarm/oven.
+- **Keep confirmation model-blind.** The existing design has deliberately **no
+  token/nonce the model can echo** and binds the confirmation to the user's own
+  ASR text. Do not weaken this for Tier 2 — a model-authored `"confirmed": true`
+  must remain worthless.
+- **Bind to what was spoken.** For Tier 2, the challenge must name the target and
+  action, and the confirmation is accepted only for the *immediately* following
+  utterance; this prevents a stale «да» from a different question authorising an
+  unlock.
+
+### 7.6 Risks and unknowns
+
+- **EMUI / LAN quirks**, mDNS resolution (`homeassistant.local` often will not
+  resolve via Android's system resolver — prefer a literal IP and `NsdManager`).
+- **Token scope** — a HA long-lived token is full-account unless a limited user
+  is created.
+- **Tuya/Xiaomi local paths are unofficial** and ToS-fragile — product risk.
+- **IR emitter presence** on the target tablet is unverified.
+
+---
+
+## 8. The architectural boundary that shapes everything
 
 **MCP tools are `EXTERNAL` and only run on a VOICE turn.**
 `ToolAuthorization.decide` allows `EXTERNAL` (and `EXTERNAL_WRITE`) **only** when
@@ -460,7 +584,7 @@ denied. This is correct and must not be weakened casually.
 
 ---
 
-## 8. MCP as the strategic bet
+## 9. MCP as the strategic bet
 
 **Verdict: yes — as the *interactive extension* strategy, not the
 autonomous-data strategy.**
@@ -470,10 +594,11 @@ configuration, not release; GMS-free by construction; can run local (loopback)
 for privacy-sensitive servers. Jarvis can match Alexa+ on extensibility while
 owning the data path.
 
-**Where it must not be used:** autonomous/scheduled data (policy-denied); the
-LAN smart-home case is *currently broken* (`McpUrlPolicy` rejects private hosts
-for REMOTE, loopback-only for LOCAL) — **add a `LAN` kind before pitching smart
-home via MCP**.
+**Where it must not be used:** autonomous/scheduled data (policy-denied). The
+**LAN smart-home case is the strongest MCP use of all** (§7) but is *currently
+blocked* — `McpUrlPolicy` rejects private hosts for REMOTE and allows only
+loopback for LOCAL, so a Home Assistant at `192.168.x.x` cannot be added. **Add
+the `LAN` kind first**; it is the prerequisite for the whole smart-home group.
 
 **Host advantages a third party can exploit:** many servers (breadth), user keys
 (no rev-share/account), local execution (privacy), a live tool surface
@@ -486,7 +611,7 @@ stays theoretical.
 
 ---
 
-## 9. What NOT to build
+## 10. What NOT to build
 
 **Platform-gated (hard refuse):** default-assistant role / system hotword;
 privileged notification access; Siri-style Announce Notifications / App Intents /
@@ -497,8 +622,9 @@ on-device ASR/TTS/LLM.
 
 **Fights the platform (GMS-free, always-on):** geofencing via GMS
 (`GeofencingClient`) or a `location` foreground-service type (would break the
-always-on boot/idle start path); broad smart-home hub / Matter-Thread; Cast /
-multi-room / wearables.
+always-on boot/idle start path); being a smart-home **hub** (no radio, GMS-gated
+Matter **commissioning** — but smart-home *control* via a hub is **in scope**,
+§7); Cast / multi-room over GMS / wearables.
 
 **Attractive but wrong:** a general automation/rules SaaS; an ambient map/visual
 dashboard (screen-off + legal risk); a proactive LLM narrator (hallucinated nags
@@ -506,7 +632,7 @@ dashboard (screen-off + legal risk); a proactive LLM narrator (hallucinated nags
 
 ---
 
-## 10. Proactivity done well (avoiding "annoying")
+## 11. Proactivity done well (avoiding "annoying")
 
 The repo already encodes the right answer — extend, don't replace:
 
@@ -525,20 +651,21 @@ The repo already encodes the right answer — extend, don't replace:
 
 ---
 
-## 11. Sequencing
+## 12. Sequencing
 
 **Phase 1 — "It acts at the right time."** R1 Routine/Briefing spine + one hero
 template **«Утренняя сводка»** (time + weather + alarms; calendar once R2 lands);
 then R2 (native CalDAV). Reuses alarms, tools, `speakProactively`, settings,
 memory; no new permission, no hardware.
 
-**Phase 2 — "It notices what matters."** R5 passive awareness (pull → digest →
-interrupt), R6 email, R3 MCP packs + `LAN` kind, R4 commute alerts, R7 local
-device miscellany.
+**Phase 2 — "It runs the house."** R3 MCP packs + the **`LAN` kind** (the
+prerequisite), then **R4 smart-home control** (Home Assistant via MCP + scoped
+direct LAN, with risk tiering); in parallel the awareness pillar R5 (pull →
+digest → interrupt) and R6 email.
 
-**Phase 3 — "It ships and stays private."** R8 OTA before external distribution;
-R9 presence only if a low-power WiFi/dock design is proven; revisit R11 only if
-the hardware changes.
+**Phase 3 — "It ships and stays private."** R9 OTA before external distribution;
+R7 commute, R8 local device miscellany; R10 presence only if a low-power
+WiFi/dock design is proven; revisit R12 only if the hardware changes.
 
 **Gate for every phase:** new tools declare a `ToolRisk`; new strings land in
 both locales (`ResourceParityTest`); new settings join `SettingsInventory`;
@@ -547,7 +674,7 @@ content; proactivity routes through `BehaviorArbiter`.
 
 ---
 
-## 12. Highest-leverage next step
+## 13. Highest-leverage next step
 
 **R1 — the Routine/Briefing spine**, immediately followed by **R2** (native
 CalDAV calendar) so briefings are genuinely useful. It is the only change that
@@ -556,7 +683,8 @@ no hardware, and is the foundation for commute alerts — while keeping the
 capability that feeds it inside the safe, first-party `READ_ONLY` boundary.
 
 The **cheap standalone win** available now is **R3's `LAN` kind**, since
-Home Assistant / local MCP servers are currently unreachable *by design*.
+Home Assistant / local MCP servers are currently unreachable *by design* — and it
+unblocks the entire smart-home group (§7).
 
 ---
 
@@ -568,7 +696,7 @@ Home Assistant / local MCP servers are currently unreachable *by design*.
 - Decide the local fast-path boundary (deterministic intent vs. LLM) for obvious
   commands.
 - Decide whether to ever allow a scoped external "read grant" for autonomous
-  turns (§7).
+  turns (§8).
 - On-device validation of EMUI notification access and GPS lock quality indoors.
 
 ## Appendix B — source provenance
