@@ -591,10 +591,7 @@ exposure targets.
   `iot:view`/`iot:control`) lets a third-party OAuth app **read and command a
   user's Yandex home** (rooms, groups, devices, scenarios). This is the **one
   sanctioned inbound control path** across the Russian clouds, and the reason to
-  add Yandex as a first-class integration (§7.2). Caveats: cloud-routed (no LAN
-  API), and the OAuth app's `iot` scope may require Yandex review — verify before
-  committing. Class it through the same risk tiering (§7.4); because it is cloud
-  egress, its reads do **not** become autonomous data (§8).
+  add Yandex as a first-class integration (§7.2).
 - **Sber Smart Home — open, but B2B-gated.** Sber has a public platform with
   **Cloud-to-Cloud** (Sber → vendor webhook) and **MQTT-to-Cloud** (an
   integrator's Sber controller → Sber) paths, but admission requires a **legal
@@ -614,7 +611,9 @@ exposure targets.
 - **The outbound bridge: `dext0r/yandex_smart_home` (Yaha Cloud).** The mature
   community integration exposes HA entities to **both Alice and Маруся** (direct
   or cloud mode; HA ≥ 2025.12). It is *outbound* (assistants control HA); there is
-  **no inbound path** to import Yandex/Sber/VK clouds into HA.
+  **no inbound path** to import Yandex/Sber/VK clouds into HA. **No HA integration
+  and no MCP server exist for the user API** (`api.iot.yandex.net`) — any Jarvis
+  integration is greenfield.
 - **Tuya / Smart Life and Xiaomi Mi Home** — the de-facto Russian home for many
   (grey-imported, large installed base). Both have official HA integrations (Tuya
   cloud; Xiaomi `xiaomi_miio`) plus **unofficial local** paths (TinyTuya,
@@ -623,6 +622,55 @@ exposure targets.
 - **Wiren Board** — open Debian/MQTT controllers; consumable via MQTT (a real
   local-control candidate). Rubetek, iRidi, Larnitech, and the telecom hubs
   (Ростелеком/МТС/Beeline) are unverified/vendor-locked — do not build on them.
+
+#### 7.3.1 Yandex user API — integration shape and the blocking gate
+
+Verified 2026 from the Yandex platform docs. This determines whether the one
+sanctioned Russian-cloud path is usable at all.
+
+- **Verdict: a native first-party tool, not an MCP server.** The API is a bespoke
+  OAuth2/REST surface with per-capability result semantics and a fixed-redirect
+  auth dance; wrapping it as generic MCP adds a hop and loses typed result
+  handling. It sits naturally beside the geo/weather lanes: an `iot/` client +
+  `ToolContract` tools (`getHomeState`, `controlDevice`, `runScenario`), token in
+  `KeystoreVault`.
+- **Auth (OAuth 2.0 code flow).** App at `oauth.yandex.ru`; authorize →
+  `?code` (TTL 10 min) → `POST /token`. **PKCE is supported** (`S256`), so the
+  code exchange needs no `client_secret` — consistent with "no secrets in the
+  APK". ⚠️ *Refresh* may still require `client_id`+`client_secret`; confirm before
+  relying on a true public client end-to-end.
+- **Headless onboarding is the UX sharp edge.** The API-access app type's
+  redirect is **fixed to `https://oauth.yandex.ru/verification_code`** and cannot
+  be changed, so a tablet with no browser flow must **show the URL/QR and accept
+  a pasted code**, or use the manual debug token (explicitly provided for
+  "checking your app works").
+- **⚠️ Blocking gate: individual eligibility is UNKNOWN.** Yandex returns
+  `unauthorized_client` when an app is rejected/pending **moderation**. The docs
+  require no legal entity, but verification is emphasized, and **nothing states
+  whether an individual/self-hosted app can hold `iot:view`/`iot:control`**. This
+  is not answerable from the docs — it must be **tested by registering an app and
+  requesting the scopes** (debug-token path) *before any code is written*. If the
+  answer is no, this path is closed and we default to HA + LAN.
+- **Model & semantics.** Capabilities `on_off` / `range` / `mode` / `toggle` /
+  `color_setting` / `video_stream`; properties `float` / `event`. Actions POST to
+  `/v1.0/devices/actions` (and `/groups/{id}/actions`,
+  `/scenarios/{id}/actions`). The result is **synchronous but per-capability**:
+  `action_result.status` = `DONE`|`ERROR` (partial success is representable), so
+  the parser must iterate every capability and never report a blanket success
+  from a top-level `status:"ok"`. `DONE` reflects **cloud acceptance**, not
+  physical actuation — reconcile with a follow-up `GET`.
+- **Risk tiering (§7.4).** T0 read = `user/info`, `devices/{id}`, `groups/{id}`;
+  T1 = `on_off`/`range`/`color_setting`/`mode` on lights/sockets/TV/vacuum/etc.;
+  T2 = `devices.types.cooking.*` (kettle/multicooker/grill), `iron`,
+  `thermostat` extremes, **every scenario invocation** (a benign-named "good
+  night" can lock doors — confirm the *invocation*, never the name), and
+  `DELETE /devices/{id}`. **No lock/garage/alarm device class was found** in the
+  user-API docs — if T2 lines ever depend on them, verify they exist, or they
+  are simply unreachable via this API (which is itself a safety plus).
+- **Failure modes to test:** scope rejection; per-capability partial failure;
+  mid-session 403 after the user revokes access (degrade honestly); refresh
+  without a browser; cloud-state ≠ physical-state; **rate limits entirely
+  undocumented** (probe a burst before relying on the API).
 
 **Verdict for Russia:** the pragmatic stack is **HA as the universal local bridge
 + the Yandex user API for Yandex homes + direct LAN/MQTT for local devices**.
@@ -726,20 +774,33 @@ the `LAN` kind first**; it is the prerequisite for the whole smart-home group.
 "allow private IPs":
 
 - **Allow RFC-1918 only** (`10/8`, `172.16/12`, `192.168/16`) **and IPv6 ULA**
-  (`fc00::/7`).
+  (`fc00::/7`) — nothing else.
 - **Still reject — explicitly** — link-local (`169.254/16`, `fe80::/10`, which
-  is cloud-metadata territory), the metadata address `169.254.169.254`, and any
-  non-LAN private/link-local form. Loopback stays covered by the existing LOCAL
-  rule, not the LAN one.
+  is cloud-metadata territory), the metadata address `169.254.169.254`,
+  `0.0.0.0` / `::` (currently classified `PRIVATE`; LAN must not inherit them),
+  and any public literal. Loopback stays covered by the existing LOCAL rule.
+- **Hostname vs public-literal needs care.** The pure policy cannot tell a
+  hostname (`homeassistant.local`) from a public IP literal — both classify as
+  `PUBLIC`. LAN must allow the *hostname* (deferring to the connect-time guard)
+  while rejecting a *public IP literal*; either split `HostClass.PUBLIC` or add
+  an `isIpLiteral(host)` helper.
 - **Enforce twice:** at the literal-URL layer (`McpUrlPolicy`) **and** at connect
-  time (resolve, then check every address — `McpDnsGuard` already fails closed on
-  private ranges for REMOTE; LAN inverts that check to *require* a private
-  address with no public one in the set).
-- **Pin the host:** refuse cross-origin redirects and re-validate the `Host`
-  header, so an allowed LAN server cannot bounce the request to another target.
-- **Keep cleartext scoped.** TLS stays the default; cleartext is permitted only
-  for the LAN/local kinds the security config already enumerates, never merged
-  into the shared client.
+  time (resolve, then require **every** address to be private — the inversion of
+  the REMOTE all-public rule, which is what defeats DNS rebinding /
+  `10.0.0.5.nip.io`). This changes *reachability*, never *trust*: LAN tools stay
+  `EXTERNAL`/`EXTERNAL_WRITE`, VOICE-turn-only, confirmation-gated.
+- **Pin the host:** extend `validateRedirect` to LAN (today it only guards
+  REMOTE), so a LAN server cannot 302 to public/link-local/metadata/loopback and
+  become an SSRF pivot.
+- **⚠️ Cleartext is an open decision, not a config line.** Android's network
+  security config matches hosts/domains and has **no CIDR support**, so it
+  *cannot* enumerate arbitrary private ranges — a LAN server on
+  `http://192.168.1.50` is blocked by the OS no matter what the policy allows.
+  Options: (a) HTTPS-only for LAN (breaks self-signed HA and non-TLS gear);
+  (b) relax `base-config` app-wide (removes OS-level defense-in-depth — no
+  cleartext is ever attempted for REMOTE, but the blast radius covers the direct
+  LAN tools too); (c) **HTTPS-first, cleartext opt-in later once the real device
+  mix is known (recommended)**. Decide before coding.
 
 **Host advantages a third party can exploit:** many servers (breadth), user keys
 (no rev-share/account), local execution (privacy), a live tool surface
@@ -836,8 +897,11 @@ unblocks the entire smart-home group (§7).
 - Confirm the Feedly consumer OAuth path (vs Enterprise-only token).
 - Confirm MAX developer access for a non-RF-entity (likely blocked).
 - **Confirm the Yandex OAuth app can obtain `iot:view`/`iot:control` without a
-  legal entity or manual review** — the one Russian-cloud inbound path (§7.3);
-  verify before committing.
+  legal entity or moderation rejection** — the blocking gate for the one
+  Russian-cloud inbound path (§7.3.1); resolve it by registering an app and
+  requesting the scopes *before writing any code*. Also observe the `iot:*` token
+  TTL and whether refresh needs a `client_secret` (public/PKCE client end-to-end?).
+- **Probe Yandex API rate limits** — entirely undocumented (§7.3.1).
 - Sber Matter/Thread support and the VK smart-home developer API — both
   unverified (§7.3).
 - Decide the local fast-path boundary (deterministic intent vs. LLM) for obvious
@@ -850,7 +914,7 @@ unblocks the entire smart-home group (§7).
 
 Competitive landscape: `lib-2` (2026 assistant research). Strategy synthesis:
 `ora-3`. Content-source + email feasibility: `lib-3`. Russian smart-home
-ecosystem: `lib-4`. Product-philosophy review: external critique (2026), folded
-in §0/§3. MCP protocol/design: `lib-1` / `ora-1` / `ora-2`. All session findings
-are reproducible from the cited official sources; uncertainty is flagged inline
-above.
+ecosystem + Yandex user-API deep-dive: `lib-4`. Product-philosophy review:
+external critique (2026), folded in §0/§3. MCP protocol/design: `lib-1` / `ora-1`
+/ `ora-2`. All session findings are reproducible from the cited official
+sources; uncertainty is flagged inline above.
