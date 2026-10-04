@@ -305,7 +305,7 @@ Ranked by **(user value) × (leverage of existing code) × (feasibility without 
 | R1 | **Routine & Briefing spine** | **P0** | L | Turns "responds" into "acts at the right time" — the Siri gap |
 | R2 | **Calendar reader (CalDAV-native)** | **P0** | M | Feeds briefings + commute; must be first-party `READ_ONLY` (§8) |
 | R3 | **MCP packs + `LAN` server kind** | **P0** | M | Prerequisite for all smart home; today `McpUrlPolicy` rejects `192.168.x.x` |
-| R4 | **Smart-home control** (§7) | **P0** | L | The action flagship — HA via MCP + scoped direct LAN; see §7 |
+| R4 | **Home Assistant subsystem** (§7) | **P0** | L | The action flagship — a first-party `home/` subsystem over native HA REST/WS, not MCP; see §7.2.1 |
 | R5 | **Passive awareness** (§6) | **P0/P1** | L | The awareness flagship; see §6 |
 | R6 | **Email awareness + confirmation-gated reply** | P1 | L | Clean IMAP/SMTP + app passwords; on-thesis |
 | R7 | **Commute / "leave now"** | P1 | M | Alexa+'s headline; MapKit has no traffic-aware arrival (accuracy cap) |
@@ -582,33 +582,30 @@ hub, but **not** control. The problem splits cleanly:
 | Sub-problem | Difficulty | Notes |
 |---|---|---|
 | **Connectivity** | **Easy** | Talk to a hub over LAN, or hit WiFi devices directly. No radio needed. |
-| **Semantics** | **Medium** | Entity resolution («свет на кухне» → which entity), scenes, state queries. |
+| **Semantics** | **Hard** | Entity/area resolution across **50+ mixed-ecosystem devices** (§7.0) is a first-class problem, not a convenience — «свет на кухне» must bind to a concrete `entity_id` deterministically. §7.2.1. |
 | **Risk tiering** | **Hard** | The real design problem — §7.4. |
 
 ### 7.2 Recommended architecture — hub-first, direct-LAN second
 
-1. **Primary: Home Assistant — MCP for read, native REST/WS for control.**
-   HA ships a **built-in MCP server** (`mcp_server`, HA 2025.2, UI-configured) at
-   **`/api/mcp`** over **Streamable HTTP (stateless)**, auth via a long-lived
-   access token (or OAuth/IndieAuth), which matches Jarvis's existing
-   `StreamableHttpMcpClient` exactly. But its surface is the **Assist/LLM intent
-   API** — `homeassistant__GetLiveContext` for reads and `intent__HassTurnOn` /
-   `HassTurnOff` / `HassSetPosition` / domain intents for control, with
-   **natural-language slots** (`name`, `domain`, `area`), **not** typed
-   `domain.service` + `entity_id` + `service_data`. That is **insufficient for
-   consequence-based risk tiering**: one `intent__HassTurnOn` turns on a lamp
-   *and* locks a lock, and Jarvis never sees the resolved entity (§7.4). So:
-   - **Reads/discovery** may go through MCP (`/api/mcp/assist`, the Assist API;
-     non-admin users may use it) — transport-compatible, zero new code.
-   - **State-changing control** goes through the **native REST
-     `POST /api/services/<domain>/<service>`** (or the WebSocket `call_service`),
-     which carries the **typed `domain` + `service` + `target.entity_id`/`area_id`
-     + `service_data`** the tier model requires. Use `/api/services` to enumerate
-     valid actions.
-   This hybrid is the defensible design; **pure-MCP write is not** — it would
-   make the risk tiers unenforceable. The same HA LLAT lives in the Keystore.
-   (MCP read + native write are different transports to the *same* trusted LAN
-   host; both are `EXTERNAL`-equivalent and voice-turn-gated.)
+1. **Primary: a first-party `home/` subsystem over native HA REST/WS — do not
+   route HA through the MCP lane.** HA ships a built-in MCP server (`mcp_server`,
+   HA 2025.2, `/api/mcp`, Streamable HTTP stateless, LLAT/OAuth), but its surface
+   is the **Assist/LLM intent API** — `homeassistant__GetLiveContext` and
+   `intent__HassTurnOn` / `HassTurnOff` / `HassSetPosition` with
+   **natural-language slots** (`name`/`domain`/`area`), **not** typed
+   `domain.service` + `entity_id` + `service_data`. One `intent__HassTurnOn`
+   turns on a lamp *and* locks a lock, and Jarvis never sees the resolved entity —
+   so MCP is **untierable by construction** and **cannot feed awareness**
+   (`EXTERNAL` → voice-turn-only). Therefore HA control is a **dedicated
+   subsystem** (§7.2.1) that owns registry + resolution + tiering over HA's
+   **native REST/WS** API (`POST /api/services/<domain>/<service>`, WS registry
+   commands, `subscribe_events`), speaking **one** typed path with **one** auth
+   (a HA long-lived access token in the Keystore). The MCP lane stays for
+   **non-HA** external servers; it is not the HA integration.
+   *(Rejected alternatives: delegating to `conversation/process` is untierable
+   and executes with no dry-run — rejected for control, optional read-only
+   fallback only; a custom HA component is version-coupled and moves Jarvis logic
+   into HA — rejected for v1.)*
 2. **Secondary: a scoped direct-LAN allow-list** — **Shelly** (JSON-RPC HTTP),
    **Tasmota/ESPHome/WLED** (MQTT), **Philips Hue** (local v2 REST/SSE), and
    optionally **Yeelight** (LAN JSON). Implement these as **built-in tools with
@@ -633,6 +630,59 @@ Also: **IR** (ACs/TVs) needs an actual emitter — probe
 `ConsumerIrManager.hasIrEmitter()` at runtime (many tablets lack one; otherwise
 use a LAN IR bridge). **BLE** works GMS-free via `BluetoothGatt` for devices with
 a known profile. **RF** requires an external bridge.
+
+### 7.2.1 The `home/` subsystem — bounded design
+
+A first-party package (`home/`) modeled on `geo/` (a capability with one impl, not
+a selectable provider) plus a `cognitive/`-style coordinator. **Android-free pure
+core; transport at the edge.**
+
+- **Transport split.** **REST** (`POST /api/services/<domain>/<service>`,
+  `GET /api/states`, `/api/services`) for the state snapshot and **all writes**;
+  **WebSocket** (`/api/websocket`) for the **registries** (entity/area/device —
+  WS-only) and `subscribe_events`. One HA LLAT in the Keystore (prefer a
+  **limited HA user**, not a full-account token). Bounded backoff + reconnect;
+  reads serve last cache and degrade honestly, writes return `Unreachable`.
+- **The resolver is the hard part and must be deterministic — the model never
+  picks the `entity_id`.** A pure `HomeEntityResolver` binds Russian speech →
+  concrete `(domain, entity_id, service, service_data)` using HA's area/device
+  registries **plus a persistent, user-anchored alias map** (the `AppAliases`
+  idiom, not fuzzy NL matching). Learned **only** from explicit disambiguation
+  answers and explicit edits — never from implicit success. Ambiguous/NotFound on
+  a control call **fails closed**; read tools may return candidates so the
+  assistant can ask a one-line disambiguation question. Stored as a prefs JSON
+  blob (mirrors `mcpServers`; **no Room bump** in the first phase).
+- **Authorization seam.** Control is one `homeControl` tool carrying a **new
+  `ToolRisk.CONTROLLED`** (voice-turn-only, like `EXTERNAL`). A pure
+  `HomeRiskClassifier(domain, deviceClass, service) → T0/T1/T2` runs at the
+  **existing single choke point**; a pure `TieredActionTool` seam lets the
+  registry derive a `WriteConfirmation` key **without `home/` knowing `tools/`**.
+  T2 (and any T1 action without a matching grant) reuses **`WriteConfirmation` /
+  `AffirmativeUtterance`** — *not* `IrreversibleCommand` (an unlock is not a
+  removal verb). T1 grants are `(entityId, domain, serviceClass)`,
+  **entity-level, never area-wide**; any ungranted call falls back to T2.
+- **Bound it hard — do NOT build a parallel HA.** In scope: read state, read
+  registries, call a typed service, invoke an existing scene/script (Tier 2).
+  **Out of scope:** automations, dashboards/Lovelace, history/logbook, energy,
+  backups, add-ons/Supervisor, HA config, integrations config, template
+  rendering. The capability filter (§0) applies with force here.
+- **Awareness.** WS `subscribe_events` on a **curated opt-in entity set**; the
+  projection is `(entityId, domain, deviceClass, oldState, newState, atMs)` with
+  **no free-text attributes** into any prompt. Interesting transitions only
+  (appliance done, door opened), debounced and capped, routed through
+  `BehaviorArbiter` + `ProactivePresenter` (§6 pull→digest→interrupt). Reads are
+  first-party `READ_ONLY`; control stays `CONTROLLED`, voice-initiated, never
+  autonomous.
+- **Phasing.** **H1** connection + LLAT + registries + **curated entity/area
+  allowlist** + read tools + `homeControl` **T2-confirm-only** (proves transport,
+  auth, confirm path; keeps prompt size bounded at 50+ devices). **H2** full
+  resolver (aliases, lexicon, disambiguation). **H3** T1 grants. **H4**
+  awareness. **H5** breadth (floors, more classes, optional read fallback).
+- **Settings.** New `SettingsCategory.HOME` + detail screen + controller
+  (factory `when` is compile-forced); keys `homeAssistantUrl`, `homeEntities`,
+  `homeAliases`, `homeGrants`; the token via `SecretVault`/`CredentialsStore`
+  (argument-keyed, like `mcpSecret`). Endpoint+token → `SERVICE_RESTART`;
+  aliases/grants/allowlist → `LIVE`. The LAN URL policy (§9) governs the URL.
 
 ### 7.3 The Russian ecosystem (verified 2026)
 
@@ -745,17 +795,21 @@ and alarms**, where an injected or hallucinated call is **physical**.
 **Tier by the action's reversibility/severity, derived from the device class and
 enforced at the same choke point — never by trusting the model to pick a tier:**
 
-- **Tier 0 — Read.** Always allowed (states, sensors).
-- **Tier 1 — Reversible, low-harm.** Lights, plugs, fans, media, scenes/scripts,
-  brightness, climate within a safe band. **Pre-authorisable** by an explicit
-  Settings grant scoped to `(server, entity/area, action-class)`, vault-stored
-  and revocable. Executes immediately. Worst case from injection: a light turns
-  on — annoying, not dangerous.
-- **Tier 2 — Safety-critical / hard-to-reverse.** `lock.`, `cover.` with
-  `device_class: garage/door/gate`, `alarm_control_panel.` (disarm), oven / water
-  heater / climate extremes. **Always confirm, never pre-authorise.** The
-  assistant must **speak the concrete action and target** before asking, and the
-  affirmative stays next-turn and ASR-derived.
+- **Tier 0 — Read.** Always allowed (states, sensors, registries).
+- **Tier 1 — Reversible, low-harm.** Lights, plugs, fans, media, brightness,
+  climate within a safe band, `cover` that is a blind/curtain/shade. **Pre-authorisable**
+  by an explicit Settings grant scoped to `(entityId, domain, serviceClass)` —
+  **entity-level, never area-wide** — revocable. Executes immediately. Worst case
+  from injection: a light turns on — annoying, not dangerous.
+- **Tier 2 — Safety-critical / hard-to-reverse.** `lock.` (all),
+  `alarm_control_panel.` (all), `cover` with `garage/door/gate` **or an unknown
+  device_class**, oven/kettle/water-heater, climate outside a safe band,
+  `homeassistant.turn_on/off` (target may hit a lock), and **every
+  scene/script invocation** — a benign-named "good night" can lock doors, so
+  confirm the *invocation*, never the name. **Always confirm, never
+  pre-authorise.** The assistant must **speak the concrete action and target**
+  before asking; the affirmative stays next-turn and ASR-derived.
+- **Any unknown domain/service/device_class → Tier 2** (fail closed).
 - **Tier 3 (optional) — LAN-only.** Mark local servers so their tools can never
   be reached on a remote path.
 
@@ -938,12 +992,13 @@ then R2 (native CalDAV). Reuses alarms, tools, `speakProactively`, settings,
 memory; no new permission, no hardware.
 
 **Phase 2 — "It runs the house."** R3 MCP packs + the **`LAN` kind** (the
-prerequisite), then **R4 smart-home control** — for this deployment, a
-**first-party typed HA integration** (native REST/WS with entity/area/device
-registries, risk tiering) rather than generic MCP, because the target is one LAN
-Home Assistant aggregating 50+ multi-ecosystem devices (§7.0); MCP remains the
-transport for read/discovery and for non-HA servers. In parallel the awareness
-pillar R5 (pull → digest → interrupt) and R6 email.
+prerequisite), then **R4 — the first-party `home/` subsystem** (§7.2.1): native
+HA REST/WS, registry + deterministic resolver + risk tiering, phased H1
+(allowlist + T2-confirm) → H4 (awareness), because the target is one LAN Home
+Assistant aggregating 50+ multi-ecosystem devices (§7.0) and the intent-shaped
+MCP surface cannot be tiered. MCP remains the transport for **non-HA** external
+servers. In parallel the awareness pillar R5 (pull → digest → interrupt) and R6
+email.
 
 **Phase 3 — "It ships and stays private."** R9 OTA before external distribution;
 R7 commute, R8 local device miscellany; R10 presence only if a low-power
