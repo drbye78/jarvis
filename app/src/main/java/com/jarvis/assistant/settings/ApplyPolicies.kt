@@ -36,6 +36,11 @@ object ApplyPolicies {
         normalize(AppPrefs.KEY_OPENAI_MODEL) to ApplyPolicy.SERVICE_RESTART,
         normalize(AppPrefs.KEY_SPEECH_BACKEND) to ApplyPolicy.SERVICE_RESTART,
         normalize(AppPrefs.KEY_AEC_MODE) to ApplyPolicy.SERVICE_RESTART,
+        // R13 management: the listener binds a specific interface:port, so the
+        // mode and port are sealed at service start; the idle timeout is read
+        // per request by the running server and is therefore LIVE (default).
+        normalize(AppPrefs.KEY_MANAGEMENT_MODE) to ApplyPolicy.SERVICE_RESTART,
+        normalize(AppPrefs.KEY_MANAGEMENT_PORT) to ApplyPolicy.SERVICE_RESTART,
         // The [OI]-compatible key is baked into the client at graph construction.
         normalize(SecretVault.KEY_OPENAI_API_KEY) to ApplyPolicy.SERVICE_RESTART,
         // MapKit may set its API key only ONCE PER PROCESS → a service restart

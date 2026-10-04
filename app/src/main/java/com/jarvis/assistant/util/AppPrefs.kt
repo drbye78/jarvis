@@ -395,6 +395,41 @@ class AppPrefs(
         get() = prefs.getString(KEY_MCP_SERVERS, "") ?: ""
         set(value) = prefs.edit().putString(KEY_MCP_SERVERS, value).apply()
 
+    // ------------------------------------------------------------------
+    // R13 §14 optional external management surface. The MODE and PORT are
+    // sealed at service start (the listener binds a specific interface:port),
+    // so a change applies on the next service restart; the idle timeout is
+    // read per request by the running server, so it is LIVE.
+    // ------------------------------------------------------------------
+
+    /**
+     * Persisted management intent: "disabled" (default) | "localhost" | "lan".
+     * This is the user's INTENT only — the in-memory `managementActive` flag
+     * decides whether the socket is actually open, and is never persisted (a
+     * reboot always drops LAN; LOCALHOST auto-activates safely).
+     *
+     * Stored as a plain string so [AppPrefs] stays free of the management
+     * lane's types. Unknown/absent values degrade to "disabled".
+     */
+    var managementMode: String
+        get() = prefs.getString(KEY_MANAGEMENT_MODE, DEFAULT_MANAGEMENT_MODE) ?: DEFAULT_MANAGEMENT_MODE
+        set(value) = prefs.edit().putString(KEY_MANAGEMENT_MODE, value).apply()
+
+    /** HTTPS listen port for the management server. Default [DEFAULT_MANAGEMENT_PORT]. */
+    var managementPort: Int
+        get() = prefs.getInt(KEY_MANAGEMENT_PORT, DEFAULT_MANAGEMENT_PORT)
+        set(value) = prefs.edit().putInt(KEY_MANAGEMENT_PORT, value).apply()
+
+    /**
+     * LAN idle auto-close window: after this long WITHOUT an authenticated
+     * request the listener closes and `active=false` (the mode pref still
+     * reads "lan", shown as stopped). Default [DEFAULT_MANAGEMENT_IDLE_TIMEOUT_MS]
+     * (15 min). Read LIVE by the running server.
+     */
+    var managementIdleTimeoutMs: Long
+        get() = prefs.getLong(KEY_MANAGEMENT_IDLE_TIMEOUT_MS, DEFAULT_MANAGEMENT_IDLE_TIMEOUT_MS)
+        set(value) = prefs.edit().putLong(KEY_MANAGEMENT_IDLE_TIMEOUT_MS, value).apply()
+
     fun loadProviderSettings(): ProviderSettings = ProviderSettings(
         type = providerType,
         openAiBaseUrl = openAiBaseUrl,
@@ -474,6 +509,20 @@ class AppPrefs(
 
         /** MCP server list blob; see [mcpServers]. LIVE (no restart). */
         internal const val KEY_MCP_SERVERS = "mcp_servers"
+
+        /** R13 management intent; see [managementMode]. SERVICE_RESTART. */
+        internal const val KEY_MANAGEMENT_MODE = "management_mode"
+
+        /** R13 management HTTPS port; see [managementPort]. SERVICE_RESTART. */
+        internal const val KEY_MANAGEMENT_PORT = "management_port"
+
+        /** R13 LAN idle auto-close window; see [managementIdleTimeoutMs]. LIVE. */
+        internal const val KEY_MANAGEMENT_IDLE_TIMEOUT_MS = "management_idle_timeout_ms"
+
+        /** Management is off by default; a fresh install never opens a socket. */
+        internal const val DEFAULT_MANAGEMENT_MODE = "disabled"
+        internal const val DEFAULT_MANAGEMENT_PORT = 8765
+        internal const val DEFAULT_MANAGEMENT_IDLE_TIMEOUT_MS = 900_000L
     }
 }
 

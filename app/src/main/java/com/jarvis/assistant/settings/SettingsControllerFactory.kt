@@ -3,6 +3,7 @@ package com.jarvis.assistant.settings
 import com.jarvis.assistant.settings.controller.AccountsSettingsController
 import com.jarvis.assistant.settings.controller.BrainSettingsController
 import com.jarvis.assistant.settings.controller.ListeningSettingsController
+import com.jarvis.assistant.settings.controller.ManagementSettingsController
 import com.jarvis.assistant.settings.controller.McpSettingsController
 import com.jarvis.assistant.settings.controller.MemorySettingsController
 import com.jarvis.assistant.settings.controller.MusicSettingsController
@@ -42,5 +43,6 @@ object SettingsControllerFactory {
         SettingsCategory.MUSIC -> MusicSettingsController(callbacks, prefs, host)
         SettingsCategory.ACCOUNTS -> AccountsSettingsController(callbacks, prefs, host)
         SettingsCategory.MCP -> McpSettingsController(callbacks, prefs, host)
+        SettingsCategory.MANAGEMENT -> ManagementSettingsController(callbacks, prefs, host)
     }
 }

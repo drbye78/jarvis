@@ -38,8 +38,11 @@ class SettingsInventoryTest {
         val reflected = propertyNames(AppPrefs::class.java) + propertyNames(CredentialsStore::class.java)
         val inventoryKeys = SettingsInventory.entries.map { it.key }.toSet()
         // Reported by this assertion so a drift is obvious ("the count it asserts").
-        assertEquals(42, SettingsInventory.entries.size)
-        assertEquals(44, reflected.size)
+        // R13 management adds managementMode / managementPort /
+        // managementIdleTimeoutMs to both the inventory (42 → 45) and the
+        // reflected accessor surface (44 → 47).
+        assertEquals(45, SettingsInventory.entries.size)
+        assertEquals(47, reflected.size)
         val stale = inventoryKeys - reflected
         assertTrue("inventory keys not found on any accessor: $stale", stale.isEmpty())
     }

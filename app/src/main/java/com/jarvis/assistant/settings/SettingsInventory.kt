@@ -97,6 +97,14 @@ object SettingsInventory {
         // argument-keyed ([CredentialsStore.mcpSecret]) and therefore not
         // enumerable as a zero-arg setting.
         entry("mcpServers", SettingsCategory.MCP, essential = false),
+
+        // --- MANAGEMENT (R13 external management surface) ---
+        // The management password is vault-backed with a fixed key but has no
+        // typed accessor (it is read/written through the vault directly), so it
+        // is deliberately not enumerable here — same shape as the MCP secrets.
+        entry("managementMode", SettingsCategory.MANAGEMENT, essential = true),
+        entry("managementPort", SettingsCategory.MANAGEMENT, essential = false),
+        entry("managementIdleTimeoutMs", SettingsCategory.MANAGEMENT, essential = false),
     )
 
     /** Persisted members that are lifecycle state, not user-facing settings. */

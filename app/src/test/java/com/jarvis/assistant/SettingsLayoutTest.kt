@@ -128,6 +128,7 @@ class SettingsLayoutTest {
         SettingsCategory.MUSIC to "MusicSettingsController.kt",
         SettingsCategory.ACCOUNTS to "AccountsSettingsController.kt",
         SettingsCategory.MCP to "McpSettingsController.kt",
+        SettingsCategory.MANAGEMENT to "ManagementSettingsController.kt",
     )
 
     @Test

@@ -582,4 +582,32 @@
     <string name="settings_mcp_url_reject_public_host">LAN-сервер не может быть по публичному IP</string>
     <string name="settings_mcp_url_reject_non_private_host">LAN-сервер должен быть в локальной сети</string>
     <string name="settings_mcp_url_reject_cross_origin_lan_host">Перенаправление LAN-сервера на другой хост запрещено</string>
+
+    <!-- R13 management surface (optional external control) -->
+    <string name="settings_cat_management">Управление</string>
+    <string name="settings_cat_management_sub">Внешний доступ</string>
+    <string name="settings_management_section">Внешнее управление</string>
+    <string name="settings_management_info">Необязательный веб-интерфейс и REST для настройки ассистента. По умолчанию отключён; включайте его только при необходимости.</string>
+    <string name="settings_management_mode_label">Режим</string>
+    <string name="settings_management_mode_disabled">Отключено</string>
+    <string name="settings_management_mode_localhost">Только localhost</string>
+    <string name="settings_management_mode_lan">Локальная сеть</string>
+    <string name="settings_management_mode_hint">Отключено — сервер не запускается. Только localhost — доступ с этого устройства (например, через adb). Локальная сеть — доступ с других устройств вашей сети.</string>
+    <string name="settings_management_port_label">Порт</string>
+    <string name="settings_management_port_hint">Порт HTTPS-сервера, от 1 до 65535.</string>
+    <string name="settings_management_port_invalid">Введите порт от 1 до 65535</string>
+    <string name="settings_management_idle_label">Автозакрытие простоя, мин</string>
+    <string name="settings_management_idle_hint">Сервер в режиме локальной сети закрывается после этого времени без подтверждённых запросов.</string>
+    <string name="settings_management_idle_invalid">Введите число минут от 1 до 1440</string>
+    <string name="settings_management_security_section">Безопасность</string>
+    <string name="settings_management_lan_warning">В режиме локальной сети интерфейс управления доступен другим устройствам вашей сети. Включайте его только в доверенной сети.</string>
+    <string name="settings_management_tls_warning">Соединение защищено самоподписанным сертификатом: браузер покажет предупреждение — это ожидаемо.</string>
+    <string name="settings_management_cert_label">Отпечаток сертификата (SHA-256)</string>
+    <string name="settings_management_cert_loading">Вычисление…</string>
+    <string name="settings_management_cert_failed">Не удалось построить сертификат</string>
+    <string name="settings_management_password_label">Пароль управления</string>
+    <string name="settings_management_password_hidden">••••••••</string>
+    <string name="settings_management_password_show">Показать пароль</string>
+    <string name="settings_management_password_hint">Пароль хранится на устройстве и показывается только по запросу. При смене пароля все сессии отзываются.</string>
+    <string name="settings_management_saved">Сохранено</string>
 </resources>

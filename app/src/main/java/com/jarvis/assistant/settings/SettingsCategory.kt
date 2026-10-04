@@ -88,4 +88,11 @@ enum class SettingsCategory(
         iconRes = R.drawable.ic_cat_mcp,
         layoutRes = R.layout.screen_settings_mcp,
     ),
+    MANAGEMENT(
+        id = "management",
+        titleRes = R.string.settings_cat_management,
+        subtitleRes = R.string.settings_cat_management_sub,
+        iconRes = R.drawable.ic_cat_management,
+        layoutRes = R.layout.screen_settings_management,
+    ),
 }

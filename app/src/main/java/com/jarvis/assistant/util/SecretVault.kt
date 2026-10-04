@@ -81,6 +81,16 @@ interface SecretVault {
         /** The vault key holding [serverId]'s MCP auth secret. */
         fun mcpSecretKey(serverId: String): String = KEY_MCP_SECRET_PREFIX + serverId
 
+        /**
+         * R13 §14 management password. Stored in the vault so the owner can
+         * re-show it on demand; it is device-bound (never leaves the Keystore
+         * vault) and is NOT an [AppPrefs] property — it has no typed accessor,
+         * so it is read/written through the vault directly. It is a fixed key
+         * (unlike the argument-keyed MCP secrets): one management password per
+         * device.
+         */
+        const val KEY_MANAGEMENT_PASSWORD = "management_password"
+
         const val KEY_GIGACHAT_TOKEN = "gigachat_token"
         const val KEY_GIGACHAT_EXPIRY = "gigachat_token_expiry"
         const val KEY_SALUTE_TOKEN = "salute_token"

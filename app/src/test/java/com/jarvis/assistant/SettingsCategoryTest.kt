@@ -14,8 +14,9 @@ import org.junit.Test
 class SettingsCategoryTest {
 
     @Test
-    fun `all nine categories are registered`() {
-        assertEquals(9, SettingsCategory.entries.size)
+    fun `all ten categories are registered`() {
+        // R13 added MANAGEMENT (external control) as the 10th category.
+        assertEquals(10, SettingsCategory.entries.size)
     }
 
     @Test

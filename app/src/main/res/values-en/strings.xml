@@ -583,4 +583,32 @@
     <string name="settings_mcp_url_reject_public_host">A LAN server cannot use a public IP address</string>
     <string name="settings_mcp_url_reject_non_private_host">A LAN server must be on the local network</string>
     <string name="settings_mcp_url_reject_cross_origin_lan_host">A LAN server redirect to a different host is not allowed</string>
+
+    <!-- R13 management surface (optional external control) -->
+    <string name="settings_cat_management">Management</string>
+    <string name="settings_cat_management_sub">External access</string>
+    <string name="settings_management_section">External management</string>
+    <string name="settings_management_info">Optional web UI and REST API for configuring the assistant. Disabled by default; enable it only when needed.</string>
+    <string name="settings_management_mode_label">Mode</string>
+    <string name="settings_management_mode_disabled">Disabled</string>
+    <string name="settings_management_mode_localhost">Localhost only</string>
+    <string name="settings_management_mode_lan">Local network</string>
+    <string name="settings_management_mode_hint">Disabled — the server does not start. Localhost only — reachable from this device (for example through adb). Local network — reachable from other devices on your network.</string>
+    <string name="settings_management_port_label">Port</string>
+    <string name="settings_management_port_hint">HTTPS server port, from 1 to 65535.</string>
+    <string name="settings_management_port_invalid">Enter a port from 1 to 65535</string>
+    <string name="settings_management_idle_label">Idle auto-close, min</string>
+    <string name="settings_management_idle_hint">The local-network server closes after this long without an authenticated request.</string>
+    <string name="settings_management_idle_invalid">Enter a number of minutes from 1 to 1440</string>
+    <string name="settings_management_security_section">Security</string>
+    <string name="settings_management_lan_warning">In local-network mode the management interface is reachable from other devices on your network. Enable it only on a trusted network.</string>
+    <string name="settings_management_tls_warning">The connection is protected by a self-signed certificate: the browser will show a warning — that is expected.</string>
+    <string name="settings_management_cert_label">Certificate fingerprint (SHA-256)</string>
+    <string name="settings_management_cert_loading">Computing…</string>
+    <string name="settings_management_cert_failed">Could not build the certificate</string>
+    <string name="settings_management_password_label">Management password</string>
+    <string name="settings_management_password_hidden">••••••••</string>
+    <string name="settings_management_password_show">Show password</string>
+    <string name="settings_management_password_hint">The password is stored on the device and shown only on request. Changing it revokes all sessions.</string>
+    <string name="settings_management_saved">Saved</string>
 </resources>
