@@ -177,8 +177,9 @@ First checks:
   **MapKit Mobile SDK key** in **Настройки → Погода и карты → Дополнительно**
   (Yandex developer cabinet →
   MapKit Mobile SDK). The SpeechKit/AI Studio key does NOT work here — MapKit
-  has its own key, and it is bound to the app's package/SHA (a debug build and a
-  release build need their own).
+  has its own key. A MapKit key is identified by the app's **package name**
+  (`applicationId`), not the signing certificate, so debug and release builds of
+  `com.jarvis.assistant` share one key.
 - **Key changed / “key already set”:** MapKit allows `setApiKey` only ONCE per
   process, so a changed key answers «Ключ Яндекс.Карт изменился…». Стоп →
   Запустить is NOT enough — fully kill and relaunch the app process.
@@ -730,8 +731,8 @@ of which would have shipped (wrong init thread, a native crash from no-arg
 
 Prereqs: a **MapKit Mobile SDK key** in **Настройки → Погода и карты → Дополнительно** (Yandex developer
 cabinet → MapKit Mobile SDK); the Yandex Cloud key does NOT work here. MapKit
-keys are bound to the app's package/SHA, so a debug build and a release build
-need separate keys. To watch the lane:
+keys are identified by the app's **package name**, not the signing certificate,
+so debug and release builds share one key. To watch the lane:
 
 ```bash
 adb logcat -c
@@ -800,27 +801,30 @@ adb logcat | grep -iE "MapKit|maps-mobile|UnsatisfiedLink|Geo|dalvikvm"
   (results must not be stored beyond 30 days) and the free-tier cap (1,000
   unique users/day).
 - **MapKit key validity is PROVEN for the debug build.** A real key was exercised
-  on-device (init `Ready`, live search, walking and transit routing). Still
-  untested: a RELEASE-build key and the `KeyChanged` path after a key swap.
-  **A MapKit Mobile SDK key binds package + signing-cert SHA-256** (the exact
-  cabinet fields are not public — treat the console dialog as source of truth).
-  Debug and release are signed with different certs, so **the debug key shows a
-  blank/empty map grid in a release build** (documented mismatch symptom; there
-  is no typed "fingerprint mismatch" SDK error — the cabinet side returns 403
-  "Invalid key"). To enable release geo:
-  1. **Release signing is already configured** (no setup needed): keystore
-     `app/release.keystore` (gitignored), alias `jarvis`,
-     `CN=Jarvis, OU=Dev, O=Personal, C=RU`; the four `RELEASE_*` fields live in
-     `local.properties` and `app/build.gradle.kts` wires the config
-     conditionally (absent → `app-release-unsigned.apk`). Release cert
-     **SHA-256**:
-     `97:36:0D:2F:9C:35:F1:D3:ED:DD:EB:CC:93:A4:A0:08:9A:5D:7B:09:4F:34:A6:7C:64:00:3F:DC:AC:0C:35:FF`.
-  2. Register a **release** MapKit key in the Yandex cabinet
-     (`yandex.ru/maps-api/console` → Подключить API → MapKit — мобильный SDK)
-     with `com.jarvis.assistant` + that SHA-256; keep the debug key separate.
-     Keys are not deletable (only blockable) and take **~15 min** to activate.
-  3. Enter the release key in Settings on the release build; swap the app key
-     via `MapKitFactory.setApiKey` **before** `initialize()` (once per process).
+  on-device (init `Ready`, live search, walking and transit routing).
+  **A MapKit Mobile SDK key is identified by the app's PACKAGE NAME
+  (`applicationId`), NOT the signing certificate.** Evidence: the shipped SDK
+  never reads the APK signature (no `GET_SIGNATURES`/`signingInfo`; key handling
+  is native and keys off `application_id`), and Yandex's documented restriction
+  model is referer / IP / request-signature — never a cert. So **debug and
+  release of `com.jarvis.assistant` share one key; no separate release key is
+  needed.** The earlier "binds package/SHA" claim was an inherited Google-Maps
+  assumption and is corrected. (Confirmed on debug; the release build was not
+  re-tested on-device because that would have required wiping the device — the
+  SDK evidence is what settles it. If a release build ever shows a blank map
+  grid, that is the documented `Invalid key`/wrong-key symptom — HTTP 403 on the
+  cabinet side — and the fallback is to register a second key for the release
+  build; multiple keys per project are allowed.) Still untested: the
+  `KeyChanged` swap path.
+  - **Release signing is already configured** (no setup needed): keystore
+    `app/release.keystore` (gitignored), alias `jarvis`,
+    `CN=Jarvis, OU=Dev, O=Personal, C=RU`; the four `RELEASE_*` fields live in
+    `local.properties` and `app/build.gradle.kts` wires the config
+    conditionally (absent → `app-release-unsigned.apk`). Release cert
+    **SHA-256** (recorded for reference only — NOT registered with Yandex):
+    `97:36:0D:2F:9C:35:F1:D3:ED:DD:EB:CC:93:A4:A0:08:9A:5D:7B:09:4F:34:A6:7C:64:00:3F:DC:AC:0C:35:FF`.
+  - Enter the key in Settings; swap it via `MapKitFactory.setApiKey` **before**
+    `initialize()` (once per process).
 - **Play Integrity attestation is untested by construction.** The device has no
   Play Services at all (`com.google.android.play` absent), and the dependency
   excludes the artifact, so `requestAttestKey()` can never fire here — the

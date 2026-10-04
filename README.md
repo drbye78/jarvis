@@ -90,8 +90,9 @@ Answers arbitrary questions and holds a conversation on any topic.
    Дополнительно** takes a **Yandex MapKit
    Mobile SDK key** — a different credential from the Yandex Cloud API key
    (SpeechKit / AI Studio). Get it in the Yandex developer cabinet → **MapKit
-   Mobile SDK**; it is bound to the app's package/SHA, so a debug build and a
-   release build need their own key. It is stored in the Keystore like every
+   Mobile SDK**; it is identified by the app's **package name** (not the signing
+   certificate), so debug and release builds of `com.jarvis.assistant` share one
+   key. It is stored in the Keystore like every
    other secret and read live, but **changing it requires a FULL app-process
    restart** — MapKit cannot be re-keyed inside a running process, and Стоп →
    Запустить is not enough.
