@@ -1,6 +1,9 @@
 package com.jarvis.assistant.manage
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.ktor.http.ContentType
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.get
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.junit.Assert.assertEquals
@@ -20,19 +23,19 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
 /**
- * DEVICE-ONLY diagnostic for the R13 §14 SPIKE. Not part of the CI gate (that
- * job only compiles this source set); it must be run explicitly. Nothing in the
- * app starts [ManagementHttpServer], so this is the only place the embedded
- * HTTPS path is exercised on a real device.
+ * DEVICE-ONLY diagnostic for the R13 §14 HTTPS stack. Not part of the CI gate
+ * (that job only compiles this source set); it must be run explicitly. Nothing
+ * in the app starts [ManagementServer] yet, so this is the only place the
+ * embedded HTTPS path is exercised on a real device.
  *
  * It isolates WHERE a failure comes from, in order:
  *
  * - **A — raw TLS sanity.** A plain [SSLServerSocket] (JSSE, no Ktor) loaded
  *   from the [TlsCertFactory] keystore, reached by the test-only trust-all
  *   client. If A fails, the problem is cert/keystore/TLS/API-29 on this device.
- * - **B — Ktor Netty HTTPS.** [ManagementHttpServer] serving `GET /health`
- *   over the same cert. If A passes but B fails, Ktor-Netty-on-Android is the
- *   problem.
+ * - **B — Ktor Netty HTTPS.** The REAL [ManagementServer] serving a trivial
+ *   `/health` route over the same cert. If A passes but B fails,
+ *   Ktor-Netty-on-Android is the problem.
  *
  * Each assertion / failure message names the tier it proves, so a device report
  * is unambiguous. The trust-all client lives ONLY in this test source set.
@@ -43,13 +46,13 @@ import javax.net.ssl.X509TrustManager
  * adb install -r app/build/outputs/apk/debug/app-debug.apk
  * adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
  * adb shell am instrument -w \
- *   -e class com.jarvis.assistant.manage.ManagementHttpsSpikeTest \
+ *   -e class com.jarvis.assistant.manage.ManagementServerDeviceTest \
  *   com.jarvis.assistant.test/androidx.test.runner.AndroidJUnitRunner
  * ```
  */
 @RunWith(AndroidJUnit4::class)
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
-class ManagementHttpsSpikeTest {
+class ManagementServerDeviceTest {
 
     private val tls: TlsMaterial by lazy { TlsCertFactory.generate() }
 
@@ -82,8 +85,8 @@ class ManagementHttpsSpikeTest {
                     socket.outputStream.write(payload.toByteArray())
                     socket.outputStream.flush()
                 }
-            } catch (t: Throwable) {
-                serverFailure.set(t)
+            } catch (failure: Exception) {
+                serverFailure.set(failure)
             }
         }
         responder.isDaemon = true
@@ -93,49 +96,52 @@ class ManagementHttpsSpikeTest {
             client.newCall(Request.Builder().url("https://127.0.0.1:$port/health").build())
                 .execute()
                 .use { it.code to it.body?.string().orEmpty() }
-        } catch (e: Exception) {
+        } catch (failure: Exception) {
             throw AssertionError(
                 "A FAILED: a plain SSLServerSocket with the generated cert could NOT complete a TLS " +
                     "handshake (server-side failure=$serverFailure). This isolates the problem to " +
-                    "cert/keystore/TLS on this device, NOT Ktor. Cause: ${e.message}",
-                e,
+                    "cert/keystore/TLS on this device, NOT Ktor. Cause: ${failure.message}",
+                failure,
             )
         } finally {
             runCatching { serverSocket.close() }
             responder.join(THREAD_JOIN_MILLIS)
         }
 
-        println("A_RAW_TLS_RESULT code=${result.first} body=${result.second}")
         assertEquals("A (raw TLS): handshake + request must yield HTTP 200", 200, result.first)
         assertEquals("A (raw TLS): trivial body must round-trip", "ok", result.second)
     }
 
     /**
-     * B: does Ktor-Netty's `sslConnector` bind and terminate TLS on this device?
-     * Only meaningful once A proves the cert/keystore path works.
+     * B: does the REAL [ManagementServer]'s Netty `sslConnector` bind and
+     * terminate TLS on this device? Only meaningful once A proves the
+     * cert/keystore path works.
      */
     @Test
-    fun b_ktorNettyHttps_servesTheHealthEndpoint() {
+    fun b_managementServerHttps_servesTheHealthEndpoint() {
         val port = freeLoopbackPort()
-        val server = ManagementHttpServer(tls, port)
+        val server = ManagementServer(tls, port, ManagementServer.LOOPBACK_HOST) {
+            get("/health") {
+                call.respondText("""{"status":"ok"}""", ContentType.Application.Json)
+            }
+        }
         try {
             server.start()
             val result = awaitHealth(port)
-            println("B_KTOR_NETTY_RESULT code=${result.first} body=${result.second}")
             assertEquals("B (Ktor/Netty): /health must answer 200 over HTTPS", 200, result.first)
             assertEquals(
                 "B (Ktor/Netty): /health must return the JSON health document",
                 """{"status":"ok"}""",
                 result.second,
             )
-        } catch (e: AssertionError) {
-            throw e
-        } catch (e: Exception) {
+        } catch (failure: AssertionError) {
+            throw failure
+        } catch (failure: Exception) {
             throw AssertionError(
-                "B FAILED: Ktor-Netty could not serve HTTPS on this device (start/bind threw). " +
-                    "If test A passed, raw TLS works and Ktor/Netty-on-Android is the problem. " +
-                    "Cause: ${e.message}",
-                e,
+                "B FAILED: the ManagementServer could not serve HTTPS on this device (start/bind " +
+                    "threw). If test A passed, raw TLS works and Ktor/Netty-on-Android is the problem. " +
+                    "Cause: ${failure.message}",
+                failure,
             )
         } finally {
             runCatching { server.stop() }
@@ -151,13 +157,13 @@ class ManagementHttpsSpikeTest {
                 return client.newCall(Request.Builder().url("https://127.0.0.1:$port/health").build())
                     .execute()
                     .use { it.code to it.body?.string().orEmpty() }
-            } catch (e: Exception) {
-                lastError = e
+            } catch (failure: Exception) {
+                lastError = failure
                 Thread.sleep(RETRY_DELAY_MILLIS)
             }
         }
         throw AssertionError(
-            "B FAILED: the Ktor-Netty HTTPS listener never answered on 127.0.0.1:$port within " +
+            "B FAILED: the ManagementServer HTTPS listener never answered on 127.0.0.1:$port within " +
                 "${READY_TIMEOUT_MILLIS}ms. If test A passed, Ktor/Netty-on-Android is the problem. " +
                 "Last error: ${lastError?.message}",
             lastError,
