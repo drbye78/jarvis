@@ -86,6 +86,34 @@ android {
         buildConfig = true
     }
 
+    // R13 spike: Netty's ~20 jars (plus gRPC's protos jar) each ship a
+    // META-INF/INDEX.LIST — a legacy JAR index that is meaningless to ART — so
+    // they collide during packaging. The generic dependency license/notice
+    // files collide the same way. None is read at runtime on Android, so drop
+    // them here. META-INF/io.netty.versions.properties is deliberately NOT
+    // excluded: Netty reads it to report its own version.
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/INDEX.LIST",
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/LICENSE.md",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/NOTICE.md",
+                // BouncyCastle + jspecify are multi-release jars; the Java-9
+                // OSGi manifest is not used by ART and collides 4 ways.
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+            )
+            // Every Netty module ships its own version descriptor; they collide
+            // 19 ways. It is read only for diagnostic version logging, so keep
+            // one arbitrary copy rather than dropping the resource entirely.
+            pickFirsts += "META-INF/io.netty.versions.properties"
+        }
+    }
+
     // The `lint { disable += "ExpiredTargetSdkVersion" }` suppression is gone:
     // it existed only while targetSdk trailed Play's requirement, and at 36 the
     // check has nothing to report. CI's lint job was already advisory
@@ -200,6 +228,35 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.okhttp)
+
+    // R13 §14 SPIKE (disabled by default): embedded HTTPS management server.
+    // Nothing in the app constructs these yet — this exists so the target-device
+    // diagnostic (`manage/ManagementHttpsSpikeTest`) can prove Ktor-Netty HTTPS
+    // works on API 29 / EMUI before the feature is built. Netty is mandatory:
+    // Ktor's CIO server engine throws on any sslConnector.
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.netty) {
+        // Ktor's Netty engine pulls HTTP/3, whose netty-codec-native-quic module
+        // resolves 5 platform-specific native jars (linux/mac/windows x86_64 +
+        // arm64) that all ship META-INF/license/LICENSE.webbit.txt and collide at
+        // packaging. The spike serves HTTP/1.1 over TLS on loopback, so the QUIC
+        // native binaries are dead weight. The epoll/kqueue *Java* classes stay:
+        // EventLoopGroupProxy calls Epoll.isAvailable()/KQueue.isAvailable()
+        // directly, so those modules must not be excluded (Netty then falls back
+        // to NIO when the native lib is absent).
+        exclude(group = "io.netty", module = "netty-codec-native-quic")
+    }
+    implementation(libs.ktor.server.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
+    // Android has no public cert-builder API (sun.security.x509 is absent), so
+    // the self-signed management cert is built with BouncyCastle. bcpkix pulls
+    // bcutil -> bcprov transitively; the jdk18on variant (not the Android
+    // repackaging com.android.org.bouncycastle) is used directly, no global
+    // provider registration (see TlsCertFactory).
+    implementation(libs.bouncycastle.bcpkix)
+    // Netty logs through slf4j; without a binding it prints a "No SLF4J
+    // providers were found" warning on every start. nop is the smallest binder.
+    implementation(libs.slf4j.nop)
 
     // Yandex MapKit (GEO lane): geocoding + masstransit routing. The Key is a
     // MapKit API key (separate SecretVault slot), never the Cloud API key.

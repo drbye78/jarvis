@@ -50,3 +50,10 @@
 # classes even though the search/routing call paths never touch them.
 -dontwarn com.google.android.gms.**
 -dontwarn com.google.android.play.**
+
+# R13 management-surface spike. Netty's io.netty.util.internal.Hidden$NettyBlockHoundIntegration
+# contains a compile-time reference (and a META-INF/services entry) for the
+# optional reactor-blockhound diagnostic integration, which is NOT on the
+# classpath. It is never loaded at runtime; silence R8's missing-class error.
+# The only rule R8 actually asked for (missing_rules.txt listed just this one).
+-dontwarn reactor.blockhound.integration.BlockHoundIntegration
