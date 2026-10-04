@@ -5,8 +5,11 @@
 (what it defends), `RUNBOOK.md` (operating it).
 
 **Scope:** what Jarvis should become, which capabilities are worth adding, and
-which are traps. The centrepiece is **passive awareness** — the capability most
-aligned with an always-on appliance — analysed in depth in §6.
+which are traps. Organised on three axes — **Awareness** (notices what matters,
+§6), **Agency** (acts in the room, within pre-authorised consequence tiers, §7),
+and **Availability** (reliability and honest degradation, §3.3). Proactivity is
+the cross-cutting behavioural property, disciplined by §11 — not a fourth
+category. **Passive awareness** remains the deepest single analysis (§6).
 
 **Date:** 2026. Version reference: Jarvis `0.2.2` (pre-1.0).
 
@@ -17,27 +20,41 @@ aligned with an always-on appliance — analysed in depth in §6.
 1. **Jarvis's niche is the controllable, extensible, GMS-free voice appliance.**
    Siri/Gemini are becoming more capable and less controllable; Alexa+ is
    controllable but vendor-bound. Jarvis is what runs on the hardware those
-   ecosystems abandon, with the user owning the keys and the integrations.
-2. **Three capabilities lead: proactivity (acts at the right time), passive
-   awareness (notices what matters), and smart-home control (controls the room
-   it lives in).** All three exploit the "always-on, in-the-home" property that
-   phone assistants structurally cannot.
-3. **MCP is the extensibility bet, but not the autonomous-data path.** MCP tools
+   ecosystems abandon, with **user-controlled dependencies** — the user owns the
+   keys, not a vendor account, and which third-party clouds get used is *their*
+   call (see the honesty note in §1.1: this is control over dependencies, not
+   ownership of them — the ASR/TTS/LLM are rented clouds).
+2. **The product is organised on three axes: Awareness, Agency, Availability.**
+   *Awareness* — notice what matters (passive awareness, §6); *Agency* — do the
+   right thing in the room, within pre-authorised consequence tiers (smart-home
+   control, §7); *Availability* — be reliably there and degrade honestly when a
+   dependency is down (§3.3). **Proactivity is a behavioural property that cuts
+   across Awareness and Agency — not a separate feature category** — and the
+   `BehaviorArbiter` suppression firewall stays a first-class component (§11).
+3. **The success metric is attention eliminated, not actions taken.** Jarvis is
+   useful when the user has to think about it *less* — briefings replace manual
+   checking, alerts pre-empt a question. Do not measure "AI actions fired."
+4. **The capability filter.** For any proposed feature ask: *does this make
+   Jarvis more useful as an always-present household agent, or merely more
+   capable?* Capability breadth is not the goal; a "random enterprise MCP tool"
+   is not product-defining.
+5. **MCP is the extensibility bet, but not the autonomous-data path.** MCP tools
    are `EXTERNAL` and only run on a voice turn; scheduled/autonomous features
-   must use first-party `READ_ONLY` data instead.
-4. **Passive awareness is the awareness flagship** (§6): notifications + feeds +
+   must use first-party `READ_ONLY` data instead. Agency is always bounded by the
+   risk tiers (§7.4), never by model discretion.
+6. **Passive awareness is the awareness flagship** (§6): notifications + feeds +
    email, delivered as *pull → digest → interrupt*, triaged deterministically,
    gated by the existing arbiter, and summarised on a **tool-free** pass so
    untrusted content can never become an action.
-5. **Smart-home control is the action flagship** (§7): reach it through **Home
-   Assistant** (local, GMS-free, already MCP-speaking) plus a scoped direct-LAN
-   path; **tier writes by device class** — pre-authorise reversible low-harm
-   actions, always confirm locks/garage/alarm/oven. Do **not** attempt GMS-free
-   Matter commissioning.
-6. **Refuse**: accessibility screen-scraping, screen OCR, user-account scraping
+7. **Smart-home control is the action flagship** (§7): reach it through **Home
+   Assistant** (local, GMS-free, already MCP-speaking), a **Yandex user-API** path
+   for Yandex homes (§7.3), and a scoped direct-LAN path; **tier writes by device
+   class** — pre-authorise reversible low-harm actions, always confirm
+   locks/garage/alarm/oven. Do **not** attempt GMS-free Matter commissioning.
+8. **Refuse**: accessibility screen-scraping, screen OCR, user-account scraping
    of private messengers, on-device ASR/TTS, speaker ID, sound-event detection,
    and anything platform-gated. These fight the platform or the hardware.
-7. **First concrete step: the Routine/Briefing spine**, immediately followed by
+9. **First concrete step: the Routine/Briefing spine**, immediately followed by
    the passive-awareness read model. The cheap standalone win is the `LAN`
    server kind, which unblocks all smart-home work.
 
@@ -71,9 +88,13 @@ streaming clients. What is genuinely local:
 - the **memory** store and all on-device state.
 
 **Therefore the honest pitch is not "works without the cloud."** It is **"you own
-the keys and the pipe"**: key-bound (not account-bound), account-free,
-provider-swappable, and egress-transparent. Any roadmap item that assumes local
-ASR/TTS (e.g. "build offline dictation") is misguided on this hardware.
+the keys and the pipe"** — more precisely, **user-controlled dependencies**:
+key-bound (not account-bound), account-free, provider-swappable, and
+egress-transparent. Note this is *control over dependencies*, not ownership of
+them: the ASR/TTS/LLM are rented clouds and can fail. Any roadmap item that
+assumes local ASR/TTS (e.g. "build offline dictation") is misguided on this
+hardware — but **graceful degradation is a first-class pillar** (§3.3), not an
+afterthought.
 
 ---
 
@@ -134,6 +155,12 @@ regional and hardware gating.
 > controllable but vendor-bound. Jarvis is the controllable, extensible,
 > GMS-free alternative — and proactivity + passive awareness are where it can
 > lead rather than follow.**
+>
+> **The design philosophy in one line:** *the best assistant is the one you think
+> about least.* Judge every capability by **attention eliminated** — how much
+> manual checking, remembering, or fiddling it removes — and by whether it makes
+> Jarvis **more useful as an always-present household agent, not merely more
+> capable** (§0).
 
 Three structural advantages the commercial assistants cannot copy:
 
@@ -165,6 +192,30 @@ Three structural advantages the commercial assistants cannot copy:
 World-knowledge QA (delegate to a user-key LLM); screen/image context; broad
 smart-home mesh (bridge via MCP, don't become a hub); default-assistant /
 hotword / privileged-notification roles; multi-user identity (no mic array).
+
+### 3.3 Reliability and graceful degradation (a first-class pillar)
+
+Jarvis is a 24/7 appliance whose ASR, TTS, and LLM are **rented clouds** (§1.1),
+so *being there* is a product property, not a given. This is the axis the 2026
+review under-weighted, and it is load-bearing for an always-on box:
+
+- **Local path first where it exists.** Wake word, voice-stop, memory, alarms,
+  timers, and device control are on-device and must keep working when the
+  network is down. A router or provider outage must not brick the appliance.
+- **Degrade honestly, never silently.** When a dependency is unreachable, say so
+  (a short spoken status) rather than failing into silence; fail over where the
+  architecture already supports it (two weather providers; swappable LLM/speech
+  backends on restart).
+- **Recover without a restart.** The FGS watchdog already revives a wedged audio
+  producer; provider outages should surface as a transient error and retry, not
+  demand a reboot.
+- **Name the failed dependency.** Because dependencies are user-selected, the
+  degradation message should say *which* one failed so the user can swap a key
+  or provider.
+
+**How to measure it:** wake-word → reply latency on a healthy network, and
+"wake word + local commands still respond" on an unhealthy one. Both belong in
+the acceptance criteria for every phase (§12 gate).
 
 ---
 
@@ -478,14 +529,19 @@ hub, but **not** control. The problem splits cleanly:
    **Tasmota/ESPHome/WLED** (MQTT), **Philips Hue** (local v2 REST/SSE), and
    optionally **Yeelight** (LAN JSON). Implement these as **built-in tools with
    precise risk classes**, not as a general "any LAN MCP server" free-for-all.
-3. **Do not own Matter/Thread.** Matter **commissioning on Android is GMS-gated**
+3. **Yandex homes: the user-API** (§7.3) — `api.iot.yandex.net` with OAuth scopes
+   `iot:view`/`iot:control`, token in the Keystore. Cloud-routed (there is no
+   Yandex LAN API), but it is the one **sanctioned inbound** path into a user's
+   Yandex devices/groups/scenarios, and Yandex's own Zigbee/Matter devices are
+   **not** importable into HA — so this is the only way to reach them.
+4. **Do not own Matter/Thread.** Matter **commissioning on Android is GMS-gated**
    (HA documents that the GMS-free app flavour cannot add Matter devices; its
    source hard-disables the Play-Services commissioning client). Control-only
    without GMS is possible only by embedding the `connectedhomeip` CHIP SDK — a
    research project, not a feature. Let **HA be the Matter controller**: commission
    once with any phone/Apple device, then drive it through HA (multi-fabric).
    Thread devices need a border router, which Jarvis does not have.
-4. **Do not build cloud bridges for Google Home / Alexa / Apple Home.** All three
+5. **Do not build cloud bridges for Google Home / Alexa / Apple Home.** All three
    are cloud-to-cloud (HomeKit is Apple-platforms-only). They are out as
    GMS-free local control.
 
@@ -494,18 +550,56 @@ Also: **IR** (ACs/TVs) needs an actual emitter — probe
 use a LAN IR bridge). **BLE** works GMS-free via `BluetoothGatt` for devices with
 a known profile. **RF** requires an external bridge.
 
-### 7.3 The Russian ecosystem
+### 7.3 The Russian ecosystem (verified 2026)
 
-- **Yandex Smart Home** — third parties integrate as a **provider** (Yandex calls
-  *your* HTTPS endpoint), which is cloud-to-cloud and the *inverse* direction; it
-  is **not** a way for a local app to control devices. The community direction is
-  HA → Alice via `AlexxIT/YandexSmartHome`.
-- **Sber Smart Home** — **no public third-party controller API found**; treat as
-  closed.
-- **Tuya / Smart Life** — official cloud API plus an **unofficial** local
-  protocol (keys extracted via cloud; ToS risk).
-- **Xiaomi Mi Home** — no official LAN API; HA uses cloud creds + tokens
-  (unofficial extraction; ToS risk).
+Russian-first means the vendor clouds matter — but their *direction* decides what
+Jarvis can actually do. Two ecosystem paths are real; the rest are outbound-only
+exposure targets.
+
+- **Yandex Smart Home — two APIs, both directions.** (a) As a **provider**,
+  Yandex calls *your* HTTPS endpoint (skill moderation; a *private* skill skips
+  it) — the inverse direction, and not how a local app controls devices. (b)
+  **The user-facing IoT API** (`api.iot.yandex.net`, OAuth scopes
+  `iot:view`/`iot:control`) lets a third-party OAuth app **read and command a
+  user's Yandex home** (rooms, groups, devices, scenarios). This is the **one
+  sanctioned inbound control path** across the Russian clouds, and the reason to
+  add Yandex as a first-class integration (§7.2). Caveats: cloud-routed (no LAN
+  API), and the OAuth app's `iot` scope may require Yandex review — verify before
+  committing. Class it through the same risk tiering (§7.4); because it is cloud
+  egress, its reads do **not** become autonomous data (§8).
+- **Sber Smart Home — open, but B2B-gated.** Sber has a public platform with
+  **Cloud-to-Cloud** (Sber → vendor webhook) and **MQTT-to-Cloud** (an
+  integrator's Sber controller → Sber) paths, but admission requires a **legal
+  entity/ИП**, certification, and (for MQTT) hardware purchase. It has **no
+  consumer/user API** comparable to Yandex's, so it is **effectively closed to an
+  individual self-hosted app** — not "no public API," but not user-keyable
+  either.
+- **VK / Маруся — outbound-only.** It has a smart-home surface (Маруся app, VK
+  Капсула) but exposes only a provider-direction skill/app platform; no confirmed
+  inbound API. Treat it as a **target to expose HA to**, not a control source.
+- **Matter in Russia — Wi-Fi only, no Thread.** Yandex supports **Matter over
+  Wi-Fi** on its Stations/Hub and sells certified Matter devices, but explicitly
+  **does not support Thread** ("К … хабу Яндекса … не получится подключить
+  устройства … на протоколе Thread"). Sber/VK: no Matter found. Matter-over-Wi-Fi
+  is therefore a viable *partial* vendor-neutral path; **Thread is not** — do not
+  market it.
+- **The outbound bridge: `dext0r/yandex_smart_home` (Yaha Cloud).** The mature
+  community integration exposes HA entities to **both Alice and Маруся** (direct
+  or cloud mode; HA ≥ 2025.12). It is *outbound* (assistants control HA); there is
+  **no inbound path** to import Yandex/Sber/VK clouds into HA.
+- **Tuya / Smart Life and Xiaomi Mi Home** — the de-facto Russian home for many
+  (grey-imported, large installed base). Both have official HA integrations (Tuya
+  cloud; Xiaomi `xiaomi_miio`) plus **unofficial local** paths (TinyTuya,
+  MIoT/UDP token extraction) that carry **ToS risk**. Keep them as opportunistic
+  HA integrations, **not** a strategy pillar.
+- **Wiren Board** — open Debian/MQTT controllers; consumable via MQTT (a real
+  local-control candidate). Rubetek, iRidi, Larnitech, and the telecom hubs
+  (Ростелеком/МТС/Beeline) are unverified/vendor-locked — do not build on them.
+
+**Verdict for Russia:** the pragmatic stack is **HA as the universal local bridge
++ the Yandex user API for Yandex homes + direct LAN/MQTT for local devices**.
+Sber and VK vendor clouds are **outbound-only** for Jarvis. HA reaches the
+Tuya/Xiaomi/Zigbee/Wi-Fi mix; nothing else does.
 
 ### 7.4 The risk-tiering problem (the crux)
 
@@ -600,6 +694,25 @@ blocked* — `McpUrlPolicy` rejects private hosts for REMOTE and allows only
 loopback for LOCAL, so a Home Assistant at `192.168.x.x` cannot be added. **Add
 the `LAN` kind first**; it is the prerequisite for the whole smart-home group.
 
+**The `LAN` kind is a relaxation, so make it a *scoped* one** — not a blanket
+"allow private IPs":
+
+- **Allow RFC-1918 only** (`10/8`, `172.16/12`, `192.168/16`) **and IPv6 ULA**
+  (`fc00::/7`).
+- **Still reject — explicitly** — link-local (`169.254/16`, `fe80::/10`, which
+  is cloud-metadata territory), the metadata address `169.254.169.254`, and any
+  non-LAN private/link-local form. Loopback stays covered by the existing LOCAL
+  rule, not the LAN one.
+- **Enforce twice:** at the literal-URL layer (`McpUrlPolicy`) **and** at connect
+  time (resolve, then check every address — `McpDnsGuard` already fails closed on
+  private ranges for REMOTE; LAN inverts that check to *require* a private
+  address with no public one in the set).
+- **Pin the host:** refuse cross-origin redirects and re-validate the `Host`
+  header, so an allowed LAN server cannot bounce the request to another target.
+- **Keep cleartext scoped.** TLS stays the default; cleartext is permitted only
+  for the LAN/local kinds the security config already enumerates, never merged
+  into the shared client.
+
 **Host advantages a third party can exploit:** many servers (breadth), user keys
 (no rev-share/account), local execution (privacy), a live tool surface
 (`McpBudget` + dynamic discovery), and a trust model (`EXTERNAL` /
@@ -660,8 +773,8 @@ memory; no new permission, no hardware.
 
 **Phase 2 — "It runs the house."** R3 MCP packs + the **`LAN` kind** (the
 prerequisite), then **R4 smart-home control** (Home Assistant via MCP + scoped
-direct LAN, with risk tiering); in parallel the awareness pillar R5 (pull →
-digest → interrupt) and R6 email.
+direct LAN + the Yandex user API, with risk tiering); in parallel the awareness
+pillar R5 (pull → digest → interrupt) and R6 email.
 
 **Phase 3 — "It ships and stays private."** R9 OTA before external distribution;
 R7 commute, R8 local device miscellany; R10 presence only if a low-power
@@ -670,7 +783,8 @@ WiFi/dock design is proven; revisit R12 only if the hardware changes.
 **Gate for every phase:** new tools declare a `ToolRisk`; new strings land in
 both locales (`ResourceParityTest`); new settings join `SettingsInventory`;
 autonomous paths use first-party `READ_ONLY` data and never relay external
-content; proactivity routes through `BehaviorArbiter`.
+content; proactivity routes through `BehaviorArbiter`; **local commands (wake,
+stop, alarms, timers, device control) still work with the network down** (§3.3).
 
 ---
 
@@ -693,6 +807,11 @@ unblocks the entire smart-home group (§7).
 - Confirm Yandex IMAP/SMTP endpoints against the live help page.
 - Confirm the Feedly consumer OAuth path (vs Enterprise-only token).
 - Confirm MAX developer access for a non-RF-entity (likely blocked).
+- **Confirm the Yandex OAuth app can obtain `iot:view`/`iot:control` without a
+  legal entity or manual review** — the one Russian-cloud inbound path (§7.3);
+  verify before committing.
+- Sber Matter/Thread support and the VK smart-home developer API — both
+  unverified (§7.3).
 - Decide the local fast-path boundary (deterministic intent vs. LLM) for obvious
   commands.
 - Decide whether to ever allow a scoped external "read grant" for autonomous
@@ -702,6 +821,8 @@ unblocks the entire smart-home group (§7).
 ## Appendix B — source provenance
 
 Competitive landscape: `lib-2` (2026 assistant research). Strategy synthesis:
-`ora-3`. Content-source + email feasibility: `lib-3`. MCP protocol/design:
-`lib-1` / `ora-1` / `ora-2`. All session findings are reproducible from the
-cited official sources; uncertainty is flagged inline above.
+`ora-3`. Content-source + email feasibility: `lib-3`. Russian smart-home
+ecosystem: `lib-4`. Product-philosophy review: external critique (2026), folded
+in §0/§3. MCP protocol/design: `lib-1` / `ora-1` / `ora-2`. All session findings
+are reproducible from the cited official sources; uncertainty is flagged inline
+above.
