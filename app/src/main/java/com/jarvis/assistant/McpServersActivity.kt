@@ -137,8 +137,11 @@ class McpServersActivity : AppCompatActivity() {
         val form = layoutInflater.inflate(R.layout.dialog_mcp_server, null, false)
         form.findViewById<TextInputEditText>(R.id.mcpNameInput)
             .setText(existing?.displayName ?: "")
-        form.findViewById<RadioGroup>(R.id.mcpKindGroup)
-            .check(if (existing?.kind == McpServerKind.LOCAL) R.id.mcpKindLocal else R.id.mcpKindRemote)
+        val kindGroup = form.findViewById<RadioGroup>(R.id.mcpKindGroup)
+        val urlLayout = form.findViewById<TextInputLayout>(R.id.mcpUrlLayout)
+        kindGroup.check(kindRadioId(existing?.kind))
+        applyUrlHint(kindGroup.checkedRadioButtonId, urlLayout)
+        kindGroup.setOnCheckedChangeListener { _, checkedId -> applyUrlHint(checkedId, urlLayout) }
         form.findViewById<TextInputEditText>(R.id.mcpUrlInput)
             .setText(existing?.url ?: "")
         form.findViewById<TextInputEditText>(R.id.mcpAuthHeaderInput)
@@ -184,10 +187,10 @@ class McpServersActivity : AppCompatActivity() {
             return null
         }
 
-        val kind = if (form.findViewById<RadioGroup>(R.id.mcpKindGroup).checkedRadioButtonId == R.id.mcpKindLocal) {
-            McpServerKind.LOCAL
-        } else {
-            McpServerKind.REMOTE
+        val kind = when (form.findViewById<RadioGroup>(R.id.mcpKindGroup).checkedRadioButtonId) {
+            R.id.mcpKindLocal -> McpServerKind.LOCAL
+            R.id.mcpKindLan -> McpServerKind.LAN
+            else -> McpServerKind.REMOTE
         }
         val url = form.findViewById<TextInputEditText>(R.id.mcpUrlInput).text.toString().trim()
         when (val result = McpUrlPolicy.validate(kind, url)) {
@@ -223,6 +226,22 @@ class McpServersActivity : AppCompatActivity() {
         )
         CredentialsStore.get().setMcpSecret(config.id, secret)
         return config
+    }
+
+    /** Checked radio id for a stored kind; a null (new server) defaults to REMOTE. */
+    private fun kindRadioId(kind: McpServerKind?): Int = when (kind) {
+        McpServerKind.LOCAL -> R.id.mcpKindLocal
+        McpServerKind.LAN -> R.id.mcpKindLan
+        McpServerKind.REMOTE, null -> R.id.mcpKindRemote
+    }
+
+    /** Show the LAN URL hint only while the LAN kind is selected. */
+    private fun applyUrlHint(checkedId: Int, urlLayout: TextInputLayout) {
+        urlLayout.helperText = if (checkedId == R.id.mcpKindLan) {
+            getString(R.string.settings_mcp_url_hint_lan)
+        } else {
+            null
+        }
     }
 
     /** Exhaustive with no `else`: a new [UrlRejection] is a compile error until mapped. */

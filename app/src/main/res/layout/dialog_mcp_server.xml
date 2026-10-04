@@ -63,6 +63,13 @@
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 android:text="@string/settings_mcp_kind_local" />
+
+            <RadioButton
+                android:id="@+id/mcpKindLan"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/settings_mcp_kind_lan" />
         </RadioGroup>
 
         <com.google.android.material.textfield.TextInputLayout

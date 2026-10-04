@@ -561,7 +561,9 @@
     <string name="settings_mcp_kind_label">Type</string>
     <string name="settings_mcp_kind_remote">Remote (https)</string>
     <string name="settings_mcp_kind_local">Local (localhost)</string>
+    <string name="settings_mcp_kind_lan">Local network (LAN)</string>
     <string name="settings_mcp_url_label">URL</string>
+    <string name="settings_mcp_url_hint_lan">Use an address on the local network; a numeric IP is preferred. The address must match the server certificate; a .local name may not resolve.</string>
     <string name="settings_mcp_auth_header_label">Authorization header</string>
     <string name="settings_mcp_secret_label">Secret</string>
     <string name="settings_mcp_access_label">Access</string>

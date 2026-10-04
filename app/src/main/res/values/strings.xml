@@ -560,7 +560,9 @@
     <string name="settings_mcp_kind_label">Тип</string>
     <string name="settings_mcp_kind_remote">Удалённый (https)</string>
     <string name="settings_mcp_kind_local">Локальный (localhost)</string>
+    <string name="settings_mcp_kind_lan">Локальная сеть (LAN)</string>
     <string name="settings_mcp_url_label">Адрес (URL)</string>
+    <string name="settings_mcp_url_hint_lan">Укажите адрес в локальной сети; лучше числовой IP. Адрес должен совпадать с сертификатом сервера; имя .local может не разрешаться.</string>
     <string name="settings_mcp_auth_header_label">Заголовок авторизации</string>
     <string name="settings_mcp_secret_label">Секрет</string>
     <string name="settings_mcp_access_label">Доступ</string>
