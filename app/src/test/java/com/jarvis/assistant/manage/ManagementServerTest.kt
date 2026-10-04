@@ -230,6 +230,17 @@ class ManagementServerTest {
     }
 
     @Test
+    fun `deleting the current session revokes it`() {
+        val id = sessionId(login())
+
+        val delete = request("DELETE", "/api/v1/sessions/current", headers = unsafeHeaders(id))
+        assertEquals(204, delete.code)
+
+        val after = request("GET", "/api/v1/status", headers = cookieHeaders(id))
+        assertEquals(401, after.code)
+    }
+
+    @Test
     fun `the static spa is served without auth`() {
         val response = request("GET", "/")
 
