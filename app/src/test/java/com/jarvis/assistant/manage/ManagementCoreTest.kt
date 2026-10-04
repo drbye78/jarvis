@@ -3,9 +3,11 @@ package com.jarvis.assistant.manage
 import com.jarvis.assistant.FakeSharedPreferences
 import com.jarvis.assistant.config.ProviderSettings
 import com.jarvis.assistant.mcp.McpServerConfig
+import com.jarvis.assistant.mcp.McpServerConfigCodec
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.InMemoryVault
 import com.jarvis.assistant.util.SecretVault
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -207,6 +209,23 @@ class ManagementCoreTest {
         assertFalse(mistypedResult.ok)
         assertTrue(mistypedResult.errors.any { it.contains("memoryEnabled") })
         assertTrue(prefs.memoryEnabled)
+    }
+
+    @Test
+    fun `import accepts the reserved top level mcpServers section`() {
+        val vault = InMemoryVault()
+        val core = coreOf(newPrefs(vault), vault)
+        val server = McpServerConfig(id = "srv", displayName = "S", url = "https://s.test/mcp")
+        val section = Json.parseToJsonElement(McpServerConfigCodec.encode(listOf(server)))
+
+        val result = core.import(ExportCodec.encode(ConfigDocument(mcpServers = section), passphrase), passphrase)
+        assertTrue(result.ok)
+        assertEquals(listOf(server), core.listMcpServers())
+
+        val malformed = ConfigDocument(mcpServers = JsonPrimitive("not-an-array"))
+        val bad = core.import(ExportCodec.encode(malformed, passphrase), passphrase)
+        assertFalse(bad.ok)
+        assertEquals(listOf(server), core.listMcpServers())
     }
 
     @Test

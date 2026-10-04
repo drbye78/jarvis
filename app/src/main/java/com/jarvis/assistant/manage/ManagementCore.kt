@@ -233,6 +233,7 @@ class ManagementCore(
         val settingWrites = mutableListOf<Pair<Binding, ManagedValue>>()
         val secretWrites = mutableListOf<Pair<Binding, String>>()
         collectSettingWrites(document, errors, settingWrites)
+        collectMcpServersWrite(document, errors, settingWrites)
         collectSecretWrites(document, errors, secretWrites)
         if (errors.isNotEmpty()) return ImportResult(applied = 0, skipped = 0, errors = errors)
 
@@ -278,6 +279,28 @@ class ManagementCore(
                     writes += binding to value
                 }
             }
+        }
+    }
+
+    /**
+     * The reserved top-level `mcpServers` section is accepted for the §14.6
+     * document shape. It is applied only when the `settings` map did NOT carry
+     * the `mcpServers` binding (our own exports carry it there) and the section
+     * is non-empty, so a settings-only document can never silently wipe the
+     * configured server list.
+     */
+    private fun collectMcpServersWrite(
+        document: ConfigDocument,
+        errors: MutableList<String>,
+        writes: MutableList<Pair<Binding, ManagedValue>>,
+    ) {
+        if (document.settings.containsKey(MCP_SERVERS_KEY)) return
+        val binding = bindings.byKey[MCP_SERVERS_KEY] ?: return
+        val servers = decodeMcpServers(document.mcpServers)
+        if (servers == null) {
+            errors += "malformed mcpServers section"
+        } else if (servers.isNotEmpty()) {
+            writes += binding to ManagedValue.JsonValue(document.mcpServers)
         }
     }
 
