@@ -6,6 +6,29 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — LAN MCP server kind
+- **A third server kind, `LAN`, reaches a Home Assistant (or any MCP server) on
+  the private network** — previously unreachable *by design*: `REMOTE` rejects
+  private hosts and `LOCAL` allows loopback only. Settings → «MCP-серверы» gains a
+  LAN radio; an `https://192.168.x.x` (or ULA) endpoint is now accepted.
+- **LAN is a reachability class, never a trust tier.** Its tools remain
+  `EXTERNAL`/`EXTERNAL_WRITE`, VOICE-turn-only, and WRITE-confirmation gated —
+  authorization semantics are unchanged.
+- **Scoped, HTTPS-only, enforced twice.** Pure `McpUrlPolicy` accepts an
+  RFC-1918 / IPv6-ULA literal or an unresolvable hostname (deferred), and rejects
+  a public IP literal, loopback, link-local, metadata, and `0.0.0.0`/`::` (now a
+  distinct `HostClass.UNSPECIFIED`). Cleartext is never permitted. At connect
+  time `McpDnsGuard` requires **every** resolved address to be private, and now
+  classifies from the raw `InetAddress` bytes (correct for v4-mapped IPv6) — so a
+  hostname that resolves public, or to a mixed record, fails closed.
+- **Redirects are refused on the MCP transport.** The per-server OkHttp client is
+  built with `followRedirects(false)`/`followSslRedirects(false)`, closing a
+  pre-existing reliance on the never-called `validateRedirect` (a 3xx is surfaced
+  as a bad response); a pure LAN cross-origin redirect rule is unit-tested too.
+- Tests: `McpUrlPolicyTest` (LAN table, `UNSPECIFIED`, `isIpLiteral`,
+  `classifyAddress`), `McpDnsGuardTest` (LAN all-private + mapped-IPv6), LAN
+  codec round-trip, and a "302 not followed" client test. JVM suite 1630 → 1644.
+
 ### Added — MCP writes require a spoken confirmation (Phase 2)
 - **WRITE-access MCP tools are now advertised and gated by an explicit confirmation.**
   A WRITE server's tools carry `ToolRisk.EXTERNAL_WRITE`; a call is allowed only on a
