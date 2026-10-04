@@ -1153,23 +1153,29 @@ visual system**; the API contract and asset packaging are frozen by this design.
 
 ### 14.6 Export / import
 
-Versioned JSON (`{format, formatVersion, appVersion, exportedAt, settings,
-mcpServers, home}`; reserved `home` section from day one), optionally wrapped in
-an **AES-256-GCM envelope** keyed by PBKDF2/Argon2 over a passphrase. Import
-validates every key against `ManagementBindings`, type-checks, and **applies
-settings atomically** (one editor commit); on validation failure, writes nothing.
-Entry points: Settings → MANAGEMENT via SAF (host-owned intents) and the REST
+**The export is ALWAYS encrypted and opaque — there is no plaintext path.** A
+user passphrase is required to export and to import; the on-disk artifact is a
+single **AES-256-GCM envelope** (key derived from the passphrase by Argon2id,
+16-byte salt, random 12-byte nonce) with only a small **cleartext versioned
+header** (`{format, formatVersion, appVersion, kdf{...}, nonce, ciphertext}`) so
+import can recognise and parse it. Plaintext settings never touch disk — config
+is opaque to the user and to anything that finds the file. The plaintext
+document it wraps is versioned JSON with a **reserved `home` section from day
+one** (`{settings, mcpServers, home}`). Import requires the passphrase, validates
+every key against `ManagementBindings`, type-checks, and **applies settings
+atomically** (one editor commit); on validation failure it writes nothing. Entry
+points: Settings → MANAGEMENT via SAF (host-owned intents) and the REST
 `/export`/`/import`.
 
-**Secrets in export — decision:** **default excludes secrets by construction.**
-An explicit **opt-in "include secrets"** is offered (the friction of re-entering
-~10 secrets + unbounded `mcpSecret(id)` on a device migration is real), but when
-enabled it is deliberately constrained: **encryption is mandatory** (refuse to
-write a plaintext file containing secrets), a passphrase is required, a count +
-warning is shown, and it is never automatic/backgrounded. The trade is explicit:
-exported secrets lose the device-bound vault's protection and rely on the
-passphrase alone. This supersedes the earlier "bulk export stays impossible"
-line — portable secret backup is a deliberate, opt-in risk.
+**Secrets in export — decision:** the envelope is always encrypted, so the only
+question is *what* goes inside. **Default excludes secrets**; an explicit
+**opt-in "include secrets"** adds them to the same encrypted envelope (the
+friction of re-entering ~10 secrets + unbounded `mcpSecret(id)` on a device
+migration is real), with a count + warning and never automatic/backgrounded. The
+trade is explicit: exported secrets leave the device-bound vault's protection and
+rely on the passphrase alone. This supersedes the earlier "bulk export stays
+impossible" line — portable secret backup is a deliberate, opt-in risk, but it is
+never a *plaintext* risk because the container is always encrypted.
 
 ### 14.7 Voice enable/disable (confirmation-gated)
 
