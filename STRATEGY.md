@@ -314,6 +314,7 @@ Ranked by **(user value) × (leverage of existing code) × (feasibility without 
 | R10 | Presence/geofence routines | P2 | L | Fights the platform (no GMS geofencing, no `location` FGS type) |
 | R11 | Ambient idle dashboard | P3 | M | Screen-off device; worsens the accepted MapKit attribution risk |
 | R12 | Speaker ID / sound events | **Reject** | L | Need a mic array |
+| R13 | **Management surface — config export/import + loopback API** (§14) | P2 | M | Config pain grows with R4; export/import first, loopback+`adb forward` second, LAN UI opt-in only |
 
 ### 5.1 Local device miscellany (cheap wins)
 
@@ -1026,6 +1027,75 @@ unblocks the entire smart-home group (§7).
 
 ---
 
+## 14. Managing a growing configuration (R13)
+
+As the capability set grows, configuration does too — and the tablet keyboard is
+a poor editor. Current surface: **9 category screens, 42 inventory entries, 44
+reflected members, 35 plain pref keys, 9 secret accessors, 1 composite blob**
+(`mcpServers`); R4 (§7.2.1) adds a 10th category plus `homeEntities` /
+`homeAliases` / `homeGrants` and the HA token, and a 50+-device home makes
+aliases/grants the hardest thing to edit by hand. The pain is real. But **every
+hardening decision so far made Jarvis an outbound client**; a management server
+makes it an *inbound* one, holding the vault on an always-on, physically-acting
+device. That is a new attack class (LAN peers, DNS rebinding, MITM), not a UI
+feature — so the surface must be chosen by blast radius, not convenience.
+
+**Constraints (verified against the code):**
+- **Secrets are AndroidKeyStore-bound** — a manager must run **in-process** (the
+  FGS is the only always-on owner); secret values cannot be read from files by a
+  separate process. **Bulk secret export is impossible by design** — and should
+  stay impossible.
+- **No inbound surface exists** (no AIDL/ContentProvider/HTTP). This would be the
+  first externally reachable write surface; the `EXTERNAL_WRITE` +
+  `WriteConfirmation` gate is the precedent for authorization.
+- **`ApplyPolicy` splits by effect** (8 keys → service restart, `mapKitApiKey` →
+  process restart); a remote writer must model "stored but not yet active."
+- **Reflection-pinned tests** (`SettingsInventoryTest` 42/44; `SettingsCategoryTest`
+  9) mean every managed key must be registered.
+
+**Decision — build by blast radius, not by convenience:**
+
+1. **First: config export/import (SAF JSON).** Solves the editing ergonomics with
+   **zero inbound attack surface** — moves config between devices, makes bulk
+   edits on a real keyboard, and composes with the vault (secrets are **excluded
+   by construction**; re-enter after import). This is the management core's first
+   client and the highest value per risk.
+2. **Second: a loopback-only management server + `adb forward`.** A real
+   REST/JSON and WS interface bound to `127.0.0.1` only, reached from a laptop
+   with `adb forward`. Full browser/editor ergonomics; **no externally reachable
+   socket**; trust is adb's USB-debug authorization (stronger than any LAN
+   credential). Loopback cleartext is already permitted by
+   `network_security_config.xml` (`McpLoopbackSecurityConfigTest`).
+3. **Later, opt-in only: a LAN web UI.** Off by default. If ever built, it needs
+   first-run **on-device pairing** (show a one-time code on the tablet; no
+   shipped default password), token auth, and **Host/Origin + `Sec-Fetch-Site`
+   CSRF/rebinding defenses** (reject repeated headers and `Sec-Fetch-Site: none`).
+4. **Never: configuration over MCP.** Prior art is unanimous — HA's MCP server and
+   every comparable appliance expose **capabilities**, not config; no appliance
+   was found that mutates its own settings over MCP. It would invert the trust
+   direction (an LLM editing secrets/grants) and collide with the consequence-tier
+   model (§7.4).
+
+**Architecture — extract the core; the API/UI are clients, not a second path.**
+The durable layer stays `AppPrefs` + the vault (the app cannot depend on a server
+for its own settings). Pull a **pure management core** — typed get/set over the
+`SettingsInventory` keys, the composite codecs, and write-only secret
+provisioning — out of the Activities (the `mcp/` layer is the model), and have
+export/import, the loopback API, and (if ever) the web UI all call it. Rejecting
+the "REST is the source of truth" inversion is deliberate: it would make the
+appliance's own config depend on an inbound server.
+
+**Secrets rule (all surfaces):** **write-only.** Accept a value; return only
+`{set:true}`; never echo, never include in export, never log. A generated local
+token, if one exists, is shown **once** at creation with rotation/revocation.
+
+**Sequencing:** build the management core during **R4** (HA defines what must be
+managed), ship **export/import** on top of it, add the **loopback API** for
+owner/dev use, and treat the LAN UI as a separate, hardened phase gated on real
+need.
+
+---
+
 ## Appendix A — open questions
 
 - Confirm Yandex IMAP/SMTP endpoints against the live help page.
@@ -1048,6 +1118,9 @@ unblocks the entire smart-home group (§7).
   commands.
 - Decide whether to ever allow a scoped external "read grant" for autonomous
   turns (§8).
+- **Management surface (§14):** decide the export format/scope (which keys, how
+  composite blobs version), whether the loopback API ships for owner use, and —
+  only if a real need appears — the LAN-UI hardening stack.
 - On-device validation of EMUI notification access and GPS lock quality indoors.
 
 ## Appendix B — source provenance
@@ -1056,5 +1129,6 @@ Competitive landscape: `lib-2` (2026 assistant research). Strategy synthesis:
 `ora-3`. Content-source + email feasibility: `lib-3`. Russian smart-home
 ecosystem + Yandex user-API deep-dive: `lib-4`. Product-philosophy review:
 external critique (2026), folded in §0/§3. MCP protocol/design: `lib-1` / `ora-1`
-/ `ora-2`. All session findings are reproducible from the cited official
-sources; uncertainty is flagged inline above.
+/ `ora-2`. Config-surface recon: `exp-1`; management-surface prior art: `lib-5`.
+All session findings are reproducible from the cited official sources;
+uncertainty is flagged inline above.
