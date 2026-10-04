@@ -23,8 +23,8 @@ import java.net.UnknownHostException
  * A rejection fails closed with a content-free [UnknownHostException] — the
  * shape OkHttp already surfaces for a failed lookup — so neither the hostname
  * nor the resolved address is ever echoed (the MCP lane logs no URLs).
- * Address classification is delegated to [McpUrlPolicy.classifyHost], keeping
- * exactly ONE private-address definition in the lane.
+ * Address classification is delegated to [McpUrlPolicy.classifyAddress] over
+ * the raw bytes, keeping exactly ONE private-address definition in the lane.
  *
  * One instance is attached to the per-server client built by the composition
  * root; the SHARED graph client is never touched.
@@ -38,7 +38,7 @@ class McpDnsGuard private constructor(
     override fun lookup(hostname: String): List<InetAddress> {
         val addresses = delegate.lookup(hostname)
         for (address in addresses) {
-            val hostClass = McpUrlPolicy.classifyHost(address.hostAddress.orEmpty())
+            val hostClass = McpUrlPolicy.classifyAddress(address)
             val allowed = when (kind) {
                 McpServerKind.REMOTE -> hostClass == HostClass.PUBLIC
                 McpServerKind.LOCAL -> hostClass == HostClass.LOOPBACK
