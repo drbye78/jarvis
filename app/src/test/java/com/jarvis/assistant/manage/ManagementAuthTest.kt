@@ -4,7 +4,7 @@ import com.jarvis.assistant.util.InMemoryVault
 import com.jarvis.assistant.util.SecretVault
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -94,7 +94,7 @@ class ManagementAuthTest {
     }
 
     @Test
-    fun `change password writes a hashed record the old password no longer matches`() {
+    fun `change password stores a recoverable secret shown in the app UI`() {
         val (auth, vault) = newPreparedAuth()
         vault.putString(SecretVault.KEY_MANAGEMENT_PASSWORD, "the-password")
         val next = "brand-new-password"
@@ -104,7 +104,8 @@ class ManagementAuthTest {
             auth.changePassword("1.1.1.1", "the-password".toCharArray(), next.toCharArray()),
         )
         val stored = vault.getString(SecretVault.KEY_MANAGEMENT_PASSWORD)
-        assertNotNull("the stored form is a decodable PasswordRecord", PasswordHasher.decodeRecord(stored))
+        assertEquals("the UI can re-show the password, so it is stored reversibly", next, stored)
+        assertNull("the management password is no longer an Argon2id record", PasswordHasher.decodeRecord(stored))
         assertEquals(ManagementAuthResult.Ok, auth.authenticate("1.1.1.1", next.toCharArray()))
         assertEquals(ManagementAuthResult.BadPassword, auth.authenticate("1.1.1.1", "the-password".toCharArray()))
     }

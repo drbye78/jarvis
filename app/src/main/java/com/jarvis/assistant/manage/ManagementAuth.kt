@@ -21,19 +21,20 @@ sealed interface ManagementAuthResult {
  * The password + rate-limit gate for the R13 §14 management surface.
  *
  * **Password storage — the decision (documented at the call site too).** The
- * server verifies against whatever the vault's `management_password` slot holds
- * and accepts BOTH representations:
+ * owner's spec requires the management password be **shown in the app UI on
+ * request**, so it is stored **reversibly** in the Keystore vault: a password
+ * change writes the new password as the vault value, and the Settings screen
+ * generates and stores the same recoverable form. The server still reads BOTH
+ * representations for compatibility:
  *
- *  1. a [PasswordRecord] JSON (preferred) — decoded and verified with Argon2id
- *     via [PasswordHasher.verify]; a password change through this class writes
- *     this form, so the plaintext is never persisted by the server; and
- *  2. a **plaintext** string (legacy) — compared with
- *     [MessageDigest.isEqual] (constant-time for equal lengths).
+ *  1. a **plaintext** string (the current form) — compared with
+ *     [MessageDigest.isEqual] (constant-time for equal lengths); and
+ *  2. a [PasswordRecord] JSON (legacy, read-only) — decoded and verified with
+ *     Argon2id via [PasswordHasher.verify]. An Argon2id record can no longer be
+ *     written through this class, but one already in the vault still verifies.
  *
- * The settings controller (`ManagementSettingsController`) still generates and
- * writes the 20-char plaintext, so this compatibility branch is required until a
- * follow-up lane migrates that write to [PasswordHasher.encodeRecord]. Keeping
- * the read side tolerant means the server can ship before the UI lane changes.
+ * [PasswordHasher] is retained for one-way secret needs; only the management
+ * password is deliberately recoverable.
  *
  * **Rate limiting.** Failed attempts are counted per source IP in a rolling
  * window; once [maxFailures] is reached the IP is locked for [lockoutMs] and a
@@ -98,17 +99,18 @@ class ManagementAuth(
     }
 
     /**
-     * Verify [current], then store [next] as a fresh Argon2id [PasswordRecord].
-     * Returns the current-password failure/lockout result unchanged; an empty
-     * [next] is reported as [ManagementAuthResult.BadPassword] (the route
-     * rejects it as a 400 before reaching here, so this is only a safety net).
+     * Verify [current], then store [next] as a **recoverable** vault value so
+     * the owner can re-show it in the app UI (see the class KDoc). Returns the
+     * current-password failure/lockout result unchanged; an empty [next] is
+     * reported as [ManagementAuthResult.BadPassword] (the route rejects it as a
+     * 400 before reaching here, so this is only a safety net).
      */
     @Synchronized
     fun changePassword(sourceIp: String, current: CharArray, next: CharArray): ManagementAuthResult {
         val result = authenticate(sourceIp, current)
         if (result !is ManagementAuthResult.Ok) return result
         if (next.isEmpty() || next.concatToString().isBlank()) return ManagementAuthResult.BadPassword
-        writeStoredSecret(PasswordHasher.encodeRecord(PasswordHasher.hash(next)))
+        writeStoredSecret(next.concatToString())
         return ManagementAuthResult.Ok
     }
 
