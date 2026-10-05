@@ -1,5 +1,7 @@
 package com.jarvis.assistant.manage
 
+import com.jarvis.assistant.audio.aec.AecMode
+import com.jarvis.assistant.cognitive.embed.EmbedderChoice
 import com.jarvis.assistant.config.ProviderSettings
 import com.jarvis.assistant.mcp.McpServerConfig
 import com.jarvis.assistant.mcp.McpServerConfigCodec
@@ -9,6 +11,7 @@ import com.jarvis.assistant.settings.SettingsInventory
 import com.jarvis.assistant.speech.SpeechBackend
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.SecretVault
+import com.jarvis.assistant.weather.WeatherProvider
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
@@ -47,6 +50,12 @@ data class Binding(
      * `picovoice_key`) and the constants are the single source of truth.
      */
     val secretVaultKey: String? = null,
+    /**
+     * The allowed persisted values for an [ManagedSettingType.ENUM] binding,
+     * derived from the same enum/constant the [get]/[set] pair round-trips (so
+     * the vocabulary cannot drift). Empty for every non-enum binding.
+     */
+    val options: List<String> = emptyList(),
     /** Reads the current value. Secret bindings return presence only. */
     val get: (AppPrefs) -> ManagedValue,
     /** Writes a value the caller has already type-checked against [type]. */
@@ -61,6 +70,7 @@ data class Binding(
             policy = policy,
             essential = essential,
             secret = secret,
+            options = options,
         )
 }
 
@@ -78,6 +88,7 @@ class ManagementBindings(private val vault: SecretVault) {
         binding(
             key = "providerType",
             type = ManagedSettingType.ENUM,
+            options = ProviderSettings.Type.entries.map { providerWire(it) },
             get = { p -> ManagedValue.EnumValue(providerWire(p.providerType)) },
             set = { p, v -> v.stringOrNull()?.let { p.providerType = providerFromWire(it) } },
         ),
@@ -116,6 +127,7 @@ class ManagementBindings(private val vault: SecretVault) {
         binding(
             key = "speechBackend",
             type = ManagedSettingType.ENUM,
+            options = SpeechBackend.entries.map { SpeechBackend.toPref(it) },
             get = { p -> ManagedValue.EnumValue(SpeechBackend.toPref(p.speechBackend)) },
             set = { p, v -> v.stringOrNull()?.let { p.speechBackend = SpeechBackend.fromPref(it) } },
         ),
@@ -166,12 +178,14 @@ class ManagementBindings(private val vault: SecretVault) {
         binding(
             key = "wakeWordEngine",
             type = ManagedSettingType.ENUM,
+            options = WAKE_WORD_ENGINE_OPTIONS,
             get = { p -> ManagedValue.EnumValue(p.wakeWordEngine) },
             set = { p, v -> v.stringOrNull()?.let { p.wakeWordEngine = it } },
         ),
         binding(
             key = "wakeWordModel",
             type = ManagedSettingType.ENUM,
+            options = WAKE_WORD_MODEL_OPTIONS,
             get = { p -> ManagedValue.EnumValue(p.wakeWordModel) },
             set = { p, v -> v.stringOrNull()?.let { p.wakeWordModel = it } },
         ),
@@ -196,6 +210,7 @@ class ManagementBindings(private val vault: SecretVault) {
         binding(
             key = "aecMode",
             type = ManagedSettingType.ENUM,
+            options = AecMode.entries.map { AecMode.toPref(it) },
             get = { p -> ManagedValue.EnumValue(p.aecMode) },
             set = { p, v -> v.stringOrNull()?.let { p.aecMode = it } },
         ),
@@ -204,6 +219,7 @@ class ManagementBindings(private val vault: SecretVault) {
         binding(
             key = "weatherProvider",
             type = ManagedSettingType.ENUM,
+            options = WeatherProvider.entries.map { it.id },
             get = { p -> ManagedValue.EnumValue(p.weatherProvider) },
             set = { p, v -> v.stringOrNull()?.let { p.weatherProvider = it } },
         ),
@@ -244,6 +260,7 @@ class ManagementBindings(private val vault: SecretVault) {
         binding(
             key = "memoryEmbedder",
             type = ManagedSettingType.ENUM,
+            options = EmbedderChoice.entries.map { it.name },
             get = { p -> ManagedValue.EnumValue(p.memoryEmbedder) },
             set = { p, v -> v.stringOrNull()?.let { p.memoryEmbedder = it } },
         ),
@@ -306,6 +323,7 @@ class ManagementBindings(private val vault: SecretVault) {
         binding(
             key = "managementMode",
             type = ManagedSettingType.ENUM,
+            options = ManagementMode.entries.map { it.id },
             get = { p -> ManagedValue.EnumValue(ManagementMode.fromId(p.managementMode).id) },
             set = { p, v -> v.stringOrNull()?.let { p.managementMode = ManagementMode.fromId(it).id } },
         ),
@@ -340,6 +358,7 @@ class ManagementBindings(private val vault: SecretVault) {
         type: ManagedSettingType,
         secret: Boolean = false,
         secretVaultKey: String? = null,
+        options: List<String> = emptyList(),
         get: (AppPrefs) -> ManagedValue,
         set: (AppPrefs, ManagedValue) -> Unit,
     ): Binding {
@@ -353,6 +372,7 @@ class ManagementBindings(private val vault: SecretVault) {
             essential = entry.essential,
             secret = secret,
             secretVaultKey = secretVaultKey,
+            options = options,
             get = get,
             set = set,
         )
@@ -397,6 +417,23 @@ private fun providerFromWire(raw: String): ProviderSettings.Type = when (raw.tri
     "yandex" -> ProviderSettings.Type.YANDEX
     else -> ProviderSettings.Type.GIGACHAT
 }
+
+/**
+ * Wake-word engine vocabulary (`AppPrefs.wakeWordEngine`: `"sherpa"` |
+ * `"porcupine"`). NOT a plain enum — the pref is a raw string written by the
+ * Settings radio, and the settings lane's `ListeningSettingsController`
+ * constants are private. This list is therefore the management surface's
+ * single source of allowed values and must track the AppPrefs KDoc.
+ */
+private val WAKE_WORD_ENGINE_OPTIONS: List<String> = listOf("sherpa", "porcupine")
+
+/**
+ * Wake-word model vocabulary (`AppPrefs.wakeWordModel`): `"builtin"` |
+ * `"custom_bundled"` | `"custom_user"`. NOT a plain enum (the radio has two
+ * options but an imported `.ppn` persists `custom_user`); see
+ * [WAKE_WORD_ENGINE_OPTIONS].
+ */
+private val WAKE_WORD_MODEL_OPTIONS: List<String> = listOf("builtin", "custom_bundled", "custom_user")
 
 /** String- or enum-valued extraction shared by every string-shaped setter. */
 private fun ManagedValue.stringOrNull(): String? = when (this) {

@@ -4,7 +4,12 @@ import com.jarvis.assistant.FakeSharedPreferences
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.InMemoryVault
 import com.jarvis.assistant.util.SecretVault
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaType
@@ -15,6 +20,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -147,6 +153,50 @@ class ManagementServerTest {
 
         val secret = request("GET", "/api/v1/settings/yandexApiKey", headers = cookieHeaders(id))
         assertEquals(403, secret.code)
+    }
+
+    @Test
+    fun `settings payload advertises enum options and omits them for plain keys`() {
+        val id = sessionId(login())
+
+        val list = request("GET", "/api/v1/settings", headers = cookieHeaders(id))
+        assertEquals(200, list.code)
+        val rows = (Json.parseToJsonElement(list.body) as JsonArray).map { it.jsonObject }
+        val enumRow = rows.first { it["key"]?.jsonPrimitive?.content == "providerType" }
+        assertEquals(
+            listOf("gigachat", "openai", "yandex"),
+            enumRow["options"]?.jsonArray?.map { it.jsonPrimitive.content },
+        )
+        val plainRow = rows.first { it["key"]?.jsonPrimitive?.content == "memoryEnabled" }
+        assertNull("a non-enum key must not carry options", plainRow["options"])
+
+        val single = request("GET", "/api/v1/settings/providerType", headers = cookieHeaders(id))
+        assertEquals(200, single.code)
+        val singleObject = Json.parseToJsonElement(single.body).jsonObject
+        assertEquals(
+            listOf("gigachat", "openai", "yandex"),
+            singleObject["options"]?.jsonArray?.map { it.jsonPrimitive.content },
+        )
+
+        val plainSingle = request("GET", "/api/v1/settings/memoryEnabled", headers = cookieHeaders(id))
+        assertEquals(200, plainSingle.code)
+        assertNull(Json.parseToJsonElement(plainSingle.body).jsonObject["options"])
+    }
+
+    @Test
+    fun `an out-of-vocabulary enum write is rejected and writes nothing`() {
+        val id = sessionId(login())
+        val before = prefs.weatherProvider
+
+        val response = request(
+            "PUT",
+            "/api/v1/settings/weatherProvider",
+            unsafeHeaders(id),
+            """{"value":"not-a-provider"}""",
+        )
+
+        assertEquals(400, response.code)
+        assertEquals(before, prefs.weatherProvider)
     }
 
     @Test

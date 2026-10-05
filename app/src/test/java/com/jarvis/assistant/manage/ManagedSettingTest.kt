@@ -43,6 +43,21 @@ class ManagedSettingTest {
     }
 
     @Test
+    fun `options default to empty and are carried verbatim`() {
+        val plain = ManagedSetting("ttsVoice", "speech", ManagedSettingType.STRING, ManagedApplyPolicy.LIVE)
+        assertTrue("non-enum settings carry no vocabulary", plain.options.isEmpty())
+
+        val enum = ManagedSetting(
+            key = "speechBackend",
+            category = "speech",
+            type = ManagedSettingType.ENUM,
+            policy = ManagedApplyPolicy.SERVICE_RESTART,
+            options = listOf("sber", "yandex"),
+        )
+        assertEquals(listOf("sber", "yandex"), enum.options)
+    }
+
+    @Test
     fun `all managed apply policies exist`() {
         assertEquals(3, ManagedApplyPolicy.entries.size)
         assertTrue(ManagedApplyPolicy.entries.contains(ManagedApplyPolicy.APP_RESTART))

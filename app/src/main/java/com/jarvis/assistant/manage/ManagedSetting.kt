@@ -48,6 +48,13 @@ enum class ManagedApplyPolicy {
  *
  * @property essential a setting without which the assistant is materially
  *   degraded; used to rank/warn in the UI.
+ * @property options the complete list of allowed persisted values, populated
+ *   **only** for [ManagedSettingType.ENUM] (and any future constrained-string)
+ *   settings and empty for every other type. It is the SINGLE source of truth
+ *   for the allowed vocabulary: the REST layer advertises it so a UI renders a
+ *   select instead of free text, and `ManagementCore` rejects a write outside
+ *   it. For a non-enum setting the default empty list keeps the payload
+ *   unchanged.
  */
 data class ManagedSetting(
     val key: String,
@@ -56,6 +63,7 @@ data class ManagedSetting(
     val policy: ManagedApplyPolicy,
     val essential: Boolean = false,
     val secret: Boolean = false,
+    val options: List<String> = emptyList(),
 ) {
     init {
         require(key.isNotBlank()) { "managed setting key must not be blank" }

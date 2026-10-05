@@ -328,6 +328,15 @@ class ManagementCore(
     /** Type check plus the composite-blob structure check for `mcpServers`. */
     private fun isValid(binding: Binding, value: ManagedValue): Boolean {
         if (!matchesType(binding.type, value)) return false
+        // An ENUM write must be inside the binding's advertised vocabulary in
+        // ADDITION to being string-shaped (fail-closed: an empty options list
+        // rejects every value). This mirrors the type-mismatch path, so a
+        // hand-built request can never persist an out-of-vocabulary enum.
+        if (binding.type == ManagedSettingType.ENUM &&
+            (value as? ManagedValue.EnumValue)?.value !in binding.options
+        ) {
+            return false
+        }
         if (binding.key != MCP_SERVERS_KEY) return true
         val element = (value as? ManagedValue.JsonValue)?.value ?: return false
         return decodeMcpServers(element) != null

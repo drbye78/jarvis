@@ -12,6 +12,7 @@ import com.jarvis.assistant.util.InMemoryVault
 import com.jarvis.assistant.util.SecretVault
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -53,6 +54,40 @@ class ManagementBindingsTest {
             assertEquals(entry.essential, binding.essential)
             assertEquals(ApplyPolicies.of(entry.key).toManagedPolicy(), binding.policy)
         }
+    }
+
+    @Test
+    fun `every enum binding advertises non-empty options that round trip`() {
+        val prefs = newPrefs()
+        val enums = bindings().all.filter { it.type == ManagedSettingType.ENUM }
+        assertEquals(8, enums.size)
+        enums.forEach { binding ->
+            assertTrue("enum ${binding.key} exposes no options", binding.options.isNotEmpty())
+            binding.options.forEach { option ->
+                binding.set(prefs, ManagedValue.EnumValue(option))
+                assertEquals(
+                    "enum ${binding.key} does not round-trip '$option'",
+                    ManagedValue.EnumValue(option),
+                    binding.get(prefs),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `enum options are derived from the persisted vocabulary`() {
+        val byKey = bindings().byKey
+        assertEquals(listOf("gigachat", "openai", "yandex"), byKey.getValue("providerType").options)
+        assertEquals(listOf("sber", "yandex"), byKey.getValue("speechBackend").options)
+        assertEquals(listOf("sherpa", "porcupine"), byKey.getValue("wakeWordEngine").options)
+        assertEquals(
+            listOf("builtin", "custom_bundled", "custom_user"),
+            byKey.getValue("wakeWordModel").options,
+        )
+        assertEquals(listOf("off", "hardware", "software"), byKey.getValue("aecMode").options)
+        assertEquals(listOf("open_meteo", "project_eol"), byKey.getValue("weatherProvider").options)
+        assertEquals(listOf("AUTO", "CLOUD", "LOCAL", "OFF"), byKey.getValue("memoryEmbedder").options)
+        assertEquals(listOf("disabled", "localhost", "lan"), byKey.getValue("managementMode").options)
     }
 
     @Test

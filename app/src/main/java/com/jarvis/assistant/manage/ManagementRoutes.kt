@@ -254,6 +254,11 @@ class ManagementRoutes(
                         put("policy", setting.policy.name)
                         put("essential", setting.essential)
                         put("secret", setting.secret)
+                        // Only enum/constrained settings carry a vocabulary;
+                        // omitting it keeps the payload unchanged for the rest.
+                        if (setting.options.isNotEmpty()) {
+                            putJsonArray("options") { setting.options.forEach { add(JsonPrimitive(it)) } }
+                        }
                         if (!setting.secret) core.getSetting(setting.key)?.let { put("value", it.toJsonElement()) }
                     },
                 )
@@ -276,6 +281,9 @@ class ManagementRoutes(
                 put("key", key)
                 put("type", meta.type.name)
                 put("value", value.toJsonElement())
+                if (meta.options.isNotEmpty()) {
+                    putJsonArray("options") { meta.options.forEach { add(JsonPrimitive(it)) } }
+                }
             },
         )
     }

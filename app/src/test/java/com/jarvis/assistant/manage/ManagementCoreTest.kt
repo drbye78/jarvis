@@ -111,6 +111,35 @@ class ManagementCoreTest {
     }
 
     @Test
+    fun `listSettings carries the enum vocabulary and omits it for plain settings`() {
+        val vault = InMemoryVault()
+        val core = coreOf(newPrefs(vault), vault)
+        val byKey = core.listSettings().associateBy { it.key }
+
+        assertEquals(listOf("gigachat", "openai", "yandex"), byKey.getValue("providerType").options)
+        assertTrue(byKey.getValue("memoryEnabled").options.isEmpty())
+        assertEquals(listOf("gigachat", "openai", "yandex"), core.setting("providerType")?.options)
+        assertTrue(core.setting("memoryEnabled")?.options?.isEmpty() == true)
+    }
+
+    @Test
+    fun `setSetting rejects an out-of-vocabulary enum and writes nothing`() {
+        val vault = InMemoryVault()
+        val prefs = newPrefs(vault)
+        val core = coreOf(prefs, vault)
+
+        assertNull(core.setSetting("weatherProvider", ManagedValue.EnumValue("bogus")))
+        assertEquals("project_eol", prefs.weatherProvider)
+
+        assertEquals(
+            ManagedApplyPolicy.LIVE,
+            core.setSetting("weatherProvider", ManagedValue.EnumValue("open_meteo")),
+        )
+        assertEquals("open_meteo", prefs.weatherProvider)
+        assertEquals(ManagedValue.EnumValue("open_meteo"), core.getSetting("weatherProvider"))
+    }
+
+    @Test
     fun `secrets are listed by presence and set clear are write only`() {
         val vault = InMemoryVault()
         val core = coreOf(newPrefs(vault), vault)
