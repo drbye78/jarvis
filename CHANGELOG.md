@@ -6,6 +6,44 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — external management surface (R13, disabled by default)
+- **Jarvis can now be managed from a browser on the same machine or LAN — off
+  by default, enabled deliberately in Settings or by voice.** A new `manage/`
+  subsystem adds an HTTPS config console + REST API that is **config-only, never
+  actions**: it does not cross `ToolAuthorization`/`ToolRisk`, so it can change
+  settings but cannot run tools, control the home, ring alarms or play music —
+  the core blast-radius control. Three modes: `DISABLED` (default), `LOCALHOST`
+  (loopback, for `adb forward`), `LAN` (binds the device Wi-Fi address). The
+  active flag is **in-memory only**, so a reboot drops LAN structurally.
+- **HTTPS-only, password-protected.** A self-signed certificate is generated on
+  device (BouncyCastle — Android has no public cert-builder API) and its PKCS#12
+  key + password are persisted in the Keystore vault, so the SHA-256 fingerprint
+  the user verifies is **stable across service/process restarts**. Ktor-Netty
+  terminates TLS (CIO cannot). The password is shown in the app UI on request and
+  changeable; browser sessions are `HttpOnly; Secure; SameSite=Strict` cookies
+  and REST scripts use `Authorization: Bearer`.
+- **Hardened by construction.** Binds a specific interface (never `0.0.0.0`), a
+  `Host` allow-list defeats DNS rebinding, Go-style cross-origin protection
+  (`Sec-Fetch-Site` `same-origin`/`none`, else `Origin` must equal `Host`; safe
+  methods always allowed), no CORS, strict CSP, per-IP login rate-limit +
+  lockout, and secrets are write-only across the whole surface.
+- **Web console** in `assets/web/` — static, offline, no build step (hand-written
+  HTML + ES modules + CSS, strict-CSP compliant), Russian-first, with status,
+  per-category settings, write-only secrets, MCP server CRUD, management mode,
+  export/import and password change.
+- **Always-encrypted config export/import** (`ExportCodec`: AES-256-GCM under an
+  Argon2id-derived key). The artifact is opaque with no plaintext path; secrets
+  are opt-in *inside* the encrypted envelope, and import validates every key
+  before applying anything.
+- **Reflection-free binding** (`ManagementBindings`): the settings↔API map is
+  explicit (release is R8-minified), and a test fails the build if any
+  `SettingsInventory` entry has no binding. `SettingsCategory.MANAGEMENT`
+  aggregates the controls and a live status/activate row.
+- Tests: `manage/*` (mode/activation, Argon2id hashing, sessions, export codec,
+  Host/cross-origin/header guards, auth rate-limit, a real loopback-HTTPS server,
+  TLS persistence across a simulated restart, bindings/core) plus the settings
+  registry. JVM suite → **1743 tests, 0 failures**; detekt 0.
+
 ### Added — LAN MCP server kind
 - **A third server kind, `LAN`, reaches a Home Assistant (or any MCP server) on
   the private network** — previously unreachable *by design*: `REMOTE` rejects

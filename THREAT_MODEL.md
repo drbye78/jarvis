@@ -15,8 +15,16 @@ explicitly does not, and which operations need whose authorization.**
 
 Jarvis is an always-on, voice-first assistant for a **single-user, GMS-free
 Android tablet** that is expected to be powered and on Wi-Fi. The appliance
-assumption is deliberate and shapes the model: there is no multi-user story, no
-remote management plane, and no account system.
+assumption is deliberate and shapes the model: there is no multi-user story and
+no account system, and there is no remote management plane **by default**.
+
+One optional exception exists (R13): a **disabled-by-default, HTTPS,
+password-protected management surface** (`manage/`) that exposes configuration
+through a browser console and a config-only REST API. It is off unless the owner
+enables it in Settings or by voice, it is never a command channel (see §4), and
+the active flag is in-memory only, so a reboot drops LAN exposure structurally.
+It is described here as its own trust boundary rather than folded into "no remote
+management plane", which is now true only of the default state.
 
 ```
 mic → wake word (on-device) → ASR (cloud) → LLM (cloud) → tool dispatch
@@ -101,8 +109,12 @@ What an attacker with local access can obtain, by access level:
 
 ### 3.1 Network-adjacent
 - All app traffic is TLS. `usesCleartextTraffic="false"`
-  (`AndroidManifest.xml:87`) and no `networkSecurityConfig` override exists, so
-  cleartext is refused process-wide.
+  (`AndroidManifest.xml:87`), with a `network_security_config` that re-enables
+  cleartext ONLY for loopback (`res/xml/network_security_config.xml`), so
+  cleartext to any non-loopback host is refused process-wide.
+- **Inbound: the management surface is the one listener, and it is off by
+  default** (see §3.6). There is otherwise no listening socket and no exported
+  IPC surface that accepts commands.
 - Sber-facing hosts get a composite trust manager whose Минцифры fallback is
   **host-scoped** to `sber.ru` / `sberbank.ru` / `giga.chat`
   (`util/SberTrust.kt:63`). Every other host — including a user-configured
@@ -190,6 +202,40 @@ the prompt on later turns. Neither is solved by the current design.
 Tool results re-enter history as `role:"tool"` content and are treated as data.
 They are the same class of risk as §3.3 and are covered by the same boundary.
 
+### 3.6 The management surface (R13 — opt-in, config-only)
+A new inbound listener, **disabled by default and never a command channel**.
+What it can and cannot do is the whole point:
+
+- **Config-only, never actions.** The REST API and console read/write
+  *settings*, MCP-server definitions, secrets (write-only) and the encrypted
+  config artifact. They do **not** cross `ToolAuthorization`/`ToolRisk`: there is
+  no path from the server to a tool, the home, alarms, music or `openApp`. A
+  stolen session therefore yields configuration, not the appliance's actuators.
+- **Off by default, in-memory activation.** `managementMode` defaults to
+  `disabled`; enabling is a deliberate Settings/voice act, and the *active* flag
+  lives only in memory (`ManagementActivation`), so a reboot drops LAN
+  structurally and it must be re-enabled. Binds a specific interface
+  (`127.0.0.1` or the device's Wi-Fi address), never `0.0.0.0`.
+- **HTTPS-only** (Ktor-Netty; a self-signed cert generated on-device and
+  persisted in the vault, so the fingerprint is stable) with a password gated by
+  Argon2id/constant-time compare and a per-IP rate-limit + lockout. Browser
+  sessions are `HttpOnly; Secure; SameSite=Strict`; scripts use
+  `Authorization: Bearer`.
+- **Hardening in depth:** a `Host` allow-list (DNS rebinding), Go-style
+  cross-origin protection (`Sec-Fetch-Site` `same-origin`/`none`, else `Origin`
+  must equal `Host`; safe methods always allowed), no CORS, a strict CSP on the
+  console, and secrets never returned (write-only across the surface).
+- **Export/import is always encrypted** (AES-256-GCM under an Argon2id key) with
+  no plaintext path; including secrets in the artifact is an explicit opt-in
+  *inside* the envelope.
+
+**Residual risk (honest):** a LAN-enabled surface is reachable by anything on
+the same network; its confidentiality rests on the password and TLS, and its
+blast radius is bounded only because it cannot execute tools. An attacker who
+learns the password can read the configuration (including the SPKI-less list of
+what is configured) and change settings; secrets are write-only, so they cannot
+be read back. The owner is warned in-app before enabling LAN.
+
 ---
 
 ## 4. Authorization model
@@ -230,10 +276,17 @@ Grouped the way the audit asked:
   (`OnboardingActivity.kt:95-99`, `SettingsDetailActivity.kt:89-92`); device-admin
   enrolment (`OnboardingActivity.kt:157-167`); «Забыть всё» `AlertDialog`
   (`MemoryInspectorActivity.kt:129-152`).
-- **Never allowed** — there is no "wipe device", no remote-config or remote-command
-  channel, no arbitrary-shell capability, and no exported IPC surface that accepts
+- **Never allowed** — there is no "wipe device", no **remote-command** channel,
+  no arbitrary-shell capability, and no exported IPC surface that accepts
   commands. The device-admin policy grants **only** `force-lock`
   (`res/xml/device_admin.xml:3-5`) — no password policy, no wipe.
+- **The management surface (R13) configures; it does not actuate.** It edits
+  settings/secrets/MCP definitions and moves the encrypted config artifact. It is
+  deliberately outside this tool-authorization table: it cannot invoke any tool
+  or device capability, so it neither needs nor receives a `ToolRisk`, and a
+  compromised session cannot escalate to §4 actions. Enabling LAN is the one
+  sensitive transition and is confirmed by voice (`WriteConfirmation`); disabling
+  is always allowed.
 
 ---
 
@@ -275,6 +328,12 @@ Notes:
   (`llm/GigaChatSseParser.kt`, `llm/YandexSseParser.kt`).
 - The **memory export** is the one path by which the whole memory can leave in
   a user-chosen file; it is user-initiated only.
+- The **management config export/import** is a separate, always-encrypted
+  artifact: export writes settings/MCP definitions (and, only if opted in,
+  secrets) as `{format, formatVersion, kdf, nonce, ciphertext}` with no plaintext
+  path. Import is a new **ingress** — a user-supplied encrypted file — and is
+  validated against the explicit `ManagementBindings` map (unknown/mistyped keys
+  are rejected and nothing is applied) before any write.
 - The MapKit SDK's real backend host is **not present in source** (native `.so`);
   only the API-key header is set in Kotlin. This is an accepted, documented gap.
 
@@ -302,6 +361,10 @@ Notes:
 4. **Notification listener** — currently inert; if implemented, add an injection
    assessment before shipping.
 5. **Database encryption at rest** — not implemented.
+6. **Management surface (R13)** — LAN exposure is owner-enabled with an in-app
+   warning. Open sub-items: the enabling voice tool, certificate rotation UI, and
+   a decision on whether a LAN-enabled session should be further bound (e.g. an
+   mTLS client cert) rather than password-only.
 
 ---
 

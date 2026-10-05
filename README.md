@@ -320,6 +320,21 @@ keystore with `keytool` and update `local.properties` accordingly.
   resolves to, a private/loopback address — SSRF guard). Changing the list
   applies to the next turn — no restart.
 
+- **Remote configuration console** (**Настройки → Управление**, **off by
+  default**): optionally manage Jarvis from a browser on the same machine or
+  the local network. It is an **HTTPS**, password-protected console
+  (self-signed certificate, fingerprint shown in the app; the password is shown
+  on request and changeable) that edits **settings only** — it cannot run tools,
+  control the home, ring alarms or play music, so a stolen session is
+  configuration, not the appliance. Three modes: **Отключено** (default),
+  **Только localhost** (loopback, reach it with `adb forward`), and **Локальная
+  сеть** (binds the device's Wi-Fi address; a deliberate, warned-about choice).
+  The active state is in-memory only, so a reboot drops network exposure. The
+  console also offers **always-encrypted config export/import** (secrets are
+  opt-in *inside* the encrypted file) and MCP-server management. Enabling LAN is
+  also available by voice. See [RUNBOOK.md](RUNBOOK.md#management-console) for
+  access steps and the browser certificate warning.
+
 ## License
 [MIT](LICENSE)
 

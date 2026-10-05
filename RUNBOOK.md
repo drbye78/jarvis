@@ -354,6 +354,63 @@ The one-minute on-device check that re-enables it:
   exempt from the permission — and they are re-armed on the next
   reconcile/boot.
 
+## Management console
+
+An **optional, off-by-default** HTTPS console + config-only REST API for managing
+Jarvis from a browser. It edits settings/secrets/MCP definitions and moves the
+encrypted config artifact — it **cannot** run tools, control the home, ring
+alarms or play music.
+
+**Enable.** Settings → **Управление** → pick a mode and activate it:
+- **Отключено** (default) — nothing listens.
+- **Только localhost** — loopback only; reach it over USB with
+  `adb forward tcp:8765 tcp:8765` then browse `https://127.0.0.1:8765`.
+- **Локальная сеть** — binds the device's Wi-Fi address; browse
+  `https://<device-ip>:8765` from another machine on the same LAN. This is a
+  deliberate exposure — the screen warns before you enable it.
+
+The active state is **in-memory only**: a reboot drops network exposure and it
+must be re-enabled.
+
+**Certificate.** TLS uses a self-signed certificate (there is no public CA for a
+device's `.local`/IP), so the browser shows a warning — that is expected. Verify
+the **SHA-256 fingerprint** shown in the app matches the one the browser offers;
+the material is persisted in the Keystore vault, so the fingerprint is **stable
+across restarts**. A corrupt/absent vault entry regenerates a fresh cert (and a
+new fingerprint).
+
+**Password.** Shown in the app on request («показать пароль») and changeable.
+The browser uses an `HttpOnly; Secure; SameSite=Strict` session cookie; scripts
+use `Authorization: Bearer <password>`.
+
+**Reaching the REST API from a script.** Unsafe methods (POST/PUT/DELETE) pass
+the cross-origin guard only when they carry `Sec-Fetch-Site: same-origin` or
+`none`, or an `Origin` equal to the `Host`. `curl` sends neither by default, so
+add `-H 'Sec-Fetch-Site: none'`:
+
+```bash
+adb forward tcp:8765 tcp:8765
+curl -k -i https://127.0.0.1:8765/api/v1/status                       # 401
+curl -k -i -X POST https://127.0.0.1:8765/api/v1/sessions \
+  -H 'Sec-Fetch-Site: none' -H 'Content-Type: application/json' \
+  -d '{"password":"<shown-in-app>"}'                                  # 201 + cookie
+```
+
+Without that header, an unsafe request is **403** (by design), not a bug.
+
+**Common issues.**
+- **`curl` gets 403 on POST/PUT/DELETE** — missing `Sec-Fetch-Site: none` (see
+  above).
+- **Browser cannot connect** — check the mode/active state in Settings; confirm
+  `adb forward` for localhost, or that both machines are on the same LAN for LAN
+  mode. A port change applies after a service restart (the screen shows the
+  pending-restart banner).
+- **Password lost** — reveal it in Settings → Управление, or set a new one.
+- **Fingerprint changed** — a regenerated cert after a vault reset; re-verify.
+
+**Disable.** Set the mode back to **Отключено** (or deactivate); reboot also
+clears it.
+
 ## Debugging
 
 ```bash
