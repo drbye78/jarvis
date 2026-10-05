@@ -43,6 +43,9 @@ class ManagementToolsTest {
     private lateinit var prefs: AppPrefs
     private var applyCount = 0
 
+    /** The mode passed to the injected apply action on the last call. */
+    private var lastAppliedMode: ManagementMode? = null
+
     /** The fake apply action; records how many times a mode was applied. */
     private lateinit var tools: List<ToolContract>
 
@@ -50,9 +53,13 @@ class ManagementToolsTest {
     fun setUp() {
         prefs = AppPrefs(context = null, prefsOverride = FakeSharedPreferences())
         applyCount = 0
+        lastAppliedMode = null
         tools = ManagementTools(
             prefs = prefs,
-            applyMode = { applyCount++ },
+            applyMode = { mode ->
+                applyCount++
+                lastAppliedMode = mode
+            },
         ).all()
     }
 
@@ -98,6 +105,7 @@ class ManagementToolsTest {
         assertFalse(result.isError)
         assertEquals(ManagementMode.LOCALHOST.id, prefs.managementMode)
         assertEquals("the fake provider must be applied once", 1, applyCount)
+        assertEquals("enable must apply the new mode deliberately", ManagementMode.LOCALHOST, lastAppliedMode)
     }
 
     @Test
@@ -111,6 +119,7 @@ class ManagementToolsTest {
         assertFalse(result.isError)
         assertEquals(ManagementMode.DISABLED.id, prefs.managementMode)
         assertEquals("the fail-safe direction is always applied", 1, applyCount)
+        assertEquals("disable must apply the disabled mode", ManagementMode.DISABLED, lastAppliedMode)
     }
 
     // ------------------------------------------------------------------

@@ -8,6 +8,7 @@ import com.jarvis.assistant.location.AndroidLocationProvider
 import com.jarvis.assistant.location.DefaultLocationResolver
 import com.jarvis.assistant.location.LocationProvider
 import com.jarvis.assistant.location.LocationResolver
+import com.jarvis.assistant.manage.ManagementMode
 import com.jarvis.assistant.manage.ManagementServerProvider
 import com.jarvis.assistant.media.AndroidMediaGateway
 import com.jarvis.assistant.media.MusicPlaybackOrchestrator
@@ -240,7 +241,10 @@ class FunctionRouter(
             ManagementTools(
                 prefs = appPrefs,
                 strings = toolStrings,
-                applyMode = { ManagementServerProvider.get(appContext).reconcile() },
+                applyMode = { mode ->
+                    val provider = ManagementServerProvider.get(appContext)
+                    if (mode == ManagementMode.DISABLED) provider.deactivate() else provider.activate()
+                },
             ).all() +
             MusicTools(
                 MusicPlaybackOrchestrator(

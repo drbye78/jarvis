@@ -24,9 +24,12 @@ import timber.log.Timber
  *
  * Each tool writes `prefs.managementMode` to its [ManagementMode.id] and then
  * applies the persisted intent through [applyMode] (production:
- * `ManagementServerProvider.get(context).reconcile()`, which treats a changed
- * mode as a DELIBERATE change and enables it; the call is heavy — TLS +
- * Netty — so it runs on [Dispatchers.Default]). The pref write happens INSIDE
+ * `ManagementServerProvider.activate()` for an enable and `deactivate()` for a
+ * disable). It is a DELIBERATE user action, NOT the process-start
+ * `reconcile()`: [ManagementServerProvider.activate] also re-opens a listener
+ * that LAN idle-close shut, whereas `reconcile()` would leave a persisted
+ * `lan` intent closed after an idle window. The call is heavy — TLS + Netty —
+ * so it runs on [Dispatchers.Default]. The pref write happens INSIDE
  * `execute`, i.e. only after the registry's confirmation gate returned
  * [WriteGate.Confirmed], so an unconfirmed LAN call changes nothing.
  *
@@ -39,10 +42,10 @@ class ManagementTools(
     private val strings: ToolStrings = ToolStrings.Default,
     /**
      * Applies the persisted mode to the process-scoped listener. Production
-     * binds `{ ManagementServerProvider.get(appContext).reconcile() }`; a test
-     * injects a fake so no Android/Netty is touched.
+     * dispatches enable → `ManagementServerProvider.activate()` and disable →
+     * `deactivate()`; a test injects a fake so no Android/Netty is touched.
      */
-    private val applyMode: () -> Unit,
+    private val applyMode: (ManagementMode) -> Unit,
 ) {
 
     /** All three tools, in advertised order. */
@@ -110,7 +113,7 @@ class ManagementTools(
     private suspend fun applyAndReport(mode: ManagementMode, message: String): String {
         prefs.managementMode = mode.id
         return try {
-            withContext(Dispatchers.Default) { applyMode() }
+            withContext(Dispatchers.Default) { applyMode(mode) }
             JsonOut.obj("status" to "ok", "mode" to mode.id, "message" to message)
         } catch (e: CancellationException) {
             throw e
