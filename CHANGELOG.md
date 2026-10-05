@@ -6,6 +6,34 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — Tuya-direct smart-home provider (R4 H6)
+- **A Tuya Cloud Project is now a first-class provider** alongside Home Assistant,
+  over the same `HomeBackend` SPI and the same provider-neutral T0/T1/T2
+  authorization. BYOC: the user creates their own Cloud Project (Development
+  Method **Smart Home**) and enters the region, linked-account UID, Access ID and
+  Access Secret in Settings; the app ships no Tuya credentials.
+- **Cloud-only, HMAC-SHA256-signed.** `TuyaSigning` implements Tuya's exact
+  canonicalization (sorted query, empty-body digest, `clientId + accessToken + t
+  + nonce + stringToSign`, uppercase hex); `TuyaOpenApiClient` caches the token,
+  re-authenticates once on an expired-token code, and never persists it.
+  `TuyaRegion` maps the seven data centers to their OpenAPI hosts; a region that
+  does not match the account links the account but returns no devices.
+- **Fail-closed mapping.** `TuyaCapabilityMapper` maps category → kind and DP
+  code → capability with **unknown → UNKNOWN**, so an unmapped product still
+  classifies T2. DP codes are device-specific, so commands resolve against the
+  device's own `functions[]` (`GET /specification`); the standard tables are only
+  a superset. **Residential locks have no standard cloud unlock DP**, so
+  lock/unlock are reported unsupported rather than guessed.
+- **Settings** gains a provider-aware connection editor: a provider picker (add
+  only), the HA block (https URL + write-only token) or the Tuya block (region,
+  UID, Access ID, write-only Access Secret). Region/UID persist as non-secret
+  metadata; secrets stay in the Keystore vault per `(id, field)`.
+- **Known limit (by design of Tuya's trial):** the free Trial Edition caps at
+  **10 controllable devices**, forbids commercial use, and allows no overage —
+  Tuya-direct is a testing path unless a paid IoT Core plan is bought. Home
+  Assistant's own Tuya integration remains the no-cap alternative.
+- Tests +58 (1,950 total, 0 failures; detekt 0).
+
 ### Added — smart-home depth: aliases, grants and proactive awareness (R4 H2–H4)
 - **Device browser + spoken aliases.** Settings → «Умный дом» → «Устройства»
   lists every discovered device, lets the user set a spoken alias per device
