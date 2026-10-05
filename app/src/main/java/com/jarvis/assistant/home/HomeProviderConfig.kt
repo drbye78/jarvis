@@ -17,6 +17,9 @@ import java.util.UUID
  *   recomputed (vault keys and discovery caches bind to it).
  * @property provider the [HomeProviderId.id] this config speaks.
  * @property order deterministic position in the user's list; [create] appends.
+ * @property metadata provider-specific NON-SECRET settings (e.g. Tuya `region`
+ *   and `uid`). Empty for providers that need none. Never place a credential
+ *   here — secrets live in the vault, keyed by `(id, field)`.
  */
 @Serializable
 data class HomeProviderConfig(
@@ -25,6 +28,7 @@ data class HomeProviderConfig(
     val enabled: Boolean = true,
     val baseUrl: String = "",
     val order: Int = 0,
+    val metadata: Map<String, String> = emptyMap(),
 ) {
     companion object {
         /** Create a new config with a fresh stable [id], appended to [existing]. */

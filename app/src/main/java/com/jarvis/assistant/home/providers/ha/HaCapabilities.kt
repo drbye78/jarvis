@@ -4,6 +4,7 @@ import com.jarvis.assistant.home.ActionVerb
 import com.jarvis.assistant.home.Capability
 import com.jarvis.assistant.home.DeviceKind
 import com.jarvis.assistant.home.HomeCapabilityMapper
+import com.jarvis.assistant.home.HomeVerbs
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonArray
 
@@ -102,37 +103,5 @@ object HaCapabilities {
     }
 
     /** Every device is readable; the write verbs follow the capability set. */
-    fun verbs(capabilities: Set<Capability>): Set<ActionVerb> {
-        val verbs = linkedSetOf(ActionVerb.READ)
-        for (capability in capabilities) addVerbs(verbs, capability)
-        return verbs
-    }
-
-    private fun addVerbs(target: MutableSet<ActionVerb>, capability: Capability) {
-        when (capability) {
-            Capability.ON_OFF -> {
-                target += ActionVerb.TURN_ON
-                target += ActionVerb.TURN_OFF
-            }
-
-            Capability.BRIGHTNESS -> target += ActionVerb.SET_LEVEL
-            Capability.COLOR, Capability.COLOR_TEMP -> target += ActionVerb.SET_COLOR
-            Capability.TARGET_TEMPERATURE -> target += ActionVerb.SET_TEMPERATURE
-            Capability.MODE -> target += ActionVerb.SET_MODE
-            Capability.FAN_SPEED -> target += ActionVerb.SET_FAN_SPEED
-            Capability.LOCK -> {
-                target += ActionVerb.LOCK
-                target += ActionVerb.UNLOCK
-            }
-
-            Capability.COVER_POSITION -> {
-                target += ActionVerb.OPEN
-                target += ActionVerb.CLOSE
-                target += ActionVerb.SET_POSITION
-            }
-
-            // Observation-only facets never produce a write verb.
-            Capability.TEMPERATURE, Capability.SENSOR, Capability.UNKNOWN -> Unit
-        }
-    }
+    fun verbs(capabilities: Set<Capability>): Set<ActionVerb> = HomeVerbs.of(capabilities)
 }
