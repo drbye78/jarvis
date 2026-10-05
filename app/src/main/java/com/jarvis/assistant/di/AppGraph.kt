@@ -164,6 +164,29 @@ class AppGraph(
     val appPrefs = com.jarvis.assistant.util.AppPrefs(appContext)
 
     /**
+     * R13 §14 management bridges. The graph builds the durable pieces only and
+     * installs them into the PROCESS-scoped
+     * [com.jarvis.assistant.manage.ManagementServerProvider]; it never starts
+     * the listener (the FGS does that after `graphReady`, off the main thread).
+     * Process-scoping matters because this graph is rebuilt on every service
+     * start / watchdog revive: the activation and running server must survive.
+     */
+    val management: com.jarvis.assistant.manage.ManagementComponents = run {
+        val vault = com.jarvis.assistant.util.KeystoreVault.get(appContext)
+        val bindings = com.jarvis.assistant.manage.ManagementBindings(vault)
+        com.jarvis.assistant.manage.ManagementComponents(
+            vault = vault,
+            bindings = bindings,
+            core = com.jarvis.assistant.manage.ManagementCore(
+                prefs = appPrefs,
+                bindings = bindings,
+                vault = vault,
+                appVersion = com.jarvis.assistant.BuildConfig.VERSION_NAME,
+            ),
+        ).also { com.jarvis.assistant.manage.ManagementServerProvider.get(appContext).install(it) }
+    }
+
+    /**
      * Multi-server MCP bridge (external tools). Declared as a lazy property so
      * construction touches only [appPrefs], [httpClient] and [scope] — never
      * the router or the cognitive coordinator — and discovery is never forced

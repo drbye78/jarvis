@@ -38,8 +38,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 /**
@@ -515,6 +517,14 @@ class JarvisForegroundService : Service() {
                 // code awaiting graphReady sees the graph immediately.
                 graphReady.complete(built)
 
+                // R13 management listener. Started AFTER readiness and OFF the
+                // main thread (cert generation + Netty bind are heavy); a
+                // failure logs and leaves the assistant running. The provider is
+                // process-scoped, so a later graph rebuild reconciles the SAME
+                // listener instead of binding a second one.
+                launchManagementReconcile(serviceScope, this@JarvisForegroundService)
+                launchManagementIdleLoop(serviceScope, this@JarvisForegroundService)
+
                 // Switch back to the main notification channel now that the
                 // pipeline is live.
                 postStateNotification(getString(R.string.state_idle))
@@ -923,15 +933,20 @@ class JarvisForegroundService : Service() {
         val graphToShutdown = graph
         graph = null
         GraphHolder.graph = null
-        if (graphToShutdown != null) {
-            Thread {
+        Thread {
+            // Close the management listener first — a graph rebuild must never
+            // double-bind, and a user stop must leave nothing listening. The
+            // provider is process-scoped, so this only closes the socket.
+            runCatching { com.jarvis.assistant.manage.ManagementServerProvider.stop() }
+                .onFailure { Timber.w(it, "Management server stop failed") }
+            if (graphToShutdown != null) {
                 runCatching { graphToShutdown.shutdown() }
                     .onFailure { Timber.w(it, "Graph shutdown failed") }
-            }.apply {
-                name = "jarvis-graph-shutdown"
-                isDaemon = true
-            }.start()
-        }
+            }
+        }.apply {
+            name = "jarvis-graph-shutdown"
+            isDaemon = true
+        }.start()
         initialized = false
         bootstrapping = false
         releaseLocks()
@@ -1115,3 +1130,52 @@ class JarvisForegroundService : Service() {
         }
     }
 }
+
+// ----------------------------------------------------------------------------
+// R13 §14 management lifecycle helpers. Deliberately TOP-LEVEL (not members of
+// [JarvisForegroundService]) so the service class stays under detekt's
+// LargeClass budget; they hold no state beyond the passed scope.
+// ----------------------------------------------------------------------------
+
+/**
+ * Reconcile the process-scoped management listener once the graph is ready.
+ * Cert generation + the Netty bind run on [Dispatchers.Default]; a failure logs
+ * (content-free) and never crashes the service.
+ */
+private fun launchManagementReconcile(scope: CoroutineScope, context: Context) {
+    scope.launch(Dispatchers.Default) {
+        try {
+            com.jarvis.assistant.manage.ManagementServerProvider.get(context).reconcile()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.e(e, "Management: reconcile failed — assistant continues without it")
+        }
+    }
+}
+
+/**
+ * LAN idle sweep: the 15-minute watchdog is far too coarse for the idle window,
+ * so this dedicated tick closes the listener when the activation expires. The
+ * check can stop the listener (bounded blocking shutdown), so it runs on
+ * [Dispatchers.Default], never the main thread. The loop dies with [scope].
+ */
+private fun launchManagementIdleLoop(scope: CoroutineScope, context: Context) {
+    scope.launch {
+        while (isActive) {
+            delay(MANAGEMENT_IDLE_TICK_MS)
+            try {
+                withContext(Dispatchers.Default) {
+                    com.jarvis.assistant.manage.ManagementServerProvider.get(context).onIdleCheck()
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Management: idle check failed")
+            }
+        }
+    }
+}
+
+/** R13 management idle sweep cadence (LAN auto-close is minutes-scale). */
+private const val MANAGEMENT_IDLE_TICK_MS = 30_000L
