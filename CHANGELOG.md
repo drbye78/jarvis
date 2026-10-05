@@ -6,6 +6,29 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — smart-home depth: aliases, grants and proactive awareness (R4 H2–H4)
+- **Device browser + spoken aliases.** Settings → «Умный дом» → «Устройства»
+  lists every discovered device, lets the user set a spoken alias per device
+  (`homeAliases`, LIVE — the resolver re-reads it every turn), and curate which
+  devices may raise notices (`homeEntities`).
+- **Reversible-action grants.** A «Быстрые действия» editor ticks the recoverable
+  (T1) actions a device may run on the fast path (`homeGrants`, LIVE). The
+  offered actions come from `HomeGrantables`, which runs the SAME
+  `HomeRiskClassifier` used at execution — locks, doors, covers and appliances
+  are excluded structurally, and only the `(capability, verb)` pairs
+  `HomeTools.buildAction` can actually issue are offered, so no dead grants.
+- **Proactive home awareness (HA-only, opt-in, default off).** `HomeEventSource`
+  is an optional backend capability (a separate SPI, not a `HomeBackend` method,
+  so poll-only providers are unaffected); the HA backend implements it with a
+  cold `subscribe_events` stream over a DEDICATED websocket. Notices are
+  content-free (device kind + transition only), gated by `HomeNoticeGate`
+  (reusing the proactivity lane's quiet-hours/DND/presence/quota vocabulary with
+  its own master switch and cap), debounced, spoken, and logged to the existing
+  `behavior_log` as a distinct `HOME_NOTICE` decision — never `FIRED`, so it
+  cannot consume the habit quota or mask a habit suggestion in the reject path.
+  No Room schema bump.
+- Tests +22 (1,892 total, 0 failures; detekt 0).
+
 ### Added — unified smart-home surface (R4, Home Assistant first)
 - **Jarvis now controls a heterogeneous smart home through one normalized voice
   model, starting with Home Assistant.** The first-party `home/` subsystem
