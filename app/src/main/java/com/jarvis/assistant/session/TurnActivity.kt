@@ -67,6 +67,10 @@ object TurnActivityLabels {
         "remember_fact" -> R.string.activity_tool_remember_fact
         "recall_facts" -> R.string.activity_tool_recall_facts
         "forget_fact" -> R.string.activity_tool_forget_fact
+        // R13 §14.7: voice enable/disable of the management surface.
+        "enableLocalManagement" -> R.string.activity_tool_enable_local_management
+        "enableLanManagement" -> R.string.activity_tool_enable_lan_management
+        "disableManagement" -> R.string.activity_tool_disable_management
         else -> null
     }
 }

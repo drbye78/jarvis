@@ -431,6 +431,10 @@
     <string name="activity_tool_remember_fact">Remembering…</string>
     <string name="activity_tool_recall_facts">Checking memory…</string>
     <string name="activity_tool_forget_fact">Forgetting…</string>
+    <!-- R13 §14.7: voice enable/disable of the management surface -->
+    <string name="activity_tool_enable_local_management">Enabling management…</string>
+    <string name="activity_tool_enable_lan_management">Opening network management…</string>
+    <string name="activity_tool_disable_management">Disabling management…</string>
         <!-- COGNITIVE_PLAN 2.6: behaviour card -->
     <string name="settings_behavior_section">Proactive</string>
     <string name="settings_behavior_toggle">Assistant may suggest habitual actions</string>

@@ -17,6 +17,8 @@ class TurnActivityLabelsTest {
         "setBluetooth", "setDnd", "lockScreen", "openApp", "playMusic",
         "controlPlayback", "getNowPlaying", "setMusicPlayer", "listPlaylists", "searchLibrary",
         "findPlace", "getRoute", "getCurrentLocation",
+        "remember_fact", "recall_facts", "forget_fact",
+        "enableLocalManagement", "enableLanManagement", "disableManagement",
     )
 
     @Test

@@ -430,6 +430,10 @@
     <string name="activity_tool_remember_fact">Запоминаю…</string>
     <string name="activity_tool_recall_facts">Проверяю память…</string>
     <string name="activity_tool_forget_fact">Забываю…</string>
+    <!-- R13 §14.7: voice enable/disable of the management surface -->
+    <string name="activity_tool_enable_local_management">Включаю управление…</string>
+    <string name="activity_tool_enable_lan_management">Открываю управление по сети…</string>
+    <string name="activity_tool_disable_management">Отключаю управление…</string>
     <!-- COGNITIVE_PLAN 2.6: behaviour card -->
     <string name="settings_behavior_section">Проактивность</string>
     <string name="settings_behavior_toggle">Ассистент может сам предлагать привычные действия</string>
