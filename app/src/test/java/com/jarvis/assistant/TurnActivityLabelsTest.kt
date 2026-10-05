@@ -19,6 +19,7 @@ class TurnActivityLabelsTest {
         "findPlace", "getRoute", "getCurrentLocation",
         "remember_fact", "recall_facts", "forget_fact",
         "enableLocalManagement", "enableLanManagement", "disableManagement",
+        "homeListDevices", "homeFindDevices", "getHomeState", "homeControl", "homeConfirmControl",
     )
 
     @Test

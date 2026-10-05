@@ -387,6 +387,19 @@
     <string name="tool_management_lan_enabled">Enabled external management for the local network. Remember to turn it off when you are done.</string>
     <string name="tool_management_disabled">Disabled external management.</string>
     <string name="tool_management_unavailable">Could not enable external management on this device.</string>
+    <string name="tool_home_not_configured">Smart home is not configured. Add an integration in Jarvis Settings.</string>
+    <string name="tool_home_auth_failed">Could not sign in to the smart home. Check the access token.</string>
+    <string name="tool_home_unreachable">The smart home is unreachable. Check the network and address.</string>
+    <string name="tool_home_service_failed">Could not complete the smart-home action.</string>
+    <string name="tool_home_provider_unavailable">This smart-home integration is currently unavailable.</string>
+    <string name="tool_home_control_read_only">That is a read — use getHomeState.</string>
+    <string name="tool_home_control_missing_handle">No device was specified.</string>
+    <string name="tool_home_control_missing_action">No action was specified.</string>
+    <string name="tool_home_control_missing_value">This action needs a value.</string>
+    <string name="tool_home_control_unsupported">The device does not support this action.</string>
+    <string name="tool_home_control_ambiguous">Found several matching devices — please specify which one.</string>
+    <string name="tool_home_control_not_found">Could not find that device.</string>
+    <string name="tool_home_confirm_instruction">Ask the user to confirm this exact action, then call homeConfirmControl with the same arguments.</string>
     <string name="tool_music_player_unknown">Unknown music service: "%1$s". Say "Yandex Music", "Zvuk", "VK Music" or "auto".</string>
 
     <!-- FIXPLAN B/C: voice stop + custom Sherpa wake keyword -->
@@ -435,6 +448,12 @@
     <string name="activity_tool_enable_local_management">Enabling management…</string>
     <string name="activity_tool_enable_lan_management">Opening network management…</string>
     <string name="activity_tool_disable_management">Disabling management…</string>
+    <!-- R4: smart-home tools -->
+    <string name="activity_tool_homeListDevices">Checking devices…</string>
+    <string name="activity_tool_homeFindDevices">Finding a device…</string>
+    <string name="activity_tool_getHomeState">Checking the state…</string>
+    <string name="activity_tool_homeControl">Controlling the device…</string>
+    <string name="activity_tool_homeConfirmControl">Confirming control…</string>
         <!-- COGNITIVE_PLAN 2.6: behaviour card -->
     <string name="settings_behavior_section">Proactive</string>
     <string name="settings_behavior_toggle">Assistant may suggest habitual actions</string>

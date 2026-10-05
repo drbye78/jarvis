@@ -49,6 +49,18 @@ class ApplyPoliciesTest {
     }
 
     @Test
+    fun `smart-home provider list seals at service start while the blobs are live`() {
+        // The process-scoped HA backend is built from the provider list at
+        // service start; the entity/alias/grant blobs and the awareness switch
+        // are consumed per use.
+        assertEquals(ApplyPolicy.SERVICE_RESTART, ApplyPolicies.of(AppPrefs.KEY_HOME_PROVIDERS))
+        assertEquals(ApplyPolicy.LIVE, ApplyPolicies.of(AppPrefs.KEY_HOME_ENTITIES))
+        assertEquals(ApplyPolicy.LIVE, ApplyPolicies.of(AppPrefs.KEY_HOME_ALIASES))
+        assertEquals(ApplyPolicy.LIVE, ApplyPolicies.of(AppPrefs.KEY_HOME_GRANTS))
+        assertEquals(ApplyPolicy.LIVE, ApplyPolicies.of(AppPrefs.KEY_HOME_AWARENESS_ENABLED))
+    }
+
+    @Test
     fun `an unknown key defaults to live`() {
         assertEquals(ApplyPolicy.LIVE, ApplyPolicies.of("notARealSetting"))
         assertEquals(ApplyPolicy.LIVE, ApplyPolicies.of(""))

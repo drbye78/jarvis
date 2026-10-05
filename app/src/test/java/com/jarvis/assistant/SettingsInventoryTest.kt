@@ -24,10 +24,25 @@ import java.lang.reflect.Modifier
  */
 class SettingsInventoryTest {
 
+    /**
+     * TEMPORARY BRIDGE (R4 smart home). The five home prefs land before the
+     * LATER settings lane that registers them in [SettingsInventory]. That lane
+     * MUST move these into a HOME category and delete this set; until then they
+     * are allow-listed so the anti-drop guard stays green.
+     */
+    private val pendingHomeKeys = setOf(
+        "homeProviders",
+        "homeEntities",
+        "homeAliases",
+        "homeGrants",
+        "homeAwarenessEnabled",
+    )
+
     @Test
     fun `every persisted member is registered or allow-listed`() {
         val reflected = propertyNames(AppPrefs::class.java) + propertyNames(CredentialsStore::class.java)
-        val known = SettingsInventory.entries.map { it.key }.toSet() + SettingsInventory.nonSettingsKeys
+        val known = SettingsInventory.entries.map { it.key }.toSet() +
+            SettingsInventory.nonSettingsKeys + pendingHomeKeys
 
         val missing = (reflected - known).sorted()
         assertEquals("persisted members MISSING from SettingsInventory: $missing", emptyList<String>(), missing)
@@ -40,9 +55,13 @@ class SettingsInventoryTest {
         // Reported by this assertion so a drift is obvious ("the count it asserts").
         // R13 management adds managementMode / managementPort /
         // managementIdleTimeoutMs to both the inventory (42 → 45) and the
-        // reflected accessor surface (44 → 47).
+        // reflected accessor surface (44 → 47). R4 smart home adds five prefs
+        // (homeProviders/homeEntities/homeAliases/homeGrants/
+        // homeAwarenessEnabled) to the accessor surface (47 → 52); the LATER
+        // settings lane moves them into the inventory and removes
+        // [pendingHomeKeys].
         assertEquals(45, SettingsInventory.entries.size)
-        assertEquals(47, reflected.size)
+        assertEquals(52, reflected.size)
         val stale = inventoryKeys - reflected
         assertTrue("inventory keys not found on any accessor: $stale", stale.isEmpty())
     }

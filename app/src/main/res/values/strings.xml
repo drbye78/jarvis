@@ -386,6 +386,19 @@
     <string name="tool_management_lan_enabled">Включил внешнее управление для локальной сети. Не забудь выключить его, когда закончишь.</string>
     <string name="tool_management_disabled">Выключил внешнее управление.</string>
     <string name="tool_management_unavailable">Не удалось включить внешнее управление на этом устройстве.</string>
+    <string name="tool_home_not_configured">Умный дом не настроен. Добавь интеграцию в настройках Джарвиса.</string>
+    <string name="tool_home_auth_failed">Не удалось войти в систему умного дома. Проверь токен доступа.</string>
+    <string name="tool_home_unreachable">Система умного дома недоступна. Проверь сеть и адрес.</string>
+    <string name="tool_home_service_failed">Не удалось выполнить действие умного дома.</string>
+    <string name="tool_home_provider_unavailable">Эта интеграция умного дома сейчас недоступна.</string>
+    <string name="tool_home_control_read_only">Это только чтение состояния — используй getHomeState.</string>
+    <string name="tool_home_control_missing_handle">Не указано устройство.</string>
+    <string name="tool_home_control_missing_action">Не указано действие.</string>
+    <string name="tool_home_control_missing_value">Для этого действия нужно значение.</string>
+    <string name="tool_home_control_unsupported">Устройство не поддерживает это действие.</string>
+    <string name="tool_home_control_ambiguous">Нашёл несколько подходящих устройств — уточни, какое.</string>
+    <string name="tool_home_control_not_found">Не нашёл такое устройство.</string>
+    <string name="tool_home_confirm_instruction">Спроси пользователя подтвердить это действие, затем вызови homeConfirmControl с теми же аргументами.</string>
     <string name="tool_music_player_unknown">Не знаю такой музыкальный сервис: «%1$s». Скажи «Яндекс Музыка», «Звук», «ВК Музыка» или «авто».</string>
 
     <!-- FIXPLAN B/C: voice stop + custom Sherpa wake keyword -->
@@ -434,6 +447,12 @@
     <string name="activity_tool_enable_local_management">Включаю управление…</string>
     <string name="activity_tool_enable_lan_management">Открываю управление по сети…</string>
     <string name="activity_tool_disable_management">Отключаю управление…</string>
+    <!-- R4: smart-home tools -->
+    <string name="activity_tool_homeListDevices">Смотрю устройства…</string>
+    <string name="activity_tool_homeFindDevices">Ищу устройство…</string>
+    <string name="activity_tool_getHomeState">Проверяю состояние…</string>
+    <string name="activity_tool_homeControl">Управляю устройством…</string>
+    <string name="activity_tool_homeConfirmControl">Подтверждаю управление…</string>
     <!-- COGNITIVE_PLAN 2.6: behaviour card -->
     <string name="settings_behavior_section">Проактивность</string>
     <string name="settings_behavior_toggle">Ассистент может сам предлагать привычные действия</string>

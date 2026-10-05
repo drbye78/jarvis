@@ -82,6 +82,19 @@ interface SecretVault {
         fun mcpSecretKey(serverId: String): String = KEY_MCP_SECRET_PREFIX + serverId
 
         /**
+         * Prefix for one smart-home integration's secret; the full key is
+         * `home_secret_<providerId>_<field>` (see [homeSecretKey]). The
+         * provider config's stable id plus a field name (e.g. `token`) keep the
+         * config blob secret-free and let a removed integration's secret be
+         * cleared independently.
+         */
+        const val KEY_HOME_SECRET_PREFIX = "home_secret_"
+
+        /** The vault key holding [providerId]'s [field] secret. */
+        fun homeSecretKey(providerId: String, field: String): String =
+            KEY_HOME_SECRET_PREFIX + providerId + "_" + field
+
+        /**
          * R13 §14 management password. Stored in the vault so the owner can
          * re-show it on demand; it is device-bound (never leaves the Keystore
          * vault) and is NOT an [AppPrefs] property — it has no typed accessor,

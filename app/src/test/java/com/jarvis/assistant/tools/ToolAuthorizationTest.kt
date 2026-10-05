@@ -23,7 +23,7 @@ import java.io.DataInputStream
  *  3. the DERIVATION — the flag comes from the utterance via
  *     [IrreversibleCommand] (see its own truth table in
  *     `IrreversibleCommandTest`);
- *  4. TOTAL and PINNED classification — the 29 canonical risk VALUES live in
+ *  4. TOTAL and PINNED classification — the 34 canonical risk VALUES live in
  *     [ToolRisks], the registry cross-checks them, and this test additionally
  *     verifies each production class's COMPILED risk against the table.
  */
@@ -370,14 +370,14 @@ class ToolAuthorizationTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `the canonical risk map pins exactly 29 values`() {
-        assertEquals(29, EXPECTED.size)
+    fun `the canonical risk map pins exactly 34 values`() {
+        assertEquals(34, EXPECTED.size)
         assertEquals("ToolRisks.byName must equal the pinned table", EXPECTED, ToolRisks.byName)
     }
 
     @Test
     fun `every production tool class declares its risk explicitly`() {
-        assertEquals(29, TOOL_CLASSES.size)
+        assertEquals(34, TOOL_CLASSES.size)
         TOOL_CLASSES.forEach { (name, clazz) ->
             assertTrue(
                 "$name must declare ToolContract.risk",
@@ -422,7 +422,7 @@ class ToolAuthorizationTest {
 
     private companion object {
         /**
-         * The 29-tool runtime surface (26 base + 3 cognitive) with its
+         * The 34-tool runtime surface (31 base + 3 cognitive) with its
          * canonical classification. This is the PINNED expectation; it must
          * stay byte-for-byte in step with [ToolRisks.byName] and with each
          * production tool class.
@@ -463,6 +463,12 @@ class ToolAuthorizationTest {
             "enableLocalManagement" to ToolRisk.CONTROLLED,
             "enableLanManagement" to ToolRisk.CONTROLLED,
             "disableManagement" to ToolRisk.CONTROLLED,
+            // smart home (R4)
+            "homeListDevices" to ToolRisk.READ_ONLY,
+            "homeFindDevices" to ToolRisk.READ_ONLY,
+            "getHomeState" to ToolRisk.READ_ONLY,
+            "homeControl" to ToolRisk.CONTROLLED,
+            "homeConfirmControl" to ToolRisk.CONTROLLED,
         )
 
         /** Every production tool class, keyed by its advertised name. */
@@ -496,6 +502,11 @@ class ToolAuthorizationTest {
             "enableLocalManagement" to ManagementTools.EnableLocalManagementTool::class.java,
             "enableLanManagement" to ManagementTools.EnableLanManagementTool::class.java,
             "disableManagement" to ManagementTools.DisableManagementTool::class.java,
+            "homeListDevices" to HomeTools.HomeListDevicesTool::class.java,
+            "homeFindDevices" to HomeTools.HomeFindDevicesTool::class.java,
+            "getHomeState" to HomeTools.GetHomeStateTool::class.java,
+            "homeControl" to HomeTools.HomeControlTool::class.java,
+            "homeConfirmControl" to HomeTools.HomeConfirmControlTool::class.java,
         )
 
         private val RISK_NAMES =

@@ -102,13 +102,15 @@ class FunctionRouterTest {
         "openApp", "getDeviceInfo",
         // ManagementTools(...).all() — R13 §14.7 voice enable/disable
         "enableLocalManagement", "enableLanManagement", "disableManagement",
+        // HomeTools(...).all() — R4 smart-home read + control
+        "homeListDevices", "homeFindDevices", "getHomeState", "homeControl", "homeConfirmControl",
         // MusicTools(...).all() — schemas covered in depth by MusicToolsSchemaTest
         "playMusic", "controlPlayback", "getNowPlaying", "setMusicPlayer", "listPlaylists", "searchLibrary",
     )
 
     @Test
     fun `advertised tool surface is complete and has no duplicates`() {
-        assertEquals(26, expectedSurface.size)
+        assertEquals(31, expectedSurface.size)
         assertEquals(
             "duplicate tool names would silently shadow each other in the registry",
             expectedSurface.size,

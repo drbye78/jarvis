@@ -71,6 +71,12 @@ object TurnActivityLabels {
         "enableLocalManagement" -> R.string.activity_tool_enable_local_management
         "enableLanManagement" -> R.string.activity_tool_enable_lan_management
         "disableManagement" -> R.string.activity_tool_disable_management
+        // R4: smart-home read + control tools.
+        "homeListDevices" -> R.string.activity_tool_homeListDevices
+        "homeFindDevices" -> R.string.activity_tool_homeFindDevices
+        "getHomeState" -> R.string.activity_tool_getHomeState
+        "homeControl" -> R.string.activity_tool_homeControl
+        "homeConfirmControl" -> R.string.activity_tool_homeConfirmControl
         else -> null
     }
 }

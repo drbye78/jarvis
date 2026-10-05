@@ -396,6 +396,40 @@ class AppPrefs(
         set(value) = prefs.edit().putString(KEY_MCP_SERVERS, value).apply()
 
     // ------------------------------------------------------------------
+    // Smart-home integrations (HA first; Yandex/Tuya later). The provider
+    // list, the discovered-device cache, the alias map and the grant list are
+    // held as opaque JSON blobs decoded by the `home/` codecs, so AppPrefs
+    // stays free of the home lane's types. The provider list is sealed at
+    // service start (the HA backend is process-scoped); the alias/grant/entity
+    // blobs and the awareness flag are read LIVE.
+    // ------------------------------------------------------------------
+
+    /** Configured smart-home integrations ([com.jarvis.assistant.home.HomeProviderConfig] JSON). */
+    var homeProviders: String
+        get() = prefs.getString(KEY_HOME_PROVIDERS, "[]") ?: "[]"
+        set(value) = prefs.edit().putString(KEY_HOME_PROVIDERS, value).apply()
+
+    /** Discovered device handles cache (JSON); the repository is the live view. */
+    var homeEntities: String
+        get() = prefs.getString(KEY_HOME_ENTITIES, "[]") ?: "[]"
+        set(value) = prefs.edit().putString(KEY_HOME_ENTITIES, value).apply()
+
+    /** Spoken-alias → [com.jarvis.assistant.home.HomeDeviceKey] map (JSON object). */
+    var homeAliases: String
+        get() = prefs.getString(KEY_HOME_ALIASES, "{}") ?: "{}"
+        set(value) = prefs.edit().putString(KEY_HOME_ALIASES, value).apply()
+
+    /** Persisted [com.jarvis.assistant.home.HomeGrant] list (JSON array). */
+    var homeGrants: String
+        get() = prefs.getString(KEY_HOME_GRANTS, "[]") ?: "[]"
+        set(value) = prefs.edit().putString(KEY_HOME_GRANTS, value).apply()
+
+    /** Proactive smart-home notice lane master switch. Default OFF. */
+    var homeAwarenessEnabled: Boolean
+        get() = prefs.getBoolean(KEY_HOME_AWARENESS_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_HOME_AWARENESS_ENABLED, value).apply()
+
+    // ------------------------------------------------------------------
     // R13 §14 optional external management surface. The MODE and PORT are
     // sealed at service start (the listener binds a specific interface:port),
     // so a change applies on the next service restart; the idle timeout is
@@ -509,6 +543,21 @@ class AppPrefs(
 
         /** MCP server list blob; see [mcpServers]. LIVE (no restart). */
         internal const val KEY_MCP_SERVERS = "mcp_servers"
+
+        /** Smart-home provider list blob; see [homeProviders]. SERVICE_RESTART. */
+        internal const val KEY_HOME_PROVIDERS = "home_providers"
+
+        /** Discovered-device cache blob; see [homeEntities]. LIVE. */
+        internal const val KEY_HOME_ENTITIES = "home_entities"
+
+        /** Alias map blob; see [homeAliases]. LIVE. */
+        internal const val KEY_HOME_ALIASES = "home_aliases"
+
+        /** Grant list blob; see [homeGrants]. LIVE. */
+        internal const val KEY_HOME_GRANTS = "home_grants"
+
+        /** Proactive smart-home notice switch; see [homeAwarenessEnabled]. LIVE. */
+        internal const val KEY_HOME_AWARENESS_ENABLED = "home_awareness_enabled"
 
         /** R13 management intent; see [managementMode]. SERVICE_RESTART. */
         internal const val KEY_MANAGEMENT_MODE = "management_mode"

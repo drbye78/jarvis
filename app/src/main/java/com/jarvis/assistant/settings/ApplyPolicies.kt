@@ -41,6 +41,14 @@ object ApplyPolicies {
         // per request by the running server and is therefore LIVE (default).
         normalize(AppPrefs.KEY_MANAGEMENT_MODE) to ApplyPolicy.SERVICE_RESTART,
         normalize(AppPrefs.KEY_MANAGEMENT_PORT) to ApplyPolicy.SERVICE_RESTART,
+        // Smart-home: the provider list seals the process-scoped HA backend at
+        // service start; the entity cache, alias map, grant list and awareness
+        // switch are read LIVE.
+        normalize(AppPrefs.KEY_HOME_PROVIDERS) to ApplyPolicy.SERVICE_RESTART,
+        normalize(AppPrefs.KEY_HOME_ENTITIES) to ApplyPolicy.LIVE,
+        normalize(AppPrefs.KEY_HOME_ALIASES) to ApplyPolicy.LIVE,
+        normalize(AppPrefs.KEY_HOME_GRANTS) to ApplyPolicy.LIVE,
+        normalize(AppPrefs.KEY_HOME_AWARENESS_ENABLED) to ApplyPolicy.LIVE,
         // The [OI]-compatible key is baked into the client at graph construction.
         normalize(SecretVault.KEY_OPENAI_API_KEY) to ApplyPolicy.SERVICE_RESTART,
         // MapKit may set its API key only ONCE PER PROCESS → a service restart

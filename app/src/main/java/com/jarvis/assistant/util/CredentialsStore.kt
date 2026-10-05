@@ -84,6 +84,20 @@ class CredentialsStore(private val vault: SecretVault) {
     }
 
     /**
+     * Secret for one configured smart-home integration, keyed by its stable
+     * config id plus a [field] name (e.g. `"token"` for Home Assistant). Blank
+     * when none is stored. Argument-keyed for the same reason as [mcpSecret]:
+     * there is no single zero-arg property a per-integration map could name.
+     */
+    fun homeSecret(providerId: String, field: String): String =
+        vault.getString(SecretVault.homeSecretKey(providerId, field)) ?: ""
+
+    /** Store (or, with a blank [value], clear) the [field] secret for [providerId]. */
+    fun setHomeSecret(providerId: String, field: String, value: String) {
+        vault.putString(SecretVault.homeSecretKey(providerId, field), value.trim())
+    }
+
+    /**
      * The MANDATORY keys: SaluteSpeech (ASR+TTS) and GigaChat (LLM).
      *
      * The old `hasRequiredSber()` also demanded the Picovoice key,

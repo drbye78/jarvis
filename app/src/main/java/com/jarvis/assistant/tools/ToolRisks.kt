@@ -1,7 +1,7 @@
 package com.jarvis.assistant.tools
 
 /**
- * Canonical name → [ToolRisk] table for the 29-tool production surface.
+ * Canonical name → [ToolRisk] table for the 34-tool production surface.
  *
  * This is the ONE testable place the classification is declared. It exists
  * because the abstract [ToolContract.risk] property alone is only a
@@ -59,6 +59,16 @@ object ToolRisks {
         "enableLocalManagement" to ToolRisk.CONTROLLED,
         "enableLanManagement" to ToolRisk.CONTROLLED,
         "disableManagement" to ToolRisk.CONTROLLED,
+        // Smart-home (R4). The three read tools observe the catalog / state;
+        // the two control tools are voice-turn-only local control, and
+        // `homeConfirmControl` additionally implements ConfirmedTool so the
+        // registry requires the two-turn affirmative even though the RISK class
+        // itself carries no blanket confirmation.
+        "homeListDevices" to ToolRisk.READ_ONLY,
+        "homeFindDevices" to ToolRisk.READ_ONLY,
+        "getHomeState" to ToolRisk.READ_ONLY,
+        "homeControl" to ToolRisk.CONTROLLED,
+        "homeConfirmControl" to ToolRisk.CONTROLLED,
     )
 
     /** The declared risk for [name]; throws for an unknown tool name. */

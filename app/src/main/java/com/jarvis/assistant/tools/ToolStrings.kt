@@ -51,6 +51,21 @@ interface ToolStrings : WeatherToolMessages, GeoToolMessages {
     val managementDisabled: String
     val managementUnavailable: String
 
+    // --- Smart-home (R4) spoken tool messages --------------------------------
+    val homeNotConfigured: String
+    val homeAuthFailed: String
+    val homeUnreachable: String
+    val homeServiceFailed: String
+    val homeProviderUnavailable: String
+    val homeControlReadOnly: String
+    val homeControlMissingHandle: String
+    val homeControlMissingAction: String
+    val homeControlMissingValue: String
+    val homeControlUnsupported: String
+    val homeControlAmbiguous: String
+    val homeControlNotFound: String
+    val homeConfirmInstruction: String
+
     // --- Memory-section wrapper strings --------------------------------------
     // These render INSIDE the system prompt (the <memory-context> block), so
     // they follow the ToolStrings seam for the RU/EN parity test even though
@@ -139,6 +154,30 @@ interface ToolStrings : WeatherToolMessages, GeoToolMessages {
             override val managementDisabled = "Выключил внешнее управление."
             override val managementUnavailable =
                 "Не удалось включить внешнее управление на этом устройстве."
+
+            override val homeNotConfigured =
+                "Умный дом не настроен. Добавь интеграцию в настройках Джарвиса."
+            override val homeAuthFailed =
+                "Не удалось войти в систему умного дома. Проверь токен доступа."
+            override val homeUnreachable =
+                "Система умного дома недоступна. Проверь сеть и адрес."
+            override val homeServiceFailed =
+                "Не удалось выполнить действие умного дома."
+            override val homeProviderUnavailable =
+                "Эта интеграция умного дома сейчас недоступна."
+            override val homeControlReadOnly =
+                "Это только чтение состояния — используй getHomeState."
+            override val homeControlMissingHandle = "Не указано устройство."
+            override val homeControlMissingAction = "Не указано действие."
+            override val homeControlMissingValue = "Для этого действия нужно значение."
+            override val homeControlUnsupported =
+                "Устройство не поддерживает это действие."
+            override val homeControlAmbiguous =
+                "Нашёл несколько подходящих устройств — уточни, какое."
+            override val homeControlNotFound = "Не нашёл такое устройство."
+            override val homeConfirmInstruction =
+                "Спроси пользователя подтвердить это действие, затем вызови " +
+                    "homeConfirmControl с теми же аргументами."
 
             override val locationDenied =
                 "Не удалось определить местоположение: нет доступа. " +
@@ -285,6 +324,33 @@ class AndroidToolStrings(private val context: Context) : ToolStrings {
         get() = context.getString(R.string.tool_management_disabled)
     override val managementUnavailable: String
         get() = context.getString(R.string.tool_management_unavailable)
+
+    override val homeNotConfigured: String
+        get() = context.getString(R.string.tool_home_not_configured)
+    override val homeAuthFailed: String
+        get() = context.getString(R.string.tool_home_auth_failed)
+    override val homeUnreachable: String
+        get() = context.getString(R.string.tool_home_unreachable)
+    override val homeServiceFailed: String
+        get() = context.getString(R.string.tool_home_service_failed)
+    override val homeProviderUnavailable: String
+        get() = context.getString(R.string.tool_home_provider_unavailable)
+    override val homeControlReadOnly: String
+        get() = context.getString(R.string.tool_home_control_read_only)
+    override val homeControlMissingHandle: String
+        get() = context.getString(R.string.tool_home_control_missing_handle)
+    override val homeControlMissingAction: String
+        get() = context.getString(R.string.tool_home_control_missing_action)
+    override val homeControlMissingValue: String
+        get() = context.getString(R.string.tool_home_control_missing_value)
+    override val homeControlUnsupported: String
+        get() = context.getString(R.string.tool_home_control_unsupported)
+    override val homeControlAmbiguous: String
+        get() = context.getString(R.string.tool_home_control_ambiguous)
+    override val homeControlNotFound: String
+        get() = context.getString(R.string.tool_home_control_not_found)
+    override val homeConfirmInstruction: String
+        get() = context.getString(R.string.tool_home_confirm_instruction)
     override val locationDenied: String
         get() = context.getString(R.string.tool_weather_location_denied)
     override val locationUnavailable: String
