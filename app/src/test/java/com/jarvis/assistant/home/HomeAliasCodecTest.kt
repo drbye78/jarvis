@@ -45,6 +45,25 @@ class HomeAliasCodecTest {
         assertEquals(unique.key, seeded["люстра"])
     }
 
+    @Test
+    fun `bind replaces a device's previous alias and normalizes the new one`() {
+        val bound = HomeAlias.bind(mapOf("старый" to kitchen), "  Люстра ", kitchen)
+        assertEquals(setOf("люстра"), bound.keys)
+        assertEquals(kitchen, bound["люстра"])
+    }
+
+    @Test
+    fun `bind with a blank alias clears the binding`() {
+        val bound = HomeAlias.bind(mapOf("лампа" to kitchen), "   ", kitchen)
+        assertEquals(emptyMap<String, HomeDeviceKey>(), bound)
+    }
+
+    @Test
+    fun `aliasFor finds the phrase bound to a device`() {
+        assertEquals("лампа", HomeAlias.aliasFor(mapOf("лампа" to kitchen, "розетка" to plug), kitchen))
+        assertEquals(null, HomeAlias.aliasFor(emptyMap(), kitchen))
+    }
+
     private fun device(nativeId: String, name: String, kind: DeviceKind) = HomeDevice(
         key = HomeDeviceKey(HomeProviderId.HOME_ASSISTANT, nativeId),
         name = name,

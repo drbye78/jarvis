@@ -65,4 +65,12 @@ class HomeNoticePolicyTest {
         assertFalse(debouncer.accept(notice, nowMs = 5_500))
         assertTrue(debouncer.accept(notice, nowMs = 6_000))
     }
+
+    @Test
+    fun `interesting tracks exactly the notifiable kinds`() {
+        assertTrue(HomeNoticePolicy.interesting(DeviceKind.SENSOR))
+        assertTrue(HomeNoticePolicy.interesting(DeviceKind.APPLIANCE_COOKING))
+        assertFalse(HomeNoticePolicy.interesting(DeviceKind.LIGHT))
+        assertFalse(HomeNoticePolicy.interesting(DeviceKind.CLIMATE))
+    }
 }

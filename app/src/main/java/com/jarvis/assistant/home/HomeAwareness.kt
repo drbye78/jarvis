@@ -28,8 +28,13 @@ enum class TransitionClass {
  */
 object HomeNoticePolicy {
 
-    fun classify(kind: DeviceKind, old: HomeState, new: HomeState): TransitionClass? =
-        when (kind) {
+    /** Kinds that can ever produce a notice — the single source of truth used by
+     * both [classify] and the awareness curation UI, so they cannot drift. */
+    fun interesting(kind: DeviceKind): Boolean = kind in NOTIFIABLE_KINDS
+
+    fun classify(kind: DeviceKind, old: HomeState, new: HomeState): TransitionClass? {
+        if (kind !in NOTIFIABLE_KINDS) return null
+        return when (kind) {
             DeviceKind.SENSOR -> if (tripped(old, new)) TransitionClass.SENSOR_TRIPPED else null
             DeviceKind.LOCK -> if (changed(old, new, Capability.LOCK)) TransitionClass.LOCK_CHANGED else null
             DeviceKind.COVER_DOOR -> if (opened(old, new)) TransitionClass.DOOR_OPENED else null
@@ -38,6 +43,16 @@ object HomeNoticePolicy {
             DeviceKind.APPLIANCE_COOKING -> if (finished(old, new)) TransitionClass.APPLIANCE_DONE else null
             else -> null
         }
+    }
+
+    private val NOTIFIABLE_KINDS: Set<DeviceKind> = setOf(
+        DeviceKind.SENSOR,
+        DeviceKind.LOCK,
+        DeviceKind.COVER_DOOR,
+        DeviceKind.COVER_GARAGE,
+        DeviceKind.COVER_BLIND,
+        DeviceKind.APPLIANCE_COOKING,
+    )
 
     /** A binary sensor false → true. */
     private fun tripped(old: HomeState, new: HomeState): Boolean =

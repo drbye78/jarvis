@@ -24,4 +24,26 @@ object HomeAlias {
         }
         return seeded
     }
+
+    /** The normalized alias currently bound to [key], or null when none is set. */
+    fun aliasFor(aliases: Map<String, HomeDeviceKey>, key: HomeDeviceKey): String? =
+        aliases.entries.firstOrNull { it.value == key }?.key
+
+    /**
+     * Rebind [key] to [alias], returning a new map. Any previous alias of [key]
+     * is dropped first (a device has at most one alias), and a blank [alias]
+     * simply clears the old binding. The key is normalized exactly as
+     * [HomeAliasCodec] does, so a stored alias always resolves.
+     */
+    fun bind(
+        aliases: Map<String, HomeDeviceKey>,
+        alias: String,
+        key: HomeDeviceKey,
+    ): Map<String, HomeDeviceKey> {
+        val out = LinkedHashMap(aliases)
+        out.entries.removeAll { it.value == key }
+        val normalized = HomeNormalizer.normalize(alias)
+        if (normalized.isNotEmpty()) out[normalized] = key
+        return out
+    }
 }
