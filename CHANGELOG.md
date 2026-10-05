@@ -22,6 +22,13 @@ semver (pre-1.0: breaking changes bump the minor).
   terminates TLS (CIO cannot). The password is shown in the app UI on request and
   changeable; browser sessions are `HttpOnly; Secure; SameSite=Strict` cookies
   and REST scripts use `Authorization: Bearer`.
+- **Enable/disable by voice too.** Three tools (`enableLocalManagement`,
+  `enableLanManagement`, `disableManagement`) carry the new **`ToolRisk.CONTROLLED`**
+  tier — voice-turn-only, user-originated local control. Opening the
+  **LAN** surface is security-sensitive, so it reuses the next-turn
+  confirmation gate (no token through the model); disabling is the fail-safe
+  direction and needs none. A voice enable is a deliberate activation that also
+  re-opens a listener closed by idle timeout.
 - **Hardened by construction.** Binds a specific interface (never `0.0.0.0`), a
   `Host` allow-list defeats DNS rebinding, Go-style cross-origin protection
   (`Sec-Fetch-Site` `same-origin`/`none`, else `Origin` must equal `Host`; safe
