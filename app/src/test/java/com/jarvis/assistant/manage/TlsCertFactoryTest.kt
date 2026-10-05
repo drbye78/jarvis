@@ -2,8 +2,10 @@ package com.jarvis.assistant.manage
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.KeyStore
 import javax.net.ssl.KeyManagerFactory
 
 /**
@@ -50,5 +52,50 @@ class TlsCertFactoryTest {
             "each byte must be two uppercase hex digits, got $fingerprint",
             parts.all { it.length == 2 && it == it.uppercase() },
         )
+    }
+
+    @Test
+    fun `encode then decode reproduces the identical certificate`() {
+        val original = TlsCertFactory.generate()
+
+        val decoded = TlsCertFactory.decode(TlsCertFactory.encode(original), original.keyPassword)
+
+        assertNotNull("a valid blob must decode", decoded)
+        assertEquals(
+            "the SHA-256 fingerprint must survive an encode/decode round trip",
+            original.sha256Fingerprint,
+            decoded!!.sha256Fingerprint,
+        )
+    }
+
+    @Test
+    fun `decode returns null for corrupt truncated wrong-password and missing-alias input`() {
+        val material = TlsCertFactory.generate()
+        val encoded = TlsCertFactory.encode(material)
+
+        assertNull("non-Base64 input", TlsCertFactory.decode("not base64!!", material.keyPassword))
+        assertNull(
+            "a truncated blob",
+            TlsCertFactory.decode(encoded.substring(0, encoded.length / 2), material.keyPassword),
+        )
+        assertNull(
+            "a wrong password",
+            TlsCertFactory.decode(encoded, "definitely-not-it".toCharArray()),
+        )
+        assertNull(
+            "a keystore whose entry is under another alias",
+            TlsCertFactory.decode(TlsCertFactory.encode(foreignAliasMaterial(material)), material.keyPassword),
+        )
+    }
+
+    /** The same key/cert pair, stored under an alias `decode` does not look for. */
+    private fun foreignAliasMaterial(base: TlsMaterial): TlsMaterial {
+        val key = base.keyStore.getKey(base.alias, base.keyPassword)
+        val chain = base.keyStore.getCertificateChain(base.alias)
+        val store = KeyStore.getInstance("PKCS12").apply {
+            load(null, null)
+            setKeyEntry("not-the-management-alias", key, base.keyPassword, chain)
+        }
+        return TlsMaterial(base.certificate, store, "not-the-management-alias", base.keyPassword)
     }
 }

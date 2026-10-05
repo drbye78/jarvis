@@ -91,6 +91,18 @@ interface SecretVault {
          */
         const val KEY_MANAGEMENT_PASSWORD = "management_password"
 
+        /**
+         * R13 §14.2 TLS persistence: the Base64 PKCS#12 keystore blob (which
+         * holds the management server's PRIVATE KEY) and the password that
+         * unlocks it. Two fixed keys — one cert per device — written/read only
+         * by [com.jarvis.assistant.manage.ManagementTlsStore], so the cert's
+         * SHA-256 fingerprint survives a service/process restart. Deliberately
+         * NOT [AppPrefs] members: they have no typed accessor, so they never
+         * appear in Settings. Both values are secret and must never be logged.
+         */
+        const val KEY_MANAGEMENT_TLS_P12 = "management_tls_p12"
+        const val KEY_MANAGEMENT_TLS_PASSWORD = "management_tls_password"
+
         const val KEY_GIGACHAT_TOKEN = "gigachat_token"
         const val KEY_GIGACHAT_EXPIRY = "gigachat_token_expiry"
         const val KEY_SALUTE_TOKEN = "salute_token"

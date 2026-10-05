@@ -9,7 +9,11 @@ import org.bouncycastle.asn1.x509.KeyUsage
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.math.BigInteger
+import java.security.GeneralSecurityException
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -17,6 +21,7 @@ import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
+import java.util.Base64
 import java.util.Date
 import java.util.Locale
 
@@ -66,6 +71,8 @@ object TlsCertFactory {
     /** Alias under which the generated key/cert pair is stored. */
     const val KEY_ALIAS = "jarvis-management"
 
+    private const val PKCS12 = "PKCS12"
+
     private const val VALIDITY_DAYS = 825L
     private const val KEY_SIZE_BITS = 2048
     private const val MILLIS_PER_DAY = 24L * 60 * 60 * 1000
@@ -107,6 +114,53 @@ object TlsCertFactory {
     fun sha256Fingerprint(certificate: X509Certificate): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(certificate.encoded)
         return digest.joinToString(separator = ":") { String.format(Locale.US, "%02X", it) }
+    }
+
+    /**
+     * Serializes [material]'s PKCS#12 [KeyStore] to a Base64 string, encrypted
+     * under the material's own [TlsMaterial.keyPassword].
+     *
+     * The output is SECRET (it carries the private key) and must only ever be
+     * handed to [com.jarvis.assistant.util.SecretVault] — never logged or
+     * persisted in plain storage.
+     *
+     * THROWS on a store failure rather than returning null: the keystore was
+     * built in-process by [generate], so a failure here is a real JCE problem
+     * worth surfacing, not a corrupt-input case. [decode] is the tolerant
+     * counterpart.
+     */
+    fun encode(material: TlsMaterial): String {
+        val out = ByteArrayOutputStream()
+        out.use { material.keyStore.store(it, material.keyPassword) }
+        return Base64.getEncoder().encodeToString(out.toByteArray())
+    }
+
+    /**
+     * Reconstructs [TlsMaterial] from a Base64 PKCS#12 blob produced by
+     * [encode], using the persisted [password] to unlock it.
+     *
+     * Returns null on ANY failure — corrupt/truncated Base64, a wrong password,
+     * a missing [KEY_ALIAS] entry, or a non-X.509 certificate — so the caller
+     * can regenerate from scratch. This NEVER throws: the persistence store
+     * treats an undecodable blob exactly like an absent one.
+     *
+     * [password] is only read (the [KeyStore] does not retain it); the returned
+     * material holds its OWN copy, so the caller may zero the array it passed.
+     */
+    @Suppress("SwallowedException") // an undecodable blob is a normal regenerate signal
+    fun decode(encoded: String, password: CharArray): TlsMaterial? = try {
+        val bytes = Base64.getDecoder().decode(encoded)
+        val keyStore = KeyStore.getInstance(PKCS12).apply {
+            ByteArrayInputStream(bytes).use { load(it, password) }
+        }
+        val certificate = keyStore.getCertificate(KEY_ALIAS) as? X509Certificate
+        certificate?.let { TlsMaterial(it, keyStore, KEY_ALIAS, password.copyOf()) }
+    } catch (e: IOException) {
+        null
+    } catch (e: GeneralSecurityException) {
+        null
+    } catch (e: IllegalArgumentException) {
+        null
     }
 
     private fun rsaKeyPair(): KeyPair =
@@ -154,7 +208,7 @@ object TlsCertFactory {
         privateKey: PrivateKey,
         certificate: X509Certificate,
         password: CharArray,
-    ): KeyStore = KeyStore.getInstance("PKCS12").apply {
+    ): KeyStore = KeyStore.getInstance(PKCS12).apply {
         load(null, null)
         setKeyEntry(KEY_ALIAS, privateKey, password, arrayOf(certificate))
     }
