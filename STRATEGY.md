@@ -46,17 +46,23 @@ category. **Passive awareness** remains the deepest single analysis (§6).
    email, delivered as *pull → digest → interrupt*, triaged deterministically,
    gated by the existing arbiter, and summarised on a **tool-free** pass so
    untrusted content can never become an action.
-7. **Smart-home control is the action flagship** (§7): reach it through **Home
-   Assistant** (local, GMS-free, already MCP-speaking), a **Yandex user-API** path
-   for Yandex homes (§7.3), and a scoped direct-LAN path; **tier writes by device
-   class** — pre-authorise reversible low-harm actions, always confirm
-   locks/garage/alarm/oven. Do **not** attempt GMS-free Matter commissioning.
+7. **Smart-home control is the action flagship** (§7): a **unified
+   multi-provider surface** over a normalized model — **Home Assistant**
+   (LAN REST/WS), **Yandex Smart Home** (user IoT API), and **SmartLife/Tuya**
+   (Cloud OpenAPI) are **equal first-class providers** behind one model. Jarvis
+   is **not a hub** (no add/remove devices, rooms, config, or automations) and
+   is **BYOC**: no app-owned vendor `client_id`/secret/project ships; the user
+   supplies every credential via the app and it lives in the Keystore.
+   **Tier writes by the normalized action** — pre-authorise reversible low-harm
+   actions, always confirm locks/garage/alarm/oven/unknown. Do **not** attempt
+   GMS-free Matter commissioning.
 8. **Refuse**: accessibility screen-scraping, screen OCR, user-account scraping
    of private messengers, on-device ASR/TTS, speaker ID, sound-event detection,
    and anything platform-gated. These fight the platform or the hardware.
 9. **First concrete step: the Routine/Briefing spine**, immediately followed by
    the passive-awareness read model. The cheap standalone win is the `LAN`
-   server kind, which unblocks all smart-home work.
+   server kind, which unblocks the LAN half of the smart-home work (a LAN Home
+   Assistant); the Yandex/Tuya direct-cloud providers do not need it.
 
 ---
 
@@ -118,13 +124,16 @@ The strategy is not "build an open-source assistant for everyone." It is
   product **if and only if it delivers on its promises and is genuinely helpful**
   (§0.3: attention eliminated; §3.3: actually there).
 
-**Concrete deployment (validates the whole thesis):** the owner runs a **LAN Home
-Assistant aggregating 50+ devices across many ecosystems at once** — Yandex,
-Google Home, SmartThings, Smart Life/Tuya, Xiaomi, Philips Hue, Electrolux,
-Polaris, and more (§7.0). That is the exact home Jarvis is built to run: one
-typed HA connection reaches the entire heterogeneous house, which is why the
-hub-first smart-home path (R4) is the product's action flagship and why the
-awareness lanes (`BehaviorArbiter`, digests) have a real signal to act on.
+**Concrete deployment (validates the whole thesis):** the owner runs a
+heterogeneous home — a **LAN Home Assistant** alongside native **Yandex Smart
+Home** and **Smart Life/Tuya** accounts, spanning **50+ devices** across many
+ecosystems at once — Yandex, Google Home, SmartThings, Smart Life/Tuya, Xiaomi,
+Philips Hue, Electrolux, Polaris, and more (§7.0). That is the exact home Jarvis
+is built to run: HA reaches most of the local mix, while the Yandex- and
+Tuya-native devices are reached directly through their own user APIs (§7.2),
+which is why the **unified multi-provider smart-home path (R4)** is the product's
+action flagship and why the awareness lanes (`BehaviorArbiter`, digests) have a
+real signal to act on.
 
 **Consequence for the roadmap:** "will other people adopt this?" is explicitly
 *not* the validation gate. The gate is "does it actually reduce this user's
@@ -226,8 +235,9 @@ Three structural advantages the commercial assistants cannot copy:
 ### 3.2 Jobs Jarvis should not contest
 
 World-knowledge QA (delegate to a user-key LLM); screen/image context; broad
-smart-home mesh (bridge via MCP, don't become a hub); default-assistant /
-hotword / privileged-notification roles; multi-user identity (no mic array).
+smart-home mesh (be a unified multi-provider client, don't become a hub);
+default-assistant / hotword / privileged-notification roles; multi-user identity
+(no mic array).
 
 ### 3.3 Reliability and graceful degradation (a first-class pillar)
 
@@ -304,8 +314,8 @@ Ranked by **(user value) × (leverage of existing code) × (feasibility without 
 |---|---|---|---|---|
 | R1 | **Routine & Briefing spine** | **P0** | L | Turns "responds" into "acts at the right time" — the Siri gap |
 | R2 | **Calendar reader (CalDAV-native)** | **P0** | M | Feeds briefings + commute; must be first-party `READ_ONLY` (§8) |
-| R3 | **MCP packs + `LAN` server kind** | **P0** | M | Prerequisite for all smart home; today `McpUrlPolicy` rejects `192.168.x.x` |
-| R4 | **Home Assistant subsystem** (§7) | **P0** | L | The action flagship — a first-party `home/` subsystem over native HA REST/WS, not MCP; see §7.2.1 |
+| R3 | **MCP packs + `LAN` server kind** | **P0** | M | Prerequisite for reaching a LAN Home Assistant and local servers; today `McpUrlPolicy` rejects `192.168.x.x` |
+| R4 | **Unified smart-home subsystem** (§7) | **P0** | L | The action flagship — a first-party `home/` subsystem over a **provider registry** (HA REST/WS, Yandex IoT, Tuya OpenAPI) with a normalized risk model, not MCP; see §7.2.1 |
 | R5 | **Passive awareness** (§6) | **P0/P1** | L | The awareness flagship; see §6 |
 | R6 | **Email awareness + confirmation-gated reply** | P1 | L | Clean IMAP/SMTP + app passwords; on-thesis |
 | R7 | **Commute / "leave now"** | P1 | M | Alexa+'s headline; MapKit has no traffic-aware arrival (accuracy cap) |
@@ -541,39 +551,52 @@ attacker-writable. OWASP **LLM01:2025 Prompt Injection** is the #1 LLM risk, and
 > natural counterpart to passive awareness: it *notices* the house, and it *acts
 > on* the house.
 
-### 7.0 The concrete target — one LAN Home Assistant over a heterogeneous home
+### 7.0 The concrete target — one normalized model over a heterogeneous home
 
 The design is anchored to the owner's actual deployment, not an abstraction:
 
-- **A single LAN-accessible Home Assistant** is the aggregation point for a
-  **large home (50+ devices)** drawn from **many ecosystems at once** — Yandex
+- **A large home (50+ devices) drawn from many ecosystems at once** — Yandex
   Smart Home, Google Home, SmartThings, Smart Life/Tuya, Xiaomi Home, Philips
   Hue, and appliance brands such as Electrolux and Polaris, among others.
-- **HA is the universal bridge; Jarvis talks to HA, not to each vendor cloud.**
-  Each ecosystem is brought into HA once (its own integration), and Jarvis needs
-  exactly **one** typed connection. This is why the per-vendor cloud APIs in
-  §7.3 are mostly *not* Jarvis's problem: **the user's HA already did that work.**
-- **Scale shapes the design.** 50+ entities means entity resolution, area/room
-  grouping, and disambiguation («свет на кухне» → which of several lights) are
-  first-class — not a nice-to-have. It also makes a **single typed, enumerable
-  control surface** far more valuable than per-device special-casing.
+- **Three ecosystems are reachable directly by Jarvis, as equal first-class
+  providers.** A **LAN Home Assistant** is one of them (and already aggregates
+  much of the mix via its own integrations); the **Yandex Smart Home user IoT
+  API** reaches Yandex-native homes; the **SmartLife/Tuya Cloud OpenAPI**
+  reaches Tuya devices. Jarvis speaks **one normalized model** across all three
+  behind a single typed tool surface — it does **not** assume HA is the only
+  bridge, and it does **not** become a hub.
+- **The user supplies every credential (BYOC).** HA is already key-based (a
+  pasted long-lived access token); Yandex and Tuya are **user-owned** OAuth
+  clients / cloud projects. The app ships **no** vendor `client_id`, secret, or
+  project, and can reach nothing the user has not personally configured
+  (§7.3).
+- **Scale shapes the design.** 50+ entities across providers means entity
+  resolution, room/kind grouping, and disambiguation («свет на кухне» → which of
+  several lights) are first-class — not a nice-to-have. Because no two
+  ecosystems share device ids, identity is explicitly namespaced
+  (`"ha:light.kitchen"`, `"yandex:<id>"`, `"tuya:<id>"`), which makes a
+  **single typed, enumerable control surface** far more valuable than per-device
+  special-casing.
 
-**Strategic consequence:** the hub-first choice is not just "easiest path" — for
-this deployment it is the *only* sane one, and it argues for investing in a
-**first-party typed HA integration** (REST/WS with entity/area/device registries)
-rather than trying to force control through the intent-shaped MCP surface (§7.2).
+**Strategic consequence:** a **first-party `home/` subsystem over a provider
+registry** is the right investment — one typed client per ecosystem, normalized
+risk, one resolver — rather than forcing control through the intent-shaped MCP
+surface (§7.2) or assuming any single hub. Providers **coexist**: the user may
+run HA + Yandex + Tuya at once, each enabled by its own config entry (the MCP
+config-list idiom, not a radio).
 
-**Second consequence — native HA also unlocks autonomous awareness (§6/§8).**
-An MCP connection is `EXTERNAL` by policy and therefore **voice-turn-only**: it
-can never feed proactive speech. A **first-party** HA integration is not forced
-into that class — its state reads can be `READ_ONLY` first-party data, which is
-exactly what an autonomous digest needs. So the same native integration that
-gives typed control (**Agency**) also gives a home-state feed for proactive
-notices like «стиральная машина закончила» (**Awareness**), without weakening
-the MCP boundary. This is a material argument for native-over-MCP here, and it
-ties §7 directly to §6. The boundary still holds where it must: *control* stays a
-`STATE`/`IRREVERSIBLE`-class action, voice-initiated, never autonomously
-triggered; only reads become awareness-eligible.
+**Second consequence — first-party state reads unlock autonomous awareness
+(§6/§8).** An MCP connection is `EXTERNAL` by policy and therefore
+**voice-turn-only**: it can never feed proactive speech. The `home/` providers
+are not forced into that class — their state reads are first-party `READ_ONLY`
+data, which is exactly what an autonomous digest needs. So the same native
+integration that gives typed control (**Agency**) also gives a home-state feed
+for proactive notices like «стиральная машина закончила» (**Awareness**),
+without weakening the MCP boundary. v1 awareness is **HA-only** because only HA
+offers true WebSocket `subscribe_events` push; Yandex and Tuya are poll-only,
+with undocumented / quota-metered limits (§7.2.1). The boundary still holds where
+it must: *control* stays a `CONTROLLED` action, voice-initiated, never
+autonomously triggered; only reads become awareness-eligible.
 
 ### 7.1 Why it is feasible (and where the difficulty really is)
 
@@ -582,114 +605,184 @@ hub, but **not** control. The problem splits cleanly:
 
 | Sub-problem | Difficulty | Notes |
 |---|---|---|
-| **Connectivity** | **Easy** | Talk to a hub over LAN, or hit WiFi devices directly. No radio needed. |
-| **Semantics** | **Hard** | Entity/area resolution across **50+ mixed-ecosystem devices** (§7.0) is a first-class problem, not a convenience — «свет на кухне» must bind to a concrete `entity_id` deterministically. §7.2.1. |
+| **Connectivity** | **Easy** | Talk to a provider over the network (LAN hub or cloud API), or hit WiFi devices directly. No radio needed. |
+| **Semantics** | **Hard** | Entity resolution across **50+ mixed-ecosystem devices** (§7.0) is a first-class problem, not a convenience — «свет на кухне» must bind to a concrete `(provider, nativeId)` handle deterministically. §7.2.1. |
 | **Risk tiering** | **Hard** | The real design problem — §7.4. |
 
-### 7.2 Recommended architecture — hub-first, direct-LAN second
+### 7.2 Recommended architecture — a provider registry of typed clients
 
-1. **Primary: a first-party `home/` subsystem over native HA REST/WS — do not
-   route HA through the MCP lane.** HA ships a built-in MCP server (`mcp_server`,
-   HA 2025.2, `/api/mcp`, Streamable HTTP stateless, LLAT/OAuth), but its surface
-   is the **Assist/LLM intent API** — `homeassistant__GetLiveContext` and
-   `intent__HassTurnOn` / `HassTurnOff` / `HassSetPosition` with
-   **natural-language slots** (`name`/`domain`/`area`), **not** typed
-   `domain.service` + `entity_id` + `service_data`. One `intent__HassTurnOn`
-   turns on a lamp *and* locks a lock, and Jarvis never sees the resolved entity —
-   so MCP is **untierable by construction** and **cannot feed awareness**
-   (`EXTERNAL` → voice-turn-only). Therefore HA control is a **dedicated
-   subsystem** (§7.2.1) that owns registry + resolution + tiering over HA's
+Jarvis talks **directly** to each supported ecosystem through a typed client,
+unified by one normalized `home/` model (§7.2.1). **Home Assistant is one of
+three providers, not the universal bridge** — and it is **not routed through the
+MCP lane** (see below).
+
+1. **`HomeProviderRegistry`.** It holds the user's **enabled `HomeProviderConfig`s**
+   (the MCP config-list idiom) and builds **one backend per config** via an
+   exhaustive `when(HomeProviderId)` with **no `else`** — a fourth provider is a
+   compile error until wired. Providers **coexist**: the user may run HA +
+   Yandex + Tuya simultaneously. There is no "select one" radio.
+2. **Home Assistant — first-party, native REST/WS, not MCP.** HA ships a built-in
+   MCP server (`mcp_server`, HA 2025.2, `/api/mcp`, Streamable HTTP stateless,
+   LLAT/OAuth), but its surface is the **Assist/LLM intent API** —
+   `homeassistant__GetLiveContext` and `intent__HassTurnOn` / `HassTurnOff` /
+   `HassSetPosition` with **natural-language slots** (`name`/`domain`/`area`),
+   **not** typed `domain.service` + `entity_id` + `service_data`. One
+   `intent__HassTurnOn` turns on a lamp *and* locks a lock, and Jarvis never sees
+   the resolved entity — so MCP is **untierable by construction** and **cannot
+   feed awareness** (`EXTERNAL` → voice-turn-only). HA is therefore a **dedicated
+   backend** (§7.2.1) that owns registry + resolution + tiering over HA's
    **native REST/WS** API (`POST /api/services/<domain>/<service>`, WS registry
-   commands, `subscribe_events`), speaking **one** typed path with **one** auth
-   (a HA long-lived access token in the Keystore). The MCP lane stays for
-   **non-HA** external servers; it is not the HA integration.
-   *(Rejected alternatives: delegating to `conversation/process` is untierable
-   and executes with no dry-run — rejected for control, optional read-only
-   fallback only; a custom HA component is version-coupled and moves Jarvis logic
-   into HA — rejected for v1.)*
-2. **Secondary: a scoped direct-LAN allow-list** — **Shelly** (JSON-RPC HTTP),
-   **Tasmota/ESPHome/WLED** (MQTT), **Philips Hue** (local v2 REST/SSE), and
-   optionally **Yeelight** (LAN JSON). Implement these as **built-in tools with
-   precise risk classes**, not as a general "any LAN MCP server" free-for-all.
-3. **Yandex homes: the user-API** (§7.3) — `api.iot.yandex.net` with OAuth scopes
-   `iot:view`/`iot:control`, token in the Keystore. Cloud-routed (there is no
-   Yandex LAN API), but it is the one **sanctioned inbound** path into a user's
-   Yandex devices/groups/scenarios, and Yandex's own Zigbee/Matter devices are
-   **not** importable into HA — so this is the only way to reach them.
-4. **Do not own Matter/Thread.** Matter **commissioning on Android is GMS-gated**
+   commands, `subscribe_events`), with **one** auth (a HA long-lived access token
+   in the Keystore). *(Rejected alternatives: delegating to
+   `conversation/process` is untierable and executes with no dry-run — rejected
+   for control, optional read-only fallback only; a custom HA component is
+   version-coupled and moves Jarvis logic into HA — rejected for v1.)*
+3. **Yandex Smart Home — first-party typed client over the user IoT API**
+   (`api.iot.yandex.net`, §7.3.1). Cloud-routed (there is no Yandex LAN API),
+   OAuth `iot:view`/`iot:control`, and **BYOC** — the user supplies their **own**
+   OAuth client; no app-owned client ships. It is the one **sanctioned inbound**
+   path into a user's Yandex devices/groups/scenarios, and Yandex's own
+   Zigbee/Matter devices are **not** importable into HA — so this is the only way
+   to reach them. **Gated on G0.**
+4. **SmartLife / Tuya — first-party typed client over the Cloud OpenAPI**
+   (HMAC-signed, **BYOC** — the user's own cloud project, §7.3.2). It is the
+   second direct-cloud provider, **gated on G1 and G3**.
+5. **Do not own Matter/Thread.** Matter **commissioning on Android is GMS-gated**
    (HA documents that the GMS-free app flavour cannot add Matter devices; its
    source hard-disables the Play-Services commissioning client). Control-only
    without GMS is possible only by embedding the `connectedhomeip` CHIP SDK — a
-   research project, not a feature. Let **HA be the Matter controller**: commission
-   once with any phone/Apple device, then drive it through HA (multi-fabric).
-   Thread devices need a border router, which Jarvis does not have.
-5. **Do not build cloud bridges for Google Home / Alexa / Apple Home.** All three
+   research project, not a feature. Let **HA (or the vendor app) be the Matter
+   controller**: commission once with any phone/Apple device, then drive it
+   through the provider that owns it. Thread devices need a border router, which
+   Jarvis does not have.
+6. **Do not build cloud bridges for Google Home / Alexa / Apple Home.** All three
    are cloud-to-cloud (HomeKit is Apple-platforms-only). They are out as
    GMS-free local control.
+
+**Boundary: the MCP lane stays, for non-home external servers.** None of the
+three home providers traverses `mcp/`; the MCP lane is not the HA integration and
+not the home integration at all. It remains the transport for user-hosted and
+third-party external servers (§9).
 
 Also: **IR** (ACs/TVs) needs an actual emitter — probe
 `ConsumerIrManager.hasIrEmitter()` at runtime (many tablets lack one; otherwise
 use a LAN IR bridge). **BLE** works GMS-free via `BluetoothGatt` for devices with
-a known profile. **RF** requires an external bridge.
+a known profile. **RF** requires an external bridge. Direct-LAN control of
+speaker-less devices (Shelly, Tasmota/ESPHome, Hue) is **not v1**: where those
+matter they are reached through a provider that already integrates them (almost
+always HA).
 
 ### 7.2.1 The `home/` subsystem — bounded design
 
-A first-party package (`home/`) modeled on `geo/` (a capability with one impl, not
-a selectable provider) plus a `cognitive/`-style coordinator. **Android-free pure
-core; transport at the edge.**
+A first-party package (`home/`) modeled on `geo/` (a narrow capability) plus a
+`cognitive/`-style coordinator. **Android-free pure core; transport at the
+edge.** It is deliberately **not** the sealed single-selectable-provider pattern:
+the registry holds several **coexisting** providers, so it is the MCP
+config-list idiom plus a `Selecting*`-style exhaustive `when(HomeProviderId)`,
+not a Settings radio.
 
-- **Transport split.** **REST** (`POST /api/services/<domain>/<service>`,
-  `GET /api/states`, `/api/services`) for the state snapshot and **all writes**;
-  **WebSocket** (`/api/websocket`) for the **registries** (entity/area/device —
-  WS-only) and `subscribe_events`. One HA LLAT in the Keystore (prefer a
-  **limited HA user**, not a full-account token). Bounded backoff + reconnect;
-  reads serve last cache and degrade honestly, writes return `Unreachable`.
+- **Provider identity & model.** `HomeProviderId { HOME_ASSISTANT("ha"),
+  YANDEX("yandex"), TUYA("tuya") }`; all three are **equal first-class** in the
+  model. A `HomeBackend` SPI exposes `discover()`, `readState(keys)` and
+  `apply(action)`, returning typed `HomeResult`/`HomeError` (**never
+  exceptions**). Because Yandex returns **per-capability `action_result.status
+  DONE|ERROR`** and Tuya can partially fail, `HomeResult` carries a **`PARTIAL`**
+  outcome — a top-level "ok" must **never** be reported as blanket success.
+- **Identity is `(provider, nativeId)`.** No two ecosystems share device ids, so
+  the wire form is namespaced (`"ha:light.kitchen"`, `"yandex:<id>"`,
+  `"tuya:<id>"`). `discover()` returns these handles; control **accepts only
+  handles present in the live catalog** — a model-invented id is rejected before
+  any transport call.
+- **Provider-neutral vocabulary.** `DeviceKind`, `Capability`, `ActionVerb`,
+  `HomeAction`, `HomeState`. Each backend has a **pure, total capability-mapper**
+  — HA `domain`/`device_class`; Yandex `devices.capabilities.*` /
+  `properties.float`; Tuya per-device **DP codes read from `/specification`**
+  (never hardcoded, G1); anything unmapped → `UNKNOWN`. The mapper is the **only
+  constructor** of `DeviceKind`/`Capability`, which is what makes "unknown → T2"
+  structural rather than a runtime hope.
+- **Transport split, at the edge.** Each backend owns its own transport —
+  HA **REST** (`POST /api/services/<domain>/<service>`, `GET /api/states`,
+  `/api/services`) for the state snapshot and **all writes** plus **WebSocket**
+  (`/api/websocket`) for the **registries** (entity/area/device — WS-only) and
+  `subscribe_events`; Yandex/Tuya signed HTTPS. Bounded backoff + reconnect;
+  reads serve last cache and degrade honestly, writes return typed
+  `Unreachable`/`AuthError`. One HA LLAT in the Keystore (prefer a **limited HA
+  user**, not a full-account token).
 - **The resolver is the hard part and must be deterministic — the model never
-  picks the `entity_id`.** A pure `HomeEntityResolver` binds Russian speech →
-  concrete `(domain, entity_id, service, service_data)` using HA's area/device
-  registries **plus a persistent, user-anchored alias map** (the `AppAliases`
-  idiom, not fuzzy NL matching). Learned **only** from explicit disambiguation
-  answers and explicit edits — never from implicit success. Ambiguous/NotFound on
-  a control call **fails closed**; read tools may return candidates so the
-  assistant can ask a one-line disambiguation question. Stored as a prefs JSON
-  blob (mirrors `mcpServers`; **no Room bump** in the first phase).
-- **Authorization seam.** Control is one `homeControl` tool carrying a **new
-  `ToolRisk.CONTROLLED`** (voice-turn-only, like `EXTERNAL`). A pure
-  `HomeRiskClassifier(domain, deviceClass, service) → T0/T1/T2` runs at the
-  **existing single choke point**; a pure `TieredActionTool` seam lets the
-  registry derive a `WriteConfirmation` key **without `home/` knowing `tools/`**.
-  T2 (and any T1 action without a matching grant) reuses **`WriteConfirmation` /
-  `AffirmativeUtterance`** — *not* `IrreversibleCommand` (an unlock is not a
-  removal verb). T1 grants are `(entityId, domain, serviceClass)`,
-  **entity-level, never area-wide**; any ungranted call falls back to T2.
-- **Bound it hard — do NOT build a parallel HA.** In scope: read state, read
-  registries, call a typed service, invoke an existing scene/script (Tier 2).
-  **Out of scope:** automations, dashboards/Lovelace, history/logbook, energy,
-  backups, add-ons/Supervisor, HA config, integrations config, template
-  rendering. The capability filter (§0) applies with force here.
-- **Awareness.** WS `subscribe_events` on a **curated opt-in entity set**; the
-  projection is `(entityId, domain, deviceClass, oldState, newState, atMs)` with
-  **no free-text attributes** into any prompt. Interesting transitions only
-  (appliance done, door opened), debounced and capped, routed through
-  `BehaviorArbiter` + `ProactivePresenter` (§6 pull→digest→interrupt). Reads are
-  first-party `READ_ONLY`; control stays `CONTROLLED`, voice-initiated, never
-  autonomous.
-- **Phasing.** **H1** connection + LLAT + registries + **curated entity/area
-  allowlist** + read tools + `homeControl` **T2-confirm-only** (proves transport,
-  auth, confirm path; keeps prompt size bounded at 50+ devices). **H2** full
-  resolver (aliases, lexicon, disambiguation). **H3** T1 grants. **H4**
-  awareness. **H5** breadth (floors, more classes, optional read fallback).
-- **Settings.** New `SettingsCategory.HOME` + detail screen + controller
-  (factory `when` is compile-forced); keys `homeAssistantUrl`, `homeEntities`,
-  `homeAliases`, `homeGrants`; the token via `SecretVault`/`CredentialsStore`
-  (argument-keyed, like `mcpSecret`). Endpoint+token → `SERVICE_RESTART`;
-  aliases/grants/allowlist → `LIVE`. The LAN URL policy (§9) governs the URL.
+  picks the entity id.** A pure `HomeEntityResolver` binds Russian speech →
+  concrete handles, **fail-closed**, in a fixed order: **explicit alias → exact
+  normalized provider name → room+kind composition → token substring →
+  `NotFound`**. On a **control** call, ambiguity/`NotFound` fails closed; **read**
+  tools may return candidates so the assistant can ask a one-line disambiguation
+  question. Aliases are **seeded** from provider names and **learned only** from
+  explicit user edits/disambiguation — never from implicit success. It owns a
+  **tiny normalizer** and does **not** depend on `tools/AppAliases`. Config is
+  stored as prefs JSON blobs mirroring `McpServerConfigCodec`
+  (`Empty`/`Invalid`/`Ok`, **never throw**): `homeProviders`, `homeEntities`,
+  `homeAliases`, `homeGrants`, `homeAwarenessEnabled` (**no Room bump**).
+- **Authorization seam (the crux, §7.4).** Reads are issued as **`READ_ONLY`**
+  (first-party data that cannot mutate, and required so autonomous/scheduled
+  awareness reads work — `CONTROLLED` would deny a non-VOICE turn). **Writes are
+  `CONTROLLED`** (voice-turn-only). There are **two tools**, and **zero change to
+  the crown-jewel confirmation seam**:
+  - **`homeControl`** (`CONTROLLED`, no confirmation marker): executes **only
+    T1** when a matching **entity-level grant** exists; otherwise it returns a
+    normal `{outcome:"requires_confirmed_control", target, action}` result
+    (never a silent success, never an error).
+  - **`homeConfirmControl`** (`CONTROLLED` **and** `ConfirmedTool`,
+    `confirmationDomain="home"`, `confirmationAction="control"`): the registry's
+    existing `confirmationGate` forces the next-turn ASR affirmative; on
+    confirmation it **re-resolves and re-classifies** the target, then executes.
+    Because the tier is **re-derived from the *resolved real device***, the
+    model's tool choice is never the boundary — a prompt-injected fast-path lock
+    call is refused and routed to confirmation. A recommended,
+    **non-authorizing** `ConfirmationLabel` addition makes the challenge name the
+    true target (it improves the wording only; the tier and decision are always
+    re-derived).
+- **Grants are entity-level, never area-wide**, keyed
+  `(provider, nativeId, capability, verb)`, **default none (deny-by-default)**,
+  persisted as the `homeGrants` JSON blob, `LIVE`, revocable. A T1 action with
+  no matching grant falls back to `homeConfirmControl` (T2-style). The tier is
+  **re-derived** at execution, so an unknown kind/capability/verb is T2.
+- **Bound it hard — do NOT build a parallel HA or become a hub.** In scope:
+  discover/list, read state, and a typed control action (including a
+  scene/script **invocation**, always T2). **Out of scope:** adding/removing
+  devices, room/config management, automations, dashboards/Lovelace,
+  history/logbook, energy, backups, add-ons/Supervisor, provider config,
+  template rendering. The capability filter (§0) applies with force here.
+- **Awareness v1 is HA-only.** HA is the only provider with true WS
+  `subscribe_events` push; Yandex and Tuya are **poll-only** (undocumented limits
+  / quota-metered). Opt-in curated `homeEntities`, **default off**; the
+  projection is a content-free `HomeNotice` (no free-text attributes, names, or
+  raw payloads) carrying `(provider, nativeId, kind, oldState, newState, atMs)`.
+  Interesting transitions only (appliance done, door opened), debounced and
+  capped, routed through `BehaviorArbiter` → `ProactivePresenter` →
+  `SessionManager.speakProactively` (§6 pull→digest→interrupt), and logged to the
+  existing `behavior_log` table (**no Room bump**). Reads stay `READ_ONLY`;
+  control stays `CONTROLLED`, voice-initiated, never autonomous.
+- **Phasing.** **H1** provider registry + HA REST/WS + LLAT + registries +
+  curated `homeEntities` + **read tools** + the two control tools
+  (T2-confirm-only) + `SettingsCategory.HOME` (proves transport, auth, confirm
+  path; keeps prompt size bounded at 50+ devices). **H2** full resolver/aliases.
+  **H3** T1 grants. **H4** awareness. **H5** **Yandex** (gated on G0). **H6**
+  **Tuya** (gated on G1/G3).
+- **Settings.** New `SettingsCategory.HOME` + detail screen + controller (factory
+  `when` is compile-forced) + **host-owned list/edit Activities** for
+  providers/aliases/grants/awareness. Secrets go through an **argument-keyed**
+  `homeSecret(providerId, field)` accessor (`SecretVault.homeSecretKey`),
+  **excluded from `SettingsInventory` reflection** like `mcpSecret`. Provider
+  set/URLs/credentials → `SERVICE_RESTART`; aliases/grants/entities/awareness →
+  `LIVE`. The reserved export `home` section is populated. The LAN URL policy
+  (§9) governs a LAN HA URL.
 
 ### 7.3 The Russian ecosystem (verified 2026)
 
-Russian-first means the vendor clouds matter — but their *direction* decides what
-Jarvis can actually do. Two ecosystem paths are real; the rest are outbound-only
-exposure targets.
+Russian-first means the vendor clouds matter. **Three inbound paths are real and
+first-class** — **Home Assistant** (local, §7.2), **Yandex Smart Home**
+(§7.3.1) and **SmartLife / Tuya** (§7.3.2) — and the rest are outbound-only
+exposure targets. Home Assistant remains the aggregation point for much of the
+local mix, but it is **not** the only provider. All three are **BYOC**: the user
+supplies the credentials; the app ships none.
 
 - **Yandex Smart Home — two APIs, both directions.** (a) As a **provider**,
   Yandex calls *your* HTTPS endpoint (skill moderation; a *private* skill skips
@@ -697,8 +790,11 @@ exposure targets.
   **The user-facing IoT API** (`api.iot.yandex.net`, OAuth scopes
   `iot:view`/`iot:control`) lets a third-party OAuth app **read and command a
   user's Yandex home** (rooms, groups, devices, scenarios). This is the **one
-  sanctioned inbound control path** across the Russian clouds, and the reason to
-  add Yandex as a first-class integration (§7.2).
+  sanctioned inbound control path** into Yandex homes, and the reason to add
+  Yandex as a first-class provider (§7.2). **BYOC:** the app ships **no**
+  app-owned Yandex OAuth client — the user registers their own app and pastes
+  their `client_id` (and any `client_secret` their app requires), or a pasted
+  long-lived token; see §7.3.1.
 - **Sber Smart Home — open, but B2B-gated.** Sber has a public platform with
   **Cloud-to-Cloud** (Sber → vendor webhook) and **MQTT-to-Cloud** (an
   integrator's Sber controller → Sber) paths, but admission requires a **legal
@@ -721,11 +817,17 @@ exposure targets.
   **no inbound path** to import Yandex/Sber/VK clouds into HA. **No HA integration
   and no MCP server exist for the user API** (`api.iot.yandex.net`) — any Jarvis
   integration is greenfield.
-- **Tuya / Smart Life and Xiaomi Mi Home** — the de-facto Russian home for many
-  (grey-imported, large installed base). Both have official HA integrations (Tuya
-  cloud; Xiaomi `xiaomi_miio`) plus **unofficial local** paths (TinyTuya,
-  MIoT/UDP token extraction) that carry **ToS risk**. Keep them as opportunistic
-  HA integrations, **not** a strategy pillar.
+- **SmartLife / Tuya — a first-class, feasibility-gated, BYOC provider
+  (§7.3.2).** The de-facto Russian home for many (grey-imported, large installed
+  base). Jarvis reaches it **directly** through the **Tuya Cloud OpenAPI**
+  (HMAC-signed, **BYOC** — the user supplies their **own** cloud project
+  `client_id`/`secret`, region and uid; the app ships none). It is **gated on
+  G1** (project + QR + `/specification` + quota) and **G3** (whether HA's own
+  Tuya integration already suffices — if it does, direct Tuya ships only where
+  HA cannot reach a device).
+- **Xiaomi Mi Home — HA-only.** Official (`xiaomi_miio`) plus **unofficial
+  local** paths (MIoT/UDP token extraction) that carry **ToS risk**; reach
+  Xiaomi through HA, **not** as its own Jarvis provider.
 - **Wiren Board** — open Debian/MQTT controllers; consumable via MQTT (a real
   local-control candidate). Rubetek, iRidi, Larnitech, and the telecom hubs
   (Ростелеком/МТС/Beeline) are unverified/vendor-locked — do not build on them.
@@ -738,9 +840,12 @@ sanctioned Russian-cloud path is usable at all.
 - **Verdict: a native first-party tool, not an MCP server.** The API is a bespoke
   OAuth2/REST surface with per-capability result semantics and a fixed-redirect
   auth dance; wrapping it as generic MCP adds a hop and loses typed result
-  handling. It sits naturally beside the geo/weather lanes: an `iot/` client +
-  `ToolContract` tools (`getHomeState`, `controlDevice`, `runScenario`), token in
-  `KeystoreVault`.
+  handling. It sits naturally beside the geo/weather lanes: a `HomeBackend`
+  client + the shared `homeControl` tools (§7.2.1), token in `KeystoreVault`.
+- **BYOC.** The app ships **no** Yandex OAuth client. The user registers their
+  own API-access app at `oauth.yandex.ru` and supplies its `client_id` (plus a
+  `client_secret` only if their app type requires one), or pastes a long-lived
+  token; all stored via `SecretVault`. Nothing is reachable until they do.
 - **Auth (OAuth 2.0 code flow).** App at `oauth.yandex.ru`; authorize →
   `?code` (TTL 10 min) → `POST /token`. **PKCE is supported** (`S256`), so the
   code exchange needs no `client_secret` — consistent with "no secrets in the
@@ -751,7 +856,7 @@ sanctioned Russian-cloud path is usable at all.
   be changed, so a tablet with no browser flow must **show the URL/QR and accept
   a pasted code**, or use the manual debug token (explicitly provided for
   "checking your app works").
-- **⚠️ Blocking gate: individual eligibility is UNKNOWN.** Yandex returns
+- **⚠️ Gate G0 (blocking): individual eligibility is UNKNOWN.** Yandex returns
   `unauthorized_client` when an app is rejected/pending **moderation**. The docs
   require no legal entity, but verification is emphasized, and **nothing states
   whether an individual/self-hosted app can hold `iot:view`/`iot:control`**. This
@@ -779,10 +884,40 @@ sanctioned Russian-cloud path is usable at all.
   without a browser; cloud-state ≠ physical-state; **rate limits entirely
   undocumented** (probe a burst before relying on the API).
 
-**Verdict for Russia:** the pragmatic stack is **HA as the universal local bridge
-+ the Yandex user API for Yandex homes + direct LAN/MQTT for local devices**.
-Sber and VK vendor clouds are **outbound-only** for Jarvis. HA reaches the
-Tuya/Xiaomi/Zigbee/Wi-Fi mix; nothing else does.
+#### 7.3.2 Tuya / SmartLife user Cloud API — integration shape and the G1/G3 gates
+
+- **Verdict: a first-party typed `HomeBackend`, not an MCP server.** A bespoke
+  HMAC-signed REST surface with per-DP result semantics, mirroring the Yandex
+  lane.
+- **BYOC.** The app ships **no** Tuya cloud project. The user creates their own
+  project in the Tuya IoT Platform and supplies `client_id` / `client_secret`,
+  the region/endpoint, and their `uid` (bound to the SmartLife app account), all
+  via `SecretVault` (§7.2.1). Nothing is reachable until they do.
+- **Signing is unavoidable and client-side.** Every call carries an HMAC-SHA256
+  signature over a canonical string (`client_id`, `t` timestamp ms, `nonce`,
+  `stringToSign`, with `sign = HMAC-SHA256(client_secret, stringToSign)` and
+  `sign_method`), plus an access token where the endpoint requires one. Document
+  the exact canonical recipe — it is easy to get subtly wrong and the failure is
+  an opaque error code.
+- **Discovery & mapping.** `GET /v1.0/users/{uid}/devices` lists devices; per
+  device, `GET /v1.0/devices/{device_id}/specification` yields the **DP code
+  map**, which is the **only** legitimate source of `Capability`/`ActionVerb`
+  for that device — DP codes are per-device and must **never** be hardcoded.
+- **⚠️ Gate G1 (blocking): project + QR + spec + quota.** Confirm an individual
+  (not an RF legal entity) can create a project, that the SmartLife account can
+  be QR-bound, that `/specification` returns usable DP codes, and what the
+  API/quota terms actually are — by calling the API with a real project
+  *before any code is written*.
+- **⚠️ Gate G3 (blocking, a product decision).** Test whether HA's Tuya
+  integration already reaches enough of the deployment. **Decision: direct Tuya
+  is gated behind G3** — ship HA first, and add direct Tuya only where HA cannot
+  reach a device.
+
+**Verdict for Russia:** the pragmatic stack is a **provider registry of three
+direct typed clients — Home Assistant (REST/WS) + the Yandex user API + the Tuya
+OpenAPI — over one normalized model**, with HA reaching the Xiaomi/Zigbee/Wi-Fi
+mix it already integrates. Sber and VK vendor clouds are **outbound-only** for
+Jarvis. All three providers are **BYOC**.
 
 ### 7.4 The risk-tiering problem (the crux)
 
@@ -793,29 +928,39 @@ say «да» across two turns to turn on a lamp. But relaxing it uniformly is
 dangerous, because the same tool surface includes **locks, garage doors, ovens,
 and alarms**, where an injected or hallucinated call is **physical**.
 
-**Tier by the action's reversibility/severity, derived from the device class and
-enforced at the same choke point — never by trusting the model to pick a tier:**
+**Tier by the normalized action, derived and enforced at the one choke point —
+never by trusting the model to pick a tier.** The classifier's input is the
+provider-agnostic `HomeAction(key, kind, capability, verb, level)`, *after* each
+backend's pure mapper has already translated its native taxonomy into
+`DeviceKind`/`Capability`/`ActionVerb`. **There is deliberately no per-provider
+tier table** — provider taxonomy is mapped once, up front:
 
-- **Tier 0 — Read.** Always allowed (states, sensors, registries).
-- **Tier 1 — Reversible, low-harm.** Lights, plugs, fans, media, brightness,
-  climate within a safe band, `cover` that is a blind/curtain/shade. **Pre-authorisable**
-  by an explicit Settings grant scoped to `(entityId, domain, serviceClass)` —
-  **entity-level, never area-wide** — revocable. Executes immediately. Worst case
-  from injection: a light turns on — annoying, not dangerous.
-- **Tier 2 — Safety-critical / hard-to-reverse.** `lock.` (all),
-  `alarm_control_panel.` (all), `cover` with `garage/door/gate` **or an unknown
-  device_class**, oven/kettle/water-heater, climate outside a safe band,
-  `homeassistant.turn_on/off` (target may hit a lock), and **every
-  scene/script invocation** — a benign-named "good night" can lock doors, so
-  confirm the *invocation*, never the name. **Always confirm, never
-  pre-authorise.** The assistant must **speak the concrete action and target**
-  before asking; the affirmative stays next-turn and ASR-derived.
-- **Any unknown domain/service/device_class → Tier 2** (fail closed).
+- **Tier 0 — Read.** Always allowed (states, sensors, discovery).
+- **Tier 1 — Reversible, low-harm.** The remaining mapped writes on
+  light/socket/switch/fan/media/vacuum, climate **within a safe band**, and
+  `cover` that is a blind/curtain/shade. **Pre-authorisable** by an explicit
+  Settings grant keyed `(provider, nativeId, capability, verb)` —
+  **entity-level, never area-wide** — revocable, **default none**. Executes
+  immediately. Worst case from injection: a light turns on — annoying, not
+  dangerous.
+- **Tier 2 — Safety-critical / hard-to-reverse.** Locks, alarm panels,
+  garage/door/gate `cover`s **and any `cover` with an unknown kind**,
+  oven/kettle/water-heater/cooking appliances, `UNLOCK`, `OPEN`/`CLOSE`,
+  `TARGET_TEMPERATURE` outside the safe band or non-numeric, **any unknown
+  `DeviceKind`/`Capability`/`ActionVerb`**, and **every scene/script
+  invocation** — a benign-named "good night" can lock doors, so confirm the
+  *invocation*, never the name. **Always confirm, never pre-authorise.** The
+  assistant must **speak the concrete action and target** before asking; the
+  affirmative stays next-turn and ASR-derived.
+- **Precedence: T0 → T2 → T1; anything unknown → T2** (fail closed). The mapper
+  is the **only** constructor of `DeviceKind`/`Capability`, so an unmapped native
+  value can never tier as T1.
 - **Tier 3 (optional) — LAN-only.** Mark local servers so their tools can never
-  be reached on a remote path.
+  be reached on a remote path (MCP lane only; the first-party home providers are
+  network-typed by construction).
 
-**Fail closed on ambiguity:** if a device class cannot be determined, treat it as
-Tier 2. Default new servers to `READ` (already the case).
+**Fail closed on ambiguity:** if a kind/capability cannot be determined, treat it
+as Tier 2. Default new servers to `READ` (already the case).
 
 **Tier 1 needs a *typed* signal — which generic MCP does not provide.** Tiering
 requires knowing the concrete device class/action (`light.turn_on` on
@@ -828,11 +973,10 @@ all. Consequences:
 - **Over generic MCP (and MCP-hosted HA control), v1 is Tier 0 reads + Tier 2
   confirmation for every write.** This is a strict, safe subset — but it means
   «включи свет» is a two-turn «да», which is not the end state.
-- **Tier 1 is only achievable over a first-party surface with typed entity/action
-  metadata** — hence §7.2's native HA REST/WS write path (`domain` + `service` +
-  `target.entity_id` + `service_data`), or the direct-LAN built-in tools, where
-  the action class is known at the tool boundary. Tier 1 pre-authorisation is
-  therefore **coupled to a typed integration, not to the LAN transport**.
+- **Tier 1 is only achievable over a first-party surface with typed
+  entity/action metadata** — hence the `home/` providers' normalized
+  `HomeAction`. Tier 1 pre-authorisation is therefore **coupled to a typed
+  integration, not to any transport.**
 
 ### 7.5 Security
 
@@ -848,14 +992,42 @@ all. Consequences:
   action, and the confirmation is accepted only for the *immediately* following
   utterance; this prevents a stale «да» from a different question authorising an
   unlock.
+- **Harden the spoken target across providers.** A T2 challenge must name the
+  **provider** as well as the resolved target (e.g. «Яндекс, кухня, выключить
+  свет»), because two ecosystems can carry same-sounding names. The recommended
+  `ConfirmationLabel` addition is **non-authorizing** — it only improves the
+  challenge text; the tier and the decision are always re-derived from the
+  resolved `HomeAction`.
+- **BYOC means the user owns the blast radius.** Each provider's credentials are
+  the user's own; a token revoked in the vendor console must degrade honestly
+  (403/401 → `AuthError`/`Unavailable`, never a crash and never a silent
+  success).
 
 ### 7.6 Risks and unknowns
 
+- **G0 — Yandex provider (blocking).** Whether an individual/self-hosted app can
+  hold `iot:view`/`iot:control`, the `iot:*` token TTL, the refresh contract
+  (does it need a `client_secret`?), and the entirely **undocumented rate
+  limits** (§7.3.1). If G0 fails, the Yandex provider is closed and we default to
+  HA.
+- **G1 — Tuya provider (blocking).** Individual project creation, SmartLife QR
+  binding, usable `/specification` DP codes, and the real API/quota terms
+  (§7.3.2).
+- **G2 — HA LAN (blocking).** LAN HTTPS, the WS registries, and
+  `subscribe_events` push actually working on the target appliance/network
+  (§7.2.1).
+- **G3 — HA-vs-direct-Tuya (blocking, product).** Whether HA's Tuya integration
+  already reaches enough of the deployment; direct Tuya is gated behind this
+  (§7.3.2).
 - **EMUI / LAN quirks**, mDNS resolution (`homeassistant.local` often will not
   resolve via Android's system resolver — prefer a literal IP and `NsdManager`).
-- **Token scope** — a HA long-lived token is full-account unless a limited user
-  is created.
-- **Tuya/Xiaomi local paths are unofficial** and ToS-fragile — product risk.
+- **Token scope / BYOC** — a HA long-lived token is full-account unless a limited
+  user is created; the Yandex and Tuya credentials are the user's own and can
+  401/403 mid-session (degrade honestly).
+- **Tuya/Xiaomi local paths are unofficial** and ToS-fragile — product risk;
+  neither is a v1 Jarvis surface.
+- **Per-capability partial failure** — Yandex `DONE|ERROR` per capability and
+  Tuya partial failures must surface as `PARTIAL`, never a blanket success.
 - **IR emitter presence** on the target tablet is unverified.
 
 ---
@@ -893,10 +1065,12 @@ for privacy-sensitive servers. Jarvis can match Alexa+ on extensibility while
 owning the data path.
 
 **Where it must not be used:** autonomous/scheduled data (policy-denied). The
-**LAN smart-home case is the strongest MCP use of all** (§7) but is *currently
-blocked* — `McpUrlPolicy` rejects private hosts for REMOTE and allows only
-loopback for LOCAL, so a Home Assistant at `192.168.x.x` cannot be added. **Add
-the `LAN` kind first**; it is the prerequisite for the whole smart-home group.
+**LAN case** is still the strongest reason for the kind — a first-party `home/`
+subsystem and other local servers need to reach `192.168.x.x` — but it is
+*currently blocked*: `McpUrlPolicy` rejects private hosts for REMOTE and allows
+only loopback for LOCAL, so a Home Assistant at `192.168.x.x` cannot be reached.
+**Add the `LAN` kind first**; it is the prerequisite for the whole smart-home
+group.
 
 **The `LAN` kind is a relaxation, so make it a *scoped* one** — not a blanket
 "allow private IPs":
@@ -957,8 +1131,8 @@ on-device ASR/TTS/LLM.
 **Fights the platform (GMS-free, always-on):** geofencing via GMS
 (`GeofencingClient`) or a `location` foreground-service type (would break the
 always-on boot/idle start path); being a smart-home **hub** (no radio, GMS-gated
-Matter **commissioning** — but smart-home *control* via a hub is **in scope**,
-§7); Cast / multi-room over GMS / wearables.
+Matter **commissioning** — but smart-home *control* through a provider registry
+is **in scope**, §7); Cast / multi-room over GMS / wearables.
 
 **Attractive but wrong:** a general automation/rules SaaS; an ambient map/visual
 dashboard (screen-off + legal risk); a proactive LLM narrator (hallucinated nags
@@ -992,14 +1166,16 @@ template **«Утренняя сводка»** (time + weather + alarms; calenda
 then R2 (native CalDAV). Reuses alarms, tools, `speakProactively`, settings,
 memory; no new permission, no hardware.
 
-**Phase 2 — "It runs the house."** R3 MCP packs + the **`LAN` kind** (the
-prerequisite), then **R4 — the first-party `home/` subsystem** (§7.2.1): native
-HA REST/WS, registry + deterministic resolver + risk tiering, phased H1
-(allowlist + T2-confirm) → H4 (awareness), because the target is one LAN Home
-Assistant aggregating 50+ multi-ecosystem devices (§7.0) and the intent-shaped
-MCP surface cannot be tiered. MCP remains the transport for **non-HA** external
-servers. In parallel the awareness pillar R5 (pull → digest → interrupt) and R6
-email.
+**Phase 2 — "It runs the house."** R3 MCP packs + the **`LAN` kind** (still the
+prerequisite for reaching a LAN HA and local servers), then **R4 — the
+first-party `home/` subsystem over a provider registry** (§7.2.1): HA REST/WS
+first, then **Yandex IoT** and **Tuya OpenAPI** behind their feasibility gates,
+with registry + deterministic resolver + normalized risk tiering, phased **H1**
+(HA + read tools + T2-confirm) → **H2/H3** (resolver, grants) → **H4**
+(awareness) → **H5/H6** (Yandex/Tuya, gated), because the target is a 50+
+multi-ecosystem home (§7.0) and the intent-shaped MCP surface cannot be tiered.
+MCP remains the transport for **non-home external** servers. In parallel the
+awareness pillar R5 (pull → digest → interrupt) and R6 email.
 
 **Phase 3 — "It ships and stays private."** R9 OTA before external distribution;
 R7 commute, R8 local device miscellany; R10 presence only if a low-power
@@ -1023,7 +1199,7 @@ capability that feeds it inside the safe, first-party `READ_ONLY` boundary.
 
 The **cheap standalone win** available now is **R3's `LAN` kind**, since
 Home Assistant / local MCP servers are currently unreachable *by design* — and it
-unblocks the entire smart-home group (§7).
+unblocks the LAN half of the smart-home group (§7).
 
 ---
 
@@ -1038,9 +1214,12 @@ so the design is blast-radius-first.
 
 Current surface: **9 category screens, 42 inventory entries, 44 reflected
 members, 35 plain pref keys, 9 secret accessors, 1 composite blob**
-(`mcpServers`); R4 (§7.2.1) adds a 10th category plus `homeEntities` /
-`homeAliases` / `homeGrants` and the HA token, and a 50+-device home makes
-aliases/grants the hardest thing to edit by hand. That is the pain this solves.
+(`mcpServers`); R4 (§7.2.1) adds a 10th category plus `homeProviders` /
+`homeEntities` / `homeAliases` / `homeGrants` / `homeAwarenessEnabled` and an
+argument-keyed `homeSecret(providerId, field)` vault accessor (HA LLAT, Yandex
+OAuth credentials, Tuya project secret), and a 50+-device **multi-provider** home
+makes aliases/grants the hardest thing to edit by hand. That is the pain this
+solves.
 
 ### 14.1 The mode model (intent vs runtime)
 
@@ -1221,19 +1400,24 @@ action endpoints (both refused).
 - Confirm Yandex IMAP/SMTP endpoints against the live help page.
 - Confirm the Feedly consumer OAuth path (vs Enterprise-only token).
 - Confirm MAX developer access for a non-RF-entity (likely blocked).
-- **Confirm the Yandex OAuth app can obtain `iot:view`/`iot:control` without a
-  legal entity or moderation rejection** — the blocking gate for the one
-  Russian-cloud inbound path (§7.3.1); resolve it by registering an app and
-  requesting the scopes *before writing any code*. Also observe the `iot:*` token
-  TTL and whether refresh needs a `client_secret` (public/PKCE client end-to-end?).
-- **Probe Yandex API rate limits** — entirely undocumented (§7.3.1).
+- **G0 — Yandex provider gate (blocking).** Confirm a Yandex OAuth app can
+  obtain `iot:view`/`iot:control` without a legal entity or moderation rejection
+  *(§7.3.1)*; resolve it by registering an app and requesting the scopes *before
+  writing any code*. Also observe the `iot:*` token TTL and whether refresh needs
+  a `client_secret` (public/PKCE client end-to-end?), and **probe the
+  undocumented rate limits**.
+- **G1 — Tuya provider gate (blocking).** Confirm an individual can create a
+  project, QR-bind the SmartLife account, get usable `/specification` DP codes,
+  and what the real API/quota terms are *(§7.3.2)*.
+- **G2 — HA LAN gate (blocking).** Confirm the target HA is reachable over LAN
+  HTTPS, the WS registries enumerate entity/area/device, and `subscribe_events`
+  pushes on the target network/appliance *(§7.0/§7.2.1)*; decide how entity
+  resolution disambiguates across 50+ mixed-ecosystem devices.
+- **G3 — HA-vs-direct-Tuya (blocking, product).** Decide whether HA's Tuya
+  integration already reaches enough of the deployment; direct Tuya is gated
+  behind this *(§7.3.2)*.
 - Sber Matter/Thread support and the VK smart-home developer API — both
   unverified (§7.3).
-- **HA integration surface for the real deployment (§7.0):** confirm the target
-  HA version is ≥ 2025.2 (for `mcp_server`); enumerate the entity/area/device
-  registries via native REST/WS; decide how entity resolution disambiguates across
-  50+ mixed-ecosystem devices; decide whether MCP read is worth keeping once the
-  native typed path exists.
 - Decide the local fast-path boundary (deterministic intent vs. LLM) for obvious
   commands.
 - Decide whether to ever allow a scoped external "read grant" for autonomous
