@@ -24,25 +24,11 @@ import java.lang.reflect.Modifier
  */
 class SettingsInventoryTest {
 
-    /**
-     * TEMPORARY BRIDGE (R4 smart home). The five home prefs land before the
-     * LATER settings lane that registers them in [SettingsInventory]. That lane
-     * MUST move these into a HOME category and delete this set; until then they
-     * are allow-listed so the anti-drop guard stays green.
-     */
-    private val pendingHomeKeys = setOf(
-        "homeProviders",
-        "homeEntities",
-        "homeAliases",
-        "homeGrants",
-        "homeAwarenessEnabled",
-    )
-
     @Test
     fun `every persisted member is registered or allow-listed`() {
         val reflected = propertyNames(AppPrefs::class.java) + propertyNames(CredentialsStore::class.java)
         val known = SettingsInventory.entries.map { it.key }.toSet() +
-            SettingsInventory.nonSettingsKeys + pendingHomeKeys
+            SettingsInventory.nonSettingsKeys
 
         val missing = (reflected - known).sorted()
         assertEquals("persisted members MISSING from SettingsInventory: $missing", emptyList<String>(), missing)
@@ -60,7 +46,7 @@ class SettingsInventoryTest {
         // homeAwarenessEnabled) to the accessor surface (47 → 52); the LATER
         // settings lane moves them into the inventory and removes
         // [pendingHomeKeys].
-        assertEquals(45, SettingsInventory.entries.size)
+        assertEquals(50, SettingsInventory.entries.size)
         assertEquals(52, reflected.size)
         val stale = inventoryKeys - reflected
         assertTrue("inventory keys not found on any accessor: $stale", stale.isEmpty())

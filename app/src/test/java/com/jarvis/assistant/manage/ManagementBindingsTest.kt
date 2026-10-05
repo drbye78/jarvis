@@ -42,7 +42,7 @@ class ManagementBindingsTest {
         assertEquals("inventory ⊄ bindings (missing/unbound key)", inventory, bound)
         assertEquals("bindings ⊄ inventory (stray binding)", bound, inventory)
         assertEquals(SettingsInventory.entries.size, bound.size)
-        assertEquals(45, bound.size)
+        assertEquals(50, bound.size)
     }
 
     @Test

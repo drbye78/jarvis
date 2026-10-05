@@ -73,7 +73,7 @@ class ManagementCoreTest {
         val vault = InMemoryVault()
         val settings = coreOf(newPrefs(vault), vault).listSettings()
 
-        assertEquals(45, settings.size)
+        assertEquals(50, settings.size)
         assertEquals(ManagedSettingType.BOOLEAN, settings.first { it.key == "memoryEnabled" }.type)
         assertTrue(settings.any { it.key == "yandexApiKey" && it.secret })
     }

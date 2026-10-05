@@ -105,6 +105,16 @@ object SettingsInventory {
         entry("managementMode", SettingsCategory.MANAGEMENT, essential = true),
         entry("managementPort", SettingsCategory.MANAGEMENT, essential = false),
         entry("managementIdleTimeoutMs", SettingsCategory.MANAGEMENT, essential = false),
+
+        // --- HOME (R4 unified smart-home surface) ---
+        // The provider list is ONE blob (like `mcpServers`); per-provider tokens
+        // are argument-keyed (CredentialsStore.homeSecret) and therefore not
+        // enumerable as zero-arg settings.
+        entry("homeProviders", SettingsCategory.HOME, essential = false),
+        entry("homeEntities", SettingsCategory.HOME, essential = false),
+        entry("homeAliases", SettingsCategory.HOME, essential = false),
+        entry("homeGrants", SettingsCategory.HOME, essential = false),
+        entry("homeAwarenessEnabled", SettingsCategory.HOME, essential = false),
     )
 
     /** Persisted members that are lifecycle state, not user-facing settings. */

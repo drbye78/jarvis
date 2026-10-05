@@ -14,6 +14,7 @@ import com.jarvis.assistant.util.SecretVault
 import com.jarvis.assistant.weather.WeatherProvider
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import timber.log.Timber
 
 /**
  * The explicit, reflection-free bridge from one `SettingsInventory` key to its
@@ -339,6 +340,42 @@ class ManagementBindings(private val vault: SecretVault) {
             get = { p -> ManagedValue.LongValue(p.managementIdleTimeoutMs) },
             set = { p, v -> (v as? ManagedValue.LongValue)?.value?.let { p.managementIdleTimeoutMs = it } },
         ),
+
+        // --- HOME (R4 unified smart-home surface) ---
+        // The four blobs are edited through their own codecs (and sent to the
+        // running backend), so the management surface treats them as opaque
+        // JSON-safe strings; per-provider tokens are argument-keyed vault
+        // secrets and are intentionally absent here.
+        binding(
+            key = "homeProviders",
+            type = ManagedSettingType.JSON_BLOB,
+            get = { p -> ManagedValue.JsonValue(parseStringElement(p.homeProviders)) },
+            set = { p, v -> (v as? ManagedValue.JsonValue)?.value?.let { p.homeProviders = it.toString() } },
+        ),
+        binding(
+            key = "homeEntities",
+            type = ManagedSettingType.JSON_BLOB,
+            get = { p -> ManagedValue.JsonValue(parseStringElement(p.homeEntities)) },
+            set = { p, v -> (v as? ManagedValue.JsonValue)?.value?.let { p.homeEntities = it.toString() } },
+        ),
+        binding(
+            key = "homeAliases",
+            type = ManagedSettingType.JSON_BLOB,
+            get = { p -> ManagedValue.JsonValue(parseStringElement(p.homeAliases)) },
+            set = { p, v -> (v as? ManagedValue.JsonValue)?.value?.let { p.homeAliases = it.toString() } },
+        ),
+        binding(
+            key = "homeGrants",
+            type = ManagedSettingType.JSON_BLOB,
+            get = { p -> ManagedValue.JsonValue(parseStringElement(p.homeGrants)) },
+            set = { p, v -> (v as? ManagedValue.JsonValue)?.value?.let { p.homeGrants = it.toString() } },
+        ),
+        binding(
+            key = "homeAwarenessEnabled",
+            type = ManagedSettingType.BOOLEAN,
+            get = { p -> ManagedValue.Bool(p.homeAwarenessEnabled) },
+            set = { p, v -> (v as? ManagedValue.Bool)?.value?.let { p.homeAwarenessEnabled = it } },
+        ),
     )
 
     /** Key → binding; the primary lookup for get/set/import validation. */
@@ -454,6 +491,23 @@ internal fun parseMcpServersElement(raw: String?): JsonElement {
         is McpServerDecodeResult.Invalid -> emptyList()
     }
     return Json.parseToJsonElement(McpServerConfigCodec.encode(servers))
+}
+
+/**
+ * Parse a JSON-blob pref string into a [JsonElement], tolerating a corrupt /
+ * blank value: an unparseable payload degrades to an empty JSON array so a GET
+ * never throws. Used for the R4 home blobs, which are edited by their own
+ * screens/codecs elsewhere.
+ */
+internal fun parseStringElement(raw: String?): JsonElement {
+    val text = raw?.trim().orEmpty()
+    if (text.isEmpty()) return Json.parseToJsonElement("[]")
+    return try {
+        Json.parseToJsonElement(text)
+    } catch (e: IllegalArgumentException) {
+        Timber.w("Home: stored JSON blob could not be parsed (%s)", e::class.java.simpleName)
+        Json.parseToJsonElement("[]")
+    }
 }
 
 /**
