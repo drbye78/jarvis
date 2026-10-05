@@ -6,6 +6,46 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Added — unified smart-home surface (R4, Home Assistant first)
+- **Jarvis now controls a heterogeneous smart home through one normalized voice
+  model, starting with Home Assistant.** The first-party `home/` subsystem
+  (Android-free pure core + transport edge, mirroring `geo/` and `cognitive/`)
+  discovers devices, reads state and applies actions over HA's native REST +
+  WebSocket — **not** through the MCP lane. `HomeProviderId` (HA / Yandex /
+  Tuya) and a `HomeBackend` SPI make all three equal first-class in the model;
+  a provider registry builds a backend per configured connection via an
+  exhaustive `when` (Yandex/Tuya are later, gated phases). Device identity is
+  `(provider, nativeId)` because no ecosystem shares ids.
+- **Provider-neutral authorization.** A normalized
+  `HomeAction(kind, capability, verb, level)` feeds a pure
+  `HomeRiskClassifier` (T0 read / T1 reversible / T2 safety-critical;
+  **unknown → T2**, provider-agnostic). Reads are `READ_ONLY`; writes are the
+  new `ToolRisk.CONTROLLED` (voice-turn-only). Two tools: `homeControl` (the
+  fast path, executes only a granted T1) and `homeConfirmControl`
+  (`CONTROLLED + ConfirmedTool`, reusing the existing next-turn affirmative
+  seam with no change to the confirmation core). A lock, garage/door cover,
+  alarm panel, `UNLOCK`/`OPEN`/`CLOSE`, an out-of-band target temperature, and
+  any unknown kind/capability all classify T2 and cannot run on the fast path.
+- **Deterministic, fail-closed resolver** (`HomeResolver`): Russian speech →
+  one device via an explicit alias → exact name → room+kind composition →
+  token substring; ambiguity refuses on control and asks on read. Aliases are
+  seeded from provider names and learned only from explicit user edits.
+- **BYOC (bring-your-own-credentials).** The app ships no Yandex client or Tuya
+  project; the user enters every credential in the UI, stored in the Keystore
+  vault under an argument-keyed `home_secret_<id>_<field>` (never a zero-arg
+  setting). HA uses a user-pasted long-lived token; the URL must be `https` and
+  passes the existing `McpUrlPolicy`/`McpDnsGuard` LAN rules.
+- **Settings → «Умный дом»**: a new category with a connection list/edit
+  Activity (add/edit/delete/enable, write-only token, https validation) and a
+  LIVE proactive-awareness toggle. Five prefs are registered in the settings
+  inventory and covered by the R13 config-only management surface.
+- Tests: `home/*` (device-key, HA capability mapper, risk classifier across
+  HA/Yandex/Tuya-shaped fixtures, resolver, grant/alias/config codecs, notice
+  policy) + `HomeAssistantBackendTest`/`HomeAssistantPayloadsTest` (fake
+  transport) + `HomeToolsTest` (the full read/control decision table over the
+  real `ToolRegistry` + `WriteConfirmation`). JVM suite → **1854 tests, 0
+  failures**; detekt 0.
+
 ### Added — external management surface (R13, disabled by default)
 - **Jarvis can now be managed from a browser on the same machine or LAN — off
   by default, enabled deliberately in Settings or by voice.** A new `manage/`
