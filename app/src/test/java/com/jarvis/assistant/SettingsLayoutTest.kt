@@ -129,6 +129,7 @@ class SettingsLayoutTest {
         SettingsCategory.ACCOUNTS to "AccountsSettingsController.kt",
         SettingsCategory.MCP to "McpSettingsController.kt",
         SettingsCategory.MANAGEMENT to "ManagementSettingsController.kt",
+        SettingsCategory.HOME to "HomeSettingsController.kt",
     )
 
     @Test

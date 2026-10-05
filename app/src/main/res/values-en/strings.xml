@@ -666,4 +666,46 @@
     <string name="settings_management_import_ok_title">Import finished</string>
     <string name="settings_management_import_error_title">Import not applied</string>
     <string name="settings_management_import_result">Applied: %1$d, skipped: %2$d, errors: %3$d</string>
+
+    <!-- R4 smart-home (unified multi-provider surface) -->
+    <string name="settings_cat_home">Smart home</string>
+    <string name="settings_cat_home_sub">Devices and integrations</string>
+    <string name="settings_home_section">Smart home</string>
+    <string name="settings_home_info">Jarvis controls devices through your own integrations: Home Assistant, Yandex Smart Home and SmartLife/Tuya. The list and setup live entirely on your account — the app stores no third-party data of its own.</string>
+    <string name="settings_home_providers_row">Connections</string>
+    <string name="settings_home_providers_row_sub">Configure addresses and tokens</string>
+    <string name="settings_home_none_configured">No connections yet. Add Home Assistant so Jarvis can see your devices.</string>
+    <string name="settings_home_configured_count">Connections: %1$d</string>
+    <string name="settings_home_awareness_label">Notify about home events</string>
+    <string name="settings_home_awareness_hint">Jarvis will announce notable events (for example, the washing machine finished). Applies immediately, no restart.</string>
+    <string name="settings_home_aliases_note">Device names and fast-action permissions will appear here later.</string>
+    <string name="settings_home_restart_hint">Changes apply after a service restart: Stop → Start on the home screen.</string>
+
+    <string name="settings_home_providers_title">Smart-home connections</string>
+    <string name="settings_home_provider_empty">No connections yet. Add the first one.</string>
+    <string name="settings_home_provider_list_invalid">The saved connection list is corrupted and was not loaded.</string>
+    <string name="settings_home_provider_add">Add connection</string>
+    <string name="settings_home_provider_add_title">New connection</string>
+    <string name="settings_home_provider_edit_title">Edit connection</string>
+    <string name="settings_home_provider_edit">Edit</string>
+    <string name="settings_home_provider_delete">Delete</string>
+    <string name="settings_home_provider_enabled_cd">Enable connection</string>
+    <string name="settings_home_provider_delete_confirm_title">Delete connection?</string>
+    <string name="settings_home_provider_delete_confirm_text">The connection and its access token will be removed from this device.</string>
+    <string name="settings_home_provider_saved">Connection saved</string>
+    <string name="settings_home_provider_deleted">Connection deleted</string>
+    <string name="settings_home_provider_unsupported">This provider is not supported yet</string>
+    <string name="settings_home_provider_url_label">Address (https)</string>
+    <string name="settings_home_provider_url_hint">The full Home Assistant address, e.g. https://192.168.1.50:8123. https only; a .local name may not resolve — a numeric IP is more reliable.</string>
+    <string name="settings_home_provider_url_https_required">An https address is required</string>
+    <string name="settings_home_provider_url_invalid">Invalid address</string>
+    <string name="settings_home_provider_token_label">Access token</string>
+    <string name="settings_home_provider_token_hint">A Home Assistant long-lived token (Profile → Security → Create token). Stored only on this device.</string>
+    <string name="settings_home_provider_token_set">Token set</string>
+    <string name="settings_home_provider_token_unset">No token set</string>
+    <string name="settings_home_provider_token_clear">Clear token</string>
+    <string name="settings_home_provider_provider_label">Integration</string>
+    <string name="settings_home_provider_kind_ha">Home Assistant</string>
+    <string name="settings_home_provider_kind_yandex">Yandex Smart Home (soon)</string>
+    <string name="settings_home_provider_kind_tuya">SmartLife/Tuya (soon)</string>
 </resources>

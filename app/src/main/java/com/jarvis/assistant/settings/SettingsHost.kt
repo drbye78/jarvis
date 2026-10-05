@@ -67,6 +67,9 @@ interface SettingsHost {
     /** Open the MCP server list/edit screen (MCP's in-app navigation). */
     fun openMcpServers()
 
+    /** Open the smart-home connection list/edit screen (HOME's in-app navigation). */
+    fun openHomeProviders()
+
     /** Close the current detail screen. */
     fun finishScreen()
 }

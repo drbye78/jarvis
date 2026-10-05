@@ -2,6 +2,7 @@ package com.jarvis.assistant.settings
 
 import com.jarvis.assistant.settings.controller.AccountsSettingsController
 import com.jarvis.assistant.settings.controller.BrainSettingsController
+import com.jarvis.assistant.settings.controller.HomeSettingsController
 import com.jarvis.assistant.settings.controller.ListeningSettingsController
 import com.jarvis.assistant.settings.controller.ManagementSettingsController
 import com.jarvis.assistant.settings.controller.McpSettingsController
@@ -44,5 +45,6 @@ object SettingsControllerFactory {
         SettingsCategory.ACCOUNTS -> AccountsSettingsController(callbacks, prefs, host)
         SettingsCategory.MCP -> McpSettingsController(callbacks, prefs, host)
         SettingsCategory.MANAGEMENT -> ManagementSettingsController(callbacks, prefs, host)
+        SettingsCategory.HOME -> HomeSettingsController(callbacks, prefs, host)
     }
 }

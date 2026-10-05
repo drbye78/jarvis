@@ -95,4 +95,11 @@ enum class SettingsCategory(
         iconRes = R.drawable.ic_cat_management,
         layoutRes = R.layout.screen_settings_management,
     ),
+    HOME(
+        id = "home",
+        titleRes = R.string.settings_cat_home,
+        subtitleRes = R.string.settings_cat_home_sub,
+        iconRes = R.drawable.ic_cat_home,
+        layoutRes = R.layout.screen_settings_home,
+    ),
 }

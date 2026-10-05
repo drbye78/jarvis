@@ -129,6 +129,12 @@
             android:name=".McpServersActivity"
             android:exported="false" />
 
+        <!-- R4 smart home: provider connection list + add/edit dialog. -->
+        <activity
+            android:name=".HomeProvidersActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <activity
             android:name=".AlarmsActivity"
             android:exported="false" />

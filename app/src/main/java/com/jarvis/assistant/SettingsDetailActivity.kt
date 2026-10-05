@@ -322,6 +322,10 @@ class SettingsDetailActivity : AppCompatActivity(), SettingsHost {
         startActivity(Intent(this, McpServersActivity::class.java))
     }
 
+    override fun openHomeProviders() {
+        startActivity(Intent(this, HomeProvidersActivity::class.java))
+    }
+
     override fun finishScreen() {
         finish()
     }

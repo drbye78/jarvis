@@ -665,4 +665,46 @@
     <string name="settings_management_import_ok_title">Импорт завершён</string>
     <string name="settings_management_import_error_title">Импорт не применён</string>
     <string name="settings_management_import_result">Применено: %1$d, пропущено: %2$d, ошибок: %3$d</string>
+
+    <!-- R4 smart-home (unified multi-provider surface) -->
+    <string name="settings_cat_home">Умный дом</string>
+    <string name="settings_cat_home_sub">Устройства и интеграции</string>
+    <string name="settings_home_section">Умный дом</string>
+    <string name="settings_home_info">Джарвис управляет устройствами через ваши интеграции: Home Assistant, Яндекс Умный дом и SmartLife/Tuya. Список и настройка полностью на вашем аккаунте — приложение не хранит чужие данные.</string>
+    <string name="settings_home_providers_row">Подключения</string>
+    <string name="settings_home_providers_row_sub">Настроить адреса и токены</string>
+    <string name="settings_home_none_configured">Пока нет подключений. Добавьте Home Assistant, чтобы Джарвис видел устройства.</string>
+    <string name="settings_home_configured_count">Подключений: %1$d</string>
+    <string name="settings_home_awareness_label">Уведомлять о событиях дома</string>
+    <string name="settings_home_awareness_hint">Джарвис будет сообщать о заметных событиях (например, стиральная машина закончила). Работает сразу, без перезапуска.</string>
+    <string name="settings_home_aliases_note">Названия устройств и разрешения на быстрые действия появятся здесь позже.</string>
+    <string name="settings_home_restart_hint">Изменения применятся после перезапуска сервиса: Стоп → Запустить на главном экране.</string>
+
+    <string name="settings_home_providers_title">Подключения умного дома</string>
+    <string name="settings_home_provider_empty">Пока нет подключений. Добавьте первое.</string>
+    <string name="settings_home_provider_list_invalid">Сохранённый список подключений повреждён и не загружен.</string>
+    <string name="settings_home_provider_add">Добавить подключение</string>
+    <string name="settings_home_provider_add_title">Новое подключение</string>
+    <string name="settings_home_provider_edit_title">Изменить подключение</string>
+    <string name="settings_home_provider_edit">Изменить</string>
+    <string name="settings_home_provider_delete">Удалить</string>
+    <string name="settings_home_provider_enabled_cd">Включить подключение</string>
+    <string name="settings_home_provider_delete_confirm_title">Удалить подключение?</string>
+    <string name="settings_home_provider_delete_confirm_text">Подключение и его токен доступа будут удалены с устройства.</string>
+    <string name="settings_home_provider_saved">Подключение сохранено</string>
+    <string name="settings_home_provider_deleted">Подключение удалено</string>
+    <string name="settings_home_provider_unsupported">Этот провайдер пока не поддерживается</string>
+    <string name="settings_home_provider_url_label">Адрес (https)</string>
+    <string name="settings_home_provider_url_hint">Полный адрес Home Assistant, например https://192.168.1.50:8123. Только https; имя .local может не разрешаться — надёжнее числовой IP.</string>
+    <string name="settings_home_provider_url_https_required">Нужен адрес https</string>
+    <string name="settings_home_provider_url_invalid">Некорректный адрес</string>
+    <string name="settings_home_provider_token_label">Токен доступа</string>
+    <string name="settings_home_provider_token_hint">Долгосрочный токен Home Assistant (Профиль → Безопасность → Создать токен). Хранится только на устройстве.</string>
+    <string name="settings_home_provider_token_set">Токен задан</string>
+    <string name="settings_home_provider_token_unset">Токен не задан</string>
+    <string name="settings_home_provider_token_clear">Очистить токен</string>
+    <string name="settings_home_provider_provider_label">Интеграция</string>
+    <string name="settings_home_provider_kind_ha">Home Assistant</string>
+    <string name="settings_home_provider_kind_yandex">Яндекс Умный дом (скоро)</string>
+    <string name="settings_home_provider_kind_tuya">SmartLife/Tuya (скоро)</string>
 </resources>
