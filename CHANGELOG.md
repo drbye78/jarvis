@@ -34,7 +34,9 @@ semver (pre-1.0: breaking changes bump the minor).
 - **Always-encrypted config export/import** (`ExportCodec`: AES-256-GCM under an
   Argon2id-derived key). The artifact is opaque with no plaintext path; secrets
   are opt-in *inside* the encrypted envelope, and import validates every key
-  before applying anything.
+  before applying anything. Offered from both the console and the app
+  (Settings → Управление, via SAF; the host owns the pickers and passphrase
+  dialog, and the passphrase is wiped after use).
 - **Reflection-free binding** (`ManagementBindings`): the settings↔API map is
   explicit (release is R8-minified), and a test fails the build if any
   `SettingsInventory` entry has no binding. `SettingsCategory.MANAGEMENT`
