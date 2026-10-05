@@ -70,6 +70,12 @@ interface SettingsHost {
     /** Open the smart-home connection list/edit screen (HOME's in-app navigation). */
     fun openHomeProviders()
 
+    /** Open the discovered-device browser (aliases + notice curation). */
+    fun openHomeDevices()
+
+    /** Open the reversible-action (T1) grants editor. */
+    fun openHomeGrants()
+
     /** Close the current detail screen. */
     fun finishScreen()
 }

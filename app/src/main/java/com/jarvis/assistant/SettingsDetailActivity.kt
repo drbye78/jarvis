@@ -326,6 +326,14 @@ class SettingsDetailActivity : AppCompatActivity(), SettingsHost {
         startActivity(Intent(this, HomeProvidersActivity::class.java))
     }
 
+    override fun openHomeDevices() {
+        startActivity(Intent(this, HomeDevicesActivity::class.java))
+    }
+
+    override fun openHomeGrants() {
+        startActivity(Intent(this, HomeGrantsActivity::class.java))
+    }
+
     override fun finishScreen() {
         finish()
     }

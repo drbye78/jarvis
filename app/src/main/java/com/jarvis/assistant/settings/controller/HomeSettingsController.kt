@@ -38,6 +38,12 @@ class HomeSettingsController(
         root.findViewById<View>(R.id.homeProvidersRow).setOnClickListener {
             host.openHomeProviders()
         }
+        root.findViewById<View>(R.id.homeDevicesRow).setOnClickListener {
+            host.openHomeDevices()
+        }
+        root.findViewById<View>(R.id.homeGrantsRow).setOnClickListener {
+            host.openHomeGrants()
+        }
 
         awareness = root.findViewById(R.id.homeAwarenessSwitch)
         awareness.isChecked = prefs.homeAwarenessEnabled

@@ -681,6 +681,58 @@
     <string name="settings_home_aliases_note">Device names and fast-action permissions will appear here later.</string>
     <string name="settings_home_restart_hint">Changes apply after a service restart: Stop → Start on the home screen.</string>
 
+    <!-- H2 device browser + spoken aliases -->
+    <string name="settings_home_devices_row">Devices</string>
+    <string name="settings_home_devices_row_sub">Voice names and notifications</string>
+    <string name="settings_home_devices_title">Devices</string>
+    <string name="settings_home_devices_loading">Loading devices…</string>
+    <string name="settings_home_devices_empty">No devices found. Check the connection and tap Refresh.</string>
+    <string name="settings_home_devices_unavailable">Could not load devices: the connection is unavailable.</string>
+    <string name="settings_home_refresh">Refresh</string>
+    <string name="settings_home_alias_label">Voice name</string>
+    <string name="settings_home_alias_none">uses the device name</string>
+    <string name="settings_home_alias_dialog_title">Voice name</string>
+    <string name="settings_home_alias_dialog_hint">What to call this device by voice, for example «люстра».</string>
+    <string name="settings_home_alias_saved">Voice name saved</string>
+    <string name="settings_home_alias_clear">Reset</string>
+    <string name="settings_home_notice_label">Notify about events</string>
+
+    <!-- H3 reversible-action grants -->
+    <string name="settings_home_grants_row">Quick actions</string>
+    <string name="settings_home_grants_row_sub">Allow without confirmation</string>
+    <string name="settings_home_grants_title">Quick actions</string>
+    <string name="settings_home_grants_intro">Tick the actions Jarvis may perform immediately, without asking again. Locks, doors and appliances always require confirmation.</string>
+    <string name="settings_home_grants_empty">No devices with quick actions. Add a connection and open Devices.</string>
+    <string name="settings_home_grants_hint">Quick actions (T1) are configured under Quick actions.</string>
+    <string name="settings_home_grants_summary">Allowed: %1$d of %2$d</string>
+    <string name="settings_home_action_turn_on">Turn on</string>
+    <string name="settings_home_action_turn_off">Turn off</string>
+    <string name="settings_home_action_set_level">Brightness</string>
+    <string name="settings_home_action_set_temperature">Temperature</string>
+    <string name="settings_home_action_set_mode">Mode</string>
+    <string name="settings_home_action_set_fan_speed">Fan speed</string>
+    <string name="settings_home_action_set_color">Color</string>
+    <string name="settings_home_action_generic">Action</string>
+
+    <!-- H2 device-kind labels (browser meta line) -->
+    <string name="settings_home_kind_light">Light</string>
+    <string name="settings_home_kind_socket">Socket</string>
+    <string name="settings_home_kind_switch">Switch</string>
+    <string name="settings_home_kind_fan">Fan</string>
+    <string name="settings_home_kind_climate">Climate</string>
+    <string name="settings_home_kind_thermostat">Thermostat</string>
+    <string name="settings_home_kind_cover_blind">Blinds</string>
+    <string name="settings_home_kind_cover_garage">Garage</string>
+    <string name="settings_home_kind_cover_door">Door</string>
+    <string name="settings_home_kind_lock">Lock</string>
+    <string name="settings_home_kind_alarm">Alarm</string>
+    <string name="settings_home_kind_appliance">Appliance</string>
+    <string name="settings_home_kind_water_heater">Water heater</string>
+    <string name="settings_home_kind_media">Media</string>
+    <string name="settings_home_kind_vacuum">Vacuum</string>
+    <string name="settings_home_kind_sensor">Sensor</string>
+    <string name="settings_home_kind_unknown">Device</string>
+
     <string name="settings_home_providers_title">Smart-home connections</string>
     <string name="settings_home_provider_empty">No connections yet. Add the first one.</string>
     <string name="settings_home_provider_list_invalid">The saved connection list is corrupted and was not loaded.</string>

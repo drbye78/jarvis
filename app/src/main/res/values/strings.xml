@@ -680,6 +680,58 @@
     <string name="settings_home_aliases_note">Названия устройств и разрешения на быстрые действия появятся здесь позже.</string>
     <string name="settings_home_restart_hint">Изменения применятся после перезапуска сервиса: Стоп → Запустить на главном экране.</string>
 
+    <!-- H2 device browser + spoken aliases -->
+    <string name="settings_home_devices_row">Устройства</string>
+    <string name="settings_home_devices_row_sub">Названия для голоса и уведомления</string>
+    <string name="settings_home_devices_title">Устройства</string>
+    <string name="settings_home_devices_loading">Обновляем список устройств…</string>
+    <string name="settings_home_devices_empty">Устройства не найдены. Проверьте подключение и нажмите «Обновить».</string>
+    <string name="settings_home_devices_unavailable">Не удалось загрузить устройства: подключение недоступно.</string>
+    <string name="settings_home_refresh">Обновить</string>
+    <string name="settings_home_alias_label">Название для голоса</string>
+    <string name="settings_home_alias_none">по имени устройства</string>
+    <string name="settings_home_alias_dialog_title">Название для голоса</string>
+    <string name="settings_home_alias_dialog_hint">Как называть это устройство голосом, например «люстра».</string>
+    <string name="settings_home_alias_saved">Название сохранено</string>
+    <string name="settings_home_alias_clear">Сбросить</string>
+    <string name="settings_home_notice_label">Сообщать о событиях</string>
+
+    <!-- H3 reversible-action grants -->
+    <string name="settings_home_grants_row">Быстрые действия</string>
+    <string name="settings_home_grants_row_sub">Разрешить без подтверждения</string>
+    <string name="settings_home_grants_title">Быстрые действия</string>
+    <string name="settings_home_grants_intro">Отметьте действия, которые Джарвис может выполнять сразу, без переспроса. Замки, двери и техника требуют подтверждения всегда.</string>
+    <string name="settings_home_grants_empty">Нет устройств с быстрыми действиями. Добавьте подключение и откройте «Устройства».</string>
+    <string name="settings_home_grants_hint">Быстрые действия (T1) настраиваются в разделе «Быстрые действия».</string>
+    <string name="settings_home_grants_summary">Разрешено: %1$d из %2$d</string>
+    <string name="settings_home_action_turn_on">Включение</string>
+    <string name="settings_home_action_turn_off">Выключение</string>
+    <string name="settings_home_action_set_level">Яркость</string>
+    <string name="settings_home_action_set_temperature">Температура</string>
+    <string name="settings_home_action_set_mode">Режим</string>
+    <string name="settings_home_action_set_fan_speed">Скорость вентилятора</string>
+    <string name="settings_home_action_set_color">Цвет</string>
+    <string name="settings_home_action_generic">Действие</string>
+
+    <!-- H2 device-kind labels (browser meta line) -->
+    <string name="settings_home_kind_light">Свет</string>
+    <string name="settings_home_kind_socket">Розетка</string>
+    <string name="settings_home_kind_switch">Выключатель</string>
+    <string name="settings_home_kind_fan">Вентилятор</string>
+    <string name="settings_home_kind_climate">Климат</string>
+    <string name="settings_home_kind_thermostat">Термостат</string>
+    <string name="settings_home_kind_cover_blind">Шторы</string>
+    <string name="settings_home_kind_cover_garage">Ворота</string>
+    <string name="settings_home_kind_cover_door">Дверь</string>
+    <string name="settings_home_kind_lock">Замок</string>
+    <string name="settings_home_kind_alarm">Сигнализация</string>
+    <string name="settings_home_kind_appliance">Техника</string>
+    <string name="settings_home_kind_water_heater">Водонагрев</string>
+    <string name="settings_home_kind_media">Медиа</string>
+    <string name="settings_home_kind_vacuum">Пылесос</string>
+    <string name="settings_home_kind_sensor">Датчик</string>
+    <string name="settings_home_kind_unknown">Устройство</string>
+
     <string name="settings_home_providers_title">Подключения умного дома</string>
     <string name="settings_home_provider_empty">Пока нет подключений. Добавьте первое.</string>
     <string name="settings_home_provider_list_invalid">Сохранённый список подключений повреждён и не загружен.</string>

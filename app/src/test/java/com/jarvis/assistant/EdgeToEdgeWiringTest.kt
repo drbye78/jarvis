@@ -74,7 +74,7 @@ class EdgeToEdgeWiringTest {
             file.name to (text to match)
         }
 
-        assertEquals("expected the nine edge-to-edge screens", 9, screens.size)
+        assertEquals("expected the eleven edge-to-edge screens", 11, screens.size)
 
         for ((name, pair) in screens) {
             val (text, match) = pair

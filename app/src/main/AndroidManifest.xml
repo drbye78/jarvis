@@ -135,6 +135,17 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- R4 smart home: discovered-device browser (aliases + notice curation). -->
+        <activity
+            android:name=".HomeDevicesActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- R4 smart home: reversible-action (T1) grants editor. -->
+        <activity
+            android:name=".HomeGrantsActivity"
+            android:exported="false" />
+
         <activity
             android:name=".AlarmsActivity"
             android:exported="false" />

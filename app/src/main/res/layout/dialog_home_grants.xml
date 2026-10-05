@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One device's quick-action (T1) grants (R4/H3): a device header and a vertical
+  list of checkable rows, one per grantable action. Inflated into the grants
+  dialog.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/homeGrantDeviceName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="4dp"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="?attr/colorOnSurface"
+        android:textSize="16sp"
+        tools:text="Люстра" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/homeGrantActionList"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxHeight="320dp"
+        android:nestedScrollingEnabled="true"
+        android:scrollbars="vertical" />
+</LinearLayout>
