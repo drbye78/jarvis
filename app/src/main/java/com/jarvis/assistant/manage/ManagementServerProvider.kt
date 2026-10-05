@@ -1,6 +1,7 @@
 package com.jarvis.assistant.manage
 
 import android.content.Context
+import com.jarvis.assistant.util.KeystoreVault
 import com.jarvis.assistant.util.SecretVault
 import timber.log.Timber
 
@@ -54,6 +55,15 @@ internal class ManagementEnvironment(
 class ManagementServerProvider internal constructor(
     private val env: ManagementEnvironment,
     /**
+     * Vault-backed owner of the TLS material. Production passes a process-stable
+     * [ManagementTlsStore] so the cert fingerprint survives a restart; a
+     * directly-constructed provider (tests) may omit it and [ensureTls] falls
+     * back to the installed components' vault. It must NEVER be a bare
+     * [TlsCertFactory.generate] call, or the verified fingerprint would change
+     * on every service restart.
+     */
+    private val tlsStore: ManagementTlsStore? = null,
+    /**
      * Test seam: replaces the real Netty factory. Production leaves it null and
      * [buildServer] is used.
      */
@@ -63,6 +73,10 @@ class ManagementServerProvider internal constructor(
     @Volatile
     private var components: ManagementComponents? = null
 
+    /**
+     * In-process cache of the vault-backed material; the vault is the durable
+     * source, so a new process loads the SAME certificate (stable fingerprint).
+     */
     @Volatile
     private var tls: TlsMaterial? = null
 
@@ -151,10 +165,11 @@ class ManagementServerProvider internal constructor(
     }
 
     /**
-     * The certificate fingerprint the listener uses. Generated once per process
-     * and reused for every bind, so the value shown in Settings always matches
-     * the running server (a fresh cert is proven by the shutdown/rebind test).
-     * Heavy (RSA-2048) — callers must keep this OFF the main thread.
+     * The certificate fingerprint the listener uses. The material is loaded
+     * from (or created once and persisted to) the vault, so the value shown in
+     * Settings is stable across service/process restarts and always matches the
+     * running server. Heavy (RSA-2048 on first creation) — callers must keep
+     * this OFF the main thread.
      */
     @Synchronized
     fun fingerprint(): String = ensureTls().sha256Fingerprint
@@ -231,8 +246,16 @@ class ManagementServerProvider internal constructor(
         }
 
     private fun ensureTls(): TlsMaterial = tls ?: synchronized(this) {
-        tls ?: TlsCertFactory.generate().also { tls = it }
+        tls ?: resolveTlsStore().loadOrCreate().also { tls = it }
     }
+
+    /**
+     * The store that owns TLS creation. Production supplies one at construction
+     * (vault resolved from the app context); a test-constructed provider falls
+     * back to the vault in the installed components.
+     */
+    private fun resolveTlsStore(): ManagementTlsStore =
+        tlsStore ?: ManagementTlsStore(requireComponents().vault)
 
     private fun requireComponents(): ManagementComponents = requireNotNull(components) {
         "ManagementServerProvider has no components — AppGraph.install must run first"
@@ -250,15 +273,18 @@ class ManagementServerProvider internal constructor(
          * The one provider for this process. Safe to call on every graph build
          * and from Settings; the first call constructs it.
          */
-        fun get(context: Context): ManagementServerProvider =
-            instance ?: synchronized(this) {
+        fun get(context: Context): ManagementServerProvider {
+            val appContext = context.applicationContext
+            return instance ?: synchronized(this) {
                 instance ?: ManagementServerProvider(
-                    ManagementEnvironment(
-                        assets = AndroidAssetSource(context.applicationContext),
+                    env = ManagementEnvironment(
+                        assets = AndroidAssetSource(appContext),
                         lanAddress = ManagementNetwork::lanIpv4,
                     ),
+                    tlsStore = ManagementTlsStore(KeystoreVault.get(appContext)),
                 ).also { instance = it }
             }
+        }
 
         /** Service teardown: close the listener, keep the process-lifetime state. */
         fun stop() {
