@@ -121,6 +121,14 @@ data class BehaviorLogEntity(
         const val DECISION_FIRED = "FIRED"
         const val DECISION_BLOCKED = "BLOCKED"
         const val DECISION_DEFERRED = "DEFERRED"
+
+        /**
+         * A smart-home awareness notice (R4/H4): ruleId is null and the row is
+         * deliberately NOT `FIRED`, so it neither consumes the habit daily quota
+         * (`firedSince`) nor is seen by the reject path (`latestFiredSince`),
+         * which maps a `FIRED` row back to a habit rule.
+         */
+        const val DECISION_HOME_NOTICE = "HOME_NOTICE"
     }
 }
 

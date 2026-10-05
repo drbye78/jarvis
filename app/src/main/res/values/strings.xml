@@ -440,6 +440,12 @@
     <string name="behavior_label_search_library">поиск в библиотеке</string>
     <string name="behavior_label_playback">управление плеером</string>
     <string name="behavior_label_volume">поменять громкость</string>
+    <string name="home_notice_appliance_done">Техника закончила работу.</string>
+    <string name="home_notice_door_opened">Открылась дверь.</string>
+    <string name="home_notice_cover_opened">Открылись ворота или шторы.</string>
+    <string name="home_notice_sensor_tripped">Сработал датчик.</string>
+    <string name="home_notice_locked">Дверь заперта.</string>
+    <string name="home_notice_unlocked">Дверь отперта.</string>
     <string name="activity_tool_remember_fact">Запоминаю…</string>
     <string name="activity_tool_recall_facts">Проверяю память…</string>
     <string name="activity_tool_forget_fact">Забываю…</string>

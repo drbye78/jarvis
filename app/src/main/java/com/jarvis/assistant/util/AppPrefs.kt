@@ -397,8 +397,8 @@ class AppPrefs(
 
     // ------------------------------------------------------------------
     // Smart-home integrations (HA first; Yandex/Tuya later). The provider
-    // list, the discovered-device cache, the alias map and the grant list are
-    // held as opaque JSON blobs decoded by the `home/` codecs, so AppPrefs
+    // list, the curated-awareness entity set, the alias map and the grant list
+    // are held as opaque JSON blobs decoded by the `home/` codecs, so AppPrefs
     // stays free of the home lane's types. The provider list is sealed at
     // service start (the HA backend is process-scoped); the alias/grant/entity
     // blobs and the awareness flag are read LIVE.
@@ -409,7 +409,7 @@ class AppPrefs(
         get() = prefs.getString(KEY_HOME_PROVIDERS, "[]") ?: "[]"
         set(value) = prefs.edit().putString(KEY_HOME_PROVIDERS, value).apply()
 
-    /** Discovered device handles cache (JSON); the repository is the live view. */
+    /** Curated awareness entity set — wire handles subscribed for notices (JSON array). */
     var homeEntities: String
         get() = prefs.getString(KEY_HOME_ENTITIES, "[]") ?: "[]"
         set(value) = prefs.edit().putString(KEY_HOME_ENTITIES, value).apply()

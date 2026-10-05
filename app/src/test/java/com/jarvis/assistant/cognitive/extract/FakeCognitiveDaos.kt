@@ -319,6 +319,9 @@ class FakeBehaviorLogDao : BehaviorLogDao {
     override suspend fun firedSince(since: Long): Int =
         rows.count { it.decision == "FIRED" && it.at >= since }
 
+    override suspend fun homeNoticeSince(since: Long): Int =
+        rows.count { it.decision == "HOME_NOTICE" && it.at >= since }
+
     override suspend fun latestForRule(ruleId: Long): BehaviorLogEntity? =
         rows.filter { it.ruleId == ruleId }.maxByOrNull { it.at }
 

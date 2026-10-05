@@ -172,6 +172,34 @@ class AppGraph(
     val homeGraph = HomeGraph(appPrefs)
 
     /**
+     * R4/H4 smart-home awareness loop. Lazy and graph-scoped: it reacts LIVE to
+     * [prefsFlow]'s awareness toggle and curated-entity blob, subscribes to the
+     * HA push stream over its OWN dedicated socket, and speaks content-free
+     * notices through [sessionManager]. Started in [start], stopped in
+     * [shutdown]. It never writes to a device.
+     */
+    val homeAwarenessLoop: com.jarvis.assistant.cognitive.behavior.HomeAwarenessLoop by lazy {
+        com.jarvis.assistant.cognitive.behavior.HomeAwarenessLoop(
+            scope = scope,
+            eventSource = { homeGraph.eventSource() },
+            awarenessEnabled = prefsFlow.homeAwarenessEnabled,
+            curated = prefsFlow.homeEntities,
+            logDao = database.behaviorLogDao(),
+            speaker = com.jarvis.assistant.cognitive.behavior.ProactiveSpeaker { text ->
+                sessionManager.speakProactively(text)
+            },
+            strings = com.jarvis.assistant.tools.AndroidToolStrings(appContext),
+            signals = com.jarvis.assistant.cognitive.behavior.AndroidDeviceSignals(appContext),
+            sessionIdle = sessionIdleFlow,
+            lastInteractionAt = { database.messageDao().lastMessageAt() },
+            quietStart = prefsFlow.behaviorQuietStart,
+            quietEnd = prefsFlow.behaviorQuietEnd,
+            dailyCap = prefsFlow.behaviorDailyQuota,
+            hourOfDay = { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) },
+        )
+    }
+
+    /**
      * R13 §14 management bridges. The graph builds the durable pieces only and
      * installs them into the PROCESS-scoped
      * [com.jarvis.assistant.manage.ManagementServerProvider]; it never starts
@@ -986,6 +1014,8 @@ class AppGraph(
             cognitiveCoordinator.startBehaviorLoop()
             // Purge cloud vector spaces the moment memory.cloudEnabled flips false.
             cognitiveCoordinator.startCloudPurgeWatch()
+            // R4/H4 smart-home awareness (no-op unless enabled with a curated set).
+            homeAwarenessLoop.start()
         } catch (e: Exception) {
             shutdown() // Tear down anything we built before the throw
             throw e
@@ -1026,6 +1056,7 @@ class AppGraph(
         // if construction/start partially failed (no resource left dangling for
         // the watchdog's next retry).
         runCatching { prefsFlow.close() } // 0.7: release the change listener
+        runCatching { homeAwarenessLoop.stop() } // R4/H4: close the push socket
         runCatching { sessionManager.cancelAll() }
         runCatching { cognitiveCoordinator.scope.cancel() } // 1.2: stop cognition first
         runCatching { playbackCapture.stop() }

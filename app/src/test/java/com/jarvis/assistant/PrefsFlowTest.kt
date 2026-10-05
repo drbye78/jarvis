@@ -174,3 +174,30 @@ class PrefsFlowSemanticTest {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// R4/H4: the smart-home awareness switch and the curated-entity set push live,
+// so toggling or editing them re-subscribes without a restart (the same
+// no-restart contract as every other pref).
+// ---------------------------------------------------------------------------
+
+class PrefsFlowHomeAwarenessTest {
+
+    @Test
+    fun `home awareness switch and curated set push live`() {
+        val prefs = FakeSharedPreferences()
+        val flow = PrefsFlow(AppPrefs(context = null, prefsOverride = prefs))
+        try {
+            assertFalse(flow.homeAwarenessEnabled.value)
+            assertEquals("[]", flow.homeEntities.value)
+
+            prefs.edit().putBoolean(AppPrefs.KEY_HOME_AWARENESS_ENABLED, true).commit()
+            prefs.edit().putString(AppPrefs.KEY_HOME_ENTITIES, """["ha:binary_sensor.washer"]""").commit()
+
+            assertTrue(flow.homeAwarenessEnabled.value)
+            assertEquals("""["ha:binary_sensor.washer"]""", flow.homeEntities.value)
+        } finally {
+            flow.close()
+        }
+    }
+}

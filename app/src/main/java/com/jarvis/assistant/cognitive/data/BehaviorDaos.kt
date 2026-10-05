@@ -88,6 +88,10 @@ interface BehaviorLogDao {
     @Query("SELECT COUNT(*) FROM behavior_log WHERE decision = 'FIRED' AND at >= :since")
     suspend fun firedSince(since: Long): Int
 
+    /** R4 home-notice daily cap — HOME_NOTICE rows since start of day. */
+    @Query("SELECT COUNT(*) FROM behavior_log WHERE decision = 'HOME_NOTICE' AND at >= :since")
+    suspend fun homeNoticeSince(since: Long): Int
+
     @Query("SELECT * FROM behavior_log WHERE ruleId = :ruleId ORDER BY at DESC, id DESC LIMIT 1")
     suspend fun latestForRule(ruleId: Long): BehaviorLogEntity?
 
@@ -179,6 +183,7 @@ object NoopBehaviorDaos : CommandEventDao, HabitRuleDao, BehaviorLogDao, Session
 
     override suspend fun insert(row: BehaviorLogEntity): Long = 0
     override suspend fun firedSince(since: Long): Int = 0
+    override suspend fun homeNoticeSince(since: Long): Int = 0
     override suspend fun latestForRule(ruleId: Long): BehaviorLogEntity? = null
     override suspend fun latestFiredSince(since: Long): BehaviorLogEntity? = null
     override suspend fun countForRuleSince(ruleId: Long, since: Long): Int = 0

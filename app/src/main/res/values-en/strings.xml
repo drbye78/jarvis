@@ -441,6 +441,12 @@
     <string name="behavior_label_search_library">a library search</string>
     <string name="behavior_label_playback">playback control</string>
     <string name="behavior_label_volume">a volume change</string>
+    <string name="home_notice_appliance_done">The appliance finished.</string>
+    <string name="home_notice_door_opened">A door opened.</string>
+    <string name="home_notice_cover_opened">A gate or blind opened.</string>
+    <string name="home_notice_sensor_tripped">A sensor triggered.</string>
+    <string name="home_notice_locked">The door is locked.</string>
+    <string name="home_notice_unlocked">The door is unlocked.</string>
     <string name="activity_tool_remember_fact">Remembering…</string>
     <string name="activity_tool_recall_facts">Checking memory…</string>
     <string name="activity_tool_forget_fact">Forgetting…</string>

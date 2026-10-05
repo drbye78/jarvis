@@ -69,6 +69,16 @@ class PrefsFlow(private val appPrefs: AppPrefs) : SharedPreferences.OnSharedPref
     private val _memoryEmbedder = MutableStateFlow(appPrefs.memoryEmbedder)
     val memoryEmbedder: StateFlow<String> = _memoryEmbedder.asStateFlow()
 
+    // --- R4 smart-home awareness ---------------------------------------------
+    // The loop reacts to BOTH the master switch and the curated-entity blob so
+    // flipping either cancels and re-subscribes (no restart).
+
+    private val _homeAwarenessEnabled = MutableStateFlow(appPrefs.homeAwarenessEnabled)
+    val homeAwarenessEnabled: StateFlow<Boolean> = _homeAwarenessEnabled.asStateFlow()
+
+    private val _homeEntities = MutableStateFlow(appPrefs.homeEntities)
+    val homeEntities: StateFlow<String> = _homeEntities.asStateFlow()
+
     init {
         prefs.registerOnSharedPreferenceChangeListener(this)
     }
@@ -91,6 +101,8 @@ class PrefsFlow(private val appPrefs: AppPrefs) : SharedPreferences.OnSharedPref
             AppPrefs.KEY_BEHAVIOR_QUIET_END -> _behaviorQuietEnd.value = appPrefs.behaviorQuietEnd
             AppPrefs.KEY_BEHAVIOR_DAILY_QUOTA -> _behaviorDailyQuota.value = appPrefs.behaviorDailyQuota
             AppPrefs.KEY_MEMORY_EMBEDDER -> _memoryEmbedder.value = appPrefs.memoryEmbedder
+            AppPrefs.KEY_HOME_AWARENESS_ENABLED -> _homeAwarenessEnabled.value = appPrefs.homeAwarenessEnabled
+            AppPrefs.KEY_HOME_ENTITIES -> _homeEntities.value = appPrefs.homeEntities
         }
     }
 }

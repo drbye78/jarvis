@@ -98,6 +98,17 @@ interface ToolStrings : WeatherToolMessages, GeoToolMessages {
     fun proactiveGenericSuggestion(commandLabel: String): String
     fun proactiveToolLabel(tool: String): String
 
+    /**
+     * Renders a content-free smart-home awareness notice from the contract-only
+     * `(kind, transition, locked)` triple — NEVER a device name, room or raw
+     * attribute (R4/H4). Both locales must implement every combination.
+     */
+    fun homeNotice(
+        kind: com.jarvis.assistant.home.DeviceKind,
+        transition: com.jarvis.assistant.home.TransitionClass,
+        locked: Boolean,
+    ): String
+
     companion object {
         /** Russian fallback (the product language) — also the JVM-test default. */
         val Default: ToolStrings = object : ToolStrings {
@@ -247,6 +258,23 @@ interface ToolStrings : WeatherToolMessages, GeoToolMessages {
                 "controlPlayback" -> "управление плеером"
                 "setVolume" -> "поменять громкость"
                 else -> tool
+            }
+
+            override fun homeNotice(
+                kind: com.jarvis.assistant.home.DeviceKind,
+                transition: com.jarvis.assistant.home.TransitionClass,
+                locked: Boolean,
+            ) = when (transition) {
+                com.jarvis.assistant.home.TransitionClass.APPLIANCE_DONE ->
+                    "Техника закончила работу."
+                com.jarvis.assistant.home.TransitionClass.DOOR_OPENED ->
+                    "Открылась дверь."
+                com.jarvis.assistant.home.TransitionClass.COVER_OPENED ->
+                    "Открылись ворота или шторы."
+                com.jarvis.assistant.home.TransitionClass.SENSOR_TRIPPED ->
+                    "Сработал датчик."
+                com.jarvis.assistant.home.TransitionClass.LOCK_CHANGED ->
+                    if (locked) "Дверь заперта." else "Дверь отперта."
             }
         }
     }
@@ -435,5 +463,26 @@ class AndroidToolStrings(private val context: Context) : ToolStrings {
         "controlPlayback" -> context.getString(R.string.behavior_label_playback)
         "setVolume" -> context.getString(R.string.behavior_label_volume)
         else -> tool
+    }
+
+    override fun homeNotice(
+        kind: com.jarvis.assistant.home.DeviceKind,
+        transition: com.jarvis.assistant.home.TransitionClass,
+        locked: Boolean,
+    ): String = when (transition) {
+        com.jarvis.assistant.home.TransitionClass.APPLIANCE_DONE ->
+            context.getString(R.string.home_notice_appliance_done)
+        com.jarvis.assistant.home.TransitionClass.DOOR_OPENED ->
+            context.getString(R.string.home_notice_door_opened)
+        com.jarvis.assistant.home.TransitionClass.COVER_OPENED ->
+            context.getString(R.string.home_notice_cover_opened)
+        com.jarvis.assistant.home.TransitionClass.SENSOR_TRIPPED ->
+            context.getString(R.string.home_notice_sensor_tripped)
+        com.jarvis.assistant.home.TransitionClass.LOCK_CHANGED ->
+            if (locked) {
+                context.getString(R.string.home_notice_locked)
+            } else {
+                context.getString(R.string.home_notice_unlocked)
+            }
     }
 }
