@@ -6,6 +6,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.RadioGroup
 import android.widget.TextView
+import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.textfield.TextInputEditText
 import com.jarvis.assistant.R
 import com.jarvis.assistant.manage.ManagementServerProvider
@@ -67,6 +68,10 @@ class ManagementSettingsController(
     private lateinit var statusDetail: TextView
     private lateinit var toggleButton: Button
     private lateinit var passwordValue: TextView
+    private lateinit var exportButton: Button
+    private lateinit var importButton: Button
+    private lateinit var includeSecretsCheck: MaterialCheckBox
+    private lateinit var secretsCount: TextView
 
     /** Owned scope (the seam has no `lifecycleScope`); cancelled in [onStop]. */
     private var scope = newScope()
@@ -82,6 +87,10 @@ class ManagementSettingsController(
         statusDetail = root.findViewById(R.id.managementStatusDetail)
         toggleButton = root.findViewById(R.id.managementToggleButton)
         passwordValue = root.findViewById(R.id.managementPasswordValue)
+        exportButton = root.findViewById(R.id.managementExportButton)
+        importButton = root.findViewById(R.id.managementImportButton)
+        includeSecretsCheck = root.findViewById(R.id.managementIncludeSecretsCheck)
+        secretsCount = root.findViewById(R.id.managementSecretsCount)
 
         syncFromPrefs()
         bindMode()
@@ -89,6 +98,7 @@ class ManagementSettingsController(
         bindIdle(root)
         bindPassword(root)
         bindToggle()
+        bindConfigTransfer()
 
         refreshStatus()
     }
@@ -103,6 +113,7 @@ class ManagementSettingsController(
             scope = newScope()
         }
         syncFromPrefs()
+        renderSecretsCount()
         refreshStatus()
     }
 
@@ -270,6 +281,57 @@ class ManagementSettingsController(
         val generated = PasswordHasher.generatePassword()
         vault.putString(SecretVault.KEY_MANAGEMENT_PASSWORD, generated)
         return generated
+    }
+
+    // ------------------------------------------------------------------
+    // Config export / import (host-owned SAF + ManagementCore).
+    // ------------------------------------------------------------------
+
+    /**
+     * The R13 §14.6 transfer section. The controller only reads the
+     * include-secrets intent and routes taps to [SettingsHost.exportConfig] /
+     * [SettingsHost.importConfig]; the host owns the passphrase dialog, the SAF
+     * intents and the actual encode/decode, so this class never starts an
+     * Intent or touches a `Uri`.
+     */
+    private fun bindConfigTransfer() {
+        exportButton.setOnClickListener { host.exportConfig(includeSecretsCheck.isChecked) }
+        importButton.setOnClickListener { host.importConfig() }
+        includeSecretsCheck.setOnCheckedChangeListener { _, _ -> renderSecretsCount() }
+        renderSecretsCount()
+    }
+
+    /**
+     * Render the include-secrets copy from the REAL stored secret count
+     * (`{applied}` honesty: the number reflects what an export would carry, not
+     * a guess). The count needs the running graph, so it is fetched through the
+     * host seam off the main thread; an unavailable service reads as "unknown"
+     * rather than a dishonest zero.
+     */
+    private fun renderSecretsCount() {
+        if (!includeSecretsCheck.isChecked) {
+            secretsCount.setText(R.string.settings_management_export_secrets_off)
+            return
+        }
+        secretsCount.setText(R.string.settings_management_export_secrets_loading)
+        scope.launch {
+            val graph = host.awaitAssistantGraph()
+            val count = if (graph == null) {
+                null
+            } else {
+                withContext(Dispatchers.Default) {
+                    graph.management.core.listSecrets().count { it.set }
+                }
+            }
+            if (count == null) {
+                secretsCount.setText(R.string.settings_management_export_secrets_unknown)
+            } else {
+                secretsCount.text = context.getString(
+                    R.string.settings_management_export_secrets_hint,
+                    count,
+                )
+            }
+        }
     }
 
     // ------------------------------------------------------------------

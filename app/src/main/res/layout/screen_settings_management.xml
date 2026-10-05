@@ -16,7 +16,8 @@
   managementModeLan, managementPortInput, managementPortSaveButton,
   managementIdleInput, managementIdleSaveButton, managementStatusValue,
   managementStatusDetail, managementToggleButton, managementPasswordValue,
-  managementShowPasswordButton.
+  managementShowPasswordButton, managementIncludeSecretsCheck,
+  managementSecretsCount, managementExportButton, managementImportButton.
 
   All ids are prefixed `management` so they can never collide with another
   screen's ids (SettingsLayoutTest asserts id uniqueness across screens).
@@ -255,5 +256,55 @@
             android:layout_marginTop="4dp"
             android:text="@string/settings_management_password_hint"
             style="@style/TextAppearance.Jarvis.Hint" />
+
+        <!-- Export/import (R13 §14.6): the artifact is ALWAYS the encrypted
+             envelope. The checkbox only opts stored secrets into that same
+             container; the passphrase dialog and the SAF intents are host-owned
+             (the controller never starts an Intent). -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_section"
+            android:text="@string/settings_management_export_section"
+            style="@style/TextAppearance.Jarvis.SectionHeader"
+            android:accessibilityHeading="true" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/settings_management_export_info"
+            style="@style/TextAppearance.Jarvis.Hint" />
+
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/managementIncludeSecretsCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_control_gap"
+            android:minHeight="48dp"
+            android:text="@string/settings_management_export_include_secrets" />
+
+        <TextView
+            android:id="@+id/managementSecretsCount"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/settings_management_export_secrets_off"
+            style="@style/TextAppearance.Jarvis.Hint" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/managementExportButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_before_action"
+            android:text="@string/settings_management_export" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/managementImportButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/settings_management_import" />
     </LinearLayout>
 </ScrollView>
