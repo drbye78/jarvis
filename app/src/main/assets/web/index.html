@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="robots" content="noindex, nofollow">
+  <!--
+    Defence-in-depth: the server sets the authoritative CSP header. This meta
+    tag mirrors it so the policy is also discoverable from the artifact itself.
+    No inline scripts, styles, event handlers or remote assets are used.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self'">
+  <title>Jarvis — Панель управления</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Boot splash: replaced by app.js once the session state is known. -->
+  <div id="app" class="app-root">
+    <div class="boot">
+      <div class="brand-mark brand-mark--pulse" aria-hidden="true">
+        <span class="brand-core"></span>
+      </div>
+      <p class="boot__label">Установка защищённого соединения…</p>
+    </div>
+  </div>
+
+  <div id="modal-root" class="modal-root" hidden></div>
+  <div id="toasts" class="toast-stack" role="status" aria-live="assertive"></div>
+
+  <noscript>
+    <div class="noscript">
+      Для работы панели управления требуется JavaScript. Он выполняется только
+      с этого устройства и не загружается извне.
+    </div>
+  </noscript>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
