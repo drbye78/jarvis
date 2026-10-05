@@ -1,7 +1,7 @@
 package com.jarvis.assistant.tools
 
 /**
- * Canonical name → [ToolRisk] table for the 26-tool production surface.
+ * Canonical name → [ToolRisk] table for the 29-tool production surface.
  *
  * This is the ONE testable place the classification is declared. It exists
  * because the abstract [ToolContract.risk] property alone is only a
@@ -52,6 +52,13 @@ object ToolRisks {
         "remember_fact" to ToolRisk.STATEFUL,
         "recall_facts" to ToolRisk.READ_ONLY,
         "forget_fact" to ToolRisk.IRREVERSIBLE,
+        // R13 §14.7 management surface (voice-turn-only local control).
+        // `enableLanManagement` additionally implements ConfirmedTool, so the
+        // registry requires the two-turn affirmative even though the RISK class
+        // itself carries no blanket confirmation.
+        "enableLocalManagement" to ToolRisk.CONTROLLED,
+        "enableLanManagement" to ToolRisk.CONTROLLED,
+        "disableManagement" to ToolRisk.CONTROLLED,
     )
 
     /** The declared risk for [name]; throws for an unknown tool name. */

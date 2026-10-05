@@ -382,6 +382,10 @@
     <string name="tool_app_not_launchable">Приложение \'%1$s\' недоступно для запуска</string>
     <string name="tool_open_app_attempted_detail">Я не вижу открытый экран, поэтому система могла заблокировать запуск — открой приложение вручную, если оно не появилось.</string>
     <string name="tool_weather_not_available">нет данных</string>
+    <string name="tool_management_local_enabled">Включил внешнее управление только на этом устройстве (localhost).</string>
+    <string name="tool_management_lan_enabled">Включил внешнее управление для локальной сети. Не забудь выключить его, когда закончишь.</string>
+    <string name="tool_management_disabled">Выключил внешнее управление.</string>
+    <string name="tool_management_unavailable">Не удалось включить внешнее управление на этом устройстве.</string>
     <string name="tool_music_player_unknown">Не знаю такой музыкальный сервис: «%1$s». Скажи «Яндекс Музыка», «Звук», «ВК Музыка» или «авто».</string>
 
     <!-- FIXPLAN B/C: voice stop + custom Sherpa wake keyword -->

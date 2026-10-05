@@ -383,6 +383,10 @@
     <string name="tool_app_not_launchable">App \'%1$s\' cannot be launched</string>
     <string name="tool_open_app_attempted_detail">I don\'t see an open window, so the system may have blocked the launch — open the app manually if it did not appear.</string>
     <string name="tool_weather_not_available">no data</string>
+    <string name="tool_management_local_enabled">Enabled external management on this device only (localhost).</string>
+    <string name="tool_management_lan_enabled">Enabled external management for the local network. Remember to turn it off when you are done.</string>
+    <string name="tool_management_disabled">Disabled external management.</string>
+    <string name="tool_management_unavailable">Could not enable external management on this device.</string>
     <string name="tool_music_player_unknown">Unknown music service: "%1$s". Say "Yandex Music", "Zvuk", "VK Music" or "auto".</string>
 
     <!-- FIXPLAN B/C: voice stop + custom Sherpa wake keyword -->

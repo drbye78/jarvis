@@ -45,6 +45,12 @@ interface ToolStrings : WeatherToolMessages, GeoToolMessages {
     val openAppAttemptedDetail: String
     val weatherNotAvailable: String
 
+    // --- R13 §14.7 management-surface voice control --------------------------
+    val managementLocalEnabled: String
+    val managementLanEnabled: String
+    val managementDisabled: String
+    val managementUnavailable: String
+
     // --- Memory-section wrapper strings --------------------------------------
     // These render INSIDE the system prompt (the <memory-context> block), so
     // they follow the ToolStrings seam for the RU/EN parity test even though
@@ -125,6 +131,14 @@ interface ToolStrings : WeatherToolMessages, GeoToolMessages {
             override val openAppAttemptedDetail =
                 "Я не вижу открытый экран, поэтому система могла заблокировать запуск — открой приложение вручную, если оно не появилось."
             override val weatherNotAvailable = "нет данных"
+
+            override val managementLocalEnabled =
+                "Включил внешнее управление только на этом устройстве (localhost)."
+            override val managementLanEnabled =
+                "Включил внешнее управление для локальной сети. Не забудь выключить его, когда закончишь."
+            override val managementDisabled = "Выключил внешнее управление."
+            override val managementUnavailable =
+                "Не удалось включить внешнее управление на этом устройстве."
 
             override val locationDenied =
                 "Не удалось определить местоположение: нет доступа. " +
@@ -263,6 +277,14 @@ class AndroidToolStrings(private val context: Context) : ToolStrings {
         get() = context.getString(R.string.tool_open_app_attempted_detail)
     override val weatherNotAvailable: String
         get() = context.getString(R.string.tool_weather_not_available)
+    override val managementLocalEnabled: String
+        get() = context.getString(R.string.tool_management_local_enabled)
+    override val managementLanEnabled: String
+        get() = context.getString(R.string.tool_management_lan_enabled)
+    override val managementDisabled: String
+        get() = context.getString(R.string.tool_management_disabled)
+    override val managementUnavailable: String
+        get() = context.getString(R.string.tool_management_unavailable)
     override val locationDenied: String
         get() = context.getString(R.string.tool_weather_location_denied)
     override val locationUnavailable: String

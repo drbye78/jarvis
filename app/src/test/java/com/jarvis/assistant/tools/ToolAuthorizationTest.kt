@@ -23,7 +23,7 @@ import java.io.DataInputStream
  *  3. the DERIVATION — the flag comes from the utterance via
  *     [IrreversibleCommand] (see its own truth table in
  *     `IrreversibleCommandTest`);
- *  4. TOTAL and PINNED classification — the 26 canonical risk VALUES live in
+ *  4. TOTAL and PINNED classification — the 29 canonical risk VALUES live in
  *     [ToolRisks], the registry cross-checks them, and this test additionally
  *     verifies each production class's COMPILED risk against the table.
  */
@@ -210,6 +210,41 @@ class ToolAuthorizationTest {
     }
 
     @Test
+    fun `controlled tools are allowed only on a bound voice turn`() {
+        assertEquals(
+            "a voice turn permits a controlled local action",
+            AuthorizationDecision.Allow,
+            ToolAuthorization.decide("enableLanManagement", ToolRisk.CONTROLLED, TurnAuthorization.voice()),
+        )
+        // Like EXTERNAL, the explicit-command flag is irrelevant.
+        assertEquals(
+            AuthorizationDecision.Allow,
+            ToolAuthorization.decide(
+                "enableLanManagement",
+                ToolRisk.CONTROLLED,
+                TurnAuthorization.voice(explicitUserCommand = true),
+            ),
+        )
+    }
+
+    @Test
+    fun `controlled tools fail closed off the voice lane`() {
+        val contexts = listOf<TurnAuthorization?>(
+            null,
+            TurnAuthorization.system(),
+            TurnAuthorization(TurnOrigin.SCHEDULED, explicitUserCommand = true),
+            TurnAuthorization(TurnOrigin.PROACTIVE, explicitUserCommand = true),
+        )
+        contexts.forEach { ctx ->
+            assertTrue(
+                "CONTROLLED must fail closed for $ctx",
+                ToolAuthorization.decide("enableLanManagement", ToolRisk.CONTROLLED, ctx)
+                is AuthorizationDecision.Deny,
+            )
+        }
+    }
+
+    @Test
     fun `no canonical tool name carries the reserved mcp namespace prefix`() {
         ToolRisks.byName.keys.forEach { name ->
             assertFalse(
@@ -261,8 +296,8 @@ class ToolAuthorizationTest {
 
     @Test
     fun `a mis-declared external write fails closed and never executes`() = runBlocking {
-        // Declares the write risk but does NOT implement ConfirmedWriteTool, so
-        // its exact call cannot be bound to a server+tool identity. Even on a
+        // Declares the write risk but does NOT implement ConfirmedTool, so
+        // its exact call cannot be bound to a domain+action identity. Even on a
         // bound voice turn it must be refused rather than run unconfirmed.
         val tool = RecordingTool("mcp_bad_write", ToolRisk.EXTERNAL_WRITE)
         val registry = ToolRegistry(listOf(tool), writeConfirmation = WriteConfirmation())
@@ -335,14 +370,14 @@ class ToolAuthorizationTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `the canonical risk map pins exactly 26 values`() {
-        assertEquals(26, EXPECTED.size)
+    fun `the canonical risk map pins exactly 29 values`() {
+        assertEquals(29, EXPECTED.size)
         assertEquals("ToolRisks.byName must equal the pinned table", EXPECTED, ToolRisks.byName)
     }
 
     @Test
     fun `every production tool class declares its risk explicitly`() {
-        assertEquals(26, TOOL_CLASSES.size)
+        assertEquals(29, TOOL_CLASSES.size)
         TOOL_CLASSES.forEach { (name, clazz) ->
             assertTrue(
                 "$name must declare ToolContract.risk",
@@ -387,7 +422,7 @@ class ToolAuthorizationTest {
 
     private companion object {
         /**
-         * The 26-tool runtime surface (23 base + 3 cognitive) with its
+         * The 29-tool runtime surface (26 base + 3 cognitive) with its
          * canonical classification. This is the PINNED expectation; it must
          * stay byte-for-byte in step with [ToolRisks.byName] and with each
          * production tool class.
@@ -424,6 +459,10 @@ class ToolAuthorizationTest {
             "remember_fact" to ToolRisk.STATEFUL,
             "recall_facts" to ToolRisk.READ_ONLY,
             "forget_fact" to ToolRisk.IRREVERSIBLE,
+            // R13 §14.7 management surface (voice-turn-only local control)
+            "enableLocalManagement" to ToolRisk.CONTROLLED,
+            "enableLanManagement" to ToolRisk.CONTROLLED,
+            "disableManagement" to ToolRisk.CONTROLLED,
         )
 
         /** Every production tool class, keyed by its advertised name. */
@@ -454,9 +493,13 @@ class ToolAuthorizationTest {
             "remember_fact" to com.jarvis.assistant.cognitive.tools.RememberFactTool::class.java,
             "recall_facts" to com.jarvis.assistant.cognitive.tools.RecallFactsTool::class.java,
             "forget_fact" to com.jarvis.assistant.cognitive.tools.ForgetFactTool::class.java,
+            "enableLocalManagement" to ManagementTools.EnableLocalManagementTool::class.java,
+            "enableLanManagement" to ManagementTools.EnableLanManagementTool::class.java,
+            "disableManagement" to ManagementTools.DisableManagementTool::class.java,
         )
 
-        private val RISK_NAMES = setOf("READ_ONLY", "STATEFUL", "IRREVERSIBLE")
+        private val RISK_NAMES =
+            setOf("READ_ONLY", "STATEFUL", "IRREVERSIBLE", "EXTERNAL", "EXTERNAL_WRITE", "CONTROLLED")
 
         /**
          * The [ToolRisk] constant names referenced by [clazz]'s compiled

@@ -8,6 +8,7 @@ import com.jarvis.assistant.location.AndroidLocationProvider
 import com.jarvis.assistant.location.DefaultLocationResolver
 import com.jarvis.assistant.location.LocationProvider
 import com.jarvis.assistant.location.LocationResolver
+import com.jarvis.assistant.manage.ManagementServerProvider
 import com.jarvis.assistant.media.AndroidMediaGateway
 import com.jarvis.assistant.media.MusicPlaybackOrchestrator
 import com.jarvis.assistant.model.FunctionCall
@@ -233,6 +234,14 @@ class FunctionRouter(
                 budgetMs = config.weatherToolTimeoutMs,
             ),
         ) + DeviceTools(appContext, toolStrings).all() +
+            // R13 §14.7: voice enable/disable of the management surface. The
+            // apply action drives the process-scoped provider off the main
+            // thread (the tool wraps it in Dispatchers.Default).
+            ManagementTools(
+                prefs = appPrefs,
+                strings = toolStrings,
+                applyMode = { ManagementServerProvider.get(appContext).reconcile() },
+            ).all() +
             MusicTools(
                 MusicPlaybackOrchestrator(
                     mediaGateway,
