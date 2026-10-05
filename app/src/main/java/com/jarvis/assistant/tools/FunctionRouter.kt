@@ -63,6 +63,12 @@ class FunctionRouter(
      */
     private val dynamicTools: () -> List<ToolContract> = { emptyList() },
     /**
+     * Smart-home tools (R4), resolved through the graph's [com.jarvis.assistant.di.HomeGraph].
+     * Lazy like [dynamicTools]: the default empty list preserves every existing
+     * caller, and building the group performs no I/O.
+     */
+    private val homeTools: () -> List<ToolContract> = { emptyList() },
+    /**
      * The single-use confirmation store for [ToolRisk.EXTERNAL_WRITE] tools,
      * forwarded into the inner [ToolRegistry]. MUST be the same instance the
      * session turn hooks feed, or a challenge can never be confirmed. Null =
@@ -246,6 +252,8 @@ class FunctionRouter(
                     if (mode == ManagementMode.DISABLED) provider.deactivate() else provider.activate()
                 },
             ).all() +
+            // R4: smart-home read + control tools over the graph's HomeGraph.
+            homeTools() +
             MusicTools(
                 MusicPlaybackOrchestrator(
                     mediaGateway,

@@ -164,6 +164,14 @@ class AppGraph(
     val appPrefs = com.jarvis.assistant.util.AppPrefs(appContext)
 
     /**
+     * R4 smart-home lane. Cheap construction (no I/O): the backend is built
+     * lazily on the first home tool call, and discovery warm-up runs off the
+     * main thread in [start]. Provider configs are sealed at graph
+     * construction; the alias/grant blobs are read live by the tools.
+     */
+    val homeGraph = HomeGraph(appPrefs)
+
+    /**
      * R13 §14 management bridges. The graph builds the durable pieces only and
      * installs them into the PROCESS-scoped
      * [com.jarvis.assistant.manage.ManagementServerProvider]; it never starts
@@ -589,6 +597,8 @@ class AppGraph(
         // Dynamically-discovered external tools; snapshot is non-blocking and
         // re-projects on every pass, so a discovery lands without a rebuild.
         dynamicTools = { mcpToolCatalog.snapshot() },
+        // Smart-home read + control tools over the graph-owned HomeGraph.
+        homeTools = { homeGraph.tools(com.jarvis.assistant.tools.AndroidToolStrings(appContext)).all() },
         // ONE confirmation store, shared with the session turn hooks below.
         writeConfirmation = writeConfirmation,
         // Command telemetry — every tool execution writes
@@ -985,13 +995,28 @@ class AppGraph(
         // network). Exceptions are contained so a failing server cannot crash
         // the graph scope; snapshot() re-arms any server still stale on the
         // first LLM pass.
+        launchWarmup("MCP") { mcpToolCatalog.refreshAll() }
+        // Smart-home warm-up: discover devices ONCE, off the construction path
+        // and off the start() critical path. Never blocks startup on the LAN
+        // network; a home tool call refreshes again on demand and snapshot()s
+        // the repository live.
+        launchWarmup("Home") { homeGraph.refresh() }
+    }
+
+    /**
+     * Fire-and-forget warm-up on the graph scope. Cancellation is rethrown so a
+     * scope cancel is honored; any other failure is logged content-free and
+     * contained (a flaky integration must never crash the graph scope). Extracted
+     * so [start] keeps a single throw and the two warm-ups cannot drift.
+     */
+    private fun launchWarmup(label: String, block: suspend () -> Unit) {
         scope.launch {
             try {
-                mcpToolCatalog.refreshAll()
+                block()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Timber.w(e, "MCP warm-up discovery failed")
+                Timber.w(e, "%s warm-up discovery failed", label)
             }
         }
     }
