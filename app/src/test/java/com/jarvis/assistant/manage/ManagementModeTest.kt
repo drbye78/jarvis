@@ -74,7 +74,7 @@ class ManagementModeTest {
     @Test
     fun `lan closes after authenticated idle timeout`() {
         var now = 1_000L
-        val activation = ManagementActivation(idleTimeoutMs = 900L, nowMs = { now })
+        val activation = ManagementActivation(idleTimeoutMs = { 900L }, nowMs = { now })
         activation.start(ManagementMode.LAN, explicitEnable = true)
         assertTrue(activation.isActive)
 
@@ -92,7 +92,7 @@ class ManagementModeTest {
     @Test
     fun `touch refreshes the idle window`() {
         var now = 0L
-        val activation = ManagementActivation(idleTimeoutMs = 100L, nowMs = { now })
+        val activation = ManagementActivation(idleTimeoutMs = { 100L }, nowMs = { now })
         activation.start(ManagementMode.LAN, explicitEnable = true)
 
         now = 90L
@@ -107,7 +107,7 @@ class ManagementModeTest {
     @Test
     fun `localhost is never idle closed`() {
         var now = 0L
-        val activation = ManagementActivation(idleTimeoutMs = 100L, nowMs = { now })
+        val activation = ManagementActivation(idleTimeoutMs = { 100L }, nowMs = { now })
         activation.start(ManagementMode.LOCALHOST)
 
         now = 10_000_000L
@@ -119,10 +119,29 @@ class ManagementModeTest {
     @Test
     fun `non-positive idle timeout disables auto close`() {
         var now = 0L
-        val activation = ManagementActivation(idleTimeoutMs = 0L, nowMs = { now })
+        val activation = ManagementActivation(idleTimeoutMs = { 0L }, nowMs = { now })
         activation.start(ManagementMode.LAN, explicitEnable = true)
         now = 10_000_000L
         assertFalse(activation.isIdleExpired())
         assertTrue(activation.isActive)
+    }
+
+    /**
+     * The R13 P1 device finding: the idle-timeout field is advertised LIVE, so a
+     * change while the listener is running must take effect WITHOUT a restart.
+     * The window is therefore read on every check, not captured at construction.
+     */
+    @Test
+    fun `idle window change applies live to a running listener`() {
+        var now = 0L
+        var window = 900L
+        val activation = ManagementActivation(idleTimeoutMs = { window }, nowMs = { now })
+        activation.start(ManagementMode.LAN, explicitEnable = true)
+
+        // Just past the ORIGINAL window it would still be open.
+        now = 100L
+        window = 50L // the user lowers the timeout mid-run
+        assertTrue("the lowered window must apply without a restart", activation.isIdleExpired())
+        assertTrue(activation.closeIfIdle())
     }
 }

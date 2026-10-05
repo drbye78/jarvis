@@ -71,11 +71,14 @@ fun initialManagementActive(mode: ManagementMode, explicitEnable: Boolean = fals
  * idle auto-close — [LOCALHOST] stays up (loopback is adb-gated) and
  * [DISABLED] is never active.
  *
- * @param idleTimeoutMs LAN idle window; `<= 0` disables idle auto-close.
+ * @param idleTimeoutMs LAN idle window; `<= 0` disables idle auto-close. A
+ *   PROVIDER (not a captured value) so the Settings change is LIVE: the
+ *   provider is re-read on every [isIdleExpired] check, so an idle-timeout edit
+ *   applies to a running listener without a service restart.
  * @param nowMs injected epoch-millis clock, so expiry is deterministic in tests.
  */
 class ManagementActivation(
-    private val idleTimeoutMs: Long = DEFAULT_IDLE_TIMEOUT_MS,
+    private val idleTimeoutMs: () -> Long = { DEFAULT_IDLE_TIMEOUT_MS },
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
 
@@ -124,8 +127,8 @@ class ManagementActivation(
     fun isIdleExpired(): Boolean =
         isActive &&
             mode == ManagementMode.LAN &&
-            idleTimeoutMs > 0 &&
-            nowMs() - lastAuthenticatedAtMs >= idleTimeoutMs
+            idleTimeoutMs() > 0 &&
+            nowMs() - lastAuthenticatedAtMs >= idleTimeoutMs()
 
     /**
      * Closes the listener on idle expiry. Returns true only on the transition

@@ -180,10 +180,14 @@ class ManagementServerProvider internal constructor(
 
     /** Creates the activation/controller on first use; false when no graph yet. */
     private fun ensureReady(): Boolean {
-        val comps = components ?: return false
+        if (components == null) return false
         if (controller == null) {
             val created = ManagementActivation(
-                idleTimeoutMs = comps.core.status().idleTimeoutMs,
+                // Read LIVE from the current components so an idle-timeout edit
+                // applies to a running listener (the pref is re-read on every
+                // isIdleExpired check); capturing the value here would make the
+                // Settings field inert until a process restart.
+                idleTimeoutMs = { requireComponents().core.status().idleTimeoutMs },
                 nowMs = env.nowMs,
             )
             activation = created
