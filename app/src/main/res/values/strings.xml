@@ -588,6 +588,12 @@
     <string name="settings_cat_management_sub">Внешний доступ</string>
     <string name="settings_management_section">Внешнее управление</string>
     <string name="settings_management_info">Необязательный веб-интерфейс и REST для настройки ассистента. По умолчанию отключён; включайте его только при необходимости.</string>
+    <string name="settings_management_status_label">Состояние сервера</string>
+    <string name="settings_management_status_running">Работает</string>
+    <string name="settings_management_status_stopped">Остановлен</string>
+    <string name="settings_management_status_detail">Порт: %1$d · Отпечаток: %2$s</string>
+    <string name="settings_management_activate">Включить</string>
+    <string name="settings_management_deactivate">Остановить</string>
     <string name="settings_management_mode_label">Режим</string>
     <string name="settings_management_mode_disabled">Отключено</string>
     <string name="settings_management_mode_localhost">Только localhost</string>

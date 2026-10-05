@@ -14,8 +14,9 @@
   FROZEN IDS (controller contract, referenced by ManagementSettingsController):
   managementModeGroup, managementModeDisabled, managementModeLocalhost,
   managementModeLan, managementPortInput, managementPortSaveButton,
-  managementIdleInput, managementIdleSaveButton, managementCertFingerprint,
-  managementPasswordValue, managementShowPasswordButton.
+  managementIdleInput, managementIdleSaveButton, managementStatusValue,
+  managementStatusDetail, managementToggleButton, managementPasswordValue,
+  managementShowPasswordButton.
 
   All ids are prefixed `management` so they can never collide with another
   screen's ids (SettingsLayoutTest asserts id uniqueness across screens).
@@ -49,6 +50,39 @@
             android:layout_marginTop="4dp"
             android:text="@string/settings_management_info"
             style="@style/TextAppearance.Jarvis.Hint" />
+
+        <!-- Live status + explicit activate/deactivate. The radio above is the
+             persisted INTENT; the button applies it to the running listener
+             through ManagementServerProvider (process-scoped). -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_section"
+            android:text="@string/settings_management_status_label"
+            style="@style/TextAppearance.Jarvis.Hint" />
+
+        <TextView
+            android:id="@+id/managementStatusValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/settings_management_status_stopped"
+            style="@style/TextAppearance.Material3.TitleMedium" />
+
+        <TextView
+            android:id="@+id/managementStatusDetail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:fontFamily="monospace"
+            style="@style/TextAppearance.Material3.BodySmall" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/managementToggleButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_before_action"
+            android:text="@string/settings_management_activate" />
 
         <!-- Mode: the persisted user INTENT. The socket is only open when the
              service decides the mode is active; a reboot always drops LAN. -->
@@ -190,24 +224,6 @@
             android:layout_marginTop="4dp"
             android:text="@string/settings_management_tls_warning"
             style="@style/TextAppearance.Jarvis.Hint" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/settings_management_cert_label"
-            style="@style/TextAppearance.Jarvis.Hint" />
-
-        <!-- Filled in code off the main thread (TlsCertFactory.generate);
-             "Computing…" until then, "Could not build…" on failure. -->
-        <TextView
-            android:id="@+id/managementCertFingerprint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:fontFamily="monospace"
-            android:text="@string/settings_management_cert_loading"
-            style="@style/TextAppearance.Material3.BodySmall" />
 
         <TextView
             android:layout_width="match_parent"

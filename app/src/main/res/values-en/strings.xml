@@ -589,6 +589,12 @@
     <string name="settings_cat_management_sub">External access</string>
     <string name="settings_management_section">External management</string>
     <string name="settings_management_info">Optional web UI and REST API for configuring the assistant. Disabled by default; enable it only when needed.</string>
+    <string name="settings_management_status_label">Server status</string>
+    <string name="settings_management_status_running">Running</string>
+    <string name="settings_management_status_stopped">Stopped</string>
+    <string name="settings_management_status_detail">Port: %1$d · Fingerprint: %2$s</string>
+    <string name="settings_management_activate">Enable</string>
+    <string name="settings_management_deactivate">Stop</string>
     <string name="settings_management_mode_label">Mode</string>
     <string name="settings_management_mode_disabled">Disabled</string>
     <string name="settings_management_mode_localhost">Localhost only</string>

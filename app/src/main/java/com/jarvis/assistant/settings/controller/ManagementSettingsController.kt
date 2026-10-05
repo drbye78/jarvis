@@ -8,7 +8,8 @@ import android.widget.RadioGroup
 import android.widget.TextView
 import com.google.android.material.textfield.TextInputEditText
 import com.jarvis.assistant.R
-import com.jarvis.assistant.manage.TlsCertFactory
+import com.jarvis.assistant.manage.ManagementServerProvider
+import com.jarvis.assistant.manage.PasswordHasher
 import com.jarvis.assistant.settings.ApplyPolicies
 import com.jarvis.assistant.settings.BaseSettingsController
 import com.jarvis.assistant.settings.SettingsCallbacks
@@ -16,7 +17,6 @@ import com.jarvis.assistant.settings.SettingsHost
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.KeystoreVault
 import com.jarvis.assistant.util.SecretVault
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,29 +24,23 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import timber.log.Timber
-import java.security.SecureRandom
 
 /**
- * «Управление» / MANAGEMENT detail screen controller (R13 §14, Wave 1).
+ * «Управление» / MANAGEMENT detail screen controller (R13 §14).
  *
- * SETTINGS + DISPLAY ONLY: this screen never starts the management server — a
- * later wave owns the listener. It persists three prefs and shows two
- * device-bound values:
+ * The screen persists the mode/port/idle timeout, shows the **live listener
+ * status** (running/stopped, bound port, TLS SHA-256 fingerprint) and offers an
+ * explicit **activate/deactivate** action plus the one-time password reveal.
  *
- *  - `managementMode` (disabled | localhost | lan) and `managementPort` are
- *    [ApplyPolicies.SERVICE_RESTART]: the listener binds a specific
- *    interface:port at service start, so a change is stored and the pending
- *    banner reports the restart need.
- *  - `managementIdleTimeoutMs` is LIVE: the running server re-reads it per
- *    request. Stored in ms, shown/edited in whole minutes.
- *  - the self-signed certificate SHA-256 fingerprint is computed OFF the main
- *    thread via [TlsCertFactory.generate] and shown so the expected browser
- *    warning can be verified. Cheap (one generation per screen bind) and
- *    cancelled with [scope].
- *  - the management password is generated on first reveal (20 chars,
- *    unambiguous alphabet) and stored in the [SecretVault]; it is shown only
- *    on request, never by default.
+ * The mode/port radio is the persisted INTENT ([ApplyPolicies.SERVICE_RESTART]);
+ * the action calls the process-scoped [ManagementServerProvider] so an explicit
+ * change can apply immediately where the design allows, without waiting for the
+ * service restart the banner still advises for a port change. The provider is
+ * owned by the FGS and survives graph rebuilds — this screen never starts a
+ * server itself.
+ *
+ * The status row is refreshed off the main thread: the first status read may
+ * generate the RSA cert, and the toggle may run a bounded Netty shutdown.
  *
  * The frozen seam has no `lifecycleScope`, so the controller owns a
  * [CoroutineScope], cancels it in [onStop] and revives it in [onResume].
@@ -69,14 +63,13 @@ class ManagementSettingsController(
     private lateinit var modeGroup: RadioGroup
     private lateinit var portInput: TextInputEditText
     private lateinit var idleInput: TextInputEditText
-    private lateinit var certFingerprint: TextView
+    private lateinit var statusValue: TextView
+    private lateinit var statusDetail: TextView
+    private lateinit var toggleButton: Button
     private lateinit var passwordValue: TextView
 
     /** Owned scope (the seam has no `lifecycleScope`); cancelled in [onStop]. */
     private var scope = newScope()
-
-    /** Guards against re-generating the RSA cert on every resume. */
-    private var fingerprintLoading = false
 
     override fun bind(root: View) {
         context = root.context
@@ -85,7 +78,9 @@ class ManagementSettingsController(
         modeGroup = root.findViewById(R.id.managementModeGroup)
         portInput = root.findViewById(R.id.managementPortInput)
         idleInput = root.findViewById(R.id.managementIdleInput)
-        certFingerprint = root.findViewById(R.id.managementCertFingerprint)
+        statusValue = root.findViewById(R.id.managementStatusValue)
+        statusDetail = root.findViewById(R.id.managementStatusDetail)
+        toggleButton = root.findViewById(R.id.managementToggleButton)
         passwordValue = root.findViewById(R.id.managementPasswordValue)
 
         syncFromPrefs()
@@ -93,8 +88,9 @@ class ManagementSettingsController(
         bindPort(root)
         bindIdle(root)
         bindPassword(root)
+        bindToggle()
 
-        loadFingerprint()
+        refreshStatus()
     }
 
     override fun onResume() {
@@ -102,18 +98,21 @@ class ManagementSettingsController(
         // no ordering guarantee beyond "bind, then lifecycle".
         if (!::modeGroup.isInitialized) return
         // A stop→resume round-trip cancels the scope; revive it and redo the
-        // (cancelled) fingerprint load.
+        // (cancelled) status load.
         if (!scope.isActive) {
             scope = newScope()
-            fingerprintLoading = false
-            loadFingerprint()
         }
         syncFromPrefs()
+        refreshStatus()
     }
 
     override fun onStop() {
         scope.cancel()
     }
+
+    // ------------------------------------------------------------------
+    // Mode / port / idle (persisted intent).
+    // ------------------------------------------------------------------
 
     /**
      * Mode radio. The STORED value is applied before the listener is attached,
@@ -193,10 +192,68 @@ class ManagementSettingsController(
         prefs.managementIdleTimeoutMs = minutes * MILLIS_PER_MINUTE
     }
 
+    // ------------------------------------------------------------------
+    // Live status + activate/deactivate.
+    // ------------------------------------------------------------------
+
+    private fun bindToggle() {
+        toggleButton.setOnClickListener {
+            scope.launch {
+                withContext(Dispatchers.Default) {
+                    val provider = ManagementServerProvider.get(context.applicationContext)
+                    if (provider.isRunning) provider.deactivate() else provider.activate()
+                }
+                refreshStatus()
+            }
+        }
+    }
+
+    /** Refresh the status row + toggle label from the process-scoped provider. */
+    private fun refreshStatus() {
+        scope.launch {
+            val snapshot = withContext(Dispatchers.Default) {
+                val provider = ManagementServerProvider.get(context.applicationContext)
+                RuntimeSnapshot(
+                    running = provider.isRunning,
+                    port = provider.boundPort,
+                    fingerprint = provider.fingerprint(),
+                )
+            }
+            render(snapshot)
+        }
+    }
+
+    private fun render(snapshot: RuntimeSnapshot) {
+        statusValue.setText(
+            if (snapshot.running) {
+                R.string.settings_management_status_running
+            } else {
+                R.string.settings_management_status_stopped
+            },
+        )
+        val fingerprint = snapshot.fingerprint.ifBlank {
+            context.getString(R.string.settings_management_cert_failed)
+        }
+        statusDetail.text = context.getString(
+            R.string.settings_management_status_detail,
+            snapshot.port ?: prefs.managementPort,
+            fingerprint,
+        )
+        toggleButton.setText(
+            if (snapshot.running) {
+                R.string.settings_management_deactivate
+            } else {
+                R.string.settings_management_activate
+            },
+        )
+    }
+
     /**
      * "Показать пароль": return the stored password, generating and storing a
-     * fresh one ONLY when none exists. The vault write touches Keystore, so it
-     * runs off the main thread inside [scope].
+     * fresh one ONLY when none exists. Stored REVERSIBLY (the owner must be able
+     * to re-show it), through the same [PasswordHasher] alphabet as the rest of
+     * the lane. The vault write touches Keystore, so it runs off the main thread
+     * inside [scope].
      */
     private fun bindPassword(root: View) {
         root.findViewById<Button>(R.id.managementShowPasswordButton).setOnClickListener {
@@ -210,40 +267,14 @@ class ManagementSettingsController(
     private fun ensurePassword(): String {
         val stored = vault.getString(SecretVault.KEY_MANAGEMENT_PASSWORD)
         if (!stored.isNullOrBlank()) return stored
-        val generated = generatePassword()
+        val generated = PasswordHasher.generatePassword()
         vault.putString(SecretVault.KEY_MANAGEMENT_PASSWORD, generated)
         return generated
     }
 
-    private fun generatePassword(): String {
-        val random = SecureRandom()
-        return buildString(PASSWORD_LENGTH) {
-            repeat(PASSWORD_LENGTH) {
-                append(PASSWORD_ALPHABET[random.nextInt(PASSWORD_ALPHABET.length)])
-            }
-        }
-    }
-
-    /** Compute the cert fingerprint once per bind, off the main thread. */
-    private fun loadFingerprint() {
-        if (fingerprintLoading) return
-        fingerprintLoading = true
-        certFingerprint.text = context.getString(R.string.settings_management_cert_loading)
-        scope.launch {
-            val fingerprint = withContext(Dispatchers.Default) { buildFingerprint() }
-            certFingerprint.text = fingerprint
-                ?: context.getString(R.string.settings_management_cert_failed)
-        }
-    }
-
-    private fun buildFingerprint(): String? = try {
-        TlsCertFactory.generate().sha256Fingerprint
-    } catch (cancellation: CancellationException) {
-        throw cancellation
-    } catch (error: Exception) {
-        Timber.w(error, "Management: TLS certificate generation failed")
-        null
-    }
+    // ------------------------------------------------------------------
+    // Rendering helpers.
+    // ------------------------------------------------------------------
 
     /** Render every control from the prefs (single source of truth). */
     private fun syncFromPrefs() {
@@ -276,6 +307,9 @@ class ManagementSettingsController(
 
     private fun newScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    /** One status snapshot read off the main thread. */
+    private data class RuntimeSnapshot(val running: Boolean, val port: Int?, val fingerprint: String)
+
     private companion object {
         /** Persisted mode values; also the property-name form for [ApplyPolicies]. */
         const val MODE_DISABLED = "disabled"
@@ -291,10 +325,5 @@ class ManagementSettingsController(
         const val MIN_IDLE_MINUTES = 1L
         const val MAX_IDLE_MINUTES = 1_440L
         const val MILLIS_PER_MINUTE = 60_000L
-
-        const val PASSWORD_LENGTH = 20
-
-        /** Unambiguous alphabet: no O/0, no I/l. */
-        const val PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
     }
 }
