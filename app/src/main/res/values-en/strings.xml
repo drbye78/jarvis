@@ -765,5 +765,24 @@
     <string name="settings_home_provider_provider_label">Integration</string>
     <string name="settings_home_provider_kind_ha">Home Assistant</string>
     <string name="settings_home_provider_kind_yandex">Yandex Smart Home (soon)</string>
-    <string name="settings_home_provider_kind_tuya">SmartLife/Tuya (soon)</string>
+    <string name="settings_home_provider_kind_tuya">SmartLife/Tuya</string>
+
+    <!-- Tuya Cloud Project fields -->
+    <string name="settings_home_provider_tuya_region_label">Data center (account region)</string>
+    <string name="settings_home_provider_tuya_region_hint">Pick the region where your Smart Life account is registered. It must match, or no devices appear.</string>
+    <string name="settings_home_provider_tuya_uid_label">Account UID</string>
+    <string name="settings_home_provider_tuya_uid_hint">Shown in the project under Devices → Link App Account after scanning the QR code.</string>
+    <string name="settings_home_provider_tuya_access_id_label">Access ID</string>
+    <string name="settings_home_provider_tuya_secret_label">Access Secret</string>
+    <string name="settings_home_provider_tuya_secret_hint">Project keys: Overview → Authorization key. Stored only on the device.</string>
+    <string name="settings_home_region_china">China</string>
+    <string name="settings_home_region_us">Western America</string>
+    <string name="settings_home_region_us_az">Eastern America (Azure)</string>
+    <string name="settings_home_region_eu">Central Europe</string>
+    <string name="settings_home_region_eu_az">Western Europe (Azure)</string>
+    <string name="settings_home_region_in">India</string>
+    <string name="settings_home_region_sg">Singapore</string>
+    <string name="settings_home_provider_tuya_uid_required">Enter the account UID</string>
+    <string name="settings_home_provider_tuya_access_id_required">Enter the Access ID</string>
+    <string name="settings_home_provider_tuya_secret_required">Enter the Access Secret</string>
 </resources>

@@ -764,5 +764,24 @@
     <string name="settings_home_provider_provider_label">Интеграция</string>
     <string name="settings_home_provider_kind_ha">Home Assistant</string>
     <string name="settings_home_provider_kind_yandex">Яндекс Умный дом (скоро)</string>
-    <string name="settings_home_provider_kind_tuya">SmartLife/Tuya (скоро)</string>
+    <string name="settings_home_provider_kind_tuya">SmartLife/Tuya</string>
+
+    <!-- Tuya Cloud Project fields -->
+    <string name="settings_home_provider_tuya_region_label">Дата-центр (регион аккаунта)</string>
+    <string name="settings_home_provider_tuya_region_hint">Выберите регион, в котором зарегистрирован ваш аккаунт Smart Life. Должен совпадать, иначе устройства не появятся.</string>
+    <string name="settings_home_provider_tuya_uid_label">UID аккаунта</string>
+    <string name="settings_home_provider_tuya_uid_hint">Показывается в проекте, вкладка «Устройства» → «Связать аккаунт приложения» после сканирования QR.</string>
+    <string name="settings_home_provider_tuya_access_id_label">Access ID</string>
+    <string name="settings_home_provider_tuya_secret_label">Access Secret</string>
+    <string name="settings_home_provider_tuya_secret_hint">Ключи проекта: Обзор → «Ключ авторизации». Хранятся только на устройстве.</string>
+    <string name="settings_home_region_china">Китай</string>
+    <string name="settings_home_region_us">Западная Америка</string>
+    <string name="settings_home_region_us_az">Восточная Америка (Azure)</string>
+    <string name="settings_home_region_eu">Центральная Европа</string>
+    <string name="settings_home_region_eu_az">Западная Европа (Azure)</string>
+    <string name="settings_home_region_in">Индия</string>
+    <string name="settings_home_region_sg">Сингапур</string>
+    <string name="settings_home_provider_tuya_uid_required">Укажите UID аккаунта</string>
+    <string name="settings_home_provider_tuya_access_id_required">Укажите Access ID</string>
+    <string name="settings_home_provider_tuya_secret_required">Укажите Access Secret</string>
 </resources>

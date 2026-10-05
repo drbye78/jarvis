@@ -16,6 +16,10 @@ import com.jarvis.assistant.home.HomeResult
 import com.jarvis.assistant.home.HomeState
 import com.jarvis.assistant.home.providers.ha.HaConnection
 import com.jarvis.assistant.home.providers.ha.HomeAssistantClientProvider
+import com.jarvis.assistant.home.providers.tuya.TuyaBackend
+import com.jarvis.assistant.home.providers.tuya.TuyaClientProvider
+import com.jarvis.assistant.home.providers.tuya.TuyaConnection
+import com.jarvis.assistant.home.providers.tuya.TuyaRegion
 import com.jarvis.assistant.tools.HomeTools
 import com.jarvis.assistant.tools.ToolStrings
 import com.jarvis.assistant.util.AppPrefs
@@ -151,8 +155,8 @@ class HomeGraph(private val appPrefs: AppPrefs) {
         val provider = HomeProviderId.fromId(config.provider) ?: return null
         return when (provider) {
             HomeProviderId.HOME_ASSISTANT -> homeAssistantBackend(config)
+            HomeProviderId.TUYA -> tuyaBackend(config)
             HomeProviderId.YANDEX -> notImplemented(provider)
-            HomeProviderId.TUYA -> notImplemented(provider)
         }
     }
 
@@ -164,6 +168,25 @@ class HomeGraph(private val appPrefs: AppPrefs) {
             )
         }
 
+    /**
+     * Tuya is cloud-only: the region (a compile-time host) and the linked-account
+     * UID are non-secret config metadata, while the Access ID/Secret live in the
+     * vault under `(config.id, field)`. The client is process-scoped per config
+     * id so its token cache survives graph rebuilds.
+     */
+    private fun tuyaBackend(config: HomeProviderConfig): HomeBackend =
+        TuyaBackend(
+            client = TuyaClientProvider.get(config.id) {
+                TuyaConnection(
+                    region = TuyaRegion.fromId(config.metadata[TUYA_REGION_KEY]),
+                    uid = config.metadata[TUYA_UID_KEY],
+                    accessId = CredentialsStore.get().homeSecret(config.id, TUYA_ACCESS_ID_FIELD),
+                    secret = CredentialsStore.get().homeSecret(config.id, TUYA_ACCESS_SECRET_FIELD),
+                )
+            },
+            uid = { config.metadata[TUYA_UID_KEY] },
+        )
+
     private fun notImplemented(provider: HomeProviderId): HomeBackend? {
         Timber.d("Home provider not implemented yet: %s", provider.id)
         return null
@@ -171,6 +194,15 @@ class HomeGraph(private val appPrefs: AppPrefs) {
 
     private companion object {
         const val HA_TOKEN_FIELD = "token"
+
+        /** Tuya non-secret metadata keys (in [HomeProviderConfig.metadata]). */
+        const val TUYA_REGION_KEY = "region"
+        const val TUYA_UID_KEY = "uid"
+
+        /** Tuya vault fields (in [CredentialsStore.homeSecret]). */
+        const val TUYA_ACCESS_ID_FIELD = "access_id"
+        const val TUYA_ACCESS_SECRET_FIELD = "access_secret"
+
         const val MAX_STATE_READS = 80
     }
 }
