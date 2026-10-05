@@ -260,36 +260,53 @@ class ToolRegistry(
     }
 
     /**
-     * The [ToolRisk.EXTERNAL_WRITE] confirmation clause. Returns null when the
-     * call may proceed (not a confirming risk, or a consumed confirmation) and
-     * the model-facing [ToolResult] otherwise.
+     * The confirmation clause shared by every [ConfirmedTool]: an external
+     * [ToolRisk.EXTERNAL_WRITE] tool and a local [ToolRisk.CONTROLLED] action
+     * both require an explicit affirmative on the immediately-next turn.
+     * Returns null when the call may proceed (not a confirming tool, or a
+     * consumed confirmation) and the model-facing [ToolResult] otherwise.
      *
-     * Fail closed at every ambiguity: a tool that declares the risk but does
-     * NOT implement [ConfirmedWriteTool] is an honest error (a mis-declared
-     * write must never run), a null key (malformed/non-object arguments) is an
-     * honest error, and an absent store is an honest error. The
-     * [WriteGate.NeedsConfirmation] result is NOT an error — it is the
-     * structured instruction the model needs to ask the user — and it never
-     * invokes the tool.
+     * Fail closed at every ambiguity: a tool that declares
+     * [ToolRisk.requiresConfirmation] but does NOT implement [ConfirmedTool]
+     * is an honest error (a mis-declared write must never run), a null key
+     * (malformed/non-object arguments) is an honest error, and an absent store
+     * is an honest error. The [WriteGate.NeedsConfirmation] result is NOT an
+     * error — it is the structured instruction the model needs to ask the
+     * user — and it never invokes the tool.
+     *
+     * EXTERNAL_WRITE behavior is unchanged: its risk sets
+     * `requiresConfirmation = true`, its [ConfirmedWriteTool] mapping supplies
+     * the server/tool identity, and the emitted challenge is byte-for-byte the
+     * same JSON. The gate additionally triggers for a [ToolRisk.CONTROLLED]
+     * tool that opts in by implementing [ConfirmedTool].
      */
     private fun confirmationGate(tool: ToolContract, call: FunctionCall): ToolResult? {
-        if (!tool.risk.requiresConfirmation) return null
-        val confirmed = tool as? ConfirmedWriteTool
+        val confirmed = tool as? ConfirmedTool
+        // A tool opts into the next-turn affirmative EITHER by declaring the
+        // write risk (EXTERNAL_WRITE) OR by implementing ConfirmedTool as a
+        // CONTROLLED local action. The MCP adapter structurally implements the
+        // MCP-shaped marker for BOTH of its access classes, so an EXTERNAL
+        // (read) tool must NOT be swept in by `is ConfirmedTool` alone —
+        // requiring `requiresConfirmation` or the CONTROLLED risk keeps every
+        // external READ behavior identical.
+        val needsConfirmation = tool.risk.requiresConfirmation ||
+            (tool.risk == ToolRisk.CONTROLLED && confirmed != null)
+        if (!needsConfirmation) return null
         if (confirmed == null) {
             // A tool that claims a write side effect but cannot be bound to a
-            // server+tool identity cannot be confirmed — refuse to run it.
-            Timber.w("Tool %s declares EXTERNAL_WRITE without ConfirmedWriteTool (fail closed)", call.name)
+            // domain+action identity cannot be confirmed — refuse to run it.
+            Timber.w("Tool %s requires confirmation without ConfirmedTool (fail closed)", call.name)
             return confirmationDeniedResult()
         }
         val key = WriteBinding.canonicalKey(
-            confirmed.confirmationServerId,
-            confirmed.confirmationToolName,
+            confirmed.confirmationDomain,
+            confirmed.confirmationAction,
             call.arguments,
         )
         if (key == null) {
             // Arguments are not a well-formed JSON object: the exact call
             // cannot be bound to a challenge, so it can never be confirmed.
-            Timber.w("Tool %s write arguments are not a JSON object (fail closed)", call.name)
+            Timber.w("Tool %s confirmation arguments are not a JSON object (fail closed)", call.name)
             return confirmationDeniedResult()
         }
         return when (writeConfirmation?.gate(key, authorizedTurn?.sessionId)) {
@@ -301,16 +318,19 @@ class ToolRegistry(
 
     /**
      * The structured, content-free challenge handed BACK to the model. Echoes
-     * only the model's own parsed arguments and the server/tool identity — no
-     * secret, URL or server payload. `isError = false`: this is a normal
-     * tool result, not a failure.
+     * only the model's own parsed arguments and the domain/action identity — no
+     * secret, URL or server payload. `isError = false`: this is a normal tool
+     * result, not a failure. The `server`/`tool` field names are deliberately
+     * kept stable so the external(MCP)-write challenge is byte-for-byte
+     * unchanged; for a local [ToolRisk.CONTROLLED] action they carry the
+     * domain/action tokens.
      */
-    private fun needsConfirmationResult(tool: ConfirmedWriteTool, call: FunctionCall): ToolResult {
+    private fun needsConfirmationResult(tool: ConfirmedTool, call: FunctionCall): ToolResult {
         val arguments = Json.parseToJsonElement(call.arguments)
         val content = buildJsonObject {
             put("outcome", "needs_confirmation")
-            put("server", tool.confirmationServerId)
-            put("tool", tool.confirmationToolName)
+            put("server", tool.confirmationDomain)
+            put("tool", tool.confirmationAction)
             put("arguments", arguments)
             put("instruction", NEEDS_CONFIRMATION_INSTRUCTION)
         }.toString()

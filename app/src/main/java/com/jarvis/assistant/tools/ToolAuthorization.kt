@@ -46,6 +46,19 @@ enum class ToolRisk(val requiresConfirmation: Boolean = false) {
      * the registry. [requiresConfirmation] is true for this class only.
      */
     EXTERNAL_WRITE(requiresConfirmation = true),
+
+    /**
+     * Voice-turn-only, user-originated LOCAL control (e.g. the R13 management
+     * surface, and the smart-home control R4 will add). Like [EXTERNAL] it is
+     * allowed only on a bound, user-originated VOICE turn; a
+     * proactive/scheduled turn or an off-turn call is denied, because the user
+     * did not ask for the local side effect in that moment. It is deliberately
+     * NOT a blanket relaxation: a tool in this class that needs the two-turn
+     * affirmative additionally implements [ConfirmedTool], and the registry
+     * layers that clause on top — [requiresConfirmation] itself stays false so
+     * the confirmation requirement is per-tool, never per-class.
+     */
+    CONTROLLED,
 }
 
 /**
@@ -113,6 +126,10 @@ sealed interface AuthorizationDecision {
  *  - EXTERNAL_WRITE (MCP tools with a side effect) follows the SAME rule here
  *    (bound VOICE turn only); the registry additionally requires an
  *    affirmative confirmation of the exact call before executing it.
+ *  - CONTROLLED (voice-turn-only user-originated local control) follows the
+ *    SAME rule as EXTERNAL/EXTERNAL_WRITE (bound VOICE turn only). A
+ *    CONTROLLED tool that needs the two-turn affirmative implements
+ *    [ConfirmedTool]; the registry layers that clause on top.
  *  - `forget_fact` is EXEMPT: it keeps its own independent confirmation gate
  *    (`CognitiveCoordinator.forgetFactLocked` + `ForgetConfirmation`), a
  *    two-step «list → confirm with an explicit yes» flow. Double-gating it here
@@ -151,7 +168,7 @@ object ToolAuthorization {
                 }
 
             ToolRisk.EXTERNAL ->
-                if (permitsExternal(context)) {
+                if (permitsVoiceTurn(context)) {
                     AuthorizationDecision.Allow
                 } else {
                     // Content-free: never name the server/tool or echo a payload.
@@ -159,21 +176,30 @@ object ToolAuthorization {
                 }
 
             ToolRisk.EXTERNAL_WRITE ->
-                if (permitsExternal(context)) {
+                if (permitsVoiceTurn(context)) {
                     AuthorizationDecision.Allow
                 } else {
                     // Content-free: never name the server/tool or echo a payload.
                     AuthorizationDecision.Deny("external write requires a bound voice turn")
                 }
+
+            ToolRisk.CONTROLLED ->
+                if (permitsVoiceTurn(context)) {
+                    AuthorizationDecision.Allow
+                } else {
+                    // Content-free: never name the action or echo a payload.
+                    AuthorizationDecision.Deny("controlled local action requires a bound voice turn")
+                }
         }
 
     /**
-     * EXTERNAL tools are the least trusted class: a bound turn is not enough,
-     * its origin must be the user's VOICE. PROACTIVE/SCHEDULED turns are the
-     * assistant acting on its own, which must never reach a third-party
-     * server.
+     * The voice-only classes ([ToolRisk.EXTERNAL], [ToolRisk.EXTERNAL_WRITE]
+     * and [ToolRisk.CONTROLLED]) are the least trusted: a bound turn is not
+     * enough, its origin must be the user's VOICE. PROACTIVE/SCHEDULED turns
+     * are the assistant acting on its own, which must never reach a
+     * third-party server or flip a local control surface.
      */
-    private fun permitsExternal(context: TurnAuthorization?): Boolean =
+    private fun permitsVoiceTurn(context: TurnAuthorization?): Boolean =
         context != null && context.origin == TurnOrigin.VOICE
 
     /**
