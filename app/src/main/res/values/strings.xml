@@ -616,4 +616,26 @@
     <string name="settings_management_password_show">Показать пароль</string>
     <string name="settings_management_password_hint">Пароль хранится на устройстве и показывается только по запросу. При смене пароля все сессии отзываются.</string>
     <string name="settings_management_saved">Сохранено</string>
+    <string name="settings_management_export_section">Экспорт и импорт</string>
+    <string name="settings_management_export_info">Резервная копия конфигурации. Файл всегда шифруется паролем; без пароля его невозможно прочитать или импортировать.</string>
+    <string name="settings_management_export">Экспортировать</string>
+    <string name="settings_management_import">Импортировать</string>
+    <string name="settings_management_export_include_secrets">Включить секреты</string>
+    <string name="settings_management_export_secrets_off">Секреты не включаются в архив.</string>
+    <string name="settings_management_export_secrets_loading">Подсчёт сохранённых секретов…</string>
+    <string name="settings_management_export_secrets_hint">Секретов в архиве: %1$d. Внимание: они покинут защиту хранилища устройства — файл будет защищён только паролем.</string>
+    <string name="settings_management_export_secrets_unknown">Количество сохранённых секретов станет известно, когда сервис запустится. Секреты остаются внутри шифрованного файла.</string>
+    <string name="settings_management_passphrase_hint">Пароль</string>
+    <string name="settings_management_passphrase_required">Введите пароль</string>
+    <string name="settings_management_export_passphrase_title">Пароль для экспорта</string>
+    <string name="settings_management_export_passphrase_message">Придумайте пароль для шифрования файла. Он потребуется при импорте.</string>
+    <string name="settings_management_export_passphrase_message_secrets">Придумайте пароль для шифрования файла. В архив будут включены секреты — они покинут защиту хранилища устройства.</string>
+    <string name="settings_management_import_passphrase_title">Пароль для импорта</string>
+    <string name="settings_management_import_passphrase_message">Введите пароль, которым зашифрован файл.</string>
+    <string name="settings_management_export_done">Конфигурация экспортирована</string>
+    <string name="settings_management_export_failed">Не удалось экспортировать конфигурацию</string>
+    <string name="settings_management_import_failed">Не удалось прочитать файл конфигурации</string>
+    <string name="settings_management_import_ok_title">Импорт завершён</string>
+    <string name="settings_management_import_error_title">Импорт не применён</string>
+    <string name="settings_management_import_result">Применено: %1$d, пропущено: %2$d, ошибок: %3$d</string>
 </resources>

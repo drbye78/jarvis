@@ -5,13 +5,18 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputType
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.jarvis.assistant.audio.WakeWordImport
 import com.jarvis.assistant.audio.aec.AecMode
@@ -19,6 +24,7 @@ import com.jarvis.assistant.di.AppGraph
 import com.jarvis.assistant.di.GraphHolder
 import com.jarvis.assistant.di.GraphReadyOutcome
 import com.jarvis.assistant.di.awaitGraphReady
+import com.jarvis.assistant.manage.ImportResult
 import com.jarvis.assistant.settings.ApplyPolicy
 import com.jarvis.assistant.settings.PendingChanges
 import com.jarvis.assistant.settings.SettingsCallbacks
@@ -32,10 +38,13 @@ import com.jarvis.assistant.ui.EdgeToEdge
 import com.jarvis.assistant.ui.FieldErrorRenderer
 import com.jarvis.assistant.ui.FieldValidation
 import com.jarvis.assistant.util.AppPrefs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.IOException
 
 /**
  * The ONE reusable Settings DETAIL host (settings redesign, FLIP lane).
@@ -90,6 +99,36 @@ class SettingsDetailActivity : AppCompatActivity(), SettingsHost {
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             controller?.onResume()
         }
+
+    /**
+     * R13 §14.6 export destination (SAF `CreateDocument`). Host-owned: the
+     * controller only triggers [exportConfig]; the Activity picks the file,
+     * writes the envelope and reports the outcome.
+     */
+    private val exportConfigLauncher =
+        registerForActivityResult(ActivityResultContracts.CreateDocument(EXPORT_MIME)) { uri ->
+            onExportDestinationChosen(uri)
+        }
+
+    /**
+     * R13 §14.6 import source (SAF `OpenDocument`). Host-owned for the same
+     * reason as [exportConfigLauncher].
+     */
+    private val importConfigLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            onImportSourceChosen(uri)
+        }
+
+    /**
+     * The passphrase collected for the in-flight export/import. Held only across
+     * the SAF picker round-trip, never logged, and wiped (zero-filled) as soon as
+     * the crypto finishes. A null value means "no flow is pending", so a stale
+     * Activity result is a no-op.
+     */
+    private var pendingPassphrase: CharArray? = null
+
+    /** The export checkbox state captured before the picker opens. */
+    private var pendingExportSecrets: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -195,6 +234,44 @@ class SettingsDetailActivity : AppCompatActivity(), SettingsHost {
         }
         @Suppress("DEPRECATION")
         startActivityForResult(intent, PPN_REQUEST)
+    }
+
+    /**
+     * R13 §14.6 export: ask for a passphrase, then let SAF pick the destination.
+     * The artifact is ALWAYS the encrypted envelope; [includeSecrets] only
+     * decides whether the stored secrets join it. Host-owned by design — the
+     * controller never sees an Intent or a `Uri`.
+     */
+    override fun exportConfig(includeSecrets: Boolean) {
+        promptPassphrase(
+            titleRes = R.string.settings_management_export_passphrase_title,
+            messageRes = if (includeSecrets) {
+                R.string.settings_management_export_passphrase_message_secrets
+            } else {
+                R.string.settings_management_export_passphrase_message
+            },
+            positiveRes = R.string.settings_management_export,
+        ) { passphrase ->
+            pendingPassphrase = passphrase
+            pendingExportSecrets = includeSecrets
+            exportConfigLauncher.launch(EXPORT_FILE_NAME)
+        }
+    }
+
+    /**
+     * R13 §14.6 import: ask for the passphrase, then let SAF pick the artifact.
+     * The core validates every key before writing, so a wrong passphrase or a
+     * malformed file produces an honest result and never a partial apply.
+     */
+    override fun importConfig() {
+        promptPassphrase(
+            titleRes = R.string.settings_management_import_passphrase_title,
+            messageRes = R.string.settings_management_import_passphrase_message,
+            positiveRes = R.string.settings_management_import,
+        ) { passphrase ->
+            pendingPassphrase = passphrase
+            importConfigLauncher.launch(arrayOf(EXPORT_MIME))
+        }
     }
 
     override fun requestPlaybackCapture() {
@@ -407,6 +484,165 @@ class SettingsDetailActivity : AppCompatActivity(), SettingsHost {
         }
     }
 
+    // ------------------------------------------------------------------
+    // Config export / import (host-owned SAF + ManagementCore)
+    // ------------------------------------------------------------------
+
+    /**
+     * Collect a non-empty passphrase into [onConfirm]. Built programmatically
+     * (no layout id) so it stays entirely inside the host — a controller cannot
+     * reach it. The positive button is overridden to keep the dialog open on an
+     * empty value instead of silently dismissing with nothing to do.
+     */
+    private fun promptPassphrase(
+        @StringRes titleRes: Int,
+        @StringRes messageRes: Int,
+        @StringRes positiveRes: Int,
+        onConfirm: (CharArray) -> Unit,
+    ) {
+        val field = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine()
+        }
+        val fieldLayout = TextInputLayout(this).apply {
+            hint = getString(R.string.settings_management_passphrase_hint)
+            boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
+            addView(field)
+        }
+        val horizontal = (DIALOG_HORIZONTAL_MARGIN_DP * resources.displayMetrics.density).toInt()
+        val container = FrameLayout(this).apply {
+            setPadding(horizontal, 0, horizontal, 0)
+            addView(
+                fieldLayout,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(titleRes)
+            .setMessage(messageRes)
+            .setView(container)
+            .setPositiveButton(positiveRes, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val passphrase = field.text?.toString().orEmpty().toCharArray()
+                if (passphrase.isEmpty()) {
+                    toast(R.string.settings_management_passphrase_required)
+                } else {
+                    dialog.dismiss()
+                    onConfirm(passphrase)
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    /** Write the encrypted export to the SAF destination off the main thread. */
+    private fun onExportDestinationChosen(uri: Uri?) {
+        val passphrase = pendingPassphrase ?: return
+        val includeSecrets = pendingExportSecrets
+        pendingPassphrase = null
+        if (uri == null) {
+            passphrase.fill('\u0000')
+            return
+        }
+        lifecycleScope.launch {
+            val graph = awaitAssistantGraph()
+            if (graph == null) {
+                passphrase.fill('\u0000')
+                return@launch
+            }
+            val written = withContext(Dispatchers.IO) {
+                try {
+                    val text = graph.management.core.export(passphrase, includeSecrets)
+                    contentResolver.openOutputStream(uri, "wt")?.use { stream ->
+                        stream.write(text.toByteArray(Charsets.UTF_8))
+                    } ?: throw IOException("export destination is not writable")
+                    true
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (failure: Exception) {
+                    Timber.w(failure, "config export failed")
+                    false
+                } finally {
+                    passphrase.fill('\u0000')
+                }
+            }
+            if (written) {
+                toast(R.string.settings_management_export_done)
+            } else {
+                toast(R.string.settings_management_export_failed)
+            }
+        }
+    }
+
+    /** Read the SAF source and validate-and-apply it off the main thread. */
+    private fun onImportSourceChosen(uri: Uri?) {
+        val passphrase = pendingPassphrase ?: return
+        pendingPassphrase = null
+        if (uri == null) {
+            passphrase.fill('\u0000')
+            return
+        }
+        lifecycleScope.launch {
+            val graph = awaitAssistantGraph()
+            if (graph == null) {
+                passphrase.fill('\u0000')
+                return@launch
+            }
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val text = contentResolver.openInputStream(uri)?.use { stream ->
+                        stream.readBytes().toString(Charsets.UTF_8)
+                    } ?: throw IOException("import source is not readable")
+                    graph.management.core.import(text, passphrase)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (failure: Exception) {
+                    Timber.w(failure, "config import failed")
+                    null
+                } finally {
+                    passphrase.fill('\u0000')
+                }
+            }
+            if (result == null) {
+                toast(R.string.settings_management_import_failed)
+            } else {
+                showImportResult(result)
+            }
+        }
+    }
+
+    /** Report `{applied, skipped, errors}`; a rejected document applied nothing. */
+    private fun showImportResult(result: ImportResult) {
+        val summary = getString(
+            R.string.settings_management_import_result,
+            result.applied,
+            result.skipped,
+            result.errors.size,
+        )
+        val body = if (result.errors.isEmpty()) {
+            summary
+        } else {
+            summary + "\n\n" + result.errors.joinToString("\n")
+        }
+        AlertDialog.Builder(this)
+            .setTitle(
+                if (result.ok) {
+                    R.string.settings_management_import_ok_title
+                } else {
+                    R.string.settings_management_import_error_title
+                },
+            )
+            .setMessage(body)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
     companion object {
         /** The [SettingsCategory.name] this detail screen shows. */
         const val EXTRA_CATEGORY = "com.jarvis.assistant.settings.EXTRA_CATEGORY"
@@ -420,6 +656,15 @@ class SettingsDetailActivity : AppCompatActivity(), SettingsHost {
 
         /** Playback-capture consent request code (preserved verbatim). */
         const val CAPTURE_REQUEST = 1003
+
+        /** The opaque envelope is JSON; SAF only ever sees bytes. */
+        const val EXPORT_MIME = "application/octet-stream"
+
+        /** Suggested artifact name (it is still an encrypted container). */
+        const val EXPORT_FILE_NAME = "jarvis-config.enc"
+
+        /** Dialog side padding, in dp. */
+        const val DIALOG_HORIZONTAL_MARGIN_DP = 24
 
         /** Reading column cap, identical to the list host and the old Activity. */
         const val SETTINGS_COLUMN_MAX_WIDTH_DP = 760

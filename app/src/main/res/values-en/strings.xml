@@ -617,4 +617,26 @@
     <string name="settings_management_password_show">Show password</string>
     <string name="settings_management_password_hint">The password is stored on the device and shown only on request. Changing it revokes all sessions.</string>
     <string name="settings_management_saved">Saved</string>
+    <string name="settings_management_export_section">Export and import</string>
+    <string name="settings_management_export_info">A configuration backup. The file is always encrypted with a passphrase; without it the file cannot be read or imported.</string>
+    <string name="settings_management_export">Export</string>
+    <string name="settings_management_import">Import</string>
+    <string name="settings_management_export_include_secrets">Include secrets</string>
+    <string name="settings_management_export_secrets_off">Secrets are not included in the archive.</string>
+    <string name="settings_management_export_secrets_loading">Counting stored secrets…</string>
+    <string name="settings_management_export_secrets_hint">Secrets in the archive: %1$d. Warning: they leave the device vault\'s protection — the file is protected by the passphrase alone.</string>
+    <string name="settings_management_export_secrets_unknown">The number of stored secrets will be known once the service is running. Secrets stay inside the encrypted file.</string>
+    <string name="settings_management_passphrase_hint">Passphrase</string>
+    <string name="settings_management_passphrase_required">Enter a passphrase</string>
+    <string name="settings_management_export_passphrase_title">Export passphrase</string>
+    <string name="settings_management_export_passphrase_message">Choose a passphrase to encrypt the file. You will need it to import.</string>
+    <string name="settings_management_export_passphrase_message_secrets">Choose a passphrase to encrypt the file. Secrets will be included — they leave the device vault\'s protection.</string>
+    <string name="settings_management_import_passphrase_title">Import passphrase</string>
+    <string name="settings_management_import_passphrase_message">Enter the passphrase the file was encrypted with.</string>
+    <string name="settings_management_export_done">Configuration exported</string>
+    <string name="settings_management_export_failed">Could not export the configuration</string>
+    <string name="settings_management_import_failed">Could not read the configuration file</string>
+    <string name="settings_management_import_ok_title">Import finished</string>
+    <string name="settings_management_import_error_title">Import not applied</string>
+    <string name="settings_management_import_result">Applied: %1$d, skipped: %2$d, errors: %3$d</string>
 </resources>

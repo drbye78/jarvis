@@ -28,6 +28,21 @@ interface SettingsHost {
     /** Launch the custom `.ppn` file picker. */
     fun importCustomPpn()
 
+    /**
+     * Launch the R13 §14.6 config-export flow: collect a passphrase, pick a
+     * destination through SAF (`CreateDocument`) and write the ALWAYS-encrypted
+     * envelope. [includeSecrets] opts the stored secrets into that same
+     * encrypted container; there is deliberately no plaintext path.
+     */
+    fun exportConfig(includeSecrets: Boolean)
+
+    /**
+     * Launch the R13 §14.6 config-import flow: collect a passphrase, pick an
+     * artifact through SAF (`OpenDocument`), then validate-and-apply it through
+     * the graph's `ManagementCore` and report the honest result.
+     */
+    fun importConfig()
+
     /** Ask for the playback-capture grant (AEC lane). */
     fun requestPlaybackCapture()
 
