@@ -6,6 +6,7 @@ import com.jarvis.assistant.home.HomeConfigCodec
 import com.jarvis.assistant.home.HomeConfigDecodeResult
 import com.jarvis.assistant.home.HomeDevice
 import com.jarvis.assistant.home.HomeDeviceKey
+import com.jarvis.assistant.home.HomeEventSource
 import com.jarvis.assistant.home.HomeGrantCodec
 import com.jarvis.assistant.home.HomeGrantStore
 import com.jarvis.assistant.home.HomeProviderConfig
@@ -57,6 +58,15 @@ class HomeGraph(private val appPrefs: AppPrefs) {
 
     /** The active device backends (one per configured, implemented provider). */
     fun backends(): Map<HomeProviderId, HomeBackend> = backendMap
+
+    /**
+     * The push event source, when the configured HA backend supports it. Null
+     * for poll-only providers (Yandex/Tuya) and when no backend is configured,
+     * so the awareness lane degrades to silence rather than demanding a method
+     * they cannot honour.
+     */
+    fun eventSource(): HomeEventSource? =
+        backendMap[HomeProviderId.HOME_ASSISTANT] as? HomeEventSource
 
     /** Spoken-alias map, decoded LIVE from [AppPrefs.homeAliases]. */
     fun aliases(): Map<String, HomeDeviceKey> = HomeAliasCodec.decodeOrEmpty(appPrefs.homeAliases)

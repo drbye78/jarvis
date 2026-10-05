@@ -50,12 +50,18 @@ object HomeAssistantClientProvider {
     }
 
     private fun build(connection: () -> HaConnection): HomeAssistantBackend {
-        val transport = OkHttpHomeTransport(defaultClient())
+        val httpClient = defaultClient()
+        val transport = OkHttpHomeTransport(httpClient)
+        // A SECOND transport/socket for the awareness push stream: the
+        // discovery transport holds a single socket and connect() closes the
+        // previous one, so sharing would tear one of the two down.
+        val eventTransport = OkHttpHomeTransport(httpClient)
         return HomeAssistantBackend(
             transport = transport,
             webSocket = transport,
             baseUrl = { connection().baseUrl },
             token = { connection().token },
+            eventSocket = eventTransport,
         )
     }
 

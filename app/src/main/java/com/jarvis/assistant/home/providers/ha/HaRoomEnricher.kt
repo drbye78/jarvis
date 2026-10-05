@@ -9,8 +9,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 /**
  * Best-effort room enrichment over the Home Assistant websocket API.
@@ -37,7 +35,7 @@ internal class HaRoomEnricher(
 
     /** entity_id → area name, or null when enrichment is unavailable for any reason. */
     suspend fun roomIndex(baseUrl: String, token: String): Map<String, String>? {
-        val socketUrl = webSocketUrl(baseUrl) ?: return null
+        val socketUrl = HaWs.webSocketUrl(baseUrl) ?: return null
         return try {
             withTimeoutOrNull(totalTimeoutMs) { fetch(socketUrl, token) }
         } catch (e: CancellationException) {
@@ -54,7 +52,9 @@ internal class HaRoomEnricher(
         val collector = async(start = CoroutineStart.UNDISPATCHED) { collectFrames(frames) }
         try {
             webSocket.connect(socketUrl, mapOf("Authorization" to "Bearer $token"))
-            if (!awaitAuth(frames, token)) return@coroutineScope null
+            if (!HaWs.authenticate(webSocket, frames, json, token, frameTimeoutMs, maxFrames)) {
+                return@coroutineScope null
+            }
             val entities = request(frames, ENTITY_REGISTRY, REQUEST_ENTITY) ?: return@coroutineScope null
             val devices = request(frames, DEVICE_REGISTRY, REQUEST_DEVICE) ?: return@coroutineScope null
             val areas = request(frames, AREA_REGISTRY, REQUEST_AREA) ?: return@coroutineScope null
@@ -76,21 +76,8 @@ internal class HaRoomEnricher(
         }
     }
 
-    private suspend fun awaitAuth(frames: Channel<String>, token: String): Boolean {
-        repeat(maxFrames) {
-            val frame = withTimeoutOrNull(frameTimeoutMs) { frames.receive() } ?: return false
-            when (HaPayloads.frameType(frame, json)) {
-                "auth_required" -> webSocket.send(authBody(token))
-                "auth_ok" -> return true
-                "auth_invalid" -> return false
-                else -> Unit
-            }
-        }
-        return false
-    }
-
     private suspend fun request(frames: Channel<String>, type: String, id: Int): JsonArray? {
-        webSocket.send(requestBody(type, id))
+        webSocket.send(HaWs.requestBody(type, id))
         repeat(maxFrames) {
             val frame = withTimeoutOrNull(frameTimeoutMs) { frames.receive() } ?: return null
             HaPayloads.resultArray(frame, id, json)?.let { return it }
@@ -98,29 +85,7 @@ internal class HaRoomEnricher(
         return null
     }
 
-    private fun authBody(token: String): String = buildJsonObject {
-        put("type", "auth")
-        put("access_token", token)
-    }.toString()
-
-    private fun requestBody(type: String, id: Int): String = buildJsonObject {
-        put("id", id)
-        put("type", type)
-    }.toString()
-
-    private fun webSocketUrl(baseUrl: String): String? {
-        val normalized = baseUrl.trim().trimEnd('/')
-        return when {
-            normalized.startsWith("https://") ->
-                "wss://" + normalized.removePrefix("https://") + WS_PATH
-
-            normalized.startsWith("wss://") -> normalized + WS_PATH
-            else -> null
-        }
-    }
-
     private companion object {
-        const val WS_PATH = "/api/websocket"
         const val ENTITY_REGISTRY = "config/entity_registry/list"
         const val DEVICE_REGISTRY = "config/device_registry/list"
         const val AREA_REGISTRY = "config/area_registry/list"

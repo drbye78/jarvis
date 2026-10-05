@@ -8,9 +8,11 @@ import com.jarvis.assistant.home.HomeBackend
 import com.jarvis.assistant.home.HomeDevice
 import com.jarvis.assistant.home.HomeDeviceKey
 import com.jarvis.assistant.home.HomeError
+import com.jarvis.assistant.home.HomeEventSource
 import com.jarvis.assistant.home.HomeProviderId
 import com.jarvis.assistant.home.HomeResult
 import com.jarvis.assistant.home.HomeState
+import com.jarvis.assistant.home.HomeStateChange
 import com.jarvis.assistant.home.net.HomeHttpTransport
 import com.jarvis.assistant.home.net.HomeTransportException
 import com.jarvis.assistant.home.net.HomeWebSocket
@@ -21,6 +23,8 @@ import com.jarvis.assistant.mcp.McpUrlPolicy
 import com.jarvis.assistant.mcp.UrlPolicyResult
 import com.jarvis.assistant.mcp.UrlRejection
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
@@ -57,12 +61,37 @@ class HomeAssistantBackend(
     private val token: () -> String?,
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val nowMs: () -> Long = System::currentTimeMillis,
-) : HomeBackend {
+    /**
+     * The DEDICATED socket for the push event stream. It must NOT be
+     * [webSocket] (the discovery socket): OkHttp's transport holds one socket
+     * and `connect()` closes the previous one, so a shared socket would tear
+     * one of the two down. Null disables push (poll-only degradation).
+     */
+    private val eventSocket: HomeWebSocket? = null,
+) : HomeBackend, HomeEventSource {
 
     override val provider: HomeProviderId = HomeProviderId.HOME_ASSISTANT
 
     private val mapper = HaCapabilityMapper()
     private val enricher = HaRoomEnricher(webSocket, json)
+
+    private val eventStream: HaEventStream? = eventSocket?.let { socket ->
+        HaEventStream(
+            webSocket = socket,
+            baseUrl = baseUrl,
+            token = token,
+            json = json,
+            nowMs = nowMs,
+        )
+    }
+
+    /**
+     * Push state changes for the curated [keys]. Empty [keys] means "curate
+     * nothing" and yields an empty flow (no socket is opened), so the awareness
+     * lane never streams the whole home by accident.
+     */
+    override fun events(keys: Set<HomeDeviceKey>): Flow<HomeStateChange> =
+        if (keys.isEmpty()) emptyFlow() else (eventStream?.events(keys) ?: emptyFlow())
 
     override suspend fun discover(): HomeResult<List<HomeDevice>> =
         when (val prepared = preparedConnection()) {
