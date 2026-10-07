@@ -9,6 +9,7 @@ import com.jarvis.assistant.tools.AlertArmer
 import com.jarvis.assistant.tools.AlertListRenderer
 import com.jarvis.assistant.tools.AlertPermissionReconciler
 import com.jarvis.assistant.tools.AndroidAlarmScheduler
+import com.jarvis.assistant.tools.ReconcileTrigger
 import com.jarvis.assistant.tools.alertArmClockFor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -167,14 +168,14 @@ class AlertStoreTest {
     // ---- Items 2/6 (boot re-arm policy) ------------------------------------
 
     @Test
-    fun `rescheduleAllOnBoot arms alarms and only future timers`() = runBlocking {
+    fun `rescheduleAll arms alarms and only future timers`() = runBlocking {
         val h = AlertHarness(nowMillis = 10_000L)
         val dailyPastId = h.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
         val futureTimerId = h.dao.insert(makeTimer("чай", trigger = 12_000L)).toInt()
         val expiredTimerId = h.dao.insert(makeTimer("старый", trigger = 9_000L)).toInt()
         val disabledAlarmId = h.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true, enabled = false)).toInt()
 
-        h.scheduler.rescheduleAllOnBoot()
+        h.scheduler.rescheduleAll(ReconcileTrigger.BOOT)
 
         // Daily rolled forward past 'now' to its next occurrence.
         assertEquals(5_000L + ALERT_DAY_MS, h.armer.armed.getValue(dailyPastId).triggerAtMillis)
@@ -767,8 +768,9 @@ class AlertClockDomainTest {
 /**
  * Exact-alarm reconciliation (SCHEDULE_EXACT_ALARM): at target 31+ revoking
  * the permission DELETES every armed alarm/timer, so the three hooks must
- * re-arm after it returns — but a sweep while it is still missing would only
- * throw again. These pin the no-op / re-arm split on the JVM.
+ * re-arm after it returns. A BOOT sweep always runs (boot persistence cannot
+ * depend on exactness); GRANT/FOREGROUND sweeps are skipped while exactness is
+ * still missing. These pin the no-op / re-arm split on the JVM.
  */
 class AlertPermissionReconcilerTest {
 
@@ -777,7 +779,7 @@ class AlertPermissionReconcilerTest {
         val h = AlertHarness(nowMillis = 10_000L)
         val id = h.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
 
-        AlertPermissionReconciler(h.scheduler) { false }.reconcile()
+        AlertPermissionReconciler(h.scheduler) { false }.reconcile(ReconcileTrigger.GRANT)
 
         // Scheduler never invoked: nothing armed, no roll-forward write.
         assertTrue(h.armer.armed.isEmpty())
@@ -785,13 +787,29 @@ class AlertPermissionReconcilerTest {
     }
 
     @Test
+    fun `boot reconcile sweeps even when the exact alarm permission is missing`() = runBlocking {
+        // Boot persistence must NOT depend on exact-alarm availability: the OS
+        // deletes every armed alarm on boot, so BOOT always sweeps (the armer
+        // degrades to inexact). The GRANT/FOREGROUND early-return must not
+        // apply to BOOT.
+        val h = AlertHarness(nowMillis = 10_000L)
+        val id = h.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
+
+        AlertPermissionReconciler(h.scheduler) { false }.reconcile(ReconcileTrigger.BOOT)
+
+        // Swept (rolled forward + armed) despite canScheduleExact() == false.
+        assertEquals(5_000L + ALERT_DAY_MS, h.armer.armed.getValue(id).triggerAtMillis)
+        assertEquals(5_000L + ALERT_DAY_MS, h.dao.byId(id)!!.triggerAtMillis)
+    }
+
+    @Test
     fun `reconcile re-arms all enabled alerts when the exact alarm permission is available`() = runBlocking {
         val h = AlertHarness(nowMillis = 10_000L)
         val id = h.dao.insert(makeAlarm(trigger = 5_000L, repeatDaily = true)).toInt()
 
-        AlertPermissionReconciler(h.scheduler) { true }.reconcile()
+        AlertPermissionReconciler(h.scheduler) { true }.reconcile(ReconcileTrigger.GRANT)
 
-        // rescheduleAllOnBoot rolled the past daily forward and armed it.
+        // rescheduleAll rolled the past daily forward and armed it.
         assertEquals(5_000L + ALERT_DAY_MS, h.armer.armed.getValue(id).triggerAtMillis)
     }
 }

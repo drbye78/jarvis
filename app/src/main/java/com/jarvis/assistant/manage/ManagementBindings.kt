@@ -9,6 +9,8 @@ import com.jarvis.assistant.mcp.McpServerDecodeResult
 import com.jarvis.assistant.settings.ApplyPolicy
 import com.jarvis.assistant.settings.SettingsInventory
 import com.jarvis.assistant.speech.SpeechBackend
+import com.jarvis.assistant.speech.tts.VoiceCatalog
+import com.jarvis.assistant.speech.tts.YandexVoiceSpec
 import com.jarvis.assistant.util.AppPrefs
 import com.jarvis.assistant.util.SecretVault
 import com.jarvis.assistant.weather.WeatherProvider
@@ -142,7 +144,22 @@ class ManagementBindings(private val vault: SecretVault) {
             key = "yandexTtsVoice",
             type = ManagedSettingType.STRING,
             get = { p -> ManagedValue.StringValue(p.yandexTtsVoice) },
-            set = { p, v -> v.stringOrNull()?.let { p.yandexTtsVoice = it } },
+            set = { p, v ->
+                v.stringOrNull()?.let { raw ->
+                    // Yandex-only and validated: a remote client must not be able
+                    // to persist a foreign id (e.g. the Sber `Mila`) that Yandex
+                    // would reject with a hard PERMISSION_DENIED. Only a catalog
+                    // member (case-insensitive, canonicalized) is stored; an
+                    // unknown value keeps the prior valid choice, else the
+                    // default.
+                    val requested = raw.trim()
+                    val selected = VoiceCatalog.YANDEX_VOICES
+                        .firstOrNull { it.id.equals(requested, ignoreCase = true) }?.id
+                    val prior = VoiceCatalog.YANDEX_VOICES
+                        .firstOrNull { it.id.equals(p.yandexTtsVoice, ignoreCase = true) }?.id
+                    p.yandexTtsVoice = selected ?: prior ?: YandexVoiceSpec.DEFAULT_VOICE
+                }
+            },
         ),
         binding(
             key = "yandexTtsRole",

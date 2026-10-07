@@ -2,6 +2,8 @@ package com.jarvis.assistant
 
 import com.jarvis.assistant.audio.AudioTrackAdapter
 import com.jarvis.assistant.audio.StreamingAudioTrackPlayer
+import io.grpc.Status
+import io.grpc.StatusRuntimeException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -180,6 +183,40 @@ class StreamingAudioTrackPlayerTest {
             val next = p.play(pcm(chunkSize = 200, chunks = 3))
             withTimeout(5_000) { next.await() }
             assertEquals(3, adapter.writesOf(200))
+
+            p.release()
+        } finally {
+            Timber.uproot(recording)
+        }
+    }
+
+    @Test
+    fun `stream failure logs the streaming message not the write-failure one`() = runBlocking {
+        val recording = RecordingTree().also { Timber.plant(it) }
+        try {
+            val adapter = FakeAdapter() // writes succeed; the FLOW fails
+            val p = player(adapter)
+
+            // A gRPC failure surfacing from the TTS stream is NOT an AudioTrack
+            // write failure — the two must be logged honestly.
+            val failing: Flow<ByteArray> = flow {
+                emit(ByteArray(100))
+                throw StatusRuntimeException(Status.INTERNAL)
+            }
+            val aborted = p.play(failing)
+            assertTrue(
+                "a stream failure must abort the sentence exceptionally",
+                failedWithin(aborted),
+            )
+
+            assertTrue(
+                "expected the streaming-failure log, got ${recording.lines}",
+                recording.lines.any { it.first == 6 && it.second.contains("failed while streaming audio") },
+            )
+            assertFalse(
+                "a gRPC stream failure must not be logged as a write failure: ${recording.lines}",
+                recording.lines.any { it.first == 6 && it.second.contains("aborted by write failure") },
+            )
 
             p.release()
         } finally {

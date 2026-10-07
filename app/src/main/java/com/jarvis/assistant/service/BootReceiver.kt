@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import com.jarvis.assistant.tools.AlarmSchedulerProvider
 import com.jarvis.assistant.tools.AlertPermissionReconciler
+import com.jarvis.assistant.tools.ReconcileTrigger
 import com.jarvis.assistant.tools.canScheduleExactAlarms
 import com.jarvis.assistant.util.AppPrefs
 import kotlinx.coroutines.CoroutineScope
@@ -51,15 +52,16 @@ class BootReceiver : BroadcastReceiver() {
         scope.launch {
             try {
                 // Re-arm through the shared scheduler (never a per-call-site
-                // armer), then reconcile so exactness newly granted since the
-                // alerts were armed is exploited. Alarms are armed even when
-                // exact is unavailable — the armer degrades honestly.
+                // armer) via the single reconcile sweep. The old code called
+                // rescheduleAllOnBoot() DIRECTLY and then reconciled — two
+                // sweeps per real boot. reconcile(BOOT) always sweeps (boot
+                // persistence must not depend on exact-alarm availability) and
+                // the armer degrades honestly when exactness is missing.
                 val scheduler = AlarmSchedulerProvider.get(context)
-                scheduler.rescheduleAllOnBoot()
                 AlertPermissionReconciler(
                     scheduler,
                     canScheduleExact = { canScheduleExactAlarms(context) },
-                ).reconcile()
+                ).reconcile(ReconcileTrigger.BOOT)
             } finally {
                 pending.finish()
                 scope.cancel()

@@ -267,11 +267,15 @@ class AppPrefs(
         set(value) = prefs.edit().putBoolean(KEY_MEMORY_SENSITIVE_VISIBLE, value).apply()
 
     /**
-     * TTS voice for the assistant's speech (Settings «Голос» card).
-     * "Mila" is the verified default; a free-text Salute voice ID is stored
-     * as-is for advanced users. Read PER SENTENCE by the session lane
-     * (TurnRunner voiceSource), so a change applies to the next spoken
-     * sentence — no service restart.
+     * SBER TTS voice for the assistant's speech (Settings «Голос» card),
+     * persisted under `tts_voice`. "Mila" is the verified default; a free-text
+     * Salute voice ID is stored as-is for advanced users. Read PER SENTENCE by
+     * the session lane (TurnRunner voiceSource), so a change applies to the next
+     * spoken sentence — no service restart.
+     *
+     * This pref is SBER-ONLY: it is never handed to the Yandex backend. The
+     * Yandex speaker lives in [yandexTtsVoice] and is validated against
+     * [com.jarvis.assistant.speech.tts.VoiceCatalog.YANDEX_VOICES].
      */
     var ttsVoice: String
         get() = prefs.getString(KEY_TTS_VOICE, "Mila") ?: "Mila"
@@ -308,9 +312,18 @@ class AppPrefs(
         set(value) = vault.putString(SecretVault.KEY_MAPKIT_API_KEY, value.trim())
 
     /**
-     * Yandex TTS voice ID (e.g. `marina`). Read PER SENTENCE by the session
-     * lane's voice source, so a change applies to the next spoken sentence
-     * without a restart. Blank falls back to the config default.
+     * Yandex TTS voice id (e.g. `marina`), persisted under `yandex_tts_voice`.
+     * Read PER SENTENCE by the session lane's voice source, so a change applies
+     * to the next spoken sentence without a restart. Blank falls back to the
+     * config default.
+     *
+     * VALIDATED: this is Yandex-ONLY and must be a member of
+     * [com.jarvis.assistant.speech.tts.VoiceCatalog.YANDEX_VOICES] (matched
+     * case-insensitively and canonicalized by
+     * [com.jarvis.assistant.speech.tts.VoiceResolver]); an unknown or foreign id
+     * falls back to
+     * [com.jarvis.assistant.speech.tts.YandexVoiceSpec.DEFAULT_VOICE] rather
+     * than being sent as a hard service error.
      */
     var yandexTtsVoice: String
         get() = prefs.getString(KEY_YANDEX_TTS_VOICE, null)

@@ -310,13 +310,29 @@ class SpeechSettingsController(
         }
     }
 
-    /** Persists the Yandex speaker and refreshes/revalidates the role controls. */
+    /**
+     * Persists the Yandex speaker and refreshes/revalidates the role controls.
+     *
+     * VALIDATED: only a member of [VoiceCatalog.YANDEX_VOICES] is persisted
+     * (matched case-insensitively and canonicalized by its catalog spelling). A
+     * free-text field can therefore never store a foreign id (e.g. the Sber
+     * `Mila`) that Yandex would reject with a hard `PERMISSION_DENIED`; an
+     * unknown value keeps the prior valid choice, else the default. The field
+     * is corrected in place so the UI never shows an unpersisted value.
+     */
     private fun commitYandexVoice() {
-        val id = yandexVoice.text.toString().trim()
-        if (id.isEmpty()) return
-        prefs.yandexTtsVoice = id
-        refreshRoleSuggestions(id)
-        clearInvalidRoleFor(id)
+        val entered = yandexVoice.text.toString().trim()
+        val selected = VoiceCatalog.YANDEX_VOICES
+            .firstOrNull { it.id.equals(entered, ignoreCase = true) }?.id
+        val prior = VoiceCatalog.YANDEX_VOICES
+            .firstOrNull { it.id.equals(prefs.yandexTtsVoice, ignoreCase = true) }?.id
+        val resolved = selected ?: prior ?: YandexVoiceSpec.DEFAULT_VOICE
+        if (entered != resolved) {
+            yandexVoice.setText(resolved, false)
+        }
+        prefs.yandexTtsVoice = resolved
+        refreshRoleSuggestions(resolved)
+        clearInvalidRoleFor(resolved)
         setRoleText(prefs.yandexTtsRole)
         applyControlVisibility(prefs.speechBackend)
     }

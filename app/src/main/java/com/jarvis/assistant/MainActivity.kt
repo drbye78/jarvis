@@ -24,6 +24,7 @@ import com.jarvis.assistant.service.JarvisForegroundService
 import com.jarvis.assistant.session.TurnActivity
 import com.jarvis.assistant.tools.AlarmSchedulerProvider
 import com.jarvis.assistant.tools.AlertPermissionReconciler
+import com.jarvis.assistant.tools.ReconcileTrigger
 import com.jarvis.assistant.tools.canScheduleExactAlarms
 import com.jarvis.assistant.ui.AudioLevel
 import com.jarvis.assistant.ui.AudioLevelMeter
@@ -262,7 +263,7 @@ class MainActivity : AppCompatActivity() {
                 AlertPermissionReconciler(
                     scheduler,
                     canScheduleExact = { canScheduleExactAlarms(this@MainActivity) },
-                ).reconcile()
+                ).reconcile(ReconcileTrigger.FOREGROUND)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {

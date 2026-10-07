@@ -3,8 +3,11 @@ package com.jarvis.assistant.util
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.Socket
 import java.security.SecureRandom
 import java.security.cert.CertificateException
 import java.security.cert.CertificateFactory
@@ -117,9 +120,13 @@ class SberTrustTest {
 
     @Test
     fun `the mincifry chain still validates a sber host`() {
-        extendedComposite().checkServerTrusted(bundledChain, "RSA", engineFor("smartspeech.sber.ru"))
-        extendedComposite()
-            .checkServerTrusted(bundledChain, "RSA", engineFor("ngw.devices.sberbank.ru"))
+        // The composite's context-free overload is the path a caller with no
+        // handshake session uses, and it must accept the bundled Минцифры
+        // chain via its system-first → russian fallback. The host-scoped
+        // wrapper's 3-arg path forwards the live engine/socket, so it cannot
+        // be exercised with a synthetic engine on the JVM — the Sber-host
+        // ROUTING is pinned by the fake-anchor tests further down.
+        SberTrust.sberCompositeTrustManager().checkServerTrusted(bundledChain, "RSA")
     }
 
     @Test
@@ -152,5 +159,252 @@ class SberTrustTest {
             throw AssertionError("unknown socket peer => platform-only anchors")
         } catch (expected: CertificateException) {
         }
+    }
+
+    // ---- 3-arg forwarding (the Android per-domain regression) ---------------
+    //
+    // Android's platform `RootTrustManager` 2-arg method throws a
+    // CertificateException as soon as the app declares ANY `<domain-config>`
+    // (`res/xml/network_security_config.xml` has the loopback MCP exception):
+    //   "Domain specific configurations require that hostname aware
+    //    checkServerTrusted(X509Certificate[], String, String) is used"
+    // The old wrapper collapsed every 3-arg call to the 2-arg form, so every
+    // non-Sber host through the shared OkHttp client failed the handshake. The
+    // JVM default manager never per-domain-throws, which is exactly why the
+    // suite below has to simulate the Android behavior.
+
+    /**
+     * The Android `RootTrustManager` shape: 2-arg server checks always throw
+     * the per-domain exception, 3-arg checks validate and record the live
+     * context.
+     */
+    private class AndroidPlatformAnchors(
+        private val serverOk: Boolean = false,
+    ) : X509ExtendedTrustManager() {
+        var engineServerChecks = 0
+            private set
+        var socketServerChecks = 0
+            private set
+        var twoArgServerChecks = 0
+            private set
+        var clientChecks = 0
+            private set
+        var lastEngine: SSLEngine? = null
+            private set
+        var lastSocket: Socket? = null
+            private set
+
+        override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+            twoArgServerChecks++
+            throw CertificateException(
+                "Domain specific configurations require that hostname aware " +
+                    "checkServerTrusted(X509Certificate[], String, String) is used",
+            )
+        }
+
+        override fun checkServerTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+            engine: SSLEngine?,
+        ) {
+            engineServerChecks++
+            lastEngine = engine
+            if (!serverOk) throw CertificateException("platform 3-arg rejects")
+        }
+
+        override fun checkServerTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+            socket: Socket?,
+        ) {
+            socketServerChecks++
+            lastSocket = socket
+            if (!serverOk) throw CertificateException("platform 3-arg rejects")
+        }
+
+        override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
+            clientChecks++
+        }
+
+        override fun checkClientTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+            socket: Socket?,
+        ) {
+            clientChecks++
+        }
+
+        override fun checkClientTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+            engine: SSLEngine?,
+        ) {
+            clientChecks++
+        }
+
+        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+    }
+
+    /** A recording anchor set that accepts or rejects by configuration. */
+    private class ConfigurableAnchors(
+        private val accept: Boolean,
+    ) : X509ExtendedTrustManager() {
+        var engineServerChecks = 0
+            private set
+        var socketServerChecks = 0
+            private set
+        var twoArgServerChecks = 0
+            private set
+        var clientChecks = 0
+            private set
+        var lastEngine: SSLEngine? = null
+            private set
+
+        private fun decide() {
+            if (!accept) throw CertificateException("anchors reject")
+        }
+
+        override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+            twoArgServerChecks++
+            decide()
+        }
+
+        override fun checkServerTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+            engine: SSLEngine?,
+        ) {
+            engineServerChecks++
+            lastEngine = engine
+            decide()
+        }
+
+        override fun checkServerTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+            socket: Socket?,
+        ) {
+            socketServerChecks++
+            decide()
+        }
+
+        override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
+            clientChecks++
+        }
+
+        override fun checkClientTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+            socket: Socket?,
+        ) {
+            clientChecks++
+        }
+
+        override fun checkClientTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+            engine: SSLEngine?,
+        ) {
+            clientChecks++
+        }
+
+        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+    }
+
+    private fun wrapper(
+        sber: X509ExtendedTrustManager,
+        platform: X509ExtendedTrustManager,
+    ): SberHostScopedTrustManager = SberHostScopedTrustManager(sber, platform)
+
+    @Test
+    fun `non-sber host forwards the original engine to the platform 3-arg overload`() {
+        val platform = AndroidPlatformAnchors(serverOk = false)
+        val sber = ConfigurableAnchors(accept = true)
+        val tm = wrapper(sber, platform)
+        val engine = engineFor("api.openai.com")
+
+        assertThrows(CertificateException::class.java) {
+            tm.checkServerTrusted(emptyArray(), "RSA", engine)
+        }
+
+        assertEquals("the platform 3-arg overload must be used", 1, platform.engineServerChecks)
+        assertSame("the EXACT engine instance must be forwarded", engine, platform.lastEngine)
+        assertEquals("the platform 2-arg overload must never be used", 0, platform.twoArgServerChecks)
+        assertEquals("a non-Sber host must never reach the Sber anchors", 0, sber.engineServerChecks)
+    }
+
+    @Test
+    fun `non-sber host forwards the original socket to the platform 3-arg overload`() {
+        val platform = AndroidPlatformAnchors(serverOk = false)
+        val sber = ConfigurableAnchors(accept = true)
+        val tm = wrapper(sber, platform)
+        val socket = SberTrust.sslContext().socketFactory.createSocket()
+
+        assertThrows(CertificateException::class.java) {
+            tm.checkServerTrusted(emptyArray(), "RSA", socket)
+        }
+
+        assertEquals("the platform 3-arg overload must be used", 1, platform.socketServerChecks)
+        assertSame("the EXACT socket instance must be forwarded", socket, platform.lastSocket)
+        assertEquals("a non-Sber host must never reach the Sber anchors", 0, sber.socketServerChecks)
+    }
+
+    @Test
+    fun `sber host routes to the sber anchors and forwards the original engine`() {
+        val platform = AndroidPlatformAnchors(serverOk = false)
+        val sber = ConfigurableAnchors(accept = true)
+        val tm = wrapper(sber, platform)
+        val engine = engineFor("smartspeech.sber.ru")
+
+        tm.checkServerTrusted(emptyArray(), "RSA", engine)
+
+        assertEquals(1, sber.engineServerChecks)
+        assertSame(engine, sber.lastEngine)
+        assertEquals("the platform anchors must not be consulted", 0, platform.engineServerChecks)
+    }
+
+    @Test
+    fun `non-sber host forwards the original engine to the platform client 3-arg overload`() {
+        val platform = AndroidPlatformAnchors(serverOk = false)
+        val sber = ConfigurableAnchors(accept = true)
+        val tm = wrapper(sber, platform)
+        val engine = engineFor("api.openai.com")
+
+        tm.checkClientTrusted(emptyArray(), "RSA", engine)
+
+        assertEquals(1, platform.clientChecks)
+        assertEquals("a non-Sber host must never reach the Sber anchors", 0, sber.clientChecks)
+        assertEquals("server overloads must be untouched", 0, platform.engineServerChecks)
+    }
+
+    @Test
+    fun `composite system-first branch is reachable through the 3-arg path`() {
+        val system = ConfigurableAnchors(accept = true)
+        val russian = ConfigurableAnchors(accept = false)
+        val composite = SberTrust.sberCompositeTrustManager(system, russian)
+        val engine = engineFor("ngw.devices.sberbank.ru")
+
+        // Must NOT throw: the system 3-arg validates before the Минцифры
+        // fallback is even considered (the latent second defect).
+        composite.checkServerTrusted(emptyArray(), "RSA", engine)
+
+        assertEquals(1, system.engineServerChecks)
+        assertSame(engine, system.lastEngine)
+        assertEquals("system success must not consult the fallback", 0, russian.engineServerChecks)
+        assertEquals("must not degrade to the 2-arg Android trap", 0, system.twoArgServerChecks)
+    }
+
+    @Test
+    fun `composite falls back to the mincifry anchors with the original engine`() {
+        val system = ConfigurableAnchors(accept = false)
+        val russian = ConfigurableAnchors(accept = true)
+        val composite = SberTrust.sberCompositeTrustManager(system, russian)
+        val engine = engineFor("ngw.devices.sberbank.ru")
+
+        composite.checkServerTrusted(emptyArray(), "RSA", engine)
+
+        assertEquals(1, system.engineServerChecks)
+        assertEquals(1, russian.engineServerChecks)
+        assertSame("the fallback must receive the ORIGINAL context", engine, russian.lastEngine)
     }
 }

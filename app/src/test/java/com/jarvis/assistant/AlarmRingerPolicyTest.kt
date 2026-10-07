@@ -6,6 +6,7 @@ import com.jarvis.assistant.data.ScheduledAlertEntity
 import com.jarvis.assistant.tools.AlarmRingerPolicy
 import com.jarvis.assistant.tools.AlertArmer
 import com.jarvis.assistant.tools.AndroidAlarmScheduler
+import com.jarvis.assistant.tools.ReconcileTrigger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -23,7 +24,7 @@ import org.junit.Test
  * Honest split:
  * - Covered here: the ringer's extracted decision math (auto-stop threshold,
  *   vibration waveform + repeat index) and AndroidAlarmScheduler
- *   .rescheduleAllOnBoot() — exactly what service/BootReceiver.onReceive
+ *   .rescheduleAll(ReconcileTrigger.BOOT) — exactly what service/BootReceiver.onReceive
  *   invokes for ACTION_BOOT_COMPLETED / ACTION_MY_PACKAGE_REPLACED.
  * - Device-only (not covered, by nature): AlarmRinger's MediaPlayer prepare/
  *   start/stop, RingtoneManager URI resolution, Vibrator vibrate/cancel and
@@ -62,7 +63,7 @@ class AlarmRingerPolicyTest {
 
 // ---------------------------------------------------------------------------
 // BootReceiver re-schedule path: the receiver's only re-schedule duty is
-// AndroidAlarmScheduler(context, dao).rescheduleAllOnBoot(). These tests pin
+// AndroidAlarmScheduler(context, dao).rescheduleAll(ReconcileTrigger.BOOT). These tests pin
 // WHICH alerts survive a reboot and HOW they are re-armed, through the same
 // seam the receiver uses.
 // ---------------------------------------------------------------------------
@@ -184,7 +185,7 @@ class BootRescheduleTest {
             ),
         ).toInt()
 
-        h.scheduler.rescheduleAllOnBoot()
+        h.scheduler.rescheduleAll(ReconcileTrigger.BOOT)
 
         // Daily alarm: re-armed ALWAYS, rolled to the next occurrence past now.
         val dailyArm = h.armer.armed.getValue(dailyPast)
@@ -215,11 +216,11 @@ class BootRescheduleTest {
             ),
         ).toInt()
 
-        h.scheduler.rescheduleAllOnBoot()
+        h.scheduler.rescheduleAll(ReconcileTrigger.BOOT)
         val first = h.armer.armed.toMap()
         assertEquals(5_000L + day, first.getValue(daily).triggerAtMillis)
 
-        h.scheduler.rescheduleAllOnBoot()
+        h.scheduler.rescheduleAll(ReconcileTrigger.BOOT)
 
         // The daily trigger is already in the future: rolled exactly once.
         assertEquals(5_000L + day, h.dao.byId(daily)!!.triggerAtMillis)
@@ -245,7 +246,7 @@ class BootRescheduleTest {
         val snoozedTrigger = 6_000L + AndroidAlarmScheduler.DEFAULT_SNOOZE_MS
         assertEquals(snoozedTrigger, h.dao.byId(id)!!.triggerAtMillis)
 
-        h.scheduler.rescheduleAllOnBoot() // reboot happens while snoozed
+        h.scheduler.rescheduleAll(ReconcileTrigger.BOOT) // reboot happens while snoozed
 
         // Rolled from the ANCHOR (5_000), not the snoozed trigger.
         assertEquals(5_000L + day, h.dao.byId(id)!!.triggerAtMillis)
@@ -266,7 +267,7 @@ class BootRescheduleTest {
             ),
         ).toInt()
 
-        h.scheduler.rescheduleAllOnBoot()
+        h.scheduler.rescheduleAll(ReconcileTrigger.BOOT)
 
         assertNull(h.armer.armed[dueNow])
         assertFalse(h.dao.byId(dueNow)!!.enabled)
@@ -286,7 +287,7 @@ class BootRescheduleTest {
             ),
         ).toInt()
 
-        h.scheduler.rescheduleAllOnBoot()
+        h.scheduler.rescheduleAll(ReconcileTrigger.BOOT)
 
         assertEquals(10_000L + day, h.armer.armed.getValue(id).triggerAtMillis)
         assertTrue(h.dao.byId(id)!!.enabled)
@@ -318,7 +319,7 @@ class BootRescheduleTest {
             ),
         ).toInt()
 
-        h.scheduler.rescheduleAllOnBoot()
+        h.scheduler.rescheduleAll(ReconcileTrigger.BOOT)
 
         val arm = h.armer.armed.getValue(future)
         assertEquals(ClockDomain.ELAPSED, arm.alert.clockDomain)

@@ -4,6 +4,7 @@ import com.jarvis.assistant.grpc.yandextts.RawAudio
 import com.jarvis.assistant.speech.grpc.FakeYandexTtsService
 import com.jarvis.assistant.speech.grpc.InProcessGrpc
 import com.jarvis.assistant.speech.tts.YandexSpeechTts
+import com.jarvis.assistant.speech.tts.YandexVoiceSpec
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
 import kotlinx.coroutines.async
@@ -258,6 +259,97 @@ class YandexSpeechTtsTest {
 
         fakeTts.completeStream()
         chunksJob.await()
+    }
+
+    @Test
+    fun `a foreign voice id is rewritten to the default before the service`() = runBlocking<Unit> {
+        val tts = newTts()
+        // FALSIFICATION: `Mila` is a Sber Salute pool id. The real service
+        // answers PERMISSION_DENIED for it, aborting the sentence, so the client
+        // must substitute the Yandex default at the synthesis boundary.
+        val flow = tts.synthesizeStream("речь", voice = "Mila")
+
+        val chunksJob = async { withTimeout(15_000) { flow.toList() } }
+        val request = fakeTts.awaitRequest()
+
+        assertEquals(
+            "a Sber id must never reach the Yandex service",
+            YandexVoiceSpec.DEFAULT_VOICE,
+            request.getHints(0).voice,
+        )
+        assertTrue("no role may accompany the substituted speaker", request.hintsList.none { it.hasRole() })
+
+        fakeTts.completeStream()
+        chunksJob.await()
+    }
+
+    @Test
+    fun `permission denied for the configured voice retries once with the default`() = runBlocking {
+        val tts = newTts()
+        // `alena` is a real, non-default Yandex voice, so it passes the boundary
+        // validation and actually reaches the service.
+        val flow = tts.synthesizeStream("речь", voice = "alena")
+
+        val chunksJob = async { withTimeout(15_000) { flow.toList() } }
+
+        val first = fakeTts.awaitRequest()
+        assertEquals("alena", first.getHints(0).voice)
+        fakeTts.emitError(Status.PERMISSION_DENIED)
+
+        val second = fakeTts.awaitRequest()
+        assertEquals(
+            "the single retry must carry the backend default speaker",
+            YandexVoiceSpec.DEFAULT_VOICE,
+            second.getHints(0).voice,
+        )
+        fakeTts.emitChunk(byteArrayOf(7))
+        deliveryPause()
+        fakeTts.completeStream()
+
+        assertEquals(
+            "the degraded retry must still deliver audio with no error",
+            listOf(listOf<Byte>(7)),
+            chunksJob.await().asByteLists(),
+        )
+    }
+
+    @Test
+    fun `invalid argument for a non-default voice also falls back once`() = runBlocking {
+        val tts = newTts()
+        val flow = tts.synthesizeStream("речь", voice = "ermil:good")
+
+        val chunksJob = async { withTimeout(15_000) { flow.toList() } }
+
+        val first = fakeTts.awaitRequest()
+        assertEquals("ermil", first.getHints(0).voice)
+        fakeTts.emitError(Status.INVALID_ARGUMENT)
+
+        val second = fakeTts.awaitRequest()
+        assertEquals(YandexVoiceSpec.DEFAULT_VOICE, second.getHints(0).voice)
+        fakeTts.emitChunk(byteArrayOf(2))
+        deliveryPause()
+        fakeTts.completeStream()
+
+        assertEquals(listOf(listOf<Byte>(2)), chunksJob.await().asByteLists())
+    }
+
+    @Test
+    fun `permission denied for the default voice fails without a retry`() = runBlocking {
+        val tts = newTts()
+        val flow = tts.synthesizeStream("речь", voice = YandexVoiceSpec.DEFAULT_VOICE)
+
+        val errorJob = async {
+            runCatching { withTimeout(15_000) { flow.toList() } }.exceptionOrNull()
+        }
+        fakeTts.awaitRequest()
+        fakeTts.emitError(Status.PERMISSION_DENIED)
+
+        // If the client retried, this await would block until the 15 s bound and
+        // the flow would not fail on the FIRST error — so a non-null typed
+        // failure here proves the retry was suppressed for the default.
+        val error = errorJob.await()
+        assertNotNull("a rejected default voice must surface, not loop", error)
+        assertEquals(Status.Code.PERMISSION_DENIED, (error as StatusRuntimeException).status.code)
     }
 
     @Test

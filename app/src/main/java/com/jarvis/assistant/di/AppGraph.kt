@@ -40,6 +40,7 @@ import com.jarvis.assistant.speech.tts.SaluteSpeechTts
 import com.jarvis.assistant.speech.tts.TtsClient
 import com.jarvis.assistant.speech.tts.TtsPlayer
 import com.jarvis.assistant.speech.tts.VoiceCatalog
+import com.jarvis.assistant.speech.tts.VoiceResolver
 import com.jarvis.assistant.speech.tts.YandexSpeechTts
 import com.jarvis.assistant.speech.tts.YandexVoiceSpec
 import com.jarvis.assistant.tools.FunctionRouter
@@ -534,12 +535,28 @@ class AppGraph(
     /**
      * Packs a Yandex speaker with the validated role and the configured speed
      * into the single in-band spec ([YandexVoiceSpec], the one encode
-     * definition). [role] is validated against the voice's documented roles, so
-     * a stale invalid pref can never reach the synthesis request. A blank voice
-     * falls back to the config default.
+     * definition). The speaker is resolved through [VoiceResolver] FIRST, so a
+     * foreign id (e.g. the Sber `Mila` left in `yandexTtsVoice`) can never reach
+     * the synthesis request — Yandex rejects an unknown speaker with a hard
+     * `PERMISSION_DENIED` that aborts the whole sentence. A blank or unknown
+     * voice falls back to the backend default. [role] is then validated against
+     * the RESOLVED voice's documented roles, so a stale invalid pref can never
+     * be sent either.
      */
     private fun packYandexVoice(voice: String, role: String?): String {
-        val speaker = voice.ifBlank { config.yandexTtsVoice }
+        val requested = voice.trim()
+        val speaker = VoiceResolver.resolve(
+            SpeechBackend.YANDEX,
+            requested,
+            YandexVoiceSpec.DEFAULT_VOICE,
+        )
+        if (requested.isNotEmpty() &&
+            VoiceCatalog.YANDEX_VOICES.none { it.id.equals(requested, ignoreCase = true) }
+        ) {
+            // Content-free: never log the voice text. Substitution is the fix;
+            // this is only a breadcrumb that the pref held a foreign id.
+            Timber.w("Yandex TTS: configured voice is unknown; using the default speaker")
+        }
         return YandexVoiceSpec.join(
             voice = speaker,
             role = VoiceCatalog.validRoleFor(speaker, role),

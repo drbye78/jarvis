@@ -105,7 +105,21 @@ class MusicPlaybackOrchestrator(
         APP_OPENED,
 
         /** Unrecoverable (no app installed, no access, no query). */
-        ERROR,
+        ERROR;
+
+        /**
+         * A terminal outcome: the cascade has finished and nothing more will
+         * happen on its own. [PLAYING]/[DISPATCHED] are forward progress; every
+         * other status is final for this request.
+         */
+        val terminal: Boolean get() = this != PLAYING && this != DISPATCHED
+
+        /**
+         * The player did NOT start playback and the user must act (tap the
+         * opened search screen / finish in the opened app). The model must
+         * relay [Outcome.detail] and stop re-calling the tool.
+         */
+        val needsUserAction: Boolean get() = this == SEARCH_OPENED || this == APP_OPENED
     }
 
     data class Outcome(

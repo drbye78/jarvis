@@ -6,13 +6,16 @@ import com.jarvis.assistant.grpc.yandextts.RawAudio
 import com.jarvis.assistant.grpc.yandextts.SynthesizerGrpc
 import com.jarvis.assistant.grpc.yandextts.UtteranceSynthesisRequest
 import com.jarvis.assistant.grpc.yandextts.UtteranceSynthesisResponse
+import com.jarvis.assistant.speech.SpeechBackend
 import com.jarvis.assistant.speech.yandexApiKeyStub
 import io.grpc.Context
 import io.grpc.ManagedChannel
 import io.grpc.Status
 import io.grpc.stub.StreamObserver
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -41,10 +44,19 @@ import timber.log.Timber
  * yields no speed hint. This keeps the provider-neutral contract unchanged
  * while still exposing Yandex's role and speed features.
  *
- * FAIL-CLOSED ROLE: an undocumented voice/role pair is a HARD service error,
- * not a fallback, so the role is re-validated against
- * [VoiceCatalog.validRoleFor] here — the runtime chokepoint that stops a stale
- * pref (or a hand-crafted spec) from failing the whole synthesis.
+ * FAIL-CLOSED VOICE AND ROLE: an unknown speaker or an undocumented voice/role
+ * pair is a HARD service error, not a fallback, so both are re-validated here
+ * (the runtime chokepoint that stops a stale pref or a hand-crafted spec from
+ * failing the whole synthesis): the speaker is resolved against
+ * [VoiceCatalog.YANDEX_VOICES] via [VoiceResolver] and the role against
+ * [VoiceCatalog.validRoleFor].
+ *
+ * DEGRADATION: if a non-default speaker is nonetheless rejected with
+ * [Status.Code.PERMISSION_DENIED] or [Status.Code.INVALID_ARGUMENT] (e.g. the
+ * account lacks that voice, or the request shape is rejected), the sentence is
+ * retried ONCE with [YandexVoiceSpec.DEFAULT_VOICE]. A barge-in
+ * ([Status.Code.CANCELLED]) ALWAYS closes normally — never retried, never
+ * masked as an error.
  *
  * SAMPLE-RATE CONSTRAINT (this is the correctness-critical part): Yandex
  * defaults to **22050 Hz LINEAR16 PCM wrapped in a WAV header**. The entire
@@ -78,89 +90,47 @@ class YandexSpeechTts(
     }
 
     override fun synthesizeStream(text: String, voice: String): Flow<ByteArray> = channelFlow {
+        val producerScope = this
         val cancellableContext = Context.current().withCancellation()
 
         val producer = launch(Dispatchers.IO) {
-            try {
-                val request = UtteranceSynthesisRequest.newBuilder()
-                    .setText(text)
-                    .addAllHints(hintsFor(voice))
-                    .setOutputAudioSpec(
-                        AudioFormatOptions.newBuilder().setRawAudio(
-                            RawAudio.newBuilder()
-                                .setAudioEncoding(RawAudio.AudioEncoding.LINEAR16_PCM)
-                                .setSampleRateHertz(TTS_SAMPLE_RATE_HERTZ),
-                        ),
-                    )
-                    .build()
-
-                // A chunk is delivered through a spawned child so the
-                // non-suspending gRPC callback can apply backpressure, and the
-                // close path joins the children spawned so far — otherwise a
-                // synchronous close() from onCompleted can outrun a pending
-                // send() and drop the final audio chunk. gRPC delivers an
-                // observer's callbacks serially on one thread, so no new child
-                // can appear after onCompleted/onError. (Same reasoning as
-                // SaluteSpeechTts; see its long comment for the failed
-                // monitor-based alternative.)
-                val childJobs = ArrayList<Job>()
-
-                val responseObserver = object : StreamObserver<UtteranceSynthesisResponse> {
-                    override fun onNext(value: UtteranceSynthesisResponse) {
-                        val bytes = value.audioChunk.data
-                        if (!bytes.isEmpty) {
-                            childJobs += this@channelFlow.launch {
-                                this@channelFlow.send(bytes.toByteArray())
-                            }
-                        }
-                    }
-
-                    override fun onError(t: Throwable) {
-                        // The async stub delivers StatusRuntimeException (not
-                        // StatusException); check both so an expected barge-in
-                        // cancel does not surface as a flow failure.
-                        val code = (t as? io.grpc.StatusException)?.status?.code
-                            ?: (t as? io.grpc.StatusRuntimeException)?.status?.code
-                        val failure = if (code == Status.Code.CANCELLED) null else t
-                        if (failure == null) {
-                            this@channelFlow.launch {
-                                childJobs.joinAll()
-                                close()
-                            }
-                        } else {
-                            Timber.e(t, "Yandex TTS stream error")
-                            this@channelFlow.launch {
-                                childJobs.joinAll()
-                                close(failure)
-                            }
-                        }
-                    }
-
-                    override fun onCompleted() {
-                        this@channelFlow.launch {
-                            childJobs.joinAll()
-                            close()
-                        }
-                    }
-                }
-
-                val stub = yandexApiKeyStub(
-                    this@YandexSpeechTts.channel,
-                    apiKeyProvider(),
-                    deadlineMs,
-                    SynthesizerGrpc::newStub,
-                )
-                cancellableContext.run {
-                    stub.utteranceSynthesis(request, responseObserver)
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: java.io.IOException) {
-                Timber.e(e, "Yandex TTS network error")
-                if (!cancellableContext.isCancelled()) close(e)
-            } catch (e: Exception) {
-                if (!cancellableContext.isCancelled()) close(e)
+            val firstFailure = producerScope.attemptOnce(text, voice, cancellableContext)
+            if (firstFailure == null) {
+                // onCompleted, or the expected CANCELLED barge-in: close
+                // normally. A cancel must NEVER be retried or surfaced.
+                producerScope.close()
+                return@launch
             }
+
+            val code = statusCodeOf(firstFailure)
+            val effectiveSpeaker = VoiceResolver.resolve(
+                SpeechBackend.YANDEX,
+                YandexVoiceSpec.split(voice).voice,
+                YandexVoiceSpec.DEFAULT_VOICE,
+            )
+            val alreadyDefault = effectiveSpeaker.equals(YandexVoiceSpec.DEFAULT_VOICE, ignoreCase = true)
+            if (alreadyDefault ||
+                (code != Status.Code.PERMISSION_DENIED && code != Status.Code.INVALID_ARGUMENT)
+            ) {
+                // No degraded retry is possible or warranted: the default
+                // itself failed, or the failure is not voice-shaped. Surface it
+                // once; the caller's sentence-level catch owns the wording.
+                // Content-free: the code only, never the server message.
+                Timber.w("Yandex TTS synthesis failed (status=%s)", code)
+                producerScope.close(firstFailure)
+                return@launch
+            }
+
+            // Content-free: the code only, never the voice text. One retry with
+            // the backend default so a stale/hand-crafted speaker cannot abort
+            // the whole spoken sentence.
+            Timber.w("Yandex TTS rejected the configured voice; retrying with the default (status=%s)", code)
+            val retryFailure = producerScope.attemptOnce(
+                text,
+                YandexVoiceSpec.DEFAULT_VOICE,
+                cancellableContext,
+            )
+            if (retryFailure == null) producerScope.close() else producerScope.close(retryFailure)
         }
 
         awaitClose {
@@ -170,19 +140,131 @@ class YandexSpeechTts(
     }
 
     /**
+     * Runs exactly ONE `UtteranceSynthesis` RPC and pumps its audio chunks into
+     * the enclosing flow.
+     *
+     * Returns null when the attempt ended normally (`onCompleted`) or was
+     * cancelled by the caller ([Status.Code.CANCELLED] — a barge-in, which must
+     * close the flow normally, never as an error and never as a retry trigger),
+     * or the failure [Throwable] otherwise.
+     *
+     * A chunk is delivered through a spawned child so the non-suspending gRPC
+     * callback can apply backpressure, and the attempt joins the children
+     * spawned so far before completing — otherwise a synchronous completion
+     * from `onCompleted`/`onError` can outrun a pending `send()` and drop the
+     * final audio chunk. gRPC delivers an observer's callbacks serially on one
+     * thread, so no new child can appear after `onCompleted`/`onError`. (Same
+     * reasoning as [SaluteSpeechTts]; see its long comment for the failed
+     * monitor-based alternative.)
+     */
+    private suspend fun ProducerScope<ByteArray>.attemptOnce(
+        text: String,
+        voice: String,
+        cancellableContext: Context,
+    ): Throwable? {
+        val outcome = CompletableDeferred<Throwable?>()
+        val childJobs = ArrayList<Job>()
+        val scope = this
+
+        val responseObserver = object : StreamObserver<UtteranceSynthesisResponse> {
+            override fun onNext(value: UtteranceSynthesisResponse) {
+                val bytes = value.audioChunk.data
+                if (!bytes.isEmpty) {
+                    childJobs += scope.launch { scope.send(bytes.toByteArray()) }
+                }
+            }
+
+            override fun onError(t: Throwable) {
+                // The async stub delivers StatusRuntimeException (not
+                // StatusException); check both so an expected barge-in cancel
+                // does not surface as a flow failure.
+                val failure = if (statusCodeOf(t) == Status.Code.CANCELLED) null else t
+                scope.launch {
+                    childJobs.joinAll()
+                    outcome.complete(failure)
+                }
+            }
+
+            override fun onCompleted() {
+                scope.launch {
+                    childJobs.joinAll()
+                    outcome.complete(null)
+                }
+            }
+        }
+
+        return try {
+            val stub = yandexApiKeyStub(
+                this@YandexSpeechTts.channel,
+                apiKeyProvider(),
+                deadlineMs,
+                SynthesizerGrpc::newStub,
+            )
+            cancellableContext.run {
+                stub.utteranceSynthesis(attemptRequest(text, voice), responseObserver)
+            }
+            outcome.await()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: java.io.IOException) {
+            Timber.e(e, "Yandex TTS network error")
+            e
+        } catch (e: Exception) {
+            e
+        }
+    }
+
+    /** Builds the request for one attempt: text, validated hints, pinned 24 kHz raw PCM. */
+    private fun attemptRequest(text: String, voice: String): UtteranceSynthesisRequest =
+        UtteranceSynthesisRequest.newBuilder()
+            .setText(text)
+            .addAllHints(hintsFor(voice))
+            .setOutputAudioSpec(
+                AudioFormatOptions.newBuilder().setRawAudio(
+                    RawAudio.newBuilder()
+                        .setAudioEncoding(RawAudio.AudioEncoding.LINEAR16_PCM)
+                        .setSampleRateHertz(TTS_SAMPLE_RATE_HERTZ),
+                ),
+            )
+            .build()
+
+    /** gRPC status of [t], tolerating both `StatusException` and `StatusRuntimeException`. */
+    private fun statusCodeOf(t: Throwable): Status.Code? =
+        (t as? io.grpc.StatusException)?.status?.code
+            ?: (t as? io.grpc.StatusRuntimeException)?.status?.code
+
+    /**
      * Unpacks the `"<voice>[:<role>][@<speed>]"` convention ([YandexVoiceSpec],
      * the single definition of the packing) into the `Hints` list the request
      * needs. `Hints` is a scalar `oneof`, so each field is its own entry:
      * the voice hint is always present; the role hint only when the voice
      * DOCUMENTS that role (fail-closed); the speed hint only when it is set and
      * differs from the service default.
+     *
+     * The speaker is re-validated against [VoiceCatalog.YANDEX_VOICES] here —
+     * the LAST chokepoint before the wire — so a stale pref or a hand-crafted
+     * spec can never send a foreign id.
      */
     private fun hintsFor(voice: String): List<Hints> {
         val split = YandexVoiceSpec.split(voice)
-        val hints = ArrayList<Hints>(3)
-        hints += Hints.newBuilder().setVoice(split.voice).build()
+        val requested = split.voice.trim()
+        val speaker = VoiceResolver.resolve(
+            SpeechBackend.YANDEX,
+            requested,
+            YandexVoiceSpec.DEFAULT_VOICE,
+        )
+        if (requested.isNotEmpty() &&
+            VoiceCatalog.YANDEX_VOICES.none { it.id.equals(requested, ignoreCase = true) }
+        ) {
+            // Content-free: never log the voice text. A foreign id (e.g. a Sber
+            // "Mila") is replaced before it can reach the service.
+            Timber.w("Yandex TTS: unknown voice id replaced with the default speaker")
+        }
 
-        val role = VoiceCatalog.validRoleFor(split.voice, split.role)
+        val hints = ArrayList<Hints>(3)
+        hints += Hints.newBuilder().setVoice(speaker).build()
+
+        val role = VoiceCatalog.validRoleFor(speaker, split.role)
         if (role != null) {
             hints += Hints.newBuilder().setRole(role).build()
         } else if (split.role != null) {

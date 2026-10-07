@@ -87,6 +87,18 @@ class VoiceCatalogTest {
     }
 
     @Test
+    fun `only catalog ids are valid Yandex speakers`() {
+        val ids = VoiceCatalog.YANDEX_VOICES.map { it.id.lowercase() }.toSet()
+        // Membership is case-insensitive at every validation site.
+        assertTrue(ids.contains("marina"))
+        assertTrue(ids.contains("alena"))
+        // A Sber pool id must never be treated as a Yandex speaker: the service
+        // answers PERMISSION_DENIED and the whole sentence is lost.
+        assertFalse("Mila is a Sber voice, not a Yandex one", ids.contains("mila"))
+        assertFalse("an arbitrary id is not a speaker", ids.contains("not-a-voice"))
+    }
+
+    @Test
     fun `the yandex role vocabulary is non-blank and unique`() {
         assertTrue(VoiceCatalog.YANDEX_ROLES.isNotEmpty())
         assertEquals(

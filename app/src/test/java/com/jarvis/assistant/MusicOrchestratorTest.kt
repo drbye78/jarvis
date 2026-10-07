@@ -728,13 +728,64 @@ class MusicOrchestratorTest {
     fun `playMusic tool emits LLM-friendly JSON`() = runTest {
         val gw = FakeGateway()
         val tools = MusicTools(orchestrator(gw))
-        val json = tools.all().first { it.name == "playMusic" }
-            .execute("""{"query":"Bohemian Rhapsody"}""")
+        val result = tools.all().first { it.name == "playMusic" }
+            .executeResult("""{"query":"Bohemian Rhapsody"}""")
 
-        assertTrue(json.contains("\"status\":\"playing\""))
-        assertTrue(json.contains("\"playing\":true"))
-        assertTrue(json.contains("Bohemian Rhapsody"))
-        assertFalse(json.contains("\"error\""))
+        assertFalse(result.isError)
+        assertTrue(result.content.contains("\"status\":\"playing\""))
+        assertTrue(result.content.contains("\"outcome\":\"success\""))
+        assertTrue(result.content.contains("\"playing\":true"))
+        assertTrue(result.content.contains("Bohemian Rhapsody"))
+        assertFalse(result.content.contains("\"error\""))
+    }
+
+    @Test
+    fun `playMusic tool flags an ignored player as needs_user_action`() = runTest {
+        // The exact production failure: every strategy is exhausted and the
+        // player opens its search screen. The tool result MUST be an error with
+        // a terminal `outcome`, or the model re-calls playMusic until the tool
+        // loop aborts (the 5-pass «Слишком много шагов»).
+        val gw = FakeGateway(launchedSessionBehavior = { _, _ -> /* ignore */ })
+        gw.handles.add(
+            FakeHandle(
+                "ru.yandex.music",
+                np = NowPlaying(title = "Старая песня", state = NowPlaying.STATE_PLAYING, positionMs = 60_000),
+                onPlayFromSearch = { _, _ -> /* ignore */ },
+            ),
+        )
+        val tool = MusicTools(orchestrator(gw)).all().first { it.name == "playMusic" }
+
+        val result = tool.executeResult("""{"query":"Bohemian Rhapsody"}""")
+
+        assertTrue(result.isError)
+        assertTrue(result.content.contains("\"outcome\":\"needs_user_action\""))
+        assertFalse(result.content.contains("\"error\""))
+    }
+
+    @Test
+    fun `playMusic tool flags launch-only as needs_user_action`() = runTest {
+        val gw = FakeGateway(sessionAfterLaunchPolls = 10_000, searchOpens = false)
+        val tool = MusicTools(orchestrator(gw)).all().first { it.name == "playMusic" }
+
+        val result = tool.executeResult("""{"query":"Bohemian Rhapsody"}""")
+
+        assertTrue(result.isError)
+        assertTrue(result.content.contains("\"outcome\":\"needs_user_action\""))
+        assertTrue(result.content.contains("\"status\":\"app_opened\""))
+    }
+
+    @Test
+    fun `playMusic tool flags a true error as failed`() = runTest {
+        val gw = FakeGateway()
+        val tools = MusicTools(
+            orchestrator(gw, installed = listOf("com.android.chrome" to "Chrome")),
+        )
+        val result = tools.all().first { it.name == "playMusic" }
+            .executeResult("""{"query":"Bohemian Rhapsody"}""")
+
+        assertTrue(result.isError)
+        assertTrue(result.content.contains("\"outcome\":\"failed\""))
+        assertTrue(result.content.contains("\"status\":\"error\""))
     }
 
     @Test

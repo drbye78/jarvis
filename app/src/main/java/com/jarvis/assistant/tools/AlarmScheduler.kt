@@ -441,6 +441,23 @@ class SystemAlertArmer(private val context: Context) : AlertArmer {
 }
 
 /**
+ * Why a reconcile sweep is running. The label is logged content-free so a
+ * device log can distinguish a real reboot from an ordinary foreground
+ * [MainActivity.onStart] or an exact-alarm grant — the old code labelled every
+ * sweep "after boot", which made 69 foreground sweeps look like 69 reboots.
+ */
+enum class ReconcileTrigger(val label: String) {
+    /** A real device boot / package replace (persistence is mandatory). */
+    BOOT("boot"),
+
+    /** SCHEDULE_EXACT_ALARM (re)granted — the OS deleted the old alarms. */
+    GRANT("exact-alarm grant"),
+
+    /** The app came to the foreground; the grant broadcast may have been lost. */
+    FOREGROUND("foreground"),
+}
+
+/**
  * Single authority for everything that rings: persists rows in
  * `scheduled_alerts` and arms/cancels [AlarmManager] through [AlertArmer].
  * Request code == row id, so schedule/cancel parity is exact and codes are
@@ -641,12 +658,17 @@ class AndroidAlarmScheduler(
     }
 
     /**
-     * Boot / package-replace re-arm: enabled ALARMs are always armed
-     * (dailies rolled forward past missed days); TIMERs only while their
-     * wall-clock trigger is still in the future — expired ones are disabled so
-     * they do not linger as armed-able ghosts. Each alarm's roll-forward write
-     * goes through the same [AlertDao.applyEnable] transaction as the UI
-     * toggle, so a boot sweep racing a user edit cannot lose either write.
+     * Boot / package-replace / grant / foreground re-arm: enabled ALARMs are
+     * always armed (dailies rolled forward past missed days); TIMERs only while
+     * their wall-clock trigger is still in the future — expired ones are
+     * disabled so they do not linger as armed-able ghosts. Each alarm's
+     * roll-forward write goes through the same [AlertDao.applyEnable]
+     * transaction as the UI toggle, so a boot sweep racing a user edit cannot
+     * lose either write.
+     *
+     * [trigger] labels the INFO line honestly — the same sweep runs from boot,
+     * the exact-alarm grant broadcast and app foreground, and calling all of
+     * them "after boot" made an ordinary foreground look like a reboot.
      *
      * Reboot resets the ELAPSED clock, so a timer's stored
      * [ScheduledAlertEntity.anchorElapsedMillis] is invalid here. The remaining
@@ -654,7 +676,7 @@ class AndroidAlarmScheduler(
      * (`elapsedNow() + remaining`); an already-overdue timer is disabled, never
      * armed into the past.
      */
-    suspend fun rescheduleAllOnBoot(): Int {
+    suspend fun rescheduleAll(trigger: ReconcileTrigger): Int {
         var armed = 0
         for (alert in dao.all()) {
             if (!alert.enabled) continue
@@ -680,12 +702,12 @@ class AndroidAlarmScheduler(
             armer.arm(spec.toAlert())
             armed++
         }
-        Timber.i("Rescheduled %d alerts after boot", armed)
+        Timber.i("Rescheduled %d alerts (%s)", armed, trigger.label)
         return armed
     }
 
     /**
-     * Shared roll-forward policy for [setEnabled] and [rescheduleAllOnBoot]:
+     * Shared roll-forward policy for [setEnabled] and [rescheduleAll]:
      * - daily (repeat or wall-clock) → next occurrence from the anchor;
      * - one-shot in the future → itself, untouched;
      * - EXPIRED one-shot ALARM → next wall-clock occurrence from the anchor
@@ -718,23 +740,34 @@ class AndroidAlarmScheduler(
  * `setExactAndAllowWhileIdle` and `setAlarmClock` when the permission is
  * revoked, and the revoke/grant broadcast is not reliably delivered — so
  * [reconcile] is invoked from three independent hooks (boot, the permission
- * broadcast, and app foreground).
+ * broadcast, and app foreground), labelled by [ReconcileTrigger].
  *
- * While exactness is unavailable it returns WITHOUT arming: the armer's own
- * degrade path already re-arms inexact on the next real scheduling call, and
- * forcing a sweep here would only throw again.
+ * A [ReconcileTrigger.BOOT] sweep ALWAYS runs: boot persistence must not
+ * depend on exact-alarm availability (the OS wipes the alarms on boot), and
+ * the armer degrades to inexact on its own. For [ReconcileTrigger.GRANT] /
+ * [ReconcileTrigger.FOREGROUND] a sweep while exactness is unavailable is
+ * skipped — the armer's degrade path already re-arms inexact on the next real
+ * scheduling call, and forcing a sweep here would only throw again.
  */
 class AlertPermissionReconciler(
     private val scheduler: AndroidAlarmScheduler,
     private val canScheduleExact: () -> Boolean,
 ) {
-    suspend fun reconcile() {
-        if (!canScheduleExact()) {
-            Timber.i("Exact-alarm reconciliation skipped: exact-alarm permission unavailable")
+    suspend fun reconcile(trigger: ReconcileTrigger) {
+        // Boot persistence must NOT depend on exact-alarm availability: the OS
+        // deletes EVERY alarm once on boot, so a BOOT sweep always runs and the
+        // armer itself degrades to inexact when the permission is missing.
+        // GRANT/FOREGROUND sweeps are only useful when exactness is available —
+        // a sweep while it is still missing would just re-arm inexact.
+        if (trigger != ReconcileTrigger.BOOT && !canScheduleExact()) {
+            Timber.i(
+                "Exact-alarm reconciliation skipped (%s): exact-alarm permission unavailable",
+                trigger.label,
+            )
             return
         }
-        val count = scheduler.rescheduleAllOnBoot()
-        Timber.i("Exact-alarm reconciliation re-armed %d alerts", count)
+        val count = scheduler.rescheduleAll(trigger)
+        Timber.i("Exact-alarm reconciliation re-armed %d alerts (%s)", count, trigger.label)
     }
 }
 
@@ -759,7 +792,7 @@ class ExactAlarmPermissionReceiver : BroadcastReceiver() {
                 AlertPermissionReconciler(
                     scheduler,
                     canScheduleExact = { canScheduleExactAlarms(context) },
-                ).reconcile()
+                ).reconcile(ReconcileTrigger.GRANT)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {

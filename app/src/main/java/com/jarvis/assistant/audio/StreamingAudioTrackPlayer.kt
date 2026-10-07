@@ -18,6 +18,15 @@ import timber.log.Timber
 import kotlin.coroutines.coroutineContext
 
 /**
+ * Thrown when the framework [AudioTrack] accepts fewer bytes than offered (or
+ * none). It distinguishes a genuine WRITE failure from any other streaming
+ * exception (e.g. a gRPC `StatusRuntimeException` surfacing from the TTS
+ * flow), so [StreamingAudioTrackPlayer] can log the two honestly. Extends
+ * [IllegalStateException] to preserve the established short-write contract.
+ */
+private class AudioTrackWriteException(message: String) : IllegalStateException(message)
+
+/**
  * Thin seam over [android.media.AudioTrack] so the player actor is
  * JVM-testable with a fake; production code always gets
  * [AndroidAudioTrackAdapter] via the default constructor argument.
@@ -202,8 +211,14 @@ class StreamingAudioTrackPlayer(
                 }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (e: AudioTrackWriteException) {
+                // Genuine AudioTrack write failure.
                 Timber.e(e, "TTS sentence aborted by write failure")
+                job.done.completeExceptionally(e)
+            } catch (e: Exception) {
+                // Any other streaming failure (e.g. a gRPC StatusRuntimeException
+                // from the TTS flow) — NOT a write failure, so do not claim one.
+                Timber.e(e, "TTS sentence failed while streaming audio")
                 job.done.completeExceptionally(e)
             }
         }
@@ -283,7 +298,7 @@ class StreamingAudioTrackPlayer(
             coroutineContext.ensureActive() // prompt abort between writes once cancelled
             val written = adapter.write(chunk, offset, chunk.size - offset)
             if (written <= 0) {
-                throw IllegalStateException(
+                throw AudioTrackWriteException(
                     "AudioTrack short write ($written <= 0 at offset $offset of ${chunk.size}) — aborting sentence",
                 )
             }

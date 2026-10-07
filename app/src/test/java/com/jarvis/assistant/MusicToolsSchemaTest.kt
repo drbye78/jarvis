@@ -11,6 +11,7 @@ import com.jarvis.assistant.tools.MusicTools
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,6 +27,8 @@ class MusicToolsSchemaTest {
 
     private class SchemaHandle(
         override val packageName: String,
+        /** When true, every dispatch is accepted but playback never changes. */
+        private val ignore: Boolean = false,
     ) : MediaControllerHandle {
         var lastCommand: SearchCommand? = null
         private var np = NowPlaying(title = "Тишина", state = NowPlaying.STATE_PAUSED)
@@ -35,6 +38,7 @@ class MusicToolsSchemaTest {
 
         override fun playFromSearch(query: String): Boolean {
             lastCommand = SearchCommand(query, null, emptyMap())
+            if (ignore) return true
             np = NowPlaying(
                 title = query.substringBefore(' ').ifBlank { "Что-то" },
                 artist = "Кто-то",
@@ -46,6 +50,7 @@ class MusicToolsSchemaTest {
 
         override fun playFromSearchStructured(command: SearchCommand): Boolean {
             lastCommand = command
+            if (ignore) return true
             np = NowPlaying(
                 title = command.extras[SearchCommand.EXTRA_TITLE]
                     ?: command.query.ifBlank { "Что-то" },
@@ -63,18 +68,25 @@ class MusicToolsSchemaTest {
         override fun stop() = true
     }
 
-    private class SchemaGateway : MediaGateway {
-        val handle = SchemaHandle("ru.yandex.music")
+    private class SchemaGateway(
+        /** Whether openAppSearch reports the search screen opened. */
+        private val openSearch: Boolean = false,
+        /** When true the session accepts commands but never starts playback. */
+        private val ignoreCommand: Boolean = false,
+    ) : MediaGateway {
+        val handle = SchemaHandle("ru.yandex.music", ignore = ignoreCommand)
         override fun hasNotificationListenerAccess() = true
         override fun activeControllers(): List<MediaControllerHandle> = listOf(handle)
         override fun dispatchMediaKey(keyCode: Int) = Unit
-        override fun openAppSearch(app: MediaAppInfo, query: String) = false
+        override fun openAppSearch(app: MediaAppInfo, query: String) = openSearch
         override fun launchApp(app: MediaAppInfo) = false
     }
 
     /** Returns the gateway backing the tools so tests can inspect dispatches. */
-    private fun buildTools(): Pair<MusicTools, SchemaGateway> {
-        val gw = SchemaGateway()
+    private fun buildTools(
+        gateway: SchemaGateway = SchemaGateway(),
+    ): Pair<MusicTools, SchemaGateway> {
+        val gw = gateway
         val orchestrator = MusicPlaybackOrchestrator(
             gw,
             MusicAppCatalog({ listOf("ru.yandex.music" to "Яндекс Музыка") }),
@@ -165,6 +177,40 @@ class MusicToolsSchemaTest {
         assertTrue(json.contains("\"status\":\"error\""))
         assertTrue(json.contains("назови"))
         assertFalse(json.contains("\"error\":"))
+        // Still valid JSON, and now carries the terminal classification.
+        assertEquals("failed", Json.parseToJsonElement(json).jsonObject["outcome"]!!.jsonPrimitive.content)
+    }
+
+    // ------------------------------------------------------------------
+    // outcome classification (the terminal contract the model keys on)
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `playMusic success carries outcome success and is not an error`() = runTest {
+        val (tools, _) = buildTools()
+        val result = tools.all().first { it.name == "playMusic" }
+            .executeResult("""{"query":"Bohemian Rhapsody"}""")
+
+        assertFalse(result.isError)
+        val obj = Json.parseToJsonElement(result.content).jsonObject
+        assertEquals("success", obj["outcome"]!!.jsonPrimitive.content)
+        assertEquals("playing", obj["status"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `playMusic deep-link fallback carries outcome needs_user_action`() = runTest {
+        // The session accepts the dispatch but never actually starts playback;
+        // the deep link opens the search screen. That is terminal — the user
+        // must act, so the tool result must be an error with the matching
+        // `outcome` token (the model sees only `content`, never `isError`).
+        val (tools, _) = buildTools(SchemaGateway(openSearch = true, ignoreCommand = true))
+        val result = tools.all().first { it.name == "playMusic" }
+            .executeResult("""{"query":"Bohemian Rhapsody"}""")
+
+        assertTrue(result.isError)
+        val obj = Json.parseToJsonElement(result.content).jsonObject
+        assertEquals("needs_user_action", obj["outcome"]!!.jsonPrimitive.content)
+        assertEquals("search_opened", obj["status"]!!.jsonPrimitive.content)
     }
 
     // ------------------------------------------------------------------

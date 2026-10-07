@@ -145,8 +145,16 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
 -----END CERTIFICATE-----
     """.trimIndent()
 
-    /** Trust manager validating against ONLY the bundled Минцифры CAs. */
-    fun russianTrustManager(): X509TrustManager {
+    /**
+     * Trust manager validating against ONLY the bundled Минцифры CAs.
+     *
+     * Returns the EXTENDED interface on purpose: the host context
+     * (`SSLEngine`/`Socket`) must reach [sberCompositeTrustManager] and
+     * [SberHostScopedTrustManager] so they forward it instead of collapsing to
+     * the 2-arg call. On Android the system `RootTrustManager` 2-arg method
+     * throws whenever the app declares any `<domain-config>`.
+     */
+    fun russianTrustManager(): X509ExtendedTrustManager {
         val ks = KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null) }
         val cf = CertificateFactory.getInstance("X.509")
         ks.setCertificateEntry(
@@ -157,16 +165,27 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
             "russian-trusted-sub",
             cf.generateCertificate(RUSSIAN_SUB_PEM.byteInputStream()) as X509Certificate,
         )
-        val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
-        tmf.init(ks)
-        return tmf.trustManagers.filterIsInstance<X509TrustManager>().first()
+        return trustManagerFor(ks)
     }
 
-    /** The platform default trust manager (system CAs). */
-    fun systemTrustManager(): X509TrustManager {
+    /** The platform default trust manager (system CAs), as an extended manager. */
+    fun systemTrustManager(): X509ExtendedTrustManager = trustManagerFor(null)
+
+    /**
+     * The default-algorithm trust manager for [keyStore] (`null` = system
+     * store), narrowed to the extended interface. Android's `RootTrustManager`
+     * and the JVM's `X509TrustManagerImpl` are both extended; the neutral
+     * adapter is a fail-closed safety net for exotic providers.
+     */
+    private fun trustManagerFor(keyStore: KeyStore?): X509ExtendedTrustManager {
         val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
-        tmf.init(null as KeyStore?)
-        return tmf.trustManagers.filterIsInstance<X509TrustManager>().first()
+        tmf.init(keyStore)
+        return tmf.trustManagers
+            .filterIsInstance<X509ExtendedTrustManager>()
+            .firstOrNull()
+            ?: NeutralExtendedTrustManager(
+                tmf.trustManagers.filterIsInstance<X509TrustManager>().first(),
+            )
     }
 
     /**
@@ -255,30 +274,88 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
      * too permissive to install directly — it exists only as the Sber-host
      * branch inside [compositeTrustManager]. Call sites that installed this
      * globally are exactly the vulnerability the wrapper closes.
+     *
+     * The 3-arg overloads forward the ORIGINAL engine/socket to the selected
+     * branch: on Android the system `RootTrustManager` 2-arg method throws a
+     * `CertificateException` as soon as the app declares any `<domain-config>`
+     * (the loopback MCP exception in `network_security_config.xml`), which
+     * would make the system-first branch unreachable and wrongly reject a
+     * public-chain Sber host. Forwarding the context restores that branch.
      */
-    fun sberCompositeTrustManager(): X509TrustManager {
-        val system = systemTrustManager()
-        val russian = russianTrustManager()
-        return object : X509TrustManager {
-            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
-                try {
-                    system.checkClientTrusted(chain, authType)
-                } catch (_: CertificateException) {
-                    russian.checkClientTrusted(chain, authType)
-                }
-            }
+    fun sberCompositeTrustManager(): X509ExtendedTrustManager =
+        sberCompositeTrustManager(systemTrustManager(), russianTrustManager())
 
-            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
-                try {
-                    system.checkServerTrusted(chain, authType)
-                } catch (_: CertificateException) {
-                    russian.checkServerTrusted(chain, authType)
-                }
+    /** Test seam: the composite over two explicit anchor sets. */
+    internal fun sberCompositeTrustManager(
+        system: X509ExtendedTrustManager,
+        russian: X509ExtendedTrustManager,
+    ): X509ExtendedTrustManager = object : X509ExtendedTrustManager() {
+        override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
+            try {
+                system.checkClientTrusted(chain, authType)
+            } catch (_: CertificateException) {
+                russian.checkClientTrusted(chain, authType)
             }
-
-            override fun getAcceptedIssuers(): Array<X509Certificate> =
-                system.acceptedIssuers + russian.acceptedIssuers
         }
+
+        override fun checkClientTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+            engine: SSLEngine?,
+        ) {
+            try {
+                system.checkClientTrusted(chain, authType, engine)
+            } catch (_: CertificateException) {
+                russian.checkClientTrusted(chain, authType, engine)
+            }
+        }
+
+        override fun checkClientTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+            socket: Socket?,
+        ) {
+            try {
+                system.checkClientTrusted(chain, authType, socket)
+            } catch (_: CertificateException) {
+                russian.checkClientTrusted(chain, authType, socket)
+            }
+        }
+
+        override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+            try {
+                system.checkServerTrusted(chain, authType)
+            } catch (_: CertificateException) {
+                russian.checkServerTrusted(chain, authType)
+            }
+        }
+
+        override fun checkServerTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+            engine: SSLEngine?,
+        ) {
+            try {
+                system.checkServerTrusted(chain, authType, engine)
+            } catch (_: CertificateException) {
+                russian.checkServerTrusted(chain, authType, engine)
+            }
+        }
+
+        override fun checkServerTrusted(
+            chain: Array<X509Certificate>,
+            authType: String,
+            socket: Socket?,
+        ) {
+            try {
+                system.checkServerTrusted(chain, authType, socket)
+            } catch (_: CertificateException) {
+                russian.checkServerTrusted(chain, authType, socket)
+            }
+        }
+
+        override fun getAcceptedIssuers(): Array<X509Certificate> =
+            system.acceptedIssuers + russian.acceptedIssuers
     }
 
     /**
@@ -288,9 +365,9 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
      * HOST-SCOPED: the returned manager validates Sber
      * hosts against [sberCompositeTrustManager] (system first, Минцифры
      * fallback) and every other host strictly against the platform default
-     * trust manager. Signature and semantics-as-a-drop-in are unchanged from
-     * the pre-fix version, so existing wiring compiles and works untouched;
-     * only the trust ANCHOR SET is now narrowed per peer host.
+     * trust manager. The peer host selects the ANCHOR SET only; the original
+     * engine/socket is forwarded to the selected manager so the platform
+     * re-derives the host itself and hostname binding is untouched.
      */
     fun compositeTrustManager(): X509TrustManager = SberHostScopedTrustManager(
         sberAnchors = sberCompositeTrustManager(),
@@ -305,6 +382,62 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
             // factory without being handed a trust manager).
             init(null, arrayOf(compositeTrustManager()), SecureRandom())
         }
+}
+
+/**
+ * File-private fail-closed adapter for a JSSE provider (or a test fake) that
+ * only implements the legacy [X509TrustManager] interface. Android's
+ * `RootTrustManager` and the JVM's `X509TrustManagerImpl` are already
+ * extended, so the production anchors bypass it; it exists so an exotic
+ * provider (or a bare 2-arg fake) degrades to the previous 2-arg behavior
+ * instead of throwing a `ClassCastException` inside a handshake. The 3-arg
+ * overloads delegate to the 2-arg call — the peer host is still re-derived by
+ * the caller's endpoint identification, so hostname binding is not weakened.
+ */
+private class NeutralExtendedTrustManager(
+    private val delegate: X509TrustManager,
+) : X509ExtendedTrustManager() {
+    override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
+        delegate.checkClientTrusted(chain, authType)
+    }
+
+    override fun checkClientTrusted(
+        chain: Array<X509Certificate>,
+        authType: String,
+        socket: Socket?,
+    ) {
+        delegate.checkClientTrusted(chain, authType)
+    }
+
+    override fun checkClientTrusted(
+        chain: Array<X509Certificate>,
+        authType: String,
+        engine: SSLEngine?,
+    ) {
+        delegate.checkClientTrusted(chain, authType)
+    }
+
+    override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+        delegate.checkServerTrusted(chain, authType)
+    }
+
+    override fun checkServerTrusted(
+        chain: Array<X509Certificate>,
+        authType: String,
+        socket: Socket?,
+    ) {
+        delegate.checkServerTrusted(chain, authType)
+    }
+
+    override fun checkServerTrusted(
+        chain: Array<X509Certificate>,
+        authType: String,
+        engine: SSLEngine?,
+    ) {
+        delegate.checkServerTrusted(chain, authType)
+    }
+
+    override fun getAcceptedIssuers(): Array<X509Certificate> = delegate.acceptedIssuers
 }
 
 /**
@@ -325,6 +458,13 @@ ZHuNM/m0TXt2wTTPL7JH2YC0gPz/BvvSzjksgzU5rLbRyUKQkgU=
  * [checkServerTrusted] with neither engine nor socket) have no peer host to
  * scope on, so by policy they take the platform-only branch — unknown host ⇒
  * non-Sber.
+ *
+ * The 3-arg overloads forward the ORIGINAL engine/socket to the selected
+ * anchor set. The peer host is extracted only to CHOOSE the branch; the
+ * downstream manager re-derives the host from the context, so hostname
+ * binding is never weakened by this routing. Collapsing to the 2-arg call
+ * (the pre-fix behavior) is what made the Android system manager throw on
+ * every non-Sber host once a `<domain-config>` was declared.
  */
 class SberHostScopedTrustManager(
     private val sberAnchors: X509TrustManager,
@@ -333,6 +473,15 @@ class SberHostScopedTrustManager(
 
     private fun anchorsFor(host: String?): X509TrustManager =
         if (SberTrust.isSberHost(host)) sberAnchors else platformAnchors
+
+    /**
+     * The selected anchor set as an extended manager. Production anchors are
+     * always extended; a bare [X509TrustManager] (an exotic provider, or a
+     * test fake) is adapted rather than cast, so a handshake can never abort
+     * with a `ClassCastException`.
+     */
+    private fun extended(anchors: X509TrustManager): X509ExtendedTrustManager =
+        anchors as? X509ExtendedTrustManager ?: NeutralExtendedTrustManager(anchors)
 
     // --- server certificates (the only direction this app actually uses) ----
 
@@ -350,7 +499,10 @@ class SberHostScopedTrustManager(
             SberTrust.handshakeSessionOf(engine),
             engine?.peerHost,
         )
-        anchorsFor(host).checkServerTrusted(chain, authType)
+        // Forward the ORIGINAL engine, not the extracted host: the manager
+        // re-derives the peer host itself, so hostname binding is preserved.
+        // `host` only selects the anchor set.
+        extended(anchorsFor(host)).checkServerTrusted(chain, authType, engine)
     }
 
     override fun checkServerTrusted(
@@ -359,7 +511,7 @@ class SberHostScopedTrustManager(
         socket: Socket?,
     ) {
         val host = SberTrust.peerHostName(SberTrust.handshakeSessionOf(socket))
-        anchorsFor(host).checkServerTrusted(chain, authType)
+        extended(anchorsFor(host)).checkServerTrusted(chain, authType, socket)
     }
 
     // --- client certificates: same scope, same policy ----------------------
@@ -377,7 +529,7 @@ class SberHostScopedTrustManager(
             SberTrust.handshakeSessionOf(engine),
             engine?.peerHost,
         )
-        anchorsFor(host).checkClientTrusted(chain, authType)
+        extended(anchorsFor(host)).checkClientTrusted(chain, authType, engine)
     }
 
     override fun checkClientTrusted(
@@ -386,7 +538,7 @@ class SberHostScopedTrustManager(
         socket: Socket?,
     ) {
         val host = SberTrust.peerHostName(SberTrust.handshakeSessionOf(socket))
-        anchorsFor(host).checkClientTrusted(chain, authType)
+        extended(anchorsFor(host)).checkClientTrusted(chain, authType, socket)
     }
 
     /**

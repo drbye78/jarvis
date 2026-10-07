@@ -30,7 +30,14 @@ data class TtsCapabilities(
  *   concept at all, so every Sber entry leaves this empty.
  */
 data class TtsVoiceChoice(
-    /** Persisted in [com.jarvis.assistant.util.AppPrefs.ttsVoice] and passed to [TtsClient.synthesizeStream]. */
+    /**
+     * The provider's canonical id, passed to [TtsClient.synthesizeStream]. It is
+     * persisted in the ACTIVE backend's own pref — `tts_voice`
+     * ([com.jarvis.assistant.util.AppPrefs.ttsVoice]) for Sber, `yandex_tts_voice`
+     * ([com.jarvis.assistant.util.AppPrefs.yandexTtsVoice]) for Yandex — so a
+     * value from one list must never be presented to the other provider (see
+     * [VoiceResolver]).
+     */
     val id: String,
     /** Settings label; null means "render [id] verbatim". */
     val labelRes: Int? = null,

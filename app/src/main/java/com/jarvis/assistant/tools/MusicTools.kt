@@ -66,7 +66,9 @@ class MusicTools(
                 "\"включи плейлист для тренировки\". FILL THE SLOTS: the track title goes into 'query', " +
                 "and artist/album/playlist/genre each go into their own parameter. " +
                 "Do NOT merge them — say the user asked \"Кино Группа крови\", send query=\"Группа крови\", " +
-                "artist=\"Кино\". 'query' may be empty when only a slot was named."
+                "artist=\"Кино\". 'query' may be empty when only a slot was named. " +
+                FINAL_OUTCOME_INSTRUCTION
+        override val deduplicateFailedRetries = true
         override val parametersJson = schema(
             mapOf(
                 "query" to """{"type":"string","description":"Track title or free search text. Only the title — put the artist/album into their own slots instead of gluing everything here. May be empty when the request is fully structured."}""",
@@ -91,13 +93,13 @@ class MusicTools(
          */
         override val timeoutMs: Long = 50_000
 
-        override suspend fun execute(arguments: String): String {
+        override suspend fun executeResult(arguments: String): ToolResult {
             val obj = ToolArgs.parse(arguments)
-                ?: return JsonOut.error("Invalid JSON arguments")
+                ?: return ToolResult(JsonOut.error("Invalid JSON arguments"), isError = true)
             val mediaId = obj.string("mediaId")
             if (!mediaId.isNullOrBlank()) {
                 return orchestrator.playLibraryItem(mediaId, obj.string("title"), obj.string("app"))
-                    .toJson()
+                    .toToolResult()
             }
             return orchestrator.playSearchQuery(
                 rawQuery = obj.string("query") ?: "",
@@ -106,8 +108,10 @@ class MusicTools(
                 playlist = obj.string("playlist"),
                 genre = obj.string("genre"),
                 appHint = obj.string("app"),
-            ).toJson()
+            ).toToolResult()
         }
+
+        override suspend fun execute(arguments: String): String = executeResult(arguments).content
     }
 
     // ------------------------------------------------------------------
@@ -124,7 +128,9 @@ class MusicTools(
                 "\"пауза\", \"дальше\", \"выключи музыку\" (stop), \"промотай на минуту\" (seek, compute deltaMs), " +
                 "\"сначала\"/\"заново\" (restart), \"лайкни\" (like), \"повтори трек\" (repeat one), " +
                 "\"перемешай\" (shuffle), \"быстрее\"/\"медленнее\" (speed, pick 1.5 or 0.75). " +
-                "When the user names a track or artist, call playMusic instead."
+                "When the user names a track or artist, call playMusic instead. " +
+                FINAL_COMMAND_OUTCOME_INSTRUCTION
+        override val deduplicateFailedRetries = true
         override val parametersJson = schema(
             mapOf(
                 "action" to """{"type":"string","enum":["play","pause","toggle","next","previous","stop","seek","restart","like","repeat","shuffle","speed"],"description":"Transport command"}""",
@@ -138,69 +144,13 @@ class MusicTools(
             required = listOf("action"),
         )
 
-        override suspend fun execute(arguments: String): String {
-            val obj = ToolArgs.parse(arguments)
-                ?: return JsonOut.error("Invalid JSON arguments")
-            val action = obj.string("action")?.lowercase()
-                ?: return JsonOut.error("Missing required parameter: action")
-            val spec = when (action) {
-                "play", "resume", "включи", "продолжи" ->
-                    MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.PLAY)
-                "pause", "пауза" ->
-                    MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.PAUSE)
-                "toggle" ->
-                    MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.TOGGLE)
-                "next", "дальше", "следующий" ->
-                    MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.NEXT)
-                "previous", "prev", "назад", "предыдущий" ->
-                    MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.PREVIOUS)
-                "stop", "стоп", "выключи" ->
-                    MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.STOP)
-                "seek", "промотай", "промотать", "перематывай" ->
-                    MusicPlaybackOrchestrator.ControlSpec(
-                        action = MusicPlaybackOrchestrator.Action.SEEK,
-                        positionMs = obj.string("positionMs")?.toLongOrNull(),
-                        deltaMs = obj.string("deltaMs")?.toLongOrNull(),
-                    )
-                "restart", "сначала", "заново" ->
-                    MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.RESTART)
-                "like", "лайк", "лайкни", "нравится" ->
-                    MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.LIKE)
-                "repeat", "повтор", "повтори" -> {
-                    val modeStr = obj.string("mode")?.lowercase()
-                    val repeatMode = when (modeStr) {
-                        // Omitted mode keeps the player-default path (ALL).
-                        null -> null
-                        "off", "none", "выкл", "без повтора" -> MusicPlaybackOrchestrator.RepeatMode.OFF
-                        "one", "track", "трек" -> MusicPlaybackOrchestrator.RepeatMode.ONE
-                        "all", "все", "всё" -> MusicPlaybackOrchestrator.RepeatMode.ALL
-                        // An unrecognized mode used to silently map to ALL —
-                        // the OPPOSITE of the likely "repeat this track"
-                        // intent. Reject it honestly instead of rewriting it.
-                        else -> return JsonOut.error("mode must be one of off|one|all (got '$modeStr')")
-                    }
-                    MusicPlaybackOrchestrator.ControlSpec(
-                        action = MusicPlaybackOrchestrator.Action.REPEAT,
-                        repeatMode = repeatMode,
-                    )
-                }
-                "shuffle", "перемешай", "перемешать", "шуфл" ->
-                    MusicPlaybackOrchestrator.ControlSpec(
-                        action = MusicPlaybackOrchestrator.Action.SHUFFLE,
-                        shuffle = obj.bool("shuffle") ?: true,
-                    )
-                "speed", "скорость", "быстрее", "медленнее" ->
-                    MusicPlaybackOrchestrator.ControlSpec(
-                        action = MusicPlaybackOrchestrator.Action.SPEED,
-                        speed = obj.string("speed")?.toFloatOrNull()
-                            ?: if (action == "медленнее") 0.75f else 1.5f,
-                    )
-                else -> return JsonOut.error(
-                    "action must be play|pause|toggle|next|previous|stop|seek|restart|like|repeat|shuffle|speed",
-                )
+        override suspend fun executeResult(arguments: String): ToolResult =
+            when (val parsed = parseControlSpec(arguments)) {
+                is ControlParse.Err -> ToolResult(JsonOut.error(parsed.message), isError = true)
+                is ControlParse.Ok -> orchestrator.control(parsed.spec, parsed.app).toToolResult()
             }
-            return orchestrator.control(spec, obj.string("app")).toJson()
-        }
+
+        override suspend fun execute(arguments: String): String = executeResult(arguments).content
     }
 
     // ------------------------------------------------------------------
@@ -214,17 +164,20 @@ class MusicTools(
             "Get what is currently playing in the active player: track title, artist, album, " +
                 "playing/paused state, position, queue placement (e.g. '3 of 12'), speed, repeat, shuffle. " +
                 "Use for \"что играет?\", \"какая песня?\", \"на какой мы минуте?\"."
+        override val deduplicateFailedRetries = true
         override val parametersJson = schema(
             mapOf(
                 "app" to """{"type":"string","description":"Optional player name if several players exist"}""",
             ),
         )
 
-        override suspend fun execute(arguments: String): String {
+        override suspend fun executeResult(arguments: String): ToolResult {
             val obj = ToolArgs.parse(arguments)
-                ?: return JsonOut.error("Invalid JSON arguments")
-            return orchestrator.nowPlaying(obj.string("app")).toJson()
+                ?: return ToolResult(JsonOut.error("Invalid JSON arguments"), isError = true)
+            return orchestrator.nowPlaying(obj.string("app")).toToolResult()
         }
+
+        override suspend fun execute(arguments: String): String = executeResult(arguments).content
     }
 
     // ------------------------------------------------------------------
@@ -241,6 +194,7 @@ class MusicTools(
                 "Use for \"поставь по умолчанию Звук\", \"смени плеер на ВК Музыку\", " +
                 "\"плеер по умолчанию — Яндекс Музыка\", \"верни авто\". " +
                 "Do NOT use this to play music — call playMusic for that."
+        override val deduplicateFailedRetries = true
         override val parametersJson = schema(
             mapOf(
                 "app" to """{"type":"string","description":"Default player: 'Яндекс Музыка', """ +
@@ -249,13 +203,13 @@ class MusicTools(
             required = listOf("app"),
         )
 
-        override suspend fun execute(arguments: String): String {
+        override suspend fun executeResult(arguments: String): ToolResult {
             val obj = ToolArgs.parse(arguments)
-                ?: return JsonOut.error("Invalid JSON arguments")
+                ?: return ToolResult(JsonOut.error("Invalid JSON arguments"), isError = true)
             val spoken = obj.string("app")
-                ?: return JsonOut.error("Missing required parameter: app")
+                ?: return ToolResult(JsonOut.error("Missing required parameter: app"), isError = true)
             val pref = MusicPlayerChoice.prefValue(spoken)
-                ?: return JsonOut.error(unknownPlayerMessage(spoken))
+                ?: return ToolResult(JsonOut.error(unknownPlayerMessage(spoken)), isError = true)
             setPreferredPlayer(pref)
             val pairs = mutableListOf<Pair<String, Any?>>(
                 "status" to "ok",
@@ -266,8 +220,10 @@ class MusicTools(
             if (pref != MusicPlayerChoice.AUTO && !isInstalled(pref)) {
                 pairs += "note" to "app is not installed"
             }
-            return JsonOut.obj(pairs)
+            return ToolResult(JsonOut.obj(pairs))
         }
+
+        override suspend fun execute(arguments: String): String = executeResult(arguments).content
     }
 
     // ------------------------------------------------------------------
@@ -282,17 +238,20 @@ class MusicTools(
                 "Use for \"какие плейлисты есть\", \"что послушать\", \"покажи библиотеку\". " +
                 "Returns up to 10 items with their mediaId — to play one, call playMusic with " +
                 "mediaId + title in the SAME conversation, immediately (ids are short-lived)."
+        override val deduplicateFailedRetries = true
         override val parametersJson = schema(
             mapOf(
                 "app" to """{"type":"string","description":"Optional player name if several players exist"}""",
             ),
         )
 
-        override suspend fun execute(arguments: String): String {
+        override suspend fun executeResult(arguments: String): ToolResult {
             val obj = ToolArgs.parse(arguments)
-                ?: return JsonOut.error("Invalid JSON arguments")
-            return orchestrator.listPlaylists(obj.string("app")).toJson()
+                ?: return ToolResult(JsonOut.error("Invalid JSON arguments"), isError = true)
+            return orchestrator.listPlaylists(obj.string("app")).toToolResult()
         }
+
+        override suspend fun execute(arguments: String): String = executeResult(arguments).content
     }
 
     inner class SearchLibraryTool : ToolContract {
@@ -303,6 +262,7 @@ class MusicTools(
                 "instead of playing). Use for \"найди в музыке\", \"что есть по запросу X\" or when the " +
                 "user asks to choose. Returns up to 10 items with their mediaId — to play one, call " +
                 "playMusic with mediaId + title immediately (ids are short-lived)."
+        override val deduplicateFailedRetries = true
         override val parametersJson = schema(
             mapOf(
                 "query" to """{"type":"string","description":"What to search for in the library: track/artist/playlist name"}""",
@@ -311,13 +271,15 @@ class MusicTools(
             required = listOf("query"),
         )
 
-        override suspend fun execute(arguments: String): String {
+        override suspend fun executeResult(arguments: String): ToolResult {
             val obj = ToolArgs.parse(arguments)
-                ?: return JsonOut.error("Invalid JSON arguments")
+                ?: return ToolResult(JsonOut.error("Invalid JSON arguments"), isError = true)
             val query = obj.string("query")
-                ?: return JsonOut.error("Missing required parameter: query")
-            return orchestrator.searchLibrary(query, obj.string("app")).toJson()
+                ?: return ToolResult(JsonOut.error("Missing required parameter: query"), isError = true)
+            return orchestrator.searchLibrary(query, obj.string("app")).toToolResult()
         }
+
+        override suspend fun execute(arguments: String): String = executeResult(arguments).content
     }
 
     fun all(): List<ToolContract> = listOf(
@@ -334,10 +296,24 @@ class MusicTools(
  * Uniform JSON shape for all music outcomes; LLM relays [Outcome.detail].
  * Null fields are OMITTED (JsonOut renders nulls as the string "null",
  * which would mislead the model) — hence the explicit puts.
+ *
+ * `outcome` is the machine-visible terminal classification the model keys on:
+ * `needs_user_action` / `failed` are FINAL — re-calling the tool for the same
+ * request cannot make progress (the cascade is exhausted), it only burns
+ * passes until the tool loop aborts.
  */
 private fun MusicPlaybackOrchestrator.Outcome.toJson(): String =
     buildJsonObject {
         put("status", status.name.lowercase())
+        put(
+            "outcome",
+            when {
+                status == MusicPlaybackOrchestrator.Status.PLAYING ||
+                    status == MusicPlaybackOrchestrator.Status.DISPATCHED -> "success"
+                status.needsUserAction -> "needs_user_action"
+                else -> "failed"
+            },
+        )
         app?.label?.let { put("app", it) }
         strategy?.let { put("strategy", it) }
         nowPlaying?.let { np ->
@@ -379,3 +355,136 @@ private fun MusicPlaybackOrchestrator.Outcome.toJson(): String =
         }
         put("detail", detail)
     }.toString()
+
+/**
+ * The structured seam: [ToolResult.isError] is what [ToolRegistry] — and,
+ * crucially, the retry guard — observe. A [MusicPlaybackOrchestrator.Status]
+ * that needs the user to act is a terminal failure for the model even though
+ * the orchestrator itself did not throw, so its outcome is flagged here.
+ * [ToolResult.content] keeps the structured JSON shape (never a bare
+ * `{"error":…}`), so the model can still read `detail` to speak to the user.
+ */
+private fun MusicPlaybackOrchestrator.Outcome.toToolResult(): ToolResult =
+    ToolResult(toJson(), isError = isError || status.needsUserAction)
+
+/**
+ * Appended to the `playMusic` description. The model sees only the tool
+ * `content` (never [ToolResult.isError]), so the terminal `outcome` tokens
+ * are the ONLY way it can tell "the cascade is done, stop retrying" from
+ * "forward progress".
+ */
+private const val FINAL_OUTCOME_INSTRUCTION =
+    "A result with `outcome` = `needs_user_action` or `failed` is final — do NOT call playMusic " +
+        "again for the same request; relay `detail` to the user."
+
+/** Same directive for the transport tool, which also returns an Outcome. */
+private const val FINAL_COMMAND_OUTCOME_INSTRUCTION =
+    "A result with `outcome` = `needs_user_action` or `failed` is final — do NOT call " +
+        "controlPlayback again for the same request; relay `detail` to the user."
+
+/** Outcome of parsing a `controlPlayback` action string into a [ControlSpec]. */
+private sealed interface ControlParse {
+    data class Ok(
+        val spec: MusicPlaybackOrchestrator.ControlSpec,
+        val app: String?,
+    ) : ControlParse
+
+    data class Err(val message: String) : ControlParse
+}
+
+/**
+ * Recognized `mode` aliases for `controlPlayback(action=repeat)`. A missing
+ * mode keeps the player default (null); any string NOT in this map is rejected
+ * by the caller. An unrecognized mode used to silently map to ALL — the
+ * OPPOSITE of the likely "repeat this track" intent — so it must stay an
+ * honest error, not a default.
+ */
+private val REPEAT_MODES: Map<String, MusicPlaybackOrchestrator.RepeatMode> = mapOf(
+    "off" to MusicPlaybackOrchestrator.RepeatMode.OFF,
+    "none" to MusicPlaybackOrchestrator.RepeatMode.OFF,
+    "выкл" to MusicPlaybackOrchestrator.RepeatMode.OFF,
+    "без повтора" to MusicPlaybackOrchestrator.RepeatMode.OFF,
+    "one" to MusicPlaybackOrchestrator.RepeatMode.ONE,
+    "track" to MusicPlaybackOrchestrator.RepeatMode.ONE,
+    "трек" to MusicPlaybackOrchestrator.RepeatMode.ONE,
+    "all" to MusicPlaybackOrchestrator.RepeatMode.ALL,
+    "все" to MusicPlaybackOrchestrator.RepeatMode.ALL,
+    "всё" to MusicPlaybackOrchestrator.RepeatMode.ALL,
+)
+
+/**
+ * The `repeat` branch of [parseControlSpec]. Omitted mode keeps the
+ * player-default path (null); any other string must be a [REPEAT_MODES] member
+ * or it is rejected — an unrecognized mode used to silently map to ALL, the
+ * OPPOSITE of the likely "repeat this track" intent.
+ */
+private fun repeatSpec(obj: kotlinx.serialization.json.JsonObject): ControlParse {
+    val modeStr = obj.string("mode")?.lowercase()
+    val repeatMode = if (modeStr == null) {
+        null
+    } else {
+        REPEAT_MODES[modeStr]
+            ?: return ControlParse.Err("mode must be one of off|one|all (got '$modeStr')")
+    }
+    return ControlParse.Ok(
+        MusicPlaybackOrchestrator.ControlSpec(
+            action = MusicPlaybackOrchestrator.Action.REPEAT,
+            repeatMode = repeatMode,
+        ),
+        obj.string("app"),
+    )
+}
+
+/**
+ * Maps the model's free-form `action` string to a
+ * [MusicPlaybackOrchestrator.ControlSpec], or an honest error for anything
+ * unrecognized. Extracted from `ControlPlaybackTool.executeResult` verbatim so
+ * the tool keeps a low cyclomatic complexity; the aliases and the deliberate
+ * rejections (unknown action, unknown repeat mode) are unchanged.
+ */
+private fun parseControlSpec(arguments: String): ControlParse {
+    val obj = ToolArgs.parse(arguments)
+        ?: return ControlParse.Err("Invalid JSON arguments")
+    val action = obj.string("action")?.lowercase()
+        ?: return ControlParse.Err("Missing required parameter: action")
+    val spec = when (action) {
+        "play", "resume", "включи", "продолжи" ->
+            MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.PLAY)
+        "pause", "пауза" ->
+            MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.PAUSE)
+        "toggle" ->
+            MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.TOGGLE)
+        "next", "дальше", "следующий" ->
+            MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.NEXT)
+        "previous", "prev", "назад", "предыдущий" ->
+            MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.PREVIOUS)
+        "stop", "стоп", "выключи" ->
+            MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.STOP)
+        "seek", "промотай", "промотать", "перематывай" ->
+            MusicPlaybackOrchestrator.ControlSpec(
+                action = MusicPlaybackOrchestrator.Action.SEEK,
+                positionMs = obj.string("positionMs")?.toLongOrNull(),
+                deltaMs = obj.string("deltaMs")?.toLongOrNull(),
+            )
+        "restart", "сначала", "заново" ->
+            MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.RESTART)
+        "like", "лайк", "лайкни", "нравится" ->
+            MusicPlaybackOrchestrator.ControlSpec(MusicPlaybackOrchestrator.Action.LIKE)
+        "repeat", "повтор", "повтори" -> return repeatSpec(obj)
+        "shuffle", "перемешай", "перемешать", "шуфл" ->
+            MusicPlaybackOrchestrator.ControlSpec(
+                action = MusicPlaybackOrchestrator.Action.SHUFFLE,
+                shuffle = obj.bool("shuffle") ?: true,
+            )
+        "speed", "скорость", "быстрее", "медленнее" ->
+            MusicPlaybackOrchestrator.ControlSpec(
+                action = MusicPlaybackOrchestrator.Action.SPEED,
+                speed = obj.string("speed")?.toFloatOrNull()
+                    ?: if (action == "медленнее") 0.75f else 1.5f,
+            )
+        else -> return ControlParse.Err(
+            "action must be play|pause|toggle|next|previous|stop|seek|restart|like|repeat|shuffle|speed",
+        )
+    }
+    return ControlParse.Ok(spec, obj.string("app"))
+}

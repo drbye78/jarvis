@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import timber.log.Timber
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * A tool exposed to the LLM. `parametersJson` is a raw JSON-schema string
@@ -37,6 +38,19 @@ interface ToolContract {
      * the player, wait for its media session, playFromSearch, verify.
      */
     val timeoutMs: Long? get() = null
+
+    /**
+     * OPT-IN failed-retry dedupe. When true, [ToolRegistry.executeResult]
+     * caches a FAILED result ([ToolResult.isError] = true) for the current
+     * turn keyed by `(name, arguments)`; an identical retry returns the cached
+     * result WITHOUT re-executing. Defaults to false deliberately: the model
+     * can legitimately retry a transient failure (a GPS fix that is warming
+     * up), so a global guard would suppress real recovery. Only tools whose
+     * repeat of the exact same call is provably pointless opt in — currently
+     * the music cascade, which can exhaust every strategy and still be
+     * retried until the loop aborts.
+     */
+    val deduplicateFailedRetries: Boolean get() = false
 
     suspend fun execute(arguments: String): String
 
@@ -126,6 +140,15 @@ class ToolRegistry(
     @Volatile
     private var authorizedTurn: AuthorizedTurn? = null
 
+    /**
+     * Per-turn cache of FAILED results for tools that opted into
+     * [ToolContract.deduplicateFailedRetries]. Keyed by `(name, arguments)`.
+     * Only failures are remembered (a success is never cached — a repeated
+     * call that succeeded the first time must still be free to run again).
+     * Cleared at every new turn bind in [setAuthorizationContext].
+     */
+    private val failedRetries = ConcurrentHashMap<String, ToolResult>()
+
     private data class AuthorizedTurn(val sessionId: Int, val context: TurnAuthorization)
 
     init {
@@ -146,6 +169,10 @@ class ToolRegistry(
      * when [sessionId] is still the bound turn; setting always overwrites.
      */
     fun setAuthorizationContext(sessionId: Int, context: TurnAuthorization?) {
+        // A non-null bind marks a NEW turn (TurnRunner binds voice() at turn
+        // start and rebinds once the utterance is known, both BEFORE any tool
+        // runs). The failed-retry cache is per-turn, so it is cleared here.
+        if (context != null) failedRetries.clear()
         authorizedTurn = if (context == null) {
             authorizedTurn?.takeUnless { it.sessionId == sessionId }
         } else {
@@ -205,6 +232,14 @@ class ToolRegistry(
                 }.toString(),
                 isError = true,
             )
+        // OPT-IN failed-retry guard key. The lookup happens AFTER authorization
+        // and the confirmation gate so a cached failure can never bypass either
+        // boundary; only the tool exercise is skipped.
+        val dedupeKey = if (tool.deduplicateFailedRetries) {
+            call.name + "\u0000" + call.arguments
+        } else {
+            null
+        }
         val decision = ToolAuthorization.decide(call.name, tool.risk, authorizedTurn?.context)
         if (decision is AuthorizationDecision.Deny) {
             Timber.w("Tool %s denied by authorization (%s)", call.name, decision.reason)
@@ -222,6 +257,14 @@ class ToolRegistry(
         // the timeout/execute block, so an unconfirmed write never reaches the
         // third-party server and no telemetry fires for it.
         confirmationGate(tool, call)?.let { return it }
+        // A tool that opted in and already failed on this exact
+        // (name, arguments) in this turn returns the cached failure instead of
+        // re-running. The model sees only `content`, so a success-shaped
+        // failure would otherwise be retried until the loop aborts (the music
+        // cascade exhausting every strategy); this makes it final for the turn.
+        if (dedupeKey != null) {
+            failedRetries[dedupeKey]?.let { return it }
+        }
         val timeout = tool.timeoutMs ?: perToolTimeoutMs
         val startedAt = System.nanoTime()
         val result = try {
@@ -255,6 +298,11 @@ class ToolRegistry(
             } catch (e: Exception) {
                 Timber.w(e, "Tool telemetry observer failed (ignored)")
             }
+        }
+        // Remember ONLY failures: a success must never be cached, so a
+        // legitimate repeat (e.g. play a second track) still executes.
+        if (dedupeKey != null && result.isError) {
+            failedRetries[dedupeKey] = result
         }
         return result
     }

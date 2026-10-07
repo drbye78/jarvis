@@ -216,15 +216,40 @@ class HybridWakeWordDetector(
      * may itself run in a cancellable lifecycle scope — the build is shielded by
      * [NonCancellable] so a cancelled caller cannot orphan a native engine).
      */
+    /**
+     * Content-free failure reason for the user: the exception CLASS name only
+     * (never its message/path). The APK ships the bundled Sherpa assets, so the
+     * old hardcoded "bundled assets missing" was a false claim for every Sherpa
+     * failure. Extracted from [buildAndSwap] to keep its complexity bounded.
+     */
+    private fun wakeFailureReason(
+        engine: String,
+        failure: Throwable?,
+        store: CredentialsStore?,
+    ): String = when {
+        engine == "sherpa" && failure != null ->
+            "Sherpa model failed to load (${failure.javaClass.simpleName})"
+        store == null || !store.hasPicovoiceKey() ->
+            "Picovoice access key is missing (set it in Settings)"
+        failure != null ->
+            "Picovoice engine unavailable (${failure.javaClass.simpleName})"
+        else -> "Wake-word engine unavailable"
+    }
+
     private suspend fun buildAndSwap(req: WakeWordRequest) {
         // Build under NonCancellable AND hold reconfigureMutex so two
         // heavy native builds (initial vs reconfigure, or a slider drag) cannot
         // run concurrently and double the peak native RAM on a low-end device.
+        // The throwable is captured so the user-facing failure reason can name
+        // the exception CLASS (content-free) instead of asserting a specific
+        // cause that may be false.
+        var buildFailure: Throwable? = null
         val built = reconfigureMutex.withLock {
             withContext(NonCancellable + engineBuildDispatcher) {
                 try {
                     engineFactory(req)
                 } catch (e: Exception) {
+                    buildFailure = e
                     Timber.e(e, "Wake-word engine build failed — wake word disabled")
                     null
                 }
@@ -232,6 +257,7 @@ class HybridWakeWordDetector(
         }
 
         if (built == null) {
+            val failure = buildFailure
             // Surface the failure readably + via the event flow — but ONLY
             // when there is no engine currently serving detections. A failed
             // reconfigure while a working engine exists must keep that engine
@@ -239,17 +265,7 @@ class HybridWakeWordDetector(
             withContext(NonCancellable) {
                 if (_state.value != DetectorState.Released && engine == null) {
                     val store = CredentialsStore.peek()
-                    val reason = when {
-                        req.engine == "sherpa" ->
-                            "Sherpa model failed to load (bundled assets missing)"
-                        store == null || !store.hasPicovoiceKey() ->
-                            "Picovoice access key is missing (set it in Settings → Настройки)"
-                        // The repo intentionally does
-                        // NOT ship jarvis_ru.ppn (RUNBOOK) — do not point the
-                        // user at a bundled asset that never exists; give the
-                        // actionable fix instead.
-                        else -> "Picovoice engine unavailable: enter the access key in Settings and/or select a custom .ppn file"
-                    }
+                    val reason = wakeFailureReason(req.engine, failure, store)
                     _state.value = DetectorState.Failed(reason)
                     // Belt and suspenders: also surface through the event flow.
                     detectionsFlow.tryEmit(Detection.DetectorError(reason))

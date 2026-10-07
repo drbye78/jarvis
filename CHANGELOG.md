@@ -6,6 +6,38 @@ semver (pre-1.0: breaking changes bump the minor).
 
 ## [Unreleased]
 
+### Fixed — on-device log-analysis remediation (TLS, music, TTS voice, diagnostics)
+- **non-Sber HTTPS was dead on Android** (Yandex AI Studio LLM, OpenAiCompat,
+  Open-Meteo/Project EOL weather, user MCP servers). `SberHostScopedTrustManager`
+  delegated its 3-arg `checkServerTrusted` to the anchors' 2-arg overload; on
+  Android `systemTrustManager()` is a `RootTrustManager` whose 2-arg method
+  throws as soon as the app declares any `<domain-config>` (the loopback MCP
+  cleartext exception), so every non-Sber handshake failed with
+  `CertificateException: Domain specific configurations require that hostname
+  aware checkServerTrusted(...)`. Both trust layers now forward the ORIGINAL
+  `SSLEngine`/`Socket` and return `X509ExtendedTrustManager`; the composite's
+  system-first branch is reachable again (it was silently dead before, wrongly
+  rejecting a public-chain Sber host). One shared host-scoped client is kept.
+- **`playMusic` no longer loops the model into `Слишком много шагов`.** A
+  terminal cascade outcome (`SEARCH_OPENED`/`APP_OPENED`) is now a typed
+  failure: the result carries `outcome` (`success`|`needs_user_action`|`failed`)
+  and `ToolResult.isError=true`, and the tool descriptions tell the model not to
+  retry. An opt-in per-turn failed-retry dedupe (music tools only) short-circuits
+  an identical failed call; the lookup runs after the authorization/confirmation
+  gates and the cache clears each turn.
+- **TTS no longer sends a foreign voice id.** `VoiceResolver` canonicalizes the
+  speaker per backend at four chokepoints (Settings commit, management API,
+  `AppGraph.voiceSource`, and the synthesis boundary), so a stale Sber id such
+  as `Mila` can never reach the Yandex service. A `PERMISSION_DENIED`/
+  `INVALID_ARGUMENT` rejection of a non-default voice now retries once with
+  `marina`; a barge-in `CANCELLED` still closes normally and is never retried.
+- **Honest diagnostics.** The exact-alarm sweep logs its trigger
+  (`boot`/`grant`/`foreground`) and boots no longer sweep twice; a Sherpa
+  wake-word failure names the exception class instead of falsely claiming
+  "bundled assets missing"; the streaming player distinguishes a genuine
+  AudioTrack write failure from any other TTS-stream exception.
+- Tests: 1,965 JVM (0 failures; detekt 0), +1 device-only `SberTrustDeviceTest`.
+
 ### Added — Tuya-direct smart-home provider (R4 H6)
 - **A Tuya Cloud Project is now a first-class provider** alongside Home Assistant,
   over the same `HomeBackend` SPI and the same provider-neutral T0/T1/T2
