@@ -197,6 +197,10 @@ Colleagues who want to build their own signed APK generate their own
 keystore with `keytool` and update `local.properties` accordingly.
 
 ## What Jarvis can do
+> The full, code-derived registry of every action, provider, credential and
+> limitation lives in **[CAPABILITIES.md](CAPABILITIES.md)**. The summary below
+> is the tour; that file is the reference.
+
 - **Voice**: wake word «Джарвис» (or a custom English keyword — the assistant's
   **name follows it**: set «Max» and it calls itself Max on the start screen and
   in dialogue, Sherpa engine), voice stop
@@ -370,6 +374,8 @@ compliance. The terms also cap free-tier use (1,000 unique users/day) and forbid
 storing results beyond 30 days.
 
 ## Docs
+- [CAPABILITIES.md](CAPABILITIES.md) — the full capability/action registry: every
+  tool, provider, credential, apply policy and honest limitation.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — component and concurrency model.
 - [THREAT_MODEL.md](THREAT_MODEL.md) — assets, attackers, egress, authorization model.
 - [RUNBOOK.md](RUNBOOK.md) — troubleshooting, debugging, performance targets.
@@ -387,6 +393,6 @@ storing results beyond 30 days.
   live voice orb (breathing/ripple/thinking/speaking animations), chat-style
   transcript, permission onboarding with status rows and start gating,
   settings organized as a category list («Помощник», «Речь», «Слушание»,
-  «Погода и карты», «Память», «Инициатива», «Музыка», «Аккаунты и ключи») with
-  a per-category detail screen (including a «Музыка» default-player screen:
-  Яндекс / Звук / VK)
+  «Погода и карты», «Память», «Инициатива», «Музыка», «Аккаунты и ключи»,
+  «MCP-серверы», «Управление», «Умный дом») with a per-category detail screen
+  (including a «Музыка» default-player screen: Яндекс / Звук / VK)
